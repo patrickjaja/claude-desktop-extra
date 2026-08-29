@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
   "label": "Claude Desktop",
-  "message": "v1.37937.3 <- v1.40609.0 available",
-  "color": "red"
+  "message": "v1.40609.0 (latest)",
+  "color": "brightgreen"
 }
