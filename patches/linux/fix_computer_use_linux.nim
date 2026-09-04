@@ -54,6 +54,17 @@ proc replaceLiteralFirst(content: var string, needle, sub: string): int =
   content = content[0 ..< idx] & sub & content[idx + needle.len .. ^1]
   return 1
 
+proc replaceLiteralFirstAny(
+    content: var string, needles: openArray[string], sub: string
+): int =
+  ## Like replaceLiteralFirst, but tries each needle in order and replaces the
+  ## first one found. Used for anchors that upstream's minifier re-quotes
+  ## between releases (backtick <-> double/single quotes) without changing text.
+  for needle in needles:
+    if replaceLiteralFirst(content, needle, sub) == 1:
+      return 1
+  return 0
+
 proc replaceLiteralAll(content: var string, needle, sub: string): int =
   ## Replace all literal occurrences. Returns match count.
   var idx = 0
@@ -751,14 +762,24 @@ proc apply*(input: string): string =
     #   function _(){return o.t.has(process.platform)&&h()&&!a.n(`chicagoEnabled`)}
     # is isComputerUseAvailableButOptedOut and has no `?`, so the ternary shape
     # below picks out exactly one function.
+    #
+    # v1.46388.2 folded the Cowork HIPAA compliance gate into the ternary and
+    # flipped the minifier back to double quotes:
+    #   function rz(){return!ZR.has(process.platform)||Uk()?!1:nz()&&Wx("chicagoEnabled")}
+    # (`Uk()` is `coworkHipaaRestricted()==="restricted"`). The Linux branch now
+    # returns `!<hipaa>()` instead of a bare `!0`, so an org compliance lock
+    # still switches CU off on Linux exactly as it does on macOS/Windows; the
+    # platform Set + chicagoEnabled parts stay forced as before.
     let alreadyWs =
-      re"""function [\w$]+\(\)\{if\(process\.platform==="linux"\)return!0;return [\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)\?[\w$]+\(\)&&[\w$]+(?:\.[\w$]+)*\(["`]chicagoEnabled["`]\):!1\}"""
+      re"""function [\w$]+\(\)\{if\(process\.platform==="linux"\)return(?: ?!0|!!?[\w$]+\(\));return ?!?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)(?:\|\|[\w$]+\(\))?\?(?:!1:)?[\w$]+\(\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)(?::!1)?\}"""
     if content.contains(alreadyWs):
-      echo "  [OK] isEnabled: linux unconditional return!0 already present (guard satisfied)"
+      echo "  [OK] isEnabled: linux branch already present (guard satisfied)"
       inc patchesApplied
     else:
+      let patV46388 =
+        re"""(function [\w$]+\(\)\{)return![\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)\|\|([\w$]+)\(\)\?!1:[\w$]+\(\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)\}"""
       let patV26832 =
-        re"""(function [\w$]+\(\)\{)return [\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)\?[\w$]+\(\)&&[\w$]+(?:\.[\w$]+)*\(["`]chicagoEnabled["`]\):!1\}"""
+        re"""(function [\w$]+\(\)\{)return [\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)\?[\w$]+\(\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\):!1\}"""
       let patV18286 =
         re"""(function [\w$]+\(\)\{)if\(!([\w$]+)\.has\(process\.platform\)\)return!1;const ([\w$]+)=([\w$]+)\(\);return \3!==void 0\?\3:([\w$]+)\(\)&&([\w$]+)\("chicagoEnabled"\)\}"""
       # <=v1.17377 shapes, kept as fallbacks:
@@ -768,14 +789,26 @@ proc apply*(input: string): string =
         re"""(function [\w$]+\(\)\{)return [\w$]+\([\w$]+\)\?[\w$]+\.has\(process\.platform\)&&[\w$]+\(\):[\w$]+\(\)\}"""
       var n = replaceFirst(
         content,
-        patV26832,
+        patV46388,
         proc(m: RegexMatch): string =
           let bounds = m.matchBounds
           let whole = content[bounds.a .. bounds.b]
           let headerLen = m.captures[0].len
-          m.captures[0] & "if(process.platform===\"linux\")return!0;" &
+          let hipaaName = m.captures[1]
+          m.captures[0] & "if(process.platform===\"linux\")return!" & hipaaName & "();" &
             whole[headerLen ..^ 1],
       )
+      if n == 0:
+        n = replaceFirst(
+          content,
+          patV26832,
+          proc(m: RegexMatch): string =
+            let bounds = m.matchBounds
+            let whole = content[bounds.a .. bounds.b]
+            let headerLen = m.captures[0].len
+            m.captures[0] & "if(process.platform===\"linux\")return!0;" &
+              whole[headerLen ..^ 1],
+        )
       if n == 0:
         n = replaceFirst(
           content,
@@ -840,14 +873,19 @@ proc apply*(input: string): string =
     # (`y` is exported as isComputerUseRegisterable, `l` is the GrowthBook flag
     # id, `g` is the Patch-11 gate). The else-arm names the gate to delegate to,
     # so capture it rather than hardcoding `return!0`.
+    #
+    # v1.46388.2 prepends the Cowork HIPAA gate to the flag-on arm:
+    #   function Nhn(){return wS(_hn)?!Uk()&&ZR.has(process.platform)&&nz():rz()}
+    # The `!<hipaa>()&&` is optional in the pattern; the Linux branch still
+    # delegates to the Patch-11 gate, which now honours the same HIPAA gate.
     let alreadyBue =
-      re"""function [\w$]+\(\)\{if\(process\.platform==="linux"\)return (?:[\w$]+\(\)|!0);return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)"""
+      re"""function [\w$]+\(\)\{if\(process\.platform==="linux"\)return (?:[\w$]+\(\)|!0);return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?(?:![\w$]+\(\)&&)?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)"""
     if content.contains(alreadyBue):
       echo "  [OK] rj/bue: linux branch already present (guard satisfied)"
       inc patchesApplied
     else:
       let patV26832 =
-        re"""(function [\w$]+\(\)\{)return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)&&[\w$]+\(\):([\w$]+)\(\)\}"""
+        re"""(function [\w$]+\(\)\{)return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?(?:![\w$]+\(\)&&)?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)&&[\w$]+\(\):([\w$]+)\(\)\}"""
       let patBue =
         re"""(function [\w$]+\(\)\{)if\(!([\w$]+)\(([\w$]+)\)\)return ([\w$]+)\(\);const ([\w$]+)=([\w$]+)\(\);return \5!==void 0\?\5:([\w$]+)\.has\(process\.platform\)&&([\w$]+)\(\)\}"""
       # <=v1.17377 shape (standalone chicagoEnabled ternary), kept as fallback:
@@ -920,7 +958,11 @@ proc apply*(input: string): string =
   block:
     # v1.26832.0: single-quoted literal → backtick template. Inside a template
     # literal the embedded `"Finder"` / `"Dolphin"` quotes need no escaping.
-    let old13b = "`This computer is running macOS. The file manager is \"Finder\". `"
+    # v1.46388.2: back to a single-quoted literal (it contains `"`).
+    let old13b = [
+      "'This computer is running macOS. The file manager is \"Finder\". '",
+      "`This computer is running macOS. The file manager is \"Finder\". `",
+    ]
     let new13b =
       "(process.platform===\"linux\"?(globalThis.__cuKwinMode?" &
       "`This computer is running Linux with KDE Plasma. The file manager is \"Dolphin\". `" &
@@ -932,7 +974,7 @@ proc apply*(input: string): string =
       "desktop environment (e.g. Nautilus on GNOME, Dolphin on KDE, " &
       "Thunar on XFCE). `)" & ":" &
       "`This computer is running macOS. The file manager is \"Finder\". `)"
-    if replaceLiteralFirst(content, old13b, new13b) == 1:
+    if replaceLiteralFirstAny(content, old13b, new13b) == 1:
       echo "  [OK] 13b request_access: 3-way (kwin-wayland=KDE/Dolphin, regular=generic Linux, other=macOS)"
       inc descChanges
       inc patchesApplied
@@ -1006,13 +1048,22 @@ proc apply*(input: string): string =
       "`The desktop shell is frontmost. Double-click, right-click, and Enter on desktop items can launch applications outside the allowlist. To click on the desktop, taskbar, Start menu, Search, or file manager, call request_access with exactly \"${"
     # v1.32352.1: the minifier escapes non-ASCII as \uXXXX inside literals -
     # the em-dash is now the six ASCII chars \u2014, not raw UTF-8 bytes.
+    # v1.46388.2: the inner string literals are double-quoted again
+    # (`==="win32"?"File Explorer":"Finder"`); the outer template stays a
+    # backtick literal because of the ${} interpolations. Accept either quote
+    # style for the inner literals via a quote class (Q below).
+    const Q = "[\"`]"
     let mid =
-      "===`win32`?`File Explorer`:`Finder`}\" in the apps array \\u2014 that single grant covers all of them.${"
+      "===" & Q & "win32" & Q & "\\?" & Q & "File Explorer" & Q & ":" & Q & "Finder" & Q &
+      escapeRe("}\" in the apps array \\u2014 that single grant covers all of them.${")
     let suffix =
-      "===`win32`?` That grant is click-only: typing into the shell stays blocked.`:``} To interact with a different app, use open_application to bring it forward.`"
-    let pat = re(
-      escapeRe(prefix) & "([\\w$]+)" & escapeRe(mid) & "([\\w$]+)" & escapeRe(suffix)
-    )
+      "===" & Q & "win32" & Q & "\\?" & Q &
+      escapeRe(" That grant is click-only: typing into the shell stays blocked.") & Q &
+      ":" & Q & Q &
+      escapeRe(
+        "} To interact with a different app, use open_application to bring it forward.`"
+      )
+    let pat = re(escapeRe(prefix) & "([\\w$]+)" & mid & "([\\w$]+)" & suffix)
     let maybeMatch = content.find(pat)
     if maybeMatch.isSome:
       let m = maybeMatch.get()
@@ -1093,8 +1144,11 @@ proc apply*(input: string): string =
 
   # 13c: request_access apps — WM_CLASS for Linux
   block:
-    let old13c =
-      "`Application display names (e.g. \"Slack\", \"Calendar\") or bundle identifiers (e.g. \"com.tinyspeck.slackmacgap\"). Display names are resolved case-insensitively against installed apps.`"
+    # v1.46388.2: single-quoted literal (contains `"`); backtick kept as fallback.
+    let old13c = [
+      "'Application display names (e.g. \"Slack\", \"Calendar\") or bundle identifiers (e.g. \"com.tinyspeck.slackmacgap\"). Display names are resolved case-insensitively against installed apps.'",
+      "`Application display names (e.g. \"Slack\", \"Calendar\") or bundle identifiers (e.g. \"com.tinyspeck.slackmacgap\"). Display names are resolved case-insensitively against installed apps.`",
+    ]
     let new13c =
       "(process.platform===\"linux\"?" &
       "`Application names as shown in window titles, or WM_CLASS values " &
@@ -1103,7 +1157,7 @@ proc apply*(input: string): string =
       "`Application display names (e.g. \"Slack\", \"Calendar\") or bundle " &
       "identifiers (e.g. \"com.tinyspeck.slackmacgap\"). Display names are " &
       "resolved case-insensitively against installed apps.`)"
-    if replaceLiteralFirst(content, old13c, new13c) == 1:
+    if replaceLiteralFirstAny(content, old13c, new13c) == 1:
       echo "  [OK] 13c request_access apps: Linux identifiers"
       inc descChanges
       inc patchesApplied
@@ -1112,13 +1166,16 @@ proc apply*(input: string): string =
 
   # 13d: open_application app identifier
   block:
-    let old13d =
-      "`Display name (e.g. \"Slack\") or bundle identifier (e.g. \"com.tinyspeck.slackmacgap\").`"
+    # v1.46388.2: single-quoted literal (contains `"`); backtick kept as fallback.
+    let old13d = [
+      "'Display name (e.g. \"Slack\") or bundle identifier (e.g. \"com.tinyspeck.slackmacgap\").'",
+      "`Display name (e.g. \"Slack\") or bundle identifier (e.g. \"com.tinyspeck.slackmacgap\").`",
+    ]
     let new13d =
       "(process.platform===\"linux\"?" &
       "`Application name or WM_CLASS (e.g. \"firefox\", \"nautilus\").`" & ":" &
       "`Display name (e.g. \"Slack\") or bundle identifier (e.g. \"com.tinyspeck.slackmacgap\").`)"
-    if replaceLiteralFirst(content, old13d, new13d) == 1:
+    if replaceLiteralFirstAny(content, old13d, new13d) == 1:
       echo "  [OK] 13d open_application app: Linux identifiers"
       inc descChanges
       inc patchesApplied
@@ -1135,14 +1192,27 @@ proc apply*(input: string): string =
     # v1.32352.1: the em-dash is emitted as the six-char \u2014 escape (see
     # 13b.kwin-shell-hint). The re-emitted branch keeps the escape, which JS
     # decodes to the same character.
-    let old13e =
-      "The target must already be in the session allowlist \\u2014 call request_access first.`,inputSchema:"
-    let new13e =
-      "${process.platform===\"linux\"?" &
-      "\"On Linux, all applications are directly accessible.\"" & ":" &
+    let linuxSentence = "\"On Linux, all applications are directly accessible.\""
+    let macSentence =
       "\"The target must already be in the session allowlist " &
-      "\\u2014 call request_access first.\"}`,inputSchema:"
-    if replaceLiteralFirst(content, old13e, new13e) == 1:
+      "\\u2014 call request_access first.\""
+    # v1.46388.2: the description is a plain double-quoted string again, so a
+    # `${}` interpolation would be emitted verbatim. Close the string and
+    # concatenate the ternary instead; the sentence is preceded by a space
+    # ("...brought to the front. "), so the split lands on a clean boundary.
+    let old13eStr =
+      "The target must already be in the session allowlist \\u2014 call request_access first.\",inputSchema:"
+    let new13eStr =
+      "\"+(process.platform===\"linux\"?" & linuxSentence & ":" & macSentence &
+      "),inputSchema:"
+    # <=v1.40609.0: backtick template - interpolate inside it.
+    let old13eTpl =
+      "The target must already be in the session allowlist \\u2014 call request_access first.`,inputSchema:"
+    let new13eTpl =
+      "${process.platform===\"linux\"?" & linuxSentence & ":" & macSentence &
+      "}`,inputSchema:"
+    if replaceLiteralFirst(content, old13eStr, new13eStr) == 1 or
+        replaceLiteralFirst(content, old13eTpl, new13eTpl) == 1:
       echo "  [OK] 13e open_application: no allowlist on Linux"
       inc descChanges
       inc patchesApplied
@@ -1152,15 +1222,18 @@ proc apply*(input: string): string =
   # 13f: screenshot description — clean on Linux
   block:
     # v1.32352.1: em-dash emitted as the \u2014 escape (see 13e).
-    let old13f =
-      "`Take a screenshot of the primary display. On this platform, screenshots are NOT filtered \\u2014 all open windows are visible. Input actions targeting apps not in the session allowlist are rejected.`"
+    # v1.46388.2: double-quoted literal; backtick kept as fallback.
+    let old13f = [
+      "\"Take a screenshot of the primary display. On this platform, screenshots are NOT filtered \\u2014 all open windows are visible. Input actions targeting apps not in the session allowlist are rejected.\"",
+      "`Take a screenshot of the primary display. On this platform, screenshots are NOT filtered \\u2014 all open windows are visible. Input actions targeting apps not in the session allowlist are rejected.`",
+    ]
     let new13f =
       "(process.platform===\"linux\"?" &
       "\"Take a screenshot of the primary display. All open windows are visible.\"" & ":" &
       "\"Take a screenshot of the primary display. On this platform, " &
       "screenshots are NOT filtered \\u2014 all open windows are visible. " &
       "Input actions targeting apps not in the session allowlist are rejected.\")"
-    if replaceLiteralFirst(content, old13f, new13f) == 1:
+    if replaceLiteralFirstAny(content, old13f, new13f) == 1:
       echo "  [OK] 13f screenshot: clean description on Linux"
       inc descChanges
       inc patchesApplied
@@ -1233,10 +1306,12 @@ proc apply*(input: string): string =
 
   # 14c: File Explorer/Finder → 3-way (Dolphin/Files/Finder)
   block:
-    let fmOld = "`File Explorer`:`Finder`"
+    # v1.46388.2: double-quoted literals; backtick kept as fallback. The
+    # replacement re-emits its own quotes, so both variants share it.
+    let fmOld = ["\"File Explorer\":\"Finder\"", "`File Explorer`:`Finder`"]
     let fmNew =
-      "`File Explorer`:process.platform===\"linux\"?(globalThis.__cuKwinMode?`Dolphin`:`Files`):`Finder`"
-    if replaceLiteralFirst(content, fmOld, fmNew) == 1:
+      "\"File Explorer\":process.platform===\"linux\"?(globalThis.__cuKwinMode?\"Dolphin\":\"Files\"):\"Finder\""
+    if replaceLiteralFirstAny(content, fmOld, fmNew) == 1:
       echo "  [OK] 14c file manager name: 3-way (kwin-wayland=Dolphin, regular=Files, other=Finder)"
       inc changes
       inc patchesApplied

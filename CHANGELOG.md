@@ -2,6 +2,52 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-09-04
+
+### Upstream bump to Claude Desktop v1.46388.2
+
+Anthropic's v1.46388.2 re-minified the bundle: string literals are double-quoted again instead of
+backticks, and the second chunk family (`index2.chunk-*`) is gone - everything is `index.chunk-*`
+once more. Five patches lost their anchors and are re-fitted; nothing was upstreamed and no patch was
+added or removed (47 patches).
+
+- **Computer Use** (`fix_computer_use_linux`): the seven tool-description rewrites were anchored on
+  backtick literals and now accept either quote style. The two availability gates gained an
+  upstream Cowork HIPAA compliance check; the Linux path now honours it too, so an org compliance
+  lock disables Computer Use on Linux exactly as on macOS and Windows. The `open_application`
+  description became a plain string, so its Linux wording is concatenated instead of interpolated.
+- **Files quick open**: the worker-host fork site is matched with either quote style; the env
+  passthrough that carries the feature switch to the file-index worker is unchanged.
+- **Native title bar**: upstream turned the titleBarOverlay style helper into a function taking
+  `main`/`popout`; the background capture follows the new declarator shape.
+- **Dock bounce**: `requestUserAttention` now returns a boolean that callers chain, so the Linux
+  guard returns `false` ("nothing flashed") instead of falling through.
+- **Renderer-gone log**: upstream turned the suppression into two early returns; both now log
+  `Main webview render process gone (suppressed)` before returning, so a silently swallowed
+  renderer death stays visible in main.log.
+
+The 2026-08-30 v1.40609.0 release was auto-released and never hand-audited, so the catalogs below
+cover two releases:
+
+- **Feature flags**: the GrowthBook override template grows from 225 to 291 catalogued flags (66
+  added, 12 removed). The static merger swapped `epitaxyMcpApps` and
+  `chillingSlothSshWorktreeLocation` (now static) for `sideSessions` and `wslForkSession`. Notable
+  new flags: multi-account, Code session keep-awake, side sessions, terminal scrollback, file
+  checkpointing. `enable_local_agent_mode` needed no change.
+- **Deployment panel**: the managed-settings key catalog grows from 117 to 143 keys, matching the
+  bundle's zod schema and the 3P setup SPA. New groups include the network egress proxy, Entra ID
+  sign-in, Microsoft 365 add-in policies and the built-in browser domain policy.
+- **Built-in MCP**: three new internal servers (`ccd_session`, `ccd_pr`, `ccd_sidebar`) and new
+  session hand-off / PR monitoring tools; none is platform-gated.
+- **Platform gates**: no new Linux-blocking gate and no new native module. New capability keys
+  `codeSessionKeepAwake`, `computerUseComplianceGate`, `multiAccount`, `sessionMentions` are
+  supported on Linux; `popoutTitleBarOverlay` is unsupported only under Wayland. Claude Code's
+  sandbox now needs `bubblewrap` on Linux when a managed egress or workspace policy requires it.
+- **ion-dist**: the 3P setup SPA patch still hits its two sites (Linux org-plugins mount path).
+
+Also fixed: `scripts/validate-patches.sh` aborted on the first failing patch instead of reporting
+all of them (`set -e` swallowed the exit status of the nim branch).
+
 ## 2026-08-30
 
 ### Files quick open (new community feature)

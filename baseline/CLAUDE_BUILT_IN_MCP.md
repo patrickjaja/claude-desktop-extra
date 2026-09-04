@@ -1,5 +1,13 @@
 # Built-in MCP Servers - Claude Desktop v1.13576.0
 
+> **Roster re-verified against v1.46388.2** (2026-09-04; covers the un-audited v1.40609.0 step too): registration mechanism unchanged - `registerInternalMcpServer` still present with exactly one registration, now exported as `registerInternalMcpServer:()=>Kge` in `index.chunk-DrnJEXHK.js` (v1.40609.0: `index.chunk-Ci77nY41.js`). **Roster grew for the first time since v1.8555.2 - two new backend servers and new tools on three existing ones, none with a platform check, all available on Linux:** (1) **`ccd_pr`** (#23 below) - 5 tools `get_status`, `set_monitor`, `set_auto_merge`, `bind_pr`, `unbind_pr`; `isEnabled:e=>e.sessionType==="ccd"&&qi()` with `qi(){return t.aD("1776348311")}` (GrowthBook). (2) **`ccd_sidebar`** (#24) - 9 tools `list_groups`, `create_group`, `rename_group`, `delete_group`, `move_sessions`, `set_pinned`, `set_unread`, `mark_completed`, `set_view`; `isEnabled:e=>e.sessionType==="ccd"&&ro()` with `ro(){return t.aD("2365358358")}`. (3) `ccd_session` gained **`start_session`** and **`hand_off_to_session`** (flag `2371478310`, built as ``mcp__${fs}__${gs}`` template literals). (4) `ccd_directory` gained **`propose_branch`** (surfaced to the model only when `setupTools===!0`). (5) `scheduled-tasks` now has flat literals `mcp__scheduled-tasks__create_scheduled_task` / `update_scheduled_task` (1 each; the tools themselves were already listed in #11). The known-server-name enum array grew **16 -> 19** (`+ccd_session`, `+ccd_pr`, `+ccd_sidebar`), now ``["claude_in_chrome","claude_browser","claude_preview","claude_code_ios_simulator","claude_code_android_emulator","computer_use","framebuffer","plugins","skills","mcp_registry","scheduled_tasks","cowork","session_info","dispatch","remote_devices","ccd_directory","ccd_session","ccd_pr","ccd_sidebar"]``. No server or tool was removed or renamed. Server-name literal counts identical for 22/29 roster names; the drifters are the new servers (`ccd_pr` 0 -> 1 as a server literal, `ccd_sidebar` 0 -> 1, `ccd_session` 1 -> 2 for the enum entry) plus non-registration call sites (`terminal` 40 -> 43, `skills` 28 -> 33, `cowork` 119 -> 126, `workspace` 19 -> 20, `computer-use` 5 -> 4 / `computer_use` 3 -> 4). Two grep notes: the minifier is back to **double-quoted** string literals (0 backtick hits in v1.46388.2; v1.26832.0 .. v1.40609.0 were backtick), so keep the ``[`"]`` quote class; and the **`index2.chunk-*` family is gone** - 158 `index.chunk-*` files, `index*.js` still globs everything. The bundled Microsoft 365 server is **byte-identical to v1.40609.0** (`office365-mcp.mjs` 7,322,713 B; it had grown from 7,320,850 B in v1.37937.0 with `pdfExtractorProcess.mjs` 425,295 B and `pdf.worker.mjs` 1,089,813 B unchanged). Chunk stats: `index.chunk-*` 85 -> 158, `index2.chunk-*` 52 -> 0, `index.pre.js` 846,690 -> 891,104 B, packaged `app.asar` 33,718,534 -> 36,619,584 B; `@anthropic-ai/claude-agent-sdk` 0.3.247 -> 0.3.260.
+>
+> **Counting method (v1.46388.2).** Audit concat = `cat .vite/build/index*.js` (160 files: `index.pre.js` + `index.js` + 158 chunks; 139 on v1.40609.0 with both families). Use GNU `grep -a` or python - the bundles contain NUL bytes and `rg -a` can silently return nothing:
+>
+> - `grep -aoF 'serverName:' "$CONCAT" | wc -l` -> **119** on v1.46388.2 (**116** on v1.40609.0 and v1.37937.0). The +3 are the `ccd_pr` and `ccd_sidebar` registrations plus one further per-session server-builder call site.
+> - `grep -aoE 'mcp__[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+' "$CONCAT" | wc -l` -> **76** (63 on v1.40609.0); `| sort -u | wc -l` -> **49 unique** (42 on v1.40609.0). The +7 unique are `mcp__ccd_session__start_session`, `mcp__ccd_session__hand_off_to_session`, `mcp__ccd_session_mgmt__get_session`, `mcp__ccd_session_mgmt__send_message`, `mcp__remote-devices__computer_` (a prefix test in the tool-classifier, not a tool), `mcp__scheduled-tasks__create_scheduled_task`, `mcp__scheduled-tasks__update_scheduled_task`. The `ccd_pr` / `ccd_sidebar` tool ids are template literals and do NOT appear here - the server-name literal count and the enum array are what flag new servers, so run all three checks.
+> - The "17 unique" recorded for v1.37937.0 below could not be reproduced: the same command yields 42 on v1.40609.0. Method mismatch again, not a regression - trust the commands above.
+>
 > **Roster re-verified against v1.37937.0** (2026-08-26): registration mechanism unchanged - `registerInternalMcpServer` still present with exactly one registration, now exported as `registerInternalMcpServer:()=>Mo`. The known-server-name enum array is **byte-identical** at 16 entries (`claude_in_chrome`, `claude_browser`, `claude_preview`, `claude_code_ios_simulator`, `claude_code_android_emulator`, `computer_use`, `framebuffer`, `plugins`, `skills`, `mcp_registry`, `scheduled_tasks`, `cowork`, `session_info`, `dispatch`, `remote_devices`, `ccd_directory`) - **no server added, removed, or renamed.** **One roster change:** the `plugins` server gained a tool, **`search_connectors`** (`mcp__plugins__search_connectors`) - ``{name:`search_connectors`,description:`Search the user's organization plugin library for connectors (MCP servers) bundled inside plugins...`}``, dispatched by ``if(e===`search_connectors`&&t.r_().type===`3p`){...}``. It is gated on **3p mode only, with no platform check**, so it is available on Linux. Server-name literal counts are identical for 15/21 roster names; the six that drifted are all non-registration call sites (`terminal` 33 -> 37, `skills` 21 -> 23, `dispatch` 6 -> 8, `cowork` 102 -> 112, `workspace` 15 -> 16, `scheduled_tasks` 3 -> 4). The bundled Microsoft 365 server grew slightly - `office365-mcp.mjs` 7,320,090 -> 7,320,850 B - with **`pdfExtractorProcess.mjs` byte-identical** and `pdf.worker.mjs` shrinking 2,056,364 -> 1,089,813 B; its **tool-name inventory is unchanged** (``diff <(rg -ao 'name:"[a-z0-9_]+"' OLD/resources/office365-mcp/office365-mcp.mjs|sort -u) <(rg -ao 'name:"[a-z0-9_]+"' NEW/.../office365-mcp.mjs|sort -u)`` is empty). Chunk stats: `index.chunk-*` 74 -> 75, `index2.chunk-*` 48 -> 52, `index.pre.js` 792,064 -> 821,513 B, packaged `app.asar` 32,952,736 B.
 >
 > **Counting method for the two roster counts (record the command with the number).** Every count in this paragraph comes from the audit concat `cat .vite/build/index*.js` (which globs `index.pre.js` + `index.js` + both `index.chunk-*` and `index2.chunk-*` families - 129 files on v1.37937.0, 124 on v1.34493.1):
@@ -312,15 +320,18 @@ An AI-powered inbox scanner that reads from user's remote MCP servers (Gmail, Sl
 | Field | Value |
 |-------|-------|
 | Server name | `"ccd_session"` |
-| Gating | CCD session + server flag `1585356617` |
-| Platform | All |
+| Gating | CCD session; `start_session` / `hand_off_to_session` additionally behind GrowthBook `2371478310` (v1.46388.2; the old `1585356617` gate literal is gone from the bundle) |
+| Platform | All - no platform check |
 
 **New in v1.1.9134.** Allows the model to spawn a parallel task into its own separate CCD session.
 
 | Tool | Description |
 |------|-------------|
 | `spawn_task` | Spin off a parallel task into a separate Claude Code Desktop session |
+| `dismiss_task` | Dismiss a spawned task (present since at least v1.40609.0; was missing from this table) |
 | `mark_chapter` | Flag an out-of-scope issue for a separate background task |
+| `start_session` | **New in v1.46388.2.** Start a separate Claude Code session for a task while staying with the user; `initiation` says who wants it (`user_asked` starts it now and returns its id). Flag `2371478310` |
+| `hand_off_to_session` | **New in v1.46388.2.** Hand the current conversation off to another session. Flag `2371478310` |
 
 The `spawn_task` tool requires desktop approval card injection - cannot be auto-approved by hooks or permission rules.
 
@@ -377,6 +388,7 @@ Infrastructure for future remote display/VM framebuffer control. Currently disab
 |------|-------------|
 | `request_directory` | Grant access to a directory outside the working directory. With `path` the user approves that exact folder; without it a native folder picker opens |
 | `change_directory` | **New in v1.34493.1.** Move the session to a different project directory. `path` is required. Access is granted immediately; the working directory (Bash, relative paths, project settings) moves at the end of the current turn. Refused for sessions in an isolated worktree or on a remote host |
+| `propose_branch` | **New in v1.46388.2.** Offered only when the session's `setupTools` is on: once the session is in a Git repository and right before the first file edit, propose a short branch name; the user sees a card and answers. Ids `mcp__ccd_directory__propose_branch`; the two older tools stay in the always-allowed set (`Mn=new Set([On,kn])`), `propose_branch` does not |
 
 ### 21. CCD Session Management
 
@@ -388,9 +400,13 @@ Infrastructure for future remote display/VM framebuffer control. Currently disab
 
 | Tool | Description |
 |------|-------------|
-| `list_sessions` | List CCD sessions |
+| `list_sessions` | List the user's other CCD sessions (active and optionally archived) |
+| `get_session` | Read one session's metadata (flat literal `mcp__ccd_session_mgmt__get_session` since v1.46388.2) |
 | `search_session_transcripts` | Search across CCD session transcripts |
+| `list_events` | List a session's events |
 | `archive_session` | Archive a CCD session |
+| `set_session_title` | Rename a session (emits `ccdSessionRenamed`) |
+| `send_message` | Deliver a message to another session (flat literal `mcp__ccd_session_mgmt__send_message` since v1.46388.2; 7 tools total, all present since at least v1.40609.0) |
 
 ### 22. Window Halo
 
@@ -409,6 +425,46 @@ Backend: `@ant/claude-swift` `.sessionHalo` module.
 |------|-------------|
 | `halo_attach` | Draw colored glow behind macOS app window to indicate model control |
 | `halo_detach` | Remove the halo |
+
+### 23. CCD PR
+
+| Field | Value |
+|-------|-------|
+| Server name | `"ccd_pr"` (constant `H` in v1.46388.2, `index.chunk-CG6yIyHG.js`) |
+| Gating | `isEnabled:e=>e.sessionType==="ccd"&&qi()` with `function qi(){return t.aD("1776348311")}` (GrowthBook) - **no platform check**, works on Linux |
+| Added in | v1.46388.2 (v1.40609.0 only had the `desktop_ccd_pr_bar_*` telemetry names) |
+
+Lets a Code session drive the PR bar: bind a pull request, switch its CI monitor on or off, toggle GitHub auto-merge. The mutating tools (`set_monitor`, `set_auto_merge`, `bind_pr`, `unbind_pr`) sit in a dedicated approval set (`Ki=new Set([Hi,Ui,Wi,Gi])`); `get_status` is read-only.
+
+| Tool | Description |
+|------|-------------|
+| `get_status` | Report the bound PR (URL, state, CI/monitor status) |
+| `set_monitor` | Turn the session's CI monitor switches on or off for its bound, open PR (the CI popover's checkboxes): wake on CI failures, merge conflicts and review comments |
+| `set_auto_merge` | Enable or disable GitHub auto-merge on the bound PR at `url` (github.com only) |
+| `bind_pr` | Bind a pull request URL to this session's PR bar |
+| `unbind_pr` | Dismiss the bound PR from this session's PR bar; the monitor stops watching it, `bind_pr` restores |
+
+### 24. CCD Sidebar
+
+| Field | Value |
+|-------|-------|
+| Server name | `"ccd_sidebar"` (constant `Ia` in v1.46388.2, `index.chunk-CG6yIyHG.js`) |
+| Gating | `isEnabled:e=>e.sessionType==="ccd"&&ro()` with `function ro(){return t.aD("2365358358")}` (GrowthBook) - **no platform check**, works on Linux |
+| Added in | v1.46388.2 |
+
+Lets a Code session organise the sessions sidebar. Tool ids are built as ``q=e=>`mcp__${Ia}__${e}` `` (template literals - invisible to the flat `mcp__` grep). `list_groups`, `create_group` and `set_view` are the read/low-risk set (`eo`), `rename_group`/`move_sessions`/`set_pinned`/`set_unread`/`mark_completed` the approval set (`to`), `delete_group` stands alone.
+
+| Tool | Description |
+|------|-------------|
+| `list_groups` | List sidebar groups |
+| `create_group` | Create a sidebar group (`name`, 1 to `io` characters) |
+| `rename_group` | Rename a group |
+| `delete_group` | Delete a group |
+| `move_sessions` | Move sessions between groups |
+| `set_pinned` | Pin or unpin sessions |
+| `set_unread` | Set or clear the unread marker |
+| `mark_completed` | Mark sessions completed |
+| `set_view` | Switch the sidebar view |
 
 ## Per-Session Dynamic MCP Servers (SDK-type)
 
@@ -595,15 +651,15 @@ Tool definitions are built by `V7r()` with platform-dependent descriptions. On L
 
 | Tool | Upstream description (verbatim, v1.569.0) |
 |------|-------------|
-| `request_access` | **Platform-dependent prefix:** macOS: *"This computer is running macOS. The file manager is 'Finder'."* / Windows: *"This computer is running Windows. The file manager is 'File Explorer' (not Finder). Elevated processes — Task Manager, UAC prompts, installers running as administrator — cannot be controlled even when granted: Windows UIPI blocks input from lower-integrity processes. If one appears, ask the user to handle it manually."* / **Linux (patched):** *"This computer is running Linux. On Linux, ALL applications are automatically accessible at full tier without explicit permission grants. You do NOT need to call request_access before using other tools. If called, it returns synthetic grant confirmations. The file manager depends on the desktop environment (e.g. Nautilus on GNOME, Dolphin on KDE, Thunar on XFCE)."* **Suffix (all platforms):** *"Request user permission to control a set of applications for this session. Must be called before any other tool in this server. The user sees a single dialog listing all requested apps and either allows the whole set or denies it. Call this again mid-session to add more apps; previously granted apps remain granted. Returns the granted apps, denied apps, and screenshot filtering capability."* |
-| `screenshot` | **Platform-dependent (via `screenshotFiltering`):** native: *"Take a screenshot of the primary display. Applications not in the session allowlist are excluded at the compositor level — only granted apps and the desktop are visible."* / mask: *"...masked with a solid rectangle — their content is hidden from you, but the rectangle's position shows where the window is."* / none (**Linux**): *"Take a screenshot of the primary display. All open windows are visible."* (patched; upstream adds *"...Input actions targeting apps not in the session allowlist are rejected."*) **Suffix:** *"Returns an error if the allowlist is empty. The returned image is what subsequent click coordinates are relative to."* (on Linux, patched to remove allowlist-empty error) |
+| `request_access` | **Platform-dependent prefix:** macOS: *"This computer is running macOS. The file manager is 'Finder'."* / Windows: *"This computer is running Windows. The file manager is 'File Explorer' (not Finder). Elevated processes - Task Manager, UAC prompts, installers running as administrator - cannot be controlled even when granted: Windows UIPI blocks input from lower-integrity processes. If one appears, ask the user to handle it manually."* / **Linux (patched):** *"This computer is running Linux. On Linux, ALL applications are automatically accessible at full tier without explicit permission grants. You do NOT need to call request_access before using other tools. If called, it returns synthetic grant confirmations. The file manager depends on the desktop environment (e.g. Nautilus on GNOME, Dolphin on KDE, Thunar on XFCE)."* **Suffix (all platforms):** *"Request user permission to control a set of applications for this session. Must be called before any other tool in this server. The user sees a single dialog listing all requested apps and either allows the whole set or denies it. Call this again mid-session to add more apps; previously granted apps remain granted. Returns the granted apps, denied apps, and screenshot filtering capability."* |
+| `screenshot` | **Platform-dependent (via `screenshotFiltering`):** native: *"Take a screenshot of the primary display. Applications not in the session allowlist are excluded at the compositor level - only granted apps and the desktop are visible."* / mask: *"...masked with a solid rectangle - their content is hidden from you, but the rectangle's position shows where the window is."* / none (**Linux**): *"Take a screenshot of the primary display. All open windows are visible."* (patched; upstream adds *"...Input actions targeting apps not in the session allowlist are rejected."*) **Suffix:** *"Returns an error if the allowlist is empty. The returned image is what subsequent click coordinates are relative to."* (on Linux, patched to remove allowlist-empty error) |
 | `left_click` | *"Left-click at the given coordinates. `${Lf}`"* |
 | `right_click` | *"Right-click at the given coordinates. Opens a context menu in most applications. `${Lf}`"* |
 | `double_click` | *"Double-click at the given coordinates. Selects a word in most text editors. `${Lf}`"* |
 | `triple_click` | *"Triple-click at the given coordinates. Selects a line in most text editors. `${Lf}`"* |
 | `middle_click` | *"Middle-click (scroll-wheel click) at the given coordinates. `${Lf}`"* |
 | `type` | *"Type text into whatever currently has keyboard focus. `${Lf}` Newlines are supported. For keyboard shortcuts use `key` instead."* |
-| `key` | *"Press a key or key combination (e.g. 'return', 'escape', 'cmd+a', 'ctrl+shift+tab'). `${Lf}` System-level combos (quit app, switch app, lock screen) require the `systemKeyCombos` grant — without it they return an error. All other combos work."* |
+| `key` | *"Press a key or key combination (e.g. 'return', 'escape', 'cmd+a', 'ctrl+shift+tab'). `${Lf}` System-level combos (quit app, switch app, lock screen) require the `systemKeyCombos` grant - without it they return an error. All other combos work."* |
 | `scroll` | *"Scroll at the given coordinates. `${Lf}`"* |
 | `left_click_drag` | *"Press, move to target, and release. `${Lf}`"* |
 | `mouse_move` | *"Move the mouse cursor without clicking. Useful for triggering hover states. `${Lf}`"* |
@@ -617,11 +673,11 @@ Tool definitions are built by `V7r()` with platform-dependent descriptions. On L
 | `list_granted_applications` | *"List the applications currently in the session allowlist, plus the active grant flags and coordinate mode. No side effects."* |
 | `read_clipboard` | *"Read the current clipboard contents as text. Requires the `clipboardRead` grant."* |
 | `write_clipboard` | *"Write text to the clipboard. Requires the `clipboardWrite` grant."* |
-| `switch_display` | *"Switch which monitor subsequent screenshots capture. Use this when the application you need is on a different monitor than the one shown. The screenshot tool tells you which monitor it captured and lists other attached monitors by name — pass one of those names here. After switching, call screenshot to see the new monitor. Pass 'auto' to return to automatic monitor selection."* |
-| `computer_batch` | *"Execute a sequence of actions in ONE tool call. Each individual tool call requires a model→API round trip (seconds); batching a predictable sequence eliminates all but one. Use this whenever you can predict the outcome of several actions ahead — e.g. click a field, type into it, press Return. Actions execute sequentially and stop on the first error. `${Lf}` The frontmost check runs before EACH action inside the batch — if an action opens a non-allowed app, the next action's gate fires and the batch stops there. Mid-batch screenshot actions are allowed for inspection but coordinates in subsequent clicks always refer to the PRE-BATCH full-screen screenshot."* |
+| `switch_display` | *"Switch which monitor subsequent screenshots capture. Use this when the application you need is on a different monitor than the one shown. The screenshot tool tells you which monitor it captured and lists other attached monitors by name - pass one of those names here. After switching, call screenshot to see the new monitor. Pass 'auto' to return to automatic monitor selection."* |
+| `computer_batch` | *"Execute a sequence of actions in ONE tool call. Each individual tool call requires a model→API round trip (seconds); batching a predictable sequence eliminates all but one. Use this whenever you can predict the outcome of several actions ahead - e.g. click a field, type into it, press Return. Actions execute sequentially and stop on the first error. `${Lf}` The frontmost check runs before EACH action inside the batch - if an action opens a non-allowed app, the next action's gate fires and the batch stops there. Mid-batch screenshot actions are allowed for inspection but coordinates in subsequent clicks always refer to the PRE-BATCH full-screen screenshot."* |
 | `request_teach_access` | *"Request permission to guide the user through a task step-by-step with on-screen tooltips. Use this INSTEAD OF request_access when the user wants to LEARN how to do something (phrases like 'teach me', 'walk me through', 'show me how', 'help me learn'). On approval the main Claude window hides and a fullscreen tooltip overlay appears. You then call teach_step repeatedly; each call shows one tooltip and waits for the user to click Next. Same app-allowlist semantics as request_access, but no clipboard/system-key flags. Teach mode ends automatically when your turn ends."* |
-| `teach_step` | *"Show one guided-tour tooltip and wait for the user to click Next. On Next, execute the actions, take a fresh screenshot, and return both — you do NOT need a separate screenshot call between steps. The returned image shows the state after your actions ran; anchor the next teach_step against it. IMPORTANT — the user only sees the tooltip during teach mode. Put ALL narration in `explanation`. Text you emit outside teach_step calls is NOT visible until teach mode ends. Pack as many actions as possible into each step's `actions` array — the user waits through the whole round trip between clicks, so one step that fills a form beats five steps that fill one field each. Returns {exited:true} if the user clicks Exit — do not call teach_step again after that. Take an initial screenshot before your FIRST teach_step to anchor it."* |
-| `teach_batch` | *"Queue multiple teach steps in one tool call. Parallels computer_batch: N steps → one model↔API round trip instead of N. Each step still shows a tooltip and waits for the user's Next click, but YOU aren't waiting for a round trip between steps. You can call teach_batch multiple times in one tour — treat each batch as one predictable SEGMENT (typically: all the steps on one page). The returned screenshot shows the state after the batch's final actions; anchor the NEXT teach_batch against it. WITHIN a batch, all anchors and click coordinates refer to the PRE-BATCH screenshot (same invariant as computer_batch) — for steps 2+ in a batch, either omit anchor (centered tooltip) or target elements you know won't have moved. Good pattern: batch 5 tooltips on page A (last step navigates) → read returned screenshot → batch 3 tooltips on page B → done. Returns {exited:true, stepsCompleted:N} if the user clicks Exit — do NOT call again after that; {stepsCompleted, stepFailed, ...} if an action errors mid-batch; otherwise {stepsCompleted, results:[...]} plus a final screenshot. Fall back to individual teach_step calls when you need to react to each intermediate screenshot."* |
+| `teach_step` | *"Show one guided-tour tooltip and wait for the user to click Next. On Next, execute the actions, take a fresh screenshot, and return both - you do NOT need a separate screenshot call between steps. The returned image shows the state after your actions ran; anchor the next teach_step against it. IMPORTANT - the user only sees the tooltip during teach mode. Put ALL narration in `explanation`. Text you emit outside teach_step calls is NOT visible until teach mode ends. Pack as many actions as possible into each step's `actions` array - the user waits through the whole round trip between clicks, so one step that fills a form beats five steps that fill one field each. Returns {exited:true} if the user clicks Exit - do not call teach_step again after that. Take an initial screenshot before your FIRST teach_step to anchor it."* |
+| `teach_batch` | *"Queue multiple teach steps in one tool call. Parallels computer_batch: N steps → one model↔API round trip instead of N. Each step still shows a tooltip and waits for the user's Next click, but YOU aren't waiting for a round trip between steps. You can call teach_batch multiple times in one tour - treat each batch as one predictable SEGMENT (typically: all the steps on one page). The returned screenshot shows the state after the batch's final actions; anchor the NEXT teach_batch against it. WITHIN a batch, all anchors and click coordinates refer to the PRE-BATCH screenshot (same invariant as computer_batch) - for steps 2+ in a batch, either omit anchor (centered tooltip) or target elements you know won't have moved. Good pattern: batch 5 tooltips on page A (last step navigates) → read returned screenshot → batch 3 tooltips on page B → done. Returns {exited:true, stepsCompleted:N} if the user clicks Exit - do NOT call again after that; {stepsCompleted, stepFailed, ...} if an action errors mid-batch; otherwise {stepsCompleted, results:[...]} plus a final screenshot. Fall back to individual teach_step calls when you need to react to each intermediate screenshot."* |
 
 #### macOS executor
 
@@ -696,6 +752,8 @@ When active, Operon provided 14 "brain tools" (multi-agent delegation, skills, d
 
 | Version | Changes |
 |---------|---------|
+| v1.46388.2 | Registration export `registerInternalMcpServer:()=>Kge` (`index.chunk-DrnJEXHK.js`); minifier back to double-quoted strings; `index2.chunk-*` family gone (158 `index.chunk-*`). **Two new backend servers: `ccd_pr`** (5 tools, flag `1776348311`) **and `ccd_sidebar`** (9 tools, flag `2365358358`), both `sessionType==="ccd"` with no platform check. **New tools:** `start_session` + `hand_off_to_session` on `ccd_session` (flag `2371478310`), `propose_branch` on `ccd_directory` (setup-tools only), flat `create_scheduled_task`/`update_scheduled_task` literals for `scheduled-tasks`. Known-server enum 16 -> 19. `serverName:` 116 -> 119, `mcp__` literals 63/42 -> 76/49 unique. M365 server byte-identical to v1.40609.0. Agent SDK 0.3.247 -> 0.3.260. |
+| v1.40609.0 | Auto-released, no manual audit at the time; reconstructed during the v1.46388.2 audit: no roster change vs v1.37937.0 (`serverName:` 116, enum 16 entries), M365 server grew 7,320,850 -> 7,322,713 B with unchanged tool inventory. |
 | v1.12603.0 | Registration function renamed `KqA()`->`iAe()` (verified via `registerInternalMcpServer:iAe`, `function iAe(A,e,t){return YL[A]=t,jVA[A]=e,...}`). Registry `CT`->`YL`, display-label map `TUA`->`jVA`, enumerator `J3()`->`s9()`. **No new or removed internal MCP servers or tools** - backend server-name array still 10 entries, server-UUID map byte-identical to v1.11847.5. **Microsoft 365 bundled server now ships**: `resources/office365-mcp/` (office365-mcp.mjs 6.5 MB + pdf extractor) added inside app.asar; loader existed in v1.11847.5 but bundle was missing. New M365 auth behavior: encrypted `msal-cache.enc` via safeStorage, GovCloud environments (`us-gov-high`, `us-gov-dod`), write scopes withheld on public builds (`MCP_GRANTED_DELEGATED_SCOPES`). New tool on the remote-device (DO bridge, codename "shrimp") tool set: `device_request_folder_access` gated by new flag `2745857735` (existing `device_list_dir`/`device_stage_files`/`device_commit_files`/`device_bash` unchanged). Chrome server instructions now recommend preloading `browser_batch`. Bundle embeds a **second copy of @anthropic-ai/claude-agent-sdk** (0.3.167 alongside 0.3.170) - explains most of the +1.4 MB index.js growth. All 50 patches compatible. |
 | v1.11847.5 | Registration function renamed `uqA()`->`KqA()` (verified via `registerInternalMcpServer:KqA`, `function KqA(A,e,t){return CT[A]=t,TUA[A]=e,...}`). Registry `sT`->`CT`, display-label map `cUA`->`TUA`, enumerator `b3()`->`J3()`. **No new or removed MCP servers or tools**; roster identical to v1.8555.2 (22 servers + 4 per-session SDK + dynamic per-artifact). `yL` server-UUID map unchanged (21 entries incl. reserved `ios_simulator`/`android_emulator`/`echo`/`office`). `office-addin` remains an IPC bridge only (not an MCP server). All 48 patches compatible without code changes. |
 | v1.11187.4 | Registration function renamed `LYA()`/`uqA()` chain; registry `QN`->`sT`, labels `pkA`->`cUA`, enumerator `k4()`->`b3()`. No new or removed MCP servers or tools. |

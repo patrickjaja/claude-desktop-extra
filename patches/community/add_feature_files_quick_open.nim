@@ -36,8 +36,9 @@
 # host (`{...a,env:s}` - already passes env), and the pty host.
 #
 # Break risk: VERY LOW for A (stable head-of-bundle anchor, no regex on minified
-# code); LOW for B (minified identifiers are wildcards; the anchor is the
-# serviceName+stdio option shape and must match exactly once - see
+# code); LOW for B (minified identifiers are wildcards, string quotes are a
+# ["`] class; the anchor is the serviceName+stdio option shape and must match
+# exactly once - see
 # baseline/FILES_QUICK_OPEN_ANCHORS.md for the grep recipe). The page half keys
 # off remote claude.ai DOM and fiber props and degrades to a no-op on a redeploy.
 
@@ -48,16 +49,23 @@ const MAIN_JS = staticRead("../../js/files_quick_open_main.js")
 const PAGE_JS = staticRead("../../js/files_quick_open_page.js")
 const MARKER = "__CDB_FILES_QUICK_OPEN__"
 const PLACEHOLDER = "\"__CDB_QOPEN_PAGE_SRC__\""
-const EXPECTED_PATCHES = 2  # A: page/main injection, B: worker-host env passthrough
+const EXPECTED_PATCHES = 2 # A: page/main injection, B: worker-host env passthrough
 
-# Sub-patch B, measured 1.37937.3 and 1.40609.0 (exactly one occurrence in the
-# staged stub+chunks bundle):
-#   utilityProcess.fork(r,[],{serviceName:t,stdio:`pipe`})
-# Groups: 0 = the worker bundle path, 1 = the service name.
-let forkRe = re2"utilityProcess\.fork\(([\w$]+),\[\],\{serviceName:([\w$]+),stdio:`pipe`\}\)"
+# Sub-patch B, exactly one occurrence in the staged stub+chunks bundle
+# (1.46388.2 shape; 1.40609.0 emitted the same call with backtick strings):
+#   utilityProcess.fork(r,[],{serviceName:t,stdio:"pipe"})
+# The string quote style flips between minifier releases, so it is matched with
+# the quote-agnostic ["`] class and re-emitted as captured.
+# Groups: 0 = the worker bundle path, 1 = the service name, 2 = the quote char.
+let forkRe =
+  re2"""utilityProcess\.fork\(([\w$]+),\[\],\{serviceName:([\w$]+),stdio:(["`])pipe["`]\}\)"""
 # Our injected end-state, asserted positively (Rule 6) rather than inferred from
-# the absence of the pre-patch shape.
-const FORK_END_STATE = "stdio:`pipe`,env:Object.assign({},process.env)}"
+# the absence of the pre-patch shape. Quote-agnostic for the same reason.
+let forkEndStateRe =
+  re2"""stdio:["`]pipe["`],env:Object\.assign\(\{\},process\.env\)\}"""
+
+proc endStateCount(s: string): int =
+  s.findAll(forkEndStateRe).len
 
 proc escapeJs(s: string): string =
   result = s
@@ -68,8 +76,10 @@ proc escapeJs(s: string): string =
 
 proc buildInjection(): string =
   if PLACEHOLDER notin MAIN_JS:
-    raise newException(ValueError, "files_quick_open_main.js lost its page-src placeholder")
-  let pageSrc = PAGE_JS & "\n;\nif(window.__cdbQuickOpenPage)window.__cdbQuickOpenPage.start();\n"
+    raise
+      newException(ValueError, "files_quick_open_main.js lost its page-src placeholder")
+  let pageSrc =
+    PAGE_JS & "\n;\nif(window.__cdbQuickOpenPage)window.__cdbQuickOpenPage.start();\n"
   MAIN_JS.replace(PLACEHOLDER, "\"" & escapeJs(pageSrc) & "\"")
 
 proc apply*(input: string): string =
@@ -96,7 +106,7 @@ proc apply*(input: string): string =
       inc patchesApplied
 
   # --- B: pass main's live env to the generic worker host ----------------------
-  let already = result.count(FORK_END_STATE)
+  let already = endStateCount(result)
   if already == 1:
     echo "  [OK] files quick open: worker host already forks with main's env (idempotent)"
     inc patchesApplied
@@ -105,22 +115,27 @@ proc apply*(input: string): string =
       " times, expected 1 - re-audit"
   else:
     var count = 0
-    result = result.replace(forkRe, proc(m: RegexMatch2, s: string): string =
-      inc count
-      "utilityProcess.fork(" & s[m.group(0)] & ",[],{serviceName:" & s[m.group(1)] &
-        ",stdio:`pipe`,env:Object.assign({},process.env)})"
+    result = result.replace(
+      forkRe,
+      proc(m: RegexMatch2, s: string): string =
+        inc count
+        let q = s[m.group(2)]
+        "utilityProcess.fork(" & s[m.group(0)] & ",[],{serviceName:" & s[m.group(1)] &
+          ",stdio:" & q & "pipe" & q & ",env:Object.assign({},process.env)})",
     )
     if count != 1:
       echo "  [FAIL] files quick open: expected exactly 1 generic worker-host fork site, found " &
-        $count & " - the CDB_FILES_QUICK_OPEN gate would never reach the file-index worker; re-audit"
-    elif result.count(FORK_END_STATE) != 1:
+        $count &
+        " - the CDB_FILES_QUICK_OPEN gate would never reach the file-index worker; re-audit"
+    elif endStateCount(result) != 1:
       echo "  [FAIL] files quick open: worker-host env passthrough absent after patching"
     else:
       echo "  [OK] files quick open: worker host now forks with main's env"
       inc patchesApplied
 
   if patchesApplied < EXPECTED_PATCHES:
-    echo "  [FAIL] Only " & $patchesApplied & "/" & $EXPECTED_PATCHES & " patches applied"
+    echo "  [FAIL] Only " & $patchesApplied & "/" & $EXPECTED_PATCHES &
+      " patches applied"
     quit(1)
 
 when isMainModule:
@@ -139,7 +154,7 @@ when isMainModule:
     writeFile(filePath, output)
     echo "  [PASS] files quick open applied"
   else:
-    if MARKER notin output or output.count(FORK_END_STATE) != 1:
+    if MARKER notin output or endStateCount(output) != 1:
       echo "  [FAIL] No changes made and the end-state is absent"
       quit(1)
     echo "  [OK] Already applied (no changes needed)"

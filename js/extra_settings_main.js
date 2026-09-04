@@ -337,7 +337,7 @@
     };
   }
 
-  // The managed-config key catalog of Claude Desktop v1.37937.0 (117 keys), read out of the
+  // The managed-config key catalog of Claude Desktop v1.46388.2 (143 keys), read out of the
   // bundle's own schema (flat key, zod leaf type, scopes, title). Upstream drives
   // its 3P Setup wizard from that schema; we cannot reach it from here (it is
   // module-scoped in index.pre.js), so this is a PINNED COPY and is therefore
@@ -474,6 +474,33 @@
     { key: "forceLoginOrgUUID", kind: "text", group: "connection", scope: "1p",
       label: "Required organization UUID" },
 
+    { key: "inferenceStreamIdleTimeoutSec", kind: "int", group: "connection", scope: "3p", only: "gateway",
+      label: "Stream idle timeout (s)", max: 1800,
+      note: "Extra seconds to wait for model output on a streaming response that only sends keep-alive pings, 300 to 1800; default 300. Gateway provider only." },
+    { key: "inferenceBedrockWebIdentityRoleArn", kind: "text", group: "connection", scope: "3p", only: "bedrock",
+      label: "IAM role for the Microsoft 365 add-in",
+      note: "Role the Microsoft 365 add-in assumes with the user's Entra ID token (STS AssumeRoleWithWebIdentity); Claude Desktop itself does not read it (upstream gates this @next)." },
+    { key: "egressProxyUrl", kind: "text", group: "connection", scope: "both",
+      label: "Proxy server URL",
+      note: "Sends the app's and the agent's traffic through this HTTP proxy instead of the operating system's proxy settings; applies at the next app start." },
+    { key: "egressProxyPacUrl", kind: "text", group: "connection", scope: "both",
+      label: "Proxy auto-config (PAC) URL",
+      note: "A PAC file that decides the proxy per request; wins over the proxy server URL when both are set." },
+    { key: "dictationEnabled", kind: "bool", group: "connection", scope: "3p",
+      label: "Dictation", note: "Normally supplied by the bootstrap server when the gateway offers dictation." },
+    { key: "disableMultiAccount", kind: "bool", group: "connection", scope: "1p",
+      label: "Single account only",
+      note: "Keeps Claude Desktop signed in to one account at a time (upstream gates this @next)." },
+    { key: "entraClientId", kind: "text", group: "connection", scope: "3p",
+      label: "Entra application (client) ID",
+      note: "Your organization's Entra app registration for the Microsoft 365 add-in; unset uses the add-in's published application (upstream gates this @next)." },
+    { key: "entraAzureCloud", kind: "enum", group: "connection", scope: "3p",
+      label: "Azure cloud", options: ["global", "us-gov-high", "us-gov-dod", "china"],
+      note: "Microsoft cloud the add-in signs in against; anything other than global needs your own client ID (upstream gates this @next)." },
+    { key: "entraScope", kind: "text", group: "connection", scope: "3p",
+      label: "Entra delegated scope",
+      note: "Delegated scopes the add-in requests, space- or comma-separated and all for one resource, e.g. api://.../.default; requires your own client ID (upstream gates this @next)." },
+
     // --- usage limits -------------------------------------------------------
     { key: "inferenceMaxTokensPerWindow", kind: "int", group: "limits", scope: "3p",
       label: "Max tokens per window" },
@@ -524,6 +551,39 @@
       label: "Require the full VM sandbox" },
     { key: "secureVmFeaturesEnabled", kind: "bool", group: "sandbox", scope: "1p",
       label: "Secure VM features" },
+    { key: "blockReadsOutsideWorkingDirectories", kind: "bool", group: "sandbox", scope: "both",
+      label: "Block reads outside working directories",
+      note: "File tools refuse reads outside a Code session's working directories and sandboxed shell commands lose the home directory (upstream gates this @next)." },
+    { key: "disableBypassPermissionsMode", kind: "bool", group: "sandbox", scope: "3p",
+      label: "Disable bypass permissions mode",
+      note: "Removes the bypass permissions mode from Code sessions and Cowork tasks, so Claude always follows the permission policy (upstream gates this @next)." },
+    { key: "sshHostAllowlist", kind: "lines", group: "sandbox", scope: "3p",
+      label: "SSH host allowlist",
+      note: "One host pattern per line; empty means SSH sessions stay off unless the device's Claude Code managed-settings allowlist applies. * allows any host." },
+    { key: "sshClientPath", kind: "text", group: "sandbox", scope: "3p",
+      label: "SSH client program",
+      note: "Absolute path to the OpenSSH ssh program used for SSH sessions; unset uses the first ssh on PATH (upstream gates this @next)." },
+    { key: "builtinBrowserEnabled", kind: "bool", group: "sandbox", scope: "3p",
+      label: "Allow the built-in browser",
+      note: "Offers the built-in browser in Cowork and Code sessions; takes effect after an app restart (upstream gates this @next)." },
+    { key: "builtinBrowserDefaultDomainPolicy", kind: "enum", group: "sandbox", scope: "3p",
+      label: "Default site policy in the built-in browser", options: ["allow", "block"],
+      note: "Whether Claude may open sites in the built-in browser by default; the allowed or blocked list is the exception (upstream gates this @next)." },
+    { key: "builtinBrowserAllowedDomains", kind: "lines", group: "sandbox", scope: "3p",
+      label: "Allowed sites in the built-in browser",
+      note: "One site per line; the exceptions when the default site policy is block (upstream gates this @next)." },
+    { key: "builtinBrowserBlockedDomains", kind: "lines", group: "sandbox", scope: "3p",
+      label: "Blocked sites in the built-in browser",
+      note: "One site per line; the exceptions when the default site policy is allow (upstream gates this @next)." },
+    { key: "officeDisabledHosts", kind: "lines", group: "sandbox", scope: "3p",
+      label: "Disabled Office applications",
+      note: "One of sheet, slide, doc, mail per line - Office hosts where the Claude add-in for Microsoft 365 is turned off (upstream gates this @next)." },
+    { key: "officeDisabledFeatures", kind: "lines", group: "sandbox", scope: "3p",
+      label: "Disabled add-in features",
+      note: "One of skills.authoring, thumbs, addin.access, file.upload, web_search per line; addin.access turns the add-in off (upstream gates this @next)." },
+    { key: "officeAccessPolicies", kind: "json", group: "sandbox", scope: "3p",
+      label: "Document access policies",
+      note: "JSON array of { effect, action, resource } statements keyed on the Microsoft Purview sensitivity label of the open or attached file (upstream gates this @next)." },
     { key: "disableDeploymentModeChooser", kind: "bool", group: "sandbox", scope: "3p",
       label: "Disable claude.ai sign-in",
       lock: "this is the key that locks a machine into 3P - it overrides the switch above, so this page never writes it" },
@@ -559,6 +619,10 @@
       label: "Allowed plugin marketplaces" },
     { key: "orgPluginSettings", kind: "json", group: "plugins", scope: "3p",
       label: "Organization plugin settings" },
+
+    { key: "skillBundles", kind: "json", group: "plugins", scope: "3p",
+      label: "Skill bundles",
+      note: "JSON array of skills the client downloads and installs for every user; names must be unique and the hosted console stores at most 20 (upstream gates this @next)." },
 
     // --- telemetry, updates & identity -------------------------------------
     { key: "otlpEndpoint", kind: "text", group: "telemetry", scope: "3p",
@@ -598,6 +662,19 @@
       label: "Check for updates on releases.claude.ai",
       note: "Upstream marks this @next - present in the schema but not active in this version yet." },
 
+    { key: "otlpAttrMaxChars", kind: "int", group: "telemetry", scope: "3p", max: 32000,
+      label: "Telemetry attribute length limit",
+      note: "Maximum characters per content-bearing span attribute sent to the collector, 256 to 32000; default 4000 (upstream gates this @next)." },
+    { key: "usageMetricsEnabled", kind: "bool", group: "telemetry", scope: "3p",
+      label: "Report usage metrics",
+      lock: "set by the Anthropic control plane from the organization's Claude Code analytics setting and hidden in upstream's own wizard, so this page never writes it" },
+    { key: "relaunchEnforcementHours", kind: "int", group: "telemetry", scope: "3p", max: 336,
+      label: "Configuration relaunch window (h)",
+      note: "Hours a user may keep working on the old configuration after a managed-configuration change is detected; blank means 24. Upstream also accepts 0 for an immediate restart, which this page cannot write." },
+    { key: "configRecheckIntervalMinutes", kind: "int", group: "telemetry", scope: "3p", max: 30,
+      label: "Configuration re-check interval (min)",
+      note: "Minutes between the running app's checks for a changed managed configuration, 2 to 30; blank means 10 (upstream gates this @next)." },
+
     // --- appearance & branding ---------------------------------------------
     { key: "deploymentDisplayName", kind: "text", group: "appearance", scope: "3p",
       label: "Deployment display name" },
@@ -606,6 +683,10 @@
     { key: "banner", kind: "json", group: "appearance", scope: "both", label: "Organization banner" },
     { key: "disableFeatureDiscovery", kind: "bool", group: "appearance", scope: "3p",
       label: "Hide feature announcements" },
+
+    { key: "disableConfigDeprecationWarnings", kind: "bool", group: "appearance", scope: "both",
+      label: "Hide configuration deprecation warnings",
+      note: "Hides the in-app warning that this configuration uses a deprecated field; the final reminder in the 24 hours before the cut-off still appears." },
 
     // --- bootstrap & import -------------------------------------------------
     { key: "bootstrapUrl", kind: "text", group: "source", scope: "3p",

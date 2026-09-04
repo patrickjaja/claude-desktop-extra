@@ -107,10 +107,11 @@ MARKER_RE = re.compile(rb"\n/\*__CDB_SPLIT__([^*\n]+?)__\*/\n")
 def chunk_parts(target_path: Path) -> list[Path] | None:
     """Return [target, chunk1, chunk2, ...] if code-split siblings exist, else None.
 
-    Since v1.26832.0 the bundler emits a second chunk family for the same
-    logical bundle (index2.chunk-<hash>.js, required from index.js and from
-    index.chunk-* siblings), so the glob accepts an optional suffix after the
-    stem (index*.chunk-*) to stage both families together.
+    Some releases (v1.26832.0 to v1.40609.0) emit a second chunk family for
+    the same logical bundle (index2.chunk-<hash>.js, required from index.js
+    and from index.chunk-* siblings); others (v1.46388.2) ship only
+    index.chunk-*. The glob accepts an optional suffix after the stem
+    (index*.chunk-*) so both layouts are staged the same way.
     """
     chunks = sorted(target_path.parent.glob(f"{target_path.stem}*.chunk-*{target_path.suffix}"))
     return [target_path] + chunks if chunks else None

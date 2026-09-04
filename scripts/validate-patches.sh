@@ -152,9 +152,10 @@ for patch_file in "$PATCHES_DIR"/*/*.nim "$PATCHES_DIR"/*/*.js; do
         target_dir=$(dirname "$actual_target")
         target_base=$(basename "$actual_target")
         target_stem="${target_base%.js}"
-        # Since v1.26832.0 a second chunk family (index2.chunk-*.js) belongs to
-        # the same logical bundle, so the glob accepts an optional suffix after
-        # the stem - keep in sync with chunk_parts() in apply_patches.py.
+        # Some releases ship a second chunk family (index2.chunk-*.js) for the
+        # same logical bundle, others only index.chunk-*; the glob accepts an
+        # optional suffix after the stem to cover both - keep in sync with
+        # chunk_parts() in apply_patches.py.
         if compgen -G "$target_dir/$target_stem*.chunk-*.js" > /dev/null; then
             cat "$actual_target" > "$tmp_file"
             for chunk in "$target_dir/$target_stem"*.chunk-*.js; do
@@ -165,8 +166,9 @@ for patch_file in "$PATCHES_DIR"/*/*.nim "$PATCHES_DIR"/*/*.js; do
             cp "$actual_target" "$tmp_file"
         fi
 
-        output=$("$nim_bin" "$tmp_file" 2>&1)
-        result=$?
+        # `&& ... ||` keeps set -e from aborting the whole report on the first
+        # failing patch (mirrors the nim-dir branch below).
+        output=$("$nim_bin" "$tmp_file" 2>&1) && result=0 || result=$?
         echo "$output" | sed 's/^/  /'
         if [ $result -eq 0 ]; then
             echo "  Status: PASS"

@@ -115,8 +115,14 @@ proc apply*(input: string): string =
   # there would then not be in scope here -- emitting it would be a
   # ReferenceError at runtime. Capture the helper's own background function
   # from the declarator that feeds the style object instead.
+  #
+  # Up to v1.40609.0 the helper was an arrow whose declarator chain continued
+  # with `,n=<electron>.nativeTheme...`; since v1.46388.2 it is a
+  # `function(e)` taking "main"/"popout" (the overlay now also styles popout
+  # windows) and the chain ends with `;return <electron>.nativeTheme...`.
+  # Accept both joiners.
   let localBg = result.capture(
-    re2"""=[\w$]+\?[\w$]+\(([\w$]+)\(\)\):[\w$]+\(\),[\w$]+=[\w$]+\.nativeTheme\.shouldUseDarkColors\?\{color:""",
+    re2"""=[\w$]+\?[\w$]+\(([\w$]+)\(\)\):[\w$]+\(\)(?:,[\w$]+=|;return )[\w$]+\.nativeTheme\.shouldUseDarkColors\?\{color:""",
     "titleBarOverlay-helper background function",
   )
   n = 0

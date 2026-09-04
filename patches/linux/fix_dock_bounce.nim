@@ -6,7 +6,10 @@
 # Two sub-patches:
 #   1. An early monkey-patch block that neuters `flashFrame(true)` and keeps
 #      clearing any residual attention flag while a window is blurred.
-#   2. A Linux early-return in `requestUserAttention()`.
+#   2. A Linux early-return in `requestUserAttention()`. Since v1.46388.2 the
+#      method returns a boolean ("attention was requested") that callers chain
+#      with `&&` to register remote-attention tags, so the guard returns `!1`
+#      (false): on Linux nothing was flashed, so nothing is left to release.
 #
 # Scope is deliberately limited to the attention/flash APIs. The window
 # activation primitives -- `BrowserWindow.show/focus/moveTop`, `app.focus`,
@@ -93,21 +96,25 @@ proc apply*(input: string): string =
     patchesApplied += 1
 
   # ── 2. No-op requestUserAttention on Linux ────────────────────────────────
-  if "requestUserAttention(){if(process.platform===\"linux\")return;" in result:
+  if "requestUserAttention(){if(process.platform===\"linux\")return!1;" in result:
     echo "  [INFO] requestUserAttention already guarded"
     applied.add("rua-guard(skip)")
     patchesApplied += 1
   else:
     # v1.26832.0 dropped the hoisted `var <tmp>;` that older minifiers emitted
     # in front of the guard expression, so the prefix is optional now.
+    # v1.46388.2 turned the body into a `return <ternary>` that yields whether
+    # the frame was flashed, so an optional `return ` is accepted in front of
+    # the focus check. The injected guard returns `!1` in both shapes: for the
+    # old void body the value is simply ignored.
     let ruaPattern =
-      re2"(requestUserAttention\(\)\{)((?:var [\w$]+;)?this\.isAppFocusedAndVisible\(\)\|\|)"
+      re2"(requestUserAttention\(\)\{)((?:return )?(?:var [\w$]+;)?this\.isAppFocusedAndVisible\(\)\|\|)"
     var ruaCount = 0
     result = result.replace(
       ruaPattern,
       proc(m: RegexMatch2, s: string): string =
         inc ruaCount
-        s[m.group(0)] & "if(process.platform===\"linux\")return;" & s[m.group(1)],
+        s[m.group(0)] & "if(process.platform===\"linux\")return!1;" & s[m.group(1)],
     )
     if ruaCount > 0:
       echo &"  [OK] requestUserAttention Linux guard: {ruaCount} match(es)"
