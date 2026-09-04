@@ -29,7 +29,7 @@ TESTS_DIR="$SCRIPT_DIR/tests"
 # `git mv` changes what gets discovered, this fails rather than quietly reporting
 # a green run over a shrunken suite - the same reasoning as EXPECTED_PATCH_COUNT
 # in scripts/apply_patches.py. Bump this when you add or remove a harness.
-EXPECTED_TEST_HARNESSES=15
+EXPECTED_TEST_HARNESSES=16
 
 CATEGORIES=(community core linux)
 

@@ -770,8 +770,17 @@ proc apply*(input: string): string =
     # returns `!<hipaa>()` instead of a bare `!0`, so an org compliance lock
     # still switches CU off on Linux exactly as it does on macOS/Windows; the
     # platform Set + chicagoEnabled parts stay forced as before.
+    #
+    # The same release added a PER-CALL deny to handleToolCall's preamble
+    # (`if(...,t.Rb())return{isError:!0,content:[...]}`), which Patch 6's Linux
+    # dispatch returns before. So the Linux branch also publishes the captured
+    # gate as `globalThis.__cdbCuHipaa` and js/cu_handler_injection.js re-checks
+    # it at the top of every tool call. isEnabled runs at server registration,
+    # before any tool call, so the global is always set when the handler runs.
+    # The v26832 fallback has no HIPAA function to capture and leaves the global
+    # unset; the handler then skips the check (typeof guard).
     let alreadyWs =
-      re"""function [\w$]+\(\)\{if\(process\.platform==="linux"\)return(?: ?!0|!!?[\w$]+\(\));return ?!?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)(?:\|\|[\w$]+\(\))?\?(?:!1:)?[\w$]+\(\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)(?::!1)?\}"""
+      re"""function [\w$]+\(\)\{if\(process\.platform==="linux"\)return(?: ?!0| globalThis\.__cdbCuHipaa=[\w$]+,![\w$]+\(\));return ?!?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)(?:\|\|[\w$]+\(\))?\?(?:!1:)?[\w$]+\(\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)(?::!1)?\}"""
     if content.contains(alreadyWs):
       echo "  [OK] isEnabled: linux branch already present (guard satisfied)"
       inc patchesApplied
@@ -795,8 +804,9 @@ proc apply*(input: string): string =
           let whole = content[bounds.a .. bounds.b]
           let headerLen = m.captures[0].len
           let hipaaName = m.captures[1]
-          m.captures[0] & "if(process.platform===\"linux\")return!" & hipaaName & "();" &
-            whole[headerLen ..^ 1],
+          m.captures[0] &
+            "if(process.platform===\"linux\")return globalThis.__cdbCuHipaa=" & hipaaName &
+            ",!" & hipaaName & "();" & whole[headerLen ..^ 1],
       )
       if n == 0:
         n = replaceFirst(

@@ -1,4 +1,7 @@
 if(process.platform==="linux"){
+// Per-call compliance deny (parity with upstream's handleToolCall preamble, which this Linux
+// block returns before). Patch 11 publishes the captured HIPAA gate; unset (older shapes) = no check.
+if(typeof globalThis.__cdbCuHipaa==="function"&&globalThis.__cdbCuHipaa()){(globalThis.__cdbDiag||console.log)("[claude-cu] tool call denied: organization compliance settings");return{isError:!0,content:[{type:"text",text:"Computer Use isn't available under your organization's compliance settings. If you recently switched organizations, restart the app."}]}}
 var __lxTeachTools=["request_teach_access","teach_step","teach_batch"];
 if(__lxTeachTools.indexOf(__TOOL_NAME__)>=0){const __n=__DISPATCHER__(__SESSION__);const{save_to_disk:__sd,...__s}=__INPUT__;return await __n(__TOOL_NAME__,__s)}
 if(__TOOL_NAME__==="request_access"){var __apps=__INPUT__.apps||[];

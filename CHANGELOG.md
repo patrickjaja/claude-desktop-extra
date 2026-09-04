@@ -14,8 +14,12 @@ added or removed (47 patches).
 - **Computer Use** (`fix_computer_use_linux`): the seven tool-description rewrites were anchored on
   backtick literals and now accept either quote style. The two availability gates gained an
   upstream Cowork HIPAA compliance check; the Linux path now honours it too, so an org compliance
-  lock disables Computer Use on Linux exactly as on macOS and Windows. The `open_application`
-  description became a plain string, so its Linux wording is concatenated instead of interpolated.
+  lock disables Computer Use on Linux exactly as on macOS and Windows. Upstream also denies every
+  tool call under a compliance lock; the non-KDE Linux dispatch, which runs before that check, now
+  applies the same per-call deny with upstream's message, so a compliance change mid-session stops
+  tool calls exactly as on macOS and Windows (new harness `scripts/tests/linux/test-cu-hipaa-deny.mjs`).
+  The `open_application` description became a plain string, so its Linux wording is concatenated
+  instead of interpolated.
 - **Files quick open**: the worker-host fork site is matched with either quote style; the env
   passthrough that carries the feature switch to the file-index worker is unchanged.
 - **Native title bar**: upstream turned the titleBarOverlay style helper into a function taking
