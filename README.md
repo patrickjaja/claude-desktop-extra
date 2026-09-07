@@ -315,7 +315,7 @@ Recolor the whole app - chat, sidebar, Code/Cowork, dialogs, Quick Entry - with 
 |-------------------|--------------------|
 | ![Mario theme - light](themes/mario/2026-06-26_14-46-chat-light.png) | ![Mario theme - dark](themes/mario/2026-06-26_14-46-chat-dark.png) |
 
-Browse all 97 with their swatches in **[themes/PALETTES.md](themes/PALETTES.md)**. The palette tables, the config file, custom CSS and spinners, and how to author your own: **[docs/themes.md](docs/themes.md)**.
+Browse all 97 with their swatches in **[themes/PALETTES.md](themes/PALETTES.md)**. Theme files reload live, so wallpaper-driven color tools (matugen, pywal, wallust) can recolor the app on every wallpaper change - drop their output into `~/.config/Claude/themes.d/`, or `extend` a bundled theme with just a dynamic accent: **[dynamic themes](docs/themes.md#6-dynamic-themes-from-your-wallpaper-matugen-pywal-wallust)**. The palette tables, the config file, custom CSS and spinners, and how to author your own: **[docs/themes.md](docs/themes.md)**.
 
 ## Multiple Profiles
 
@@ -372,6 +372,7 @@ Flags this project adds on top of the official build (run `claude-desktop --help
 | `--delete-profile=NAME` | Remove a profile's entry points (user data preserved) |
 | `--list-profiles` | List installed profiles |
 | `--toggle` | Toggle the [Quick Entry](#quick-entry) overlay (bind to a global shortcut) |
+| `--reload-theme` | Ask the running instance to re-read its [theme](#custom-themes) files and re-apply the active theme; prints `{ok, changed, name, windows}`, exits 1 when the app is not running. Only needed with `"themeWatch": false`, the file watcher does it automatically otherwise |
 | `--install-gnome-hotkey [ACCEL]` | Bind the Quick Entry hotkey on GNOME, where the portal doesn't (default `Ctrl+Alt+Space`); `--uninstall-gnome-hotkey` removes it |
 | `--1p` / `--3p` | Select personal claude.ai (1P) vs [third-party inference](docs/third-party-inference.md) (3P) mode by persisting the upstream `deploymentMode` key; replaces the removed upstream `--boot-1p-once` flag. The same switch is in the app under Settings → **Extra** → **Deployment**. See [switching back to 1P](docs/third-party-inference.md#common-gotchas) |
 | `--native-titlebar` | Use the native window frame instead of the integrated titlebar (same as `CLAUDE_NATIVE_TITLEBAR=1`) |

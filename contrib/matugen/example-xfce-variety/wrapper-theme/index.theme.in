@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=@NAME@
+Comment=adw-gtk3 (@VARIANT@) with matugen wallpaper colors
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=@NAME@
+MetacityTheme=@NAME@

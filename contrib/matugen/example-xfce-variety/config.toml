@@ -1,0 +1,49 @@
+# ~/.config/matugen/config.toml - tested setup: Arch, XFCE 4 / X11, Variety, matugen 4.2 (2026-09-08)
+# Driven by the wallpaper tool's post-change command:
+#   ~/.config/matugen/set-mode-from-wallpaper.sh "$WALLPAPER"      (light/dark follows the wallpaper)
+# or a fixed mode:
+#   matugen image "$WALLPAPER" -m dark
+
+[config]
+contrast = 0.0
+# matugen 4.x asks interactively which source color to use unless this is set.
+source_color_index = 0
+# (no [config.wallpaper] section: the wallpaper tool sets the image, matugen only derives colors)
+
+[config.custom_colors]
+# Roles Material You does not define; harmonised towards the wallpaper hue.
+success = "#3fb950"
+warning = "#f5a524"
+
+# --- GTK3 (Thunar, xfce4-panel, ...) via adw-gtk3 named colors -------------
+# colors.css is imported by the wrapper themes in ~/.themes/adw-gtk3-matugen*. GTK3 parses
+# the user ~/.config/gtk-3.0/gtk.css only once per process, so live reload only works when
+# the colors live INSIDE the theme; reload-gtk.sh flips between two identical wrapper
+# themes of the current mode to force every running GTK3 app to re-parse.
+[templates.gtk3]
+input_path = '~/.config/matugen/templates/gtk-colors.css'
+output_path = '~/.config/gtk-3.0/colors.css'
+post_hook = '~/.config/matugen/reload-gtk.sh {{mode}}'
+
+# GTK4 apps read ~/.config/gtk-4.0/gtk.css (which imports colors.css) on their next start.
+[templates.gtk4]
+input_path = '~/.config/matugen/templates/gtk-colors.css'
+output_path = '~/.config/gtk-4.0/colors.css'
+
+# --- Claude Desktop (claude-desktop-extra) ----------------------------------
+# themes.d/<name>.json is the generator drop-in dir; the app watches it and re-applies live.
+# Recommended: keep any theme, overlay only the wallpaper accents
+#   -> "themeOverlay": "wallpaper-accent" in ~/.config/Claude/claude-desktop-extra.jsonc
+[templates.claude-desktop-overlay]
+input_path = '~/.config/matugen/templates/claude-desktop-overlay.json'
+output_path = '~/.config/Claude/themes.d/wallpaper-accent.json'
+
+# Variant: only the backgrounds follow the wallpaper  -> "themeOverlay": "wallpaper-bg"
+[templates.claude-desktop-overlay-bg]
+input_path = '~/.config/matugen/templates/claude-desktop-overlay-bg.json'
+output_path = '~/.config/Claude/themes.d/wallpaper-bg.json'
+
+# Full theme from the wallpaper (selectable as "Matugen (wallpaper)" in Ctrl+Shift+T)
+[templates.claude-desktop]
+input_path = '~/.config/matugen/templates/claude-desktop.json'
+output_path = '~/.config/Claude/themes.d/matugen.json'

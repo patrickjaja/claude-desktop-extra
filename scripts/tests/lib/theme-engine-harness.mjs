@@ -1,7 +1,7 @@
 /*
  * theme-engine-harness.mjs - shared plumbing for the theme/spinner test suites
  * (core/test-spinner-main.mjs, core/test-spinner-dom.mjs, core/test-theme-scope.mjs,
- * community/test-picker-gaming.mjs).
+ * core/test-theme-inherit-reload.mjs, community/test-picker-gaming.mjs).
  *
  * The theme engine is a JS IIFE that patches/core/add_feature_custom_themes.nim PREPENDS to
  * the main bundle, so the only faithful way to test it is to run the real compiled patch
@@ -59,13 +59,20 @@ export function buildInjectedModule() {
 /**
  * Load the engine with electron shimmed. `config` (an object) is written to
  * claude-desktop-extra.jsonc in a fresh userData dir BEFORE the engine boots, which is
- * how the engine sees themes and an activeTheme.
+ * how the engine sees themes and an activeTheme. `files` ({ "<relative path>": text })
+ * seeds further files under userData first - claude-desktop-extra.json, themes.d/*.json
+ * - so the loader's precedence and the themes.d/ reader can be exercised from boot.
  */
-export function installEngine({ config } = {}) {
+export function installEngine({ config, files } = {}) {
   const require2 = createRequire(import.meta.url);
   const fs = require2("fs"), os = require2("os"), path = require2("path");
   const Module = require2("module");
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-userdata-"));
+  for (const rel of Object.keys(files || {})) {
+    const abs = path.join(userData, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, files[rel]);
+  }
   if (config) {
     fs.writeFileSync(path.join(userData, "claude-desktop-extra.jsonc"),
       JSON.stringify(config, null, 2));

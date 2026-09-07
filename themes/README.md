@@ -5,6 +5,9 @@ Themes are now **dual light/dark**: each theme defines a `light` and a `dark`
 palette, and the app's own light/dark toggle (Settings -> Appearance) picks the
 matching one live.
 
+New here? Start with [docs/themes.md](../docs/themes.md), which walks from picking a theme to
+wallpaper-driven themes. This file is the deep reference.
+
 ## Preview - Mario theme (light + dark)
 
 The same theme, both variants - toggle Settings -> Appearance to switch:
@@ -45,8 +48,8 @@ the injected CSS from every window and saves an empty `activeTheme`.
 **Every part of a theme switches instantly** - surfaces, text, accents, borders, status
 colors, the `chatFont` override, any `customCss`, and the **spinner shape**: the loading
 glyph takes the new theme's shape and animation in every open window, and reverting to
-Claude default puts Claude's own star back. Nothing about switching needs a restart.
-(Hand-editing the config file still does, since that file is read at startup.)
+Claude default puts Claude's own star back. Nothing about switching needs a restart, and
+neither does hand-editing the config file (see [Reloading](#reloading)).
 
 ## Settings -> Extra (in the app's own dialog)
 
@@ -100,68 +103,6 @@ The element overrides (sidebar, content panes, popovers, scrims, scrollbars, etc
 reference the semantic tokens, so they are emitted **once** and are automatically
 correct in whichever mode is active. Only the decorative glow shadows are gated to
 dark mode (they look gaudy on a light surface).
-
-## JSON schema
-
-Place your theme config at `~/.config/Claude/claude-desktop-extra.jsonc`
-(comments allowed; configs under the previous `claude-desktop-bin` name also keep working and are
-merged in, with the `.jsonc` winning per key). The dual-variant shape:
-
-```jsonc
-{
-  "activeTheme": "<name>",
-  "themes": {
-    "<name>": {
-      "light":  { /* full token set, LIGHT-mode values */ },
-      "dark":   { /* full token set, DARK-mode values  */ },
-      "chatFont": "optional CSS font-family string",   // optional, shared both modes
-      "spinner": { /* optional loading-glyph override, see below */ },
-      "category": "gaming"                            // optional; own picker section
-    }
-  }
-}
-```
-
-A minimal real example (only the tokens you want to change; unspecified tokens fall
-through to claude.ai's stock values for that mode):
-
-```jsonc
-{
-  "activeTheme": "my-theme",
-  "themes": {
-    "my-theme": {
-      "light": {
-        "--bg-000": "0 0% 100%",
-        "--bg-100": "30 30% 97%",
-        "--text-000": "30 10% 12%",
-        "--accent-brand": "15 63% 50%",
-        "--border-100": "30 8% 20%",            // DARK-ish in light mode (see polarity tip)
-        "--claude-background-color": "#fbfaf7",
-        "--claude-foreground-color": "#1a1814"
-      },
-      "dark": {
-        "--bg-000": "30 6% 16%",
-        "--bg-100": "30 6% 12%",
-        "--text-000": "40 30% 96%",
-        "--accent-brand": "15 70% 62%",
-        "--border-100": "40 14% 84%",           // LIGHT-ish in dark mode (see polarity tip)
-        "--claude-background-color": "#27241f",
-        "--claude-foreground-color": "#f5f2ea"
-      }
-    }
-  }
-}
-```
-
-- Set `activeTheme` to a built-in name, a community palette slug (both below), or a key
-  in your own `themes` object.
-- Restart Claude Desktop after hand-editing the file - it is read at startup. Switching
-  with the picker or Settings -> Extra -> Themes applies without a restart.
-
-> **Backward compatibility:** a **flat** theme object - one with `--token` keys
-> directly and **no** `light`/`dark` blocks (the old schema) - still works. The patch
-> treats the whole object as **both** light and dark, so old single-palette configs
-> keep applying exactly as before.
 
 ## Built-in themes (dual-variant)
 
@@ -243,6 +184,103 @@ built-ins and the 6 gaming palettes, each with its swatch card and slug - is in
 Resolution order is **your themes > built-ins > community palettes**, so defining a
 theme under `themes` with the same slug as a community palette overrides it rather
 than colliding with it.
+
+## JSON schema
+
+Place your theme config at `~/.config/Claude/claude-desktop-extra.jsonc`
+(comments allowed; configs under the previous `claude-desktop-bin` name also keep working and are
+merged in, with the `.jsonc` winning per key). The dual-variant shape:
+
+```jsonc
+{
+  "activeTheme": "<name>",
+  "themes": {
+    "<name>": {
+      "light":  { /* full token set, LIGHT-mode values */ },
+      "dark":   { /* full token set, DARK-mode values  */ },
+      "chatFont": "optional CSS font-family string",   // optional, shared both modes
+      "spinner": { /* optional loading-glyph override, see below */ },
+      "category": "gaming",                           // optional; own picker section
+      "hidden": true                                  // optional; usable but not listed in the picker
+    }
+  }
+}
+```
+
+A minimal real example (only the tokens you want to change; unspecified tokens fall
+through to claude.ai's stock values for that mode):
+
+```jsonc
+{
+  "activeTheme": "my-theme",
+  "themes": {
+    "my-theme": {
+      "light": {
+        "--bg-000": "0 0% 100%",
+        "--bg-100": "30 30% 97%",
+        "--text-000": "30 10% 12%",
+        "--accent-brand": "15 63% 50%",
+        "--border-100": "30 8% 20%",            // DARK-ish in light mode (see polarity tip)
+        "--claude-background-color": "#fbfaf7",
+        "--claude-foreground-color": "#1a1814"
+      },
+      "dark": {
+        "--bg-000": "30 6% 16%",
+        "--bg-100": "30 6% 12%",
+        "--text-000": "40 30% 96%",
+        "--accent-brand": "15 70% 62%",
+        "--border-100": "40 14% 84%",           // LIGHT-ish in dark mode (see polarity tip)
+        "--claude-background-color": "#27241f",
+        "--claude-foreground-color": "#f5f2ea"
+      }
+    }
+  }
+}
+```
+
+- Set `activeTheme` to a built-in name, a community palette slug (both above), or a key
+  in your own `themes` object.
+- Hand-edits are picked up live: the app watches the file and re-applies the active
+  theme within a moment (see [Reloading](#reloading)). The picker and Settings -> Extra ->
+  Themes apply instantly as well.
+- `"themeOverlay": "<theme>"` merges that theme's `light`/`dark` tokens over whatever theme
+  is active (picker, Settings or `activeTheme`), per mode; its `spinner`, `chatFont`,
+  `customCss`, name and category are ignored. Resolved like any theme (a `themes.d/` file,
+  a built-in, `extends` allowed). `""` or absent = off; with no active theme nothing is
+  overlaid. Built for wallpaper accents, see [docs/themes.md](../docs/themes.md#matugen-official-recipe).
+
+> **Backward compatibility:** a **flat** theme object - one with `--token` keys
+> directly and **no** `light`/`dark` blocks (the old schema) - still works. The patch
+> treats the whole object as **both** light and dark, so old single-palette configs
+> keep applying exactly as before.
+
+### `extends`
+
+`"extends": "<theme>"` inherits every token plus `chatFont`, `spinner` and `customCss`
+from another theme (built-in, community or your own; chains allowed, cycles ignored) and
+overrides only the keys you give, per mode. The display name and `category` are not
+inherited, so your theme keeps its own label and stays under "Your themes" unless you
+set a category yourself. Handy for "Mario with a
+different accent": `{"extends": "mario", "dark": {"--accent-brand": "200 80% 60%"}}`.
+
+### Reloading
+
+Theme files reload live: a change to `claude-desktop-extra.json`, `.jsonc` or anything in
+`themes.d/` is re-applied in every open window within about 300 ms, including atomic
+tmp-and-rename writes. `"themeWatch": false` turns the watcher off. To trigger a reload
+by hand, run `claude-desktop --reload-theme` (talks to the running instance over the
+Quick Entry socket, prints `{ok, changed, name, windows}`, exits 1 when the app is not
+running); in-app code can call `globalThis.__cdbThemes.reload(reason)`. Named profiles and
+3p mode use their own userData dir and socket suffix.
+
+### Generators and `themes.d/`
+
+Every `*.json`/`*.jsonc` file in `~/.config/Claude/themes.d/` is one theme named after the
+file stem (`matugen.json` -> `matugen`), or several as `{"themes": {...}}`. Same name in
+several places: `.jsonc` > `.json` > `themes.d` > built-ins > community. Color generators
+(matugen, pywal, wallust) should write here, never into `claude-desktop-extra.json`, which
+the Extra settings page rewrites. Full guide with a matugen recipe:
+[docs/themes.md](../docs/themes.md#6-dynamic-themes-from-your-wallpaper-matugen-pywal-wallust).
 
 ## Spinner reshape (per-theme loading glyph)
 

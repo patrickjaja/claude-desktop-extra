@@ -21,7 +21,10 @@
 # "Quick answer" band and the disclaimer strip stayed stock until this re-assert.
 #
 # THEME SOURCES, in resolution order:
-#   1. user themes from the config file ("themes" map)
+#   1. user themes from the config file ("themes" map; .jsonc beats .json), then
+#      one theme per file from <userData>/themes.d/*.json|*.jsonc (theme name = file
+#      stem, or the inner names when the file is a {"themes":{...}} wrapper). A
+#      config-file theme shadows a themes.d theme of the same name.
 #   2. __cdb_builtins   -- the curated built-ins in this file, PLUS the gaming
 #                          palettes from js/gaming_themes.json merged in at startup.
 #                          Gaming themes are builtin-TIER (same resolution rank); they
@@ -41,12 +44,39 @@
 # REGISTRY + LIVE APPLY: `globalThis.__cdbThemes` is installed on every Linux start,
 # even with no config file and no activeTheme, so the theme picker
 # (patches/add_feature_theme_picker.nim) always has something to talk to:
-#   { version, list(), active(), apply(name) }
+#   { version:2, list(), active(), overlay(), apply(name), reload(reason), configPath, themesDir }
 # apply() rebuilds the stylesheet, swaps it in every tracked webContents
 # (removeInsertedCSS of the key we inserted last + insertCSS the new sheet), and
 # persists activeTheme. Windows opened later read the CURRENT theme, not a
 # startup-frozen string. Passing "" or null reverts to the stock look.
 # The early "nothing to do" exits now only skip the STARTUP css application.
+#
+# INHERITANCE: a theme may carry "extends": "<theme-name>". __cdb_effective() resolves
+# the base with the normal lookup (user > builtin > community, aliases honoured), walks
+# the chain (depth 8, cycle guard by name), and lays the child's light/dark maps OVER
+# the base's per mode; a legacy flat child merges into both modes. name, category,
+# chatFont, spinner and customCss are inherited unless the child sets them. A child
+# that is nothing but "extends" plus a few tokens is a complete theme. A missing base
+# is logged and treated as no base.
+#
+# HIDDEN: a theme with "hidden": true is resolvable (activeTheme, themeOverlay, extends base) but
+# never listed in the picker or Settings; overlay files set it so nobody picks them as a base by mistake.
+# OVERLAY: the top-level config key "themeOverlay": "<theme-name>" names a theme whose
+# light/dark TOKEN maps are laid over whatever theme is active (startup, apply(),
+# reload()), per mode, overlay keys winning. Only "--" tokens are taken from it: its
+# chatFont, spinner, customCss, name and category are ignored, the active theme keeps
+# its own. The overlay resolves through the normal lookup (user, themes.d, built-in,
+# community; may itself use "extends"). No active theme -> no overlay (stock stays
+# stock). A missing overlay theme is logged and skipped. It lives inside
+# __cdb_buildCss, so every caller gets it; it is never persisted and never listed.
+#
+# RELOAD + FILE WATCH: __cdb_reload(reason) re-reads the config from disk and re-applies
+# cfg.activeTheme to every live window WITHOUT persisting anything (the file is the
+# source of truth there); identical output is a no-op. A non-persistent fs.watch on
+# the userData DIRECTORY (file-level watches die on the tmp+rename our writer and tools
+# like matugen use) plus one on themes.d/ feed it, debounced 300 ms, with a 1.5 s
+# self-write window so our own persist() does not bounce. "themeWatch": false in the
+# config disables the watcher. Watcher failures are logged and never block theming.
 #
 # PERSISTENCE is a surgical text edit so user comments survive: the raw .jsonc is
 # scanned comment-aware for the real "activeTheme" key and only its VALUE is
@@ -233,6 +263,7 @@ var __cdb_aliases={"nordic":"nord"};
 var __cdb_marker="__cdb_dualvariant";
 var __cdb_cfgPath=_path.join(_app.getPath("userData"),"claude-desktop-extra.json");
 var __cdb_cfgPathC=_path.join(_app.getPath("userData"),"claude-desktop-extra.jsonc");
+var __cdb_themesDir=_path.join(_app.getPath("userData"),"themes.d");
 function __cdb_log(m){(globalThis.__cdbDiag||console.log)("[CustomThemes] "+m)}
 // One-time rename migration (claude-desktop-bin -> claude-desktop-extra): copy
 // each legacy file to its new name, pairwise (.json stays machine-written, .jsonc
@@ -272,27 +303,100 @@ __cdb_migrate();
 // loader disagree about what the very same file says.
 var __cdb_stripJsonc=function(s){var o="",q=false,i=0;while(i<s.length){var c=s[i];if(q){o+=c;if(c==="\\"&&i+1<s.length){o+=s[i+1];i++}else if(c==='"'){q=false}i++;continue}if(c==='"'){q=true;o+=c;i++;continue}if(c==="/"&&s[i+1]==="/"){while(i<s.length&&s[i]!=="\n")i++;continue}if(c==="/"&&s[i+1]==="*"){i+=2;while(i<s.length&&!(s[i]==="*"&&s[i+1]==="/"))i++;i+=2;continue}if(c===","){var j=i+1;while(j<s.length){if(s[j]===" "||s[j]==="\t"||s[j]==="\r"||s[j]==="\n"){j++;continue}if(s[j]==="/"&&s[j+1]==="/"){while(j<s.length&&s[j]!=="\n")j++;continue}if(s[j]==="/"&&s[j+1]==="*"){j+=2;while(j<s.length&&!(s[j]==="*"&&s[j+1]==="/"))j++;j+=2;continue}break}if(s[j]==="}"||s[j]==="]"){i++;continue}}o+=c;i++}return o};
 var __cdb_readRaw=function(p){try{return _fs.readFileSync(p,"utf8")}catch(e){if(e.code!=="ENOENT")__cdb_log("Error reading "+p+": "+e.message);return null}};
-var __cdb_readCfg=function(p){var r=__cdb_readRaw(p);if(r===null)return null;try{return JSON.parse(__cdb_stripJsonc(r))}catch(e){__cdb_log("Error parsing "+p+": "+e.message);return null}};
-// Merge .json then .jsonc, per key and per theme name; .jsonc wins.
+var __cdb_parseFailed=false;
+var __cdb_readCfg=function(p){var r=__cdb_readRaw(p);if(r===null)return null;try{return JSON.parse(__cdb_stripJsonc(r))}catch(e){__cdb_parseFailed=true;__cdb_log("Error parsing "+p+": "+e.message);return null}};
+// One theme per file from themes.d/. A file is either the theme object itself (name =
+// file stem, so matugen.json -> "matugen") or a {"themes":{"<name>":{...}}} wrapper.
+// Files are read in sorted order, so x.jsonc lands after x.json and wins. A file that
+// does not parse is logged and skipped; it can never take the config down.
+function __cdb_loadThemesDir(){
+var out={},names,i,f,p,obj,stem,k,n=0;
+try{names=_fs.readdirSync(__cdb_themesDir)}catch(e){if(e.code!=="ENOENT")__cdb_log("Error reading "+__cdb_themesDir+": "+e.message);return out}
+names.sort();
+for(i=0;i<names.length;i++){
+f=String(names[i]);
+if(!/\.jsonc?$/i.test(f))continue;
+p=_path.join(__cdb_themesDir,f);
+obj=__cdb_readCfg(p);
+if(obj===null)continue;
+if(typeof obj!=="object"||Array.isArray(obj)){__cdb_log("themes.d/"+f+": not a theme object; skipped");continue}
+stem=f.replace(/\.jsonc?$/i,"");
+if(obj.themes&&typeof obj.themes==="object"&&!obj.light&&!obj.dark&&!obj.extends&&!__cdb_isVarMap(obj)){
+for(k in obj.themes){out[k]=obj.themes[k];n++}
+}else{out[stem]=obj;n++}
+}
+if(n)__cdb_log("themes.d: "+n+" theme(s) from "+__cdb_themesDir);
+return out;
+}
+// Merge .json then .jsonc, per key and per theme name; .jsonc wins. Themes from
+// themes.d/ sit below both config files.
 function __cdb_loadCfg(){
-var j=__cdb_readCfg(__cdb_cfgPath),c=__cdb_readCfg(__cdb_cfgPathC),cfg={},k;
+__cdb_parseFailed=false;
+// Only the two main files count as a parse failure (a broken themes.d drop-in is
+// logged and skipped, it must not block reloads), so capture the flag before themes.d.
+var j=__cdb_readCfg(__cdb_cfgPath),c=__cdb_readCfg(__cdb_cfgPathC),cfg={},k,pf=__cdb_parseFailed,d=__cdb_loadThemesDir();
 for(k in (j||{}))cfg[k]=j[k];
 for(k in (c||{}))cfg[k]=c[k];
 cfg.themes={};
+for(k in d)cfg.themes[k]=d[k];
 for(k in ((j&&j.themes)||{}))cfg.themes[k]=j.themes[k];
 for(k in ((c&&c.themes)||{}))cfg.themes[k]=c.themes[k];
 cfg.__present=!(!j&&!c);
+cfg.__parseError=pf;
 return cfg;
 }
 function __cdb_pretty(s){return String(s).split(/[-_ ]+/).map(function(w){return w?w.charAt(0).toUpperCase()+w.slice(1):w}).join(" ")}
 function __cdb_resolveName(n){return (n&&__cdb_aliases[n])?__cdb_aliases[n]:n}
-// Resolution order: user themes > built-ins > bundled community palettes.
-function __cdb_lookup(cfg,name){
+// Resolution order: user themes > built-ins > bundled community palettes. Raw: the
+// theme as authored, "extends" unresolved.
+function __cdb_lookupRaw(cfg,name){
 if(!name)return null;
 if(cfg&&cfg.themes&&cfg.themes[name])return {theme:cfg.themes[name],src:"custom"};
 if(__cdb_builtins[name])return {theme:__cdb_builtins[name],src:"builtin"};
 if(__cdb_community[name])return {theme:__cdb_community[name],src:"community"};
 return null;
+}
+// Same, but the theme comes back with its "extends" chain folded in.
+function __cdb_lookup(cfg,name){
+var hit=__cdb_lookupRaw(cfg,name);
+if(!hit)return null;
+return {theme:__cdb_effective(cfg,hit.theme,name),src:hit.src};
+}
+function __cdb_mergeVars(base,over){var o={},k;for(k in (base||{}))o[k]=base[k];for(k in (over||{}))o[k]=over[k];return o}
+// The child's own contribution per mode: dual-variant maps as given (a missing mode
+// contributes nothing, so the base shows through), a legacy flat map for both modes.
+function __cdb_ownVariants(t){
+if(t.light||t.dark)return {light:t.light||{},dark:t.dark||{}};
+if(__cdb_isVarMap(t))return {light:t,dark:t};
+return {light:{},dark:{}};
+}
+var __cdb_INHERIT=["chatFont","spinner","customCss"]; // name and category are NOT inherited: a user theme keeps its own label and lands in "Your themes"
+var __cdb_EXTENDS_MAX=8;
+// Fold "extends" into an effective theme: base first (recursively), then the child's
+// light/dark maps over it per mode, child keys winning; the metadata keys above are
+// inherited when the child lacks them. Themes without "extends" come back untouched.
+function __cdb_effective(cfg,theme,name,seen,depth){
+if(!theme||typeof theme!=="object"||typeof theme.extends!=="string"||!theme.extends)return theme;
+seen=seen||{};depth=depth||0;
+if(name)seen[name]=true;
+var ext=theme.extends,canon=__cdb_resolveName(ext),base=null,hit;
+if(seen[canon])__cdb_log("theme '"+(name||"?")+"' extends '"+ext+"' which is already in its inheritance chain (cycle); ignoring the base");
+else if(depth>=__cdb_EXTENDS_MAX)__cdb_log("theme '"+(name||"?")+"' extends '"+ext+"': chain deeper than "+__cdb_EXTENDS_MAX+"; ignoring the base");
+else{
+hit=__cdb_lookupRaw(cfg,canon);
+if(!hit)__cdb_log("theme '"+(name||"?")+"' extends unknown theme '"+ext+"' (not a user, built-in, or community theme); ignoring the base");
+else{seen[canon]=true;base=__cdb_effective(cfg,hit.theme,canon,seen,depth+1)}
+}
+var out={},k,i;
+// No usable base: the child stands alone, exactly as if "extends" were not there
+// (so a dark-only child still mirrors dark into light, as any dark-only theme does).
+if(!base){for(k in theme){if(k!=="extends")out[k]=theme[k]}return out}
+var bv=__cdb_variants(base)||{light:{},dark:{}},cv=__cdb_ownVariants(theme);
+for(k in theme){if(k!=="extends"&&k!=="light"&&k!=="dark"&&k.indexOf("--")!==0)out[k]=theme[k]}
+for(i=0;i<__cdb_INHERIT.length;i++){k=__cdb_INHERIT[i];if(out[k]===undefined&&base[k]!==undefined)out[k]=base[k]}
+out.light=__cdb_mergeVars(bv.light,cv.light);
+out.dark=__cdb_mergeVars(bv.dark,cv.dark);
+return out;
 }
 // Dual-variant -> use each; flat var map (legacy schema) -> the same map for both.
 function __cdb_variants(t){
@@ -304,9 +408,28 @@ return null;
 // The whole stylesheet for one theme: dual-variant var blocks, element overrides,
 // optional font + customCss, spinner keyframes. null when the theme carries
 // neither light/dark variants nor --token keys.
+// Only the "--" tokens of a var map (the overlay contributes tokens, nothing else).
+function __cdb_tokensOnly(m){var o={},k;for(k in (m||{})){if(k.indexOf("--")===0)o[k]=m[k]}return o}
+// The overlay named by cfg.themeOverlay, resolved and reduced to its per-mode tokens;
+// null when unset, unknown (logged) or token-less (logged).
+function __cdb_overlayFor(cfg){
+var raw=cfg&&cfg.themeOverlay;
+if(typeof raw!=="string"||!raw)return null;
+var canon=__cdb_resolveName(raw),hit=__cdb_lookup(cfg,canon);
+if(!hit){__cdb_log("themeOverlay '"+raw+"' is not a user, built-in, or community theme; ignoring the overlay");return null}
+var ov=__cdb_variants(hit.theme);
+if(!ov){__cdb_log("themeOverlay '"+canon+"' has neither light/dark variants nor --token keys; ignoring the overlay");return null}
+return {name:canon,light:__cdb_tokensOnly(ov.light),dark:__cdb_tokensOnly(ov.dark)};
+}
 function __cdb_buildCss(cfg,theme,name){
+theme=__cdb_effective(cfg,theme,name);
 var v=__cdb_variants(theme);
 if(!v)return null;
+var overlay=__cdb_overlayFor(cfg);
+if(overlay){
+v={light:__cdb_mergeVars(v.light,overlay.light),dark:__cdb_mergeVars(v.dark,overlay.dark)};
+__cdb_log("Overlay '"+overlay.name+"' merged over '"+name+"' ("+Object.keys(overlay.light).length+" light, "+Object.keys(overlay.dark).length+" dark token(s))");
+}
 // Emit light first, dark second so dark wins on a specificity tie (both single-class/attr).
 var css=":root,[data-mode=light]{"+__cdb_block(v.light)+"}";
 css+=".darkTheme,[data-mode=dark],.dark{"+__cdb_block(v.dark)+"}";
@@ -401,7 +524,7 @@ css+="svg[data-cdb-spinner].cdb-anim-pulse{animation:cdbPulse 1.2s ease-in-out i
 css+="svg[data-cdb-spinner].cdb-anim-flip [data-cdb-frame=\"1\"]{animation:cdbFlipA 1s steps(2,jump-none) infinite}";
 css+="svg[data-cdb-spinner].cdb-anim-flip [data-cdb-frame=\"2\"]{animation:cdbFlipB 1s steps(2,jump-none) infinite}";
 if(spinnerJson!=="null")__cdb_log("Spinner spec present ("+spinnerJson.length+" chars JSON) for '"+name+"'");
-return {css:css,font:fontFlag,spinnerJson:spinnerJson};
+return {css:css,font:fontFlag,spinnerJson:spinnerJson,overlay:overlay?overlay.name:null};
 }
 // --- activeTheme persistence (comment-preserving) --------------------------
 // Walk the RAW text tracking string/comment state and return the value span of
@@ -441,8 +564,11 @@ i++;
 }
 return -1;
 }
+// Our own writes must not bounce through the file watcher: stamp a window the
+// watcher ignores (reload's no-op detection is the second line of defense).
+var __cdb_selfWriteUntil=0;
 function __cdb_writeFile(p,txt){
-try{var tmp=p+".cdb-tmp";_fs.writeFileSync(tmp,txt,"utf8");_fs.renameSync(tmp,p);return {ok:true,path:p}}
+try{__cdb_selfWriteUntil=Date.now()+1500;var tmp=p+".cdb-tmp";_fs.writeFileSync(tmp,txt,"utf8");_fs.renameSync(tmp,p);return {ok:true,path:p}}
 catch(e){return {ok:false,error:"could not write "+p+": "+e.message}}
 }
 function __cdb_template(val){
@@ -479,7 +605,7 @@ return __cdb_writeFile(__cdb_cfgPathC,__cdb_template(val));
 }
 // --- live stylesheet bookkeeping ------------------------------------------
 // What is applied right now (rewritten by apply(), read by every later window).
-var __cdb_state={name:null,src:"",css:"",font:false,spinnerJson:"null"};
+var __cdb_state={name:null,src:"",css:"",font:false,spinnerJson:"null",overlay:null};
 // webContents -> the insertCSS key we inserted last (null = nothing inserted).
 var __cdb_wcKeys=new Map();
 function __cdb_trackWc(wc){
@@ -537,6 +663,7 @@ return n;
 function __cdb_listEntries(){
 var cfg=__cdb_loadCfg(),map={},order=[],out=[],k,i;
 function put(name,src,theme){
+if(theme&&theme.hidden===true){delete map[name];return}
 var v=__cdb_variants(theme);
 if(!v)return;
 if(!map[name])order.push(name);
@@ -544,8 +671,8 @@ map[name]={name:name,displayName:(theme&&typeof theme.name==="string"&&theme.nam
 }
 for(k in __cdb_community)put(k,"community",__cdb_community[k]);
 for(k in __cdb_builtins)put(k,"builtin",__cdb_builtins[k]);
-for(k in (cfg.themes||{}))put(k,"custom",cfg.themes[k]);
-for(i=0;i<order.length;i++)out.push(map[order[i]]);
+for(k in (cfg.themes||{}))put(k,"custom",__cdb_effective(cfg,cfg.themes[k],k));
+for(i=0;i<order.length;i++)if(map[order[i]])out.push(map[order[i]]);
 return out;
 }
 // Switch theme without a restart: rebuild the sheet, swap it in every tracked
@@ -553,7 +680,7 @@ return out;
 function __cdb_applyTheme(name){
 try{
 if(name===null||name===undefined||name===""){
-__cdb_state={name:null,src:"",css:"",font:false,spinnerJson:"null"};
+__cdb_state={name:null,src:"",css:"",font:false,spinnerJson:"null",overlay:null};
 var m=__cdb_restyleAll(),ms=__cdb_spinnerAll(),rp=__cdb_persist("");
 if(!rp.ok)return {ok:false,error:"reverted "+m+" window(s) but could not save: "+rp.error};
 __cdb_log("Reverted to the stock look in "+m+" window(s), restored the glyph in "+ms);
@@ -564,14 +691,91 @@ var canon=__cdb_resolveName(name),cfg=__cdb_loadCfg(),hit=__cdb_lookup(cfg,canon
 if(!hit)return {ok:false,error:"'"+name+"' is not a user, built-in, or community theme"};
 var built=__cdb_buildCss(cfg,hit.theme,canon);
 if(!built)return {ok:false,error:"'"+canon+"' has neither light/dark variants nor --token keys"};
-__cdb_state={name:canon,src:hit.src,css:built.css,font:built.font,spinnerJson:built.spinnerJson};
+__cdb_state={name:canon,src:hit.src,css:built.css,font:built.font,spinnerJson:built.spinnerJson,overlay:built.overlay};
 var n=__cdb_restyleAll(),ns=__cdb_spinnerAll(),p=__cdb_persist(canon);
 if(!p.ok)return {ok:false,error:"applied to "+n+" window(s) but could not save: "+p.error};
 __cdb_log("Applied "+hit.src+" theme '"+canon+"' to "+n+" window(s) (spinner pushed to "+ns+"), saved to "+p.path);
 return {ok:true,saved:_path.basename(p.path)};
 }catch(e){return {ok:false,error:(e&&e.message)||String(e)}}
 }
-globalThis.__cdbThemes={version:1,list:__cdb_listEntries,active:function(){return __cdb_state.name},apply:__cdb_applyTheme,configPath:__cdb_cfgPathC};
+// Re-read the config from disk and re-apply what it says, without persisting: the
+// file is the source of truth here (edited by hand, by matugen, by a sync client).
+// An unset activeTheme reverts to stock. Identical output -> no window is touched.
+function __cdb_reload(reason){
+try{
+var cfg=__cdb_loadCfg(),raw=cfg.activeTheme,next={name:null,src:"",css:"",font:false,spinnerJson:"null",overlay:null};
+if(cfg.__parseError)return {ok:false,error:"a config file has a syntax error (see log); keeping the current theme"};
+if(raw!==null&&raw!==undefined&&raw!==""){
+if(typeof raw!=="string")return {ok:false,error:"activeTheme must be a string"};
+var canon=__cdb_resolveName(raw),hit=__cdb_lookup(cfg,canon);
+if(!hit)return {ok:false,error:"'"+raw+"' is not a user, built-in, or community theme"};
+var built=__cdb_buildCss(cfg,hit.theme,canon);
+if(!built)return {ok:false,error:"'"+canon+"' has neither light/dark variants nor --token keys"};
+next={name:canon,src:hit.src,css:built.css,font:built.font,spinnerJson:built.spinnerJson,overlay:built.overlay};
+}
+if(next.name===__cdb_state.name&&next.css===__cdb_state.css&&next.font===__cdb_state.font&&next.spinnerJson===__cdb_state.spinnerJson&&next.overlay===__cdb_state.overlay)return {ok:true,changed:false,name:next.name,overlay:next.overlay};
+__cdb_state=next;
+var n=__cdb_restyleAll();
+__cdb_spinnerAll();
+__cdb_log("reload ("+reason+"): applied '"+(next.name||"")+"' to "+n+" window(s)");
+return {ok:true,changed:true,name:next.name,overlay:next.overlay,windows:n};
+}catch(e){return {ok:false,error:(e&&e.message)||String(e)}}
+}
+globalThis.__cdbThemes={version:2,list:__cdb_listEntries,active:function(){return __cdb_state.name},overlay:function(){return __cdb_state.overlay},apply:__cdb_applyTheme,reload:__cdb_reload,configPath:__cdb_cfgPathC,themesDir:__cdb_themesDir};
+// --- file watcher -----------------------------------------------------------
+// Watch DIRECTORIES, not files: our writer and tools like matugen write tmp+rename,
+// which orphans a file-level inotify watch. Events for the two config files (and
+// anything in themes.d/) are debounced into one reload; config-file events inside the
+// self-write window are ours and ignored (nothing of ours ever writes to themes.d). Every step is guarded - fs.watch can throw on some
+// filesystems and a dead watcher must never cost the user their theme.
+var __cdb_watchTimer=null,__cdb_watchWhy="",__cdb_watchers=[],__cdb_themesDirWatcher=null;
+function __cdb_watchKick(why,ours){
+if(ours&&Date.now()<__cdb_selfWriteUntil)return;
+__cdb_watchWhy=why;
+if(__cdb_watchTimer)clearTimeout(__cdb_watchTimer);
+__cdb_watchTimer=setTimeout(function(){
+__cdb_watchTimer=null;
+var w=__cdb_watchWhy;__cdb_watchWhy="";
+var r=__cdb_reload("file watch: "+w);
+if(!r.ok)__cdb_log("reload after file watch ("+w+") failed: "+r.error);
+},300);
+if(__cdb_watchTimer.unref)__cdb_watchTimer.unref();
+}
+function __cdb_watchThemesDir(){
+if(__cdb_themesDirWatcher){try{__cdb_themesDirWatcher.close()}catch(e){}__cdb_themesDirWatcher=null}
+try{
+if(!_fs.existsSync(__cdb_themesDir))return false;
+var w=_fs.watch(__cdb_themesDir,{persistent:false},function(_ev,fn){
+fn=fn?String(fn):"";
+if(fn&&!/\.jsonc?$/i.test(fn))return;
+__cdb_watchKick("themes.d/"+(fn||"?"));
+});
+w.on("error",function(e){__cdb_log("themes.d watcher error: "+(e&&e.message));try{w.close()}catch(_e){}if(__cdb_themesDirWatcher===w)__cdb_themesDirWatcher=null});
+__cdb_themesDirWatcher=w;
+__cdb_log("watching "+__cdb_themesDir+" for theme files");
+return true;
+}catch(e){__cdb_log("could not watch "+__cdb_themesDir+": "+(e&&e.message));return false}
+}
+function __cdb_startWatch(cfg){
+if(cfg&&cfg.themeWatch===false){__cdb_log("watcher disabled (themeWatch:false)");return false}
+try{
+var ud=_app.getPath("userData");
+try{_fs.mkdirSync(ud,{recursive:true})}catch(_e){}
+var w=_fs.watch(ud,{persistent:false},function(_ev,fn){
+fn=fn?String(fn):"";
+// The directory itself appeared, vanished or was replaced: re-arm its watcher, then
+// reload because its contents may have changed wholesale.
+if(fn==="themes.d"){__cdb_watchThemesDir();__cdb_watchKick(fn);return}
+if(fn!=="claude-desktop-extra.json"&&fn!=="claude-desktop-extra.jsonc")return;
+__cdb_watchKick(fn,true);
+});
+w.on("error",function(e){__cdb_log("config watcher error: "+(e&&e.message));try{w.close()}catch(_e){}});
+__cdb_watchers.push(w);
+__cdb_log("watching "+ud+" for config changes (themeWatch)");
+__cdb_watchThemesDir();
+return true;
+}catch(e){__cdb_log("file watcher unavailable ("+(e&&e.message)+"); edit the config and restart to re-theme");return false}
+}
 // --- startup: apply the configured theme ---------------------------------
 // Only the CSS application is skipped when there is nothing to apply; the
 // registry above and the hook below are installed either way.
@@ -596,7 +800,7 @@ __cdb_log("Press Ctrl+Shift+T to browse every theme, or define \""+__cdb_name0+"
 var __cdb_built0=__cdb_buildCss(__cdb_cfg0,__cdb_hit0.theme,__cdb_name0);
 if(!__cdb_built0)__cdb_log("Theme '"+__cdb_name0+"' has neither light/dark variants nor --token keys; nothing applied");
 else{
-__cdb_state={name:__cdb_name0,src:__cdb_hit0.src,css:__cdb_built0.css,font:__cdb_built0.font,spinnerJson:__cdb_built0.spinnerJson};
+__cdb_state={name:__cdb_name0,src:__cdb_hit0.src,css:__cdb_built0.css,font:__cdb_built0.font,spinnerJson:__cdb_built0.spinnerJson,overlay:__cdb_built0.overlay};
 __cdb_log("Loaded "+__cdb_hit0.src+" theme '"+__cdb_name0+"' (dual-variant) with element overrides");
 }
 }
@@ -605,6 +809,7 @@ __cdb_log("Loaded "+__cdb_hit0.src+" theme '"+__cdb_name0+"' (dual-variant) with
 }catch(e){
 __cdb_log("Error applying config: "+e.message)
 }
+__cdb_startWatch(typeof __cdb_cfg0==="object"?__cdb_cfg0:null);
 // Reads __cdb_state at dom-ready, so a window opened after a live switch gets
 // the CURRENT theme rather than whatever was active at startup.
 _app.on("web-contents-created",function(_ev,wc){
@@ -643,6 +848,7 @@ const THEME_INJECTION_JS =
 const MARKERS = [
   "__cdb_dualvariant", "globalThis.__cdbThemes=",
   "__cdb_builtins[__cdb_gk]=__cdb_gaming[__cdb_gk]", "window.__cdbSpinnerApply",
+  "reload:__cdb_reload", "function __cdb_effective(",
 ]
 
 proc apply*(input: string): string =

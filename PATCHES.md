@@ -46,7 +46,7 @@ Panel tabs and Files quick open depend on DOM anchors in remote claude.ai code; 
 | [`add_growthbook_overrides.nim`](patches/core/add_growthbook_overrides.nim) | Lets you [override Anthropic's feature flags](docs/feature-flags.md) from your own config file. Upstream has no local override mechanism - the flag cache is encrypted |
 | [`fix_profile_url_routing.nim`](patches/core/fix_profile_url_routing.nim) | Routes an SSO callback back to the [profile](docs/profiles.md) that started the login, instead of landing it in whichever profile owns the URL scheme |
 | [`fix_profile_window_title.nim`](patches/core/fix_profile_window_title.nim) | Puts the profile name in the window title (`Claude (work)`), so profiles are tellable apart in Alt-Tab and the taskbar |
-| [`fix_quick_entry_cli_toggle.nim`](patches/core/fix_quick_entry_cli_toggle.nim) | Makes `claude-desktop --toggle` open [Quick Entry](docs/quick-entry.md) in milliseconds over a socket instead of spawning Electron - fast enough to bind to a global hotkey |
+| [`fix_quick_entry_cli_toggle.nim`](patches/core/fix_quick_entry_cli_toggle.nim) | Makes `claude-desktop --toggle` open [Quick Entry](docs/quick-entry.md) in milliseconds over a socket instead of spawning Electron - fast enough to bind to a global hotkey. The same socket takes one short command per connection, so `claude-desktop --reload-theme` makes the running app re-read its [theme](docs/themes.md) config and re-apply it, replying with a one-line JSON result |
 
 ## Linux compatibility
 

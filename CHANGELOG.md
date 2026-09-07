@@ -2,6 +2,39 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-09-08
+
+### Dynamic themes (issue #242)
+
+Themes now follow your wallpaper. The app watches `claude-desktop-extra.json`, `.jsonc` and the
+new `~/.config/Claude/themes.d/` directory and re-applies the active theme live in every window
+(about 300 ms, atomic tmp+rename writers included; `"themeWatch": false` opts out). A config file with a syntax error (a half-saved edit) is logged and the current theme is kept until it parses again.
+`claude-desktop --reload-theme` triggers the same reload from the command line via the Quick
+Entry socket, and `globalThis.__cdbThemes.reload(reason)` from inside the app (registry v2).
+
+- **`themes.d/` drop-in directory**: every `*.json`/`*.jsonc` file is one theme named after its
+  stem (or several as `{"themes": {...}}`); precedence `.jsonc` > `.json` > `themes.d` >
+  built-ins > community. Generators own their file there instead of fighting the Extra
+  settings page over `claude-desktop-extra.json`.
+- **`extends` inheritance**: `"extends": "mario"` plus a few tokens gives Mario with a dynamic
+  accent; tokens, `chatFont`, `spinner` and `customCss` come from the base (name and category stay the child's own), chains
+  allowed, cycles ignored.
+- **`themeOverlay` key**: `"themeOverlay": "<theme>"` merges that theme's light/dark tokens over
+  whatever theme is active, per mode (spinner, font, CSS, name and category of the overlay are
+  ignored); `""` or absent turns it off. Pick any theme, keep your wallpaper accents.
+- **matugen templates** in `contrib/matugen/`: an accent-only overlay (recommended, pairs with
+  `themeOverlay`), a backgrounds-only overlay (both `"hidden": true`, so they never show up in the picker as a base), a full theme, a tinted variant whose backgrounds come from the primary tonal
+  palette, and a compact `extends` variant, with the `config.toml` snippet; tested on Arch /
+  XFCE 4 / X11 with Variety and matugen 4.2. pywal and wallust users can produce the same JSON
+  shape.
+- **Light/dark from the wallpaper**: `contrib/matugen/set-mode-from-wallpaper.sh` is the recipe's
+  wallpaper post-change command; it measures the wallpaper's luma, runs matugen in the matching
+  mode and sets the desktop-wide color-scheme preference so Appearance = System follows. A fixed
+  `matugen image -m dark` line is the alternative for people who do not want that.
+
+Docs: [docs/themes.md](docs/themes.md#6-dynamic-themes-from-your-wallpaper-matugen-pywal-wallust), `themes/README.md`,
+the `--reload-theme` row in the README's command-line flags table.
+
 ## 2026-09-04
 
 ### Upstream bump to Claude Desktop v1.46388.2

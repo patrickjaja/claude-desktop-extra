@@ -1,0 +1,5 @@
+/* adw-gtk3 (@VARIANT@) recolored by matugen. Two identical copies of each mode exist
+   (adw-gtk3-matugen[-light]{,-b}) so reload-gtk.sh can flip the theme name and force
+   running GTK3 apps to re-parse this file and the generated colors.css it imports. */
+@import url("/usr/share/themes/@BASE@/gtk-3.0/gtk.css");
+@import url("@HOME@/.config/gtk-3.0/colors.css");
