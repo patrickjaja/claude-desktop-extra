@@ -3,50 +3,976 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Claude Desktop for Linux — APT Repository</title>
+  <title>Claude Desktop for Linux</title>
+  <meta name="description" content="Unofficial pre-patched Linux packages for Claude Desktop. Chat, Code, Cowork, Computer Use - on every distro, every architecture.">
+  <meta property="og:title" content="Claude Desktop for Linux">
+  <meta property="og:description" content="Anthropic's official Claude Desktop Linux build, repackaged for Arch, Fedora, NixOS & AppImage - x86_64 and ARM64 - plus Linux-only extras: Computer Use, themes, profiles, Quick Entry.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://patrickjaja.github.io/claude-desktop-extra/">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 700px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; line-height: 1.6; }
-    h1 { border-bottom: 2px solid #e5e5e5; padding-bottom: 0.5rem; }
-    pre { background: #f4f4f4; padding: 1rem; border-radius: 6px; overflow-x: auto; }
-    code { background: #f4f4f4; padding: 0.15rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
-    a { color: #0066cc; }
-    .note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 0.75rem 1rem; border-radius: 4px; margin: 1rem 0; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0b10;
+      --surface: #12141d;
+      --border: rgba(139, 92, 246, 0.12);
+      --border-hover: rgba(139, 92, 246, 0.3);
+      --accent: #a78bfa;
+      --accent-dim: rgba(167, 139, 250, 0.15);
+      --blue: #60a5fa;
+      --green: #4ade80;
+      --text: #e8e4dc;
+      --text-dim: #9a968e;
+      --mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
+      --sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --radius: 8px;
+      --max-w: 1100px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* --- NAV --- */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(10, 11, 16, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-inner {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .nav-brand {
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .nav-brand span { color: var(--accent); }
+    .nav-links { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+    .nav-links a {
+      color: var(--text-dim);
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+    .nav-gh {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--text-dim);
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    .nav-gh:hover { color: var(--text); text-decoration: none; }
+
+    /* --- HERO --- */
+    .hero {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 5rem 1.5rem 4rem;
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-block;
+      padding: 0.3rem 0.75rem;
+      background: var(--accent-dim);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.8rem;
+      color: var(--accent);
+      font-weight: 500;
+      margin-bottom: 1.5rem;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.25rem);
+      font-weight: 700;
+      line-height: 1.15;
+      margin-bottom: 1rem;
+      letter-spacing: -0.02em;
+    }
+    .hero h1 em {
+      font-style: normal;
+      color: var(--accent);
+    }
+    .hero p {
+      font-size: 1.125rem;
+      color: var(--text-dim);
+      max-width: 600px;
+      margin: 0 auto 2rem;
+    }
+
+    /* Terminal block in hero */
+    .terminal {
+      max-width: 560px;
+      margin: 0 auto 2.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      text-align: left;
+    }
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0.6rem 0.85rem;
+      background: rgba(255, 255, 255, 0.03);
+      border-bottom: 1px solid var(--border);
+    }
+    .terminal-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .terminal-body {
+      padding: 1rem 1.1rem;
+      font-family: var(--mono);
+      font-size: 0.875rem;
+      line-height: 1.7;
+    }
+    .terminal-prompt { color: var(--accent); }
+    .terminal-cmd { color: var(--text); }
+    .terminal-comment { color: var(--text-dim); }
+    .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 1.1em;
+      background: var(--accent);
+      vertical-align: text-bottom;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .hero-actions {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.65rem 1.5rem;
+      border-radius: var(--radius);
+      font-size: 0.9rem;
+      font-weight: 600;
+      font-family: var(--sans);
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #0a0b10;
+    }
+    .btn-primary:hover { background: #b89dff; text-decoration: none; }
+    .btn-ghost {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { border-color: var(--border-hover); text-decoration: none; }
+
+    /* --- SECTIONS --- */
+    section {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 4rem 1.5rem;
+    }
+    .section-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+    section h2 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+    section > p {
+      color: var(--text-dim);
+      margin-bottom: 2rem;
+      max-width: 600px;
+    }
+
+    /* --- INSTALL TABS --- */
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 1.25rem;
+    }
+    .tab-btn {
+      padding: 0.4rem 0.9rem;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--text-dim);
+      font-size: 0.8rem;
+      font-weight: 500;
+      font-family: var(--sans);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { border-color: var(--border-hover); color: var(--text); }
+    .tab-btn.active {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .install-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.1rem 1.25rem;
+      position: relative;
+    }
+    .install-block pre {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      line-height: 1.7;
+      overflow-x: auto;
+      white-space: pre;
+      color: var(--text);
+    }
+    .install-block .comment { color: var(--text-dim); }
+    .copy-btn {
+      position: absolute;
+      top: 0.7rem;
+      right: 0.7rem;
+      padding: 0.3rem 0.6rem;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-dim);
+      font-size: 0.75rem;
+      font-family: var(--sans);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover { background: rgba(255, 255, 255, 0.1); color: var(--text); }
+    .install-note {
+      margin-top: 0.75rem;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+
+    /* --- FEATURES GRID --- */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1rem;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      transition: all 0.2s;
+    }
+    .feature-card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-2px);
+    }
+    .feature-icon {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent-dim);
+      border-radius: 8px;
+      margin-bottom: 0.75rem;
+      color: var(--accent);
+    }
+    .feature-icon svg { width: 20px; height: 20px; }
+    .feature-card h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+    }
+    .feature-card p {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+
+    /* --- COMPAT TABLE --- */
+    .compat-grid {
+      overflow-x: auto;
+    }
+    .compat-grid table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .compat-grid th,
+    .compat-grid td {
+      padding: 0.6rem 0.85rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .compat-grid th {
+      color: var(--text-dim);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .compat-grid td:first-child { font-weight: 500; }
+    .check { color: var(--green); }
+    .dash { color: var(--text-dim); }
+
+    /* --- COWORK SECTION --- */
+    .cowork-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+    @media (max-width: 640px) {
+      .cowork-box { grid-template-columns: 1fr; }
+    }
+    .cowork-mode h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 0.3rem;
+    }
+    .cowork-mode p {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+    .cowork-mode .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-bottom: 0.4rem;
+    }
+    .badge-default { background: rgba(74, 222, 128, 0.15); color: var(--green); }
+    .badge-exp { background: rgba(96, 165, 250, 0.15); color: var(--blue); }
+
+    /* --- FOOTER --- */
+    footer {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 2rem 1.5rem 3rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+    .footer-badges {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .footer-badges img { height: 20px; }
+
+    /* --- ANIMATIONS --- */
+    .fade-in {
+      opacity: 0;
+      transform: translateY(16px);
+      transition: opacity 0.5s ease, transform 0.5s ease;
+    }
+    .fade-in.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .fade-in { opacity: 1; transform: none; transition: none; }
+      .cursor { animation: none; opacity: 1; }
+      .feature-card:hover { transform: none; }
+    }
+
+    /* --- MOBILE NAV --- */
+    .nav-toggle {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text);
+      cursor: pointer;
+      padding: 0.25rem;
+    }
+    .nav-toggle svg { width: 22px; height: 22px; }
+
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .nav-links.open {
+        display: flex;
+        flex-direction: column;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+        padding: 0.75rem 1.5rem 1rem;
+        gap: 0.75rem;
+      }
+      .nav-toggle { display: block; }
+      .hero { padding: 3rem 1.5rem 2.5rem; }
+      section { padding: 2.5rem 1.5rem; }
+    }
   </style>
 </head>
 <body>
-  <h1>Claude Desktop for Linux</h1>
-  <p>Unofficial APT repository for <a href="https://github.com/patrickjaja/claude-desktop-bin">claude-desktop-bin</a>.</p>
 
-  <h2>Quick Setup (Debian / Ubuntu)</h2>
-  <pre>curl -fsSL https://patrickjaja.github.io/claude-desktop-bin/install.sh | sudo bash
-sudo apt install claude-desktop-bin</pre>
+<!-- NAV -->
+<nav>
+  <div class="nav-inner">
+    <div class="nav-brand"><span>claude</span>-desktop-bin</div>
+    <button class="nav-toggle" aria-label="Toggle navigation">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+    <div class="nav-links">
+      <a href="#install">Install</a>
+      <a href="#features">Features</a>
+      <a href="#compatibility">Compatibility</a>
+      <a href="#cowork">Cowork</a>
+      <a href="#enterprise">Enterprise</a>
+      <a href="https://github.com/patrickjaja/claude-desktop-extra" class="nav-gh">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</nav>
 
-  <h2>Manual Setup</h2>
-  <pre># Import GPG key
-curl -fsSL https://patrickjaja.github.io/claude-desktop-bin/gpg-key.asc \
-  | sudo gpg --dearmor -o /etc/apt/keyrings/claude-desktop.gpg
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-badge">Community package - not affiliated with Anthropic</div>
+  <h1>Claude Desktop, <em>packaged for every Linux</em></h1>
+  <p>Anthropic's official Claude Desktop Linux build - repackaged for Arch, Fedora, NixOS, and AppImage - plus Linux-only extras like Computer Use, themes, and multi-profile.</p>
 
-# Add repository
-echo "deb [signed-by=/etc/apt/keyrings/claude-desktop.gpg arch=$(dpkg --print-architecture)] https://patrickjaja.github.io/claude-desktop-bin/deb/ ./" \
-  | sudo tee /etc/apt/sources.list.d/claude-desktop.list
-
-# Install
-sudo apt update &amp;&amp; sudo apt install claude-desktop-bin</pre>
-
-  <h2>Updates</h2>
-  <p>Once installed, updates arrive through your normal system updates:</p>
-  <pre>sudo apt update &amp;&amp; sudo apt upgrade</pre>
-
-  <h2>Other Distros</h2>
-  <ul>
-    <li><strong>Arch Linux / Manjaro:</strong> <code>yay -S claude-desktop-bin</code> (<a href="https://aur.archlinux.org/packages/claude-desktop-bin">AUR</a>)</li>
-    <li><strong>AppImage:</strong> Download from <a href="https://github.com/patrickjaja/claude-desktop-bin/releases/latest">GitHub Releases</a></li>
-  </ul>
-
-  <div class="note">
-    This is an unofficial community package, not supported by Anthropic.
+  <div class="terminal">
+    <div class="terminal-bar">
+      <div class="terminal-dot"></div>
+      <div class="terminal-dot"></div>
+      <div class="terminal-dot"></div>
+    </div>
+    <div class="terminal-body" id="hero-terminal">
+      <div><span class="terminal-comment"># install in one command</span></div>
+      <div><span class="terminal-prompt">$</span> <span class="terminal-cmd" id="hero-cmd">curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-pacman.sh | sudo bash</span></div>
+      <div><span class="terminal-prompt">$</span> <span class="terminal-cmd">sudo pacman -Syu claude-desktop-extra</span><span class="cursor"></span></div>
+    </div>
   </div>
 
-  <p><a href="https://github.com/patrickjaja/claude-desktop-bin">Source &amp; Issues on GitHub</a></p>
+  <div class="hero-actions">
+    <a href="#install" class="btn btn-primary">Get Started</a>
+    <a href="https://github.com/patrickjaja/claude-desktop-extra" class="btn btn-ghost">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      View on GitHub
+    </a>
+  </div>
+</div>
+
+<!-- INSTALL -->
+<section id="install" class="fade-in">
+  <div class="section-label">Quick Start</div>
+  <h2>Install in seconds</h2>
+  <p>Pick your distro. ARM64 packages are served from the same repos - your package manager selects the right architecture automatically.</p>
+
+  <div class="tabs" role="tablist">
+    <button class="tab-btn active" data-tab="arch" role="tab">Arch / Manjaro</button>
+    <button class="tab-btn" data-tab="debian" role="tab">Ubuntu / Debian</button>
+    <button class="tab-btn" data-tab="fedora" role="tab">Fedora / RHEL</button>
+    <button class="tab-btn" data-tab="nix" role="tab">NixOS / Nix</button>
+    <button class="tab-btn" data-tab="appimage" role="tab">AppImage</button>
+  </div>
+
+  <div class="tab-panel active" id="tab-arch">
+    <div class="install-block">
+      <button class="copy-btn" data-copy="curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-pacman.sh | sudo bash
+sudo pacman -Syu claude-desktop-extra">Copy</button>
+      <pre><span class="comment"># Add repo + GPG key</span>
+curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-pacman.sh | sudo bash
+<span class="comment"># Install</span>
+sudo pacman -Syu claude-desktop-extra</pre>
+    </div>
+    <div class="install-note">Updates arrive through <code>pacman -Syu</code> (or <code>yay -Syu</code>). Signed packages, x86_64 and aarch64. <a href="https://github.com/patrickjaja/claude-desktop-extra#arch-linux--manjaro-pacman-repository">Manual setup and <code>makepkg</code> build →</a></div>
+  </div>
+
+  <div class="tab-panel" id="tab-debian">
+    <div class="install-block">
+      <button class="copy-btn" data-copy="curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install.sh | sudo bash
+sudo apt install claude-desktop-extra">Copy</button>
+      <pre><span class="comment"># Add repo + GPG key</span>
+curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install.sh | sudo bash
+<span class="comment"># Install</span>
+sudo apt install claude-desktop-extra</pre>
+    </div>
+    <div class="install-note">Updates arrive through <code>apt update && apt upgrade</code>. Supports amd64 and arm64.</div>
+  </div>
+
+  <div class="tab-panel" id="tab-fedora">
+    <div class="install-block">
+      <button class="copy-btn" data-copy="curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-rpm.sh | sudo bash
+sudo dnf install claude-desktop-extra">Copy</button>
+      <pre><span class="comment"># Add repo + GPG key</span>
+curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-rpm.sh | sudo bash
+<span class="comment"># Install</span>
+sudo dnf install claude-desktop-extra</pre>
+    </div>
+    <div class="install-note">Updates arrive through <code>dnf upgrade</code>. Supports x86_64 and aarch64.</div>
+  </div>
+
+  <div class="tab-panel" id="tab-nix">
+    <div class="install-block">
+      <button class="copy-btn" data-copy="nix run github:patrickjaja/claude-desktop-extra">Copy</button>
+      <pre><span class="comment"># Try without installing</span>
+nix run github:patrickjaja/claude-desktop-extra
+
+<span class="comment"># Or install persistently</span>
+nix profile install github:patrickjaja/claude-desktop-extra</pre>
+    </div>
+    <div class="install-note">Nix flake with auto-updated hashes on each release.</div>
+  </div>
+
+  <div class="tab-panel" id="tab-appimage">
+    <div class="install-block">
+      <button class="copy-btn" data-copy="wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/Claude_Desktop-x86_64.AppImage
+chmod +x Claude_Desktop-x86_64.AppImage
+./Claude_Desktop-x86_64.AppImage">Copy</button>
+      <pre><span class="comment"># Download, make executable, run</span>
+wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/Claude_Desktop-x86_64.AppImage
+chmod +x Claude_Desktop-x86_64.AppImage
+./Claude_Desktop-x86_64.AppImage</pre>
+    </div>
+    <div class="install-note">No root required. Works on any glibc-based distro. ARM64 AppImage also available.</div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features" class="fade-in">
+  <div class="section-label">Features</div>
+  <h2>Everything works on Linux</h2>
+  <p>Anthropic's official Linux build - Chat, Code, Cowork, Browser Tools, 3P inference - preserved through the repackage, plus four Linux-only extras we add on top.</p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      </div>
+      <h3>Chat</h3>
+      <p>Full desktop chat UI with artifacts, projects, search, and file uploads on X11 and Wayland.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+      </div>
+      <h3>Code</h3>
+      <p>Claude Code CLI integration with local agent mode, git worktrees, and terminal access.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      </div>
+      <h3>Cowork</h3>
+      <p>Delegated coding workspace with live artifacts, CoworkSpaces, and Imagine/Visualize.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+      </div>
+      <h3>Computer Use</h3>
+      <p>27 desktop automation tools - screenshot, click, type, scroll, drag. Teach mode for learning new tools.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+      </div>
+      <h3>Browser Tools</h3>
+      <p>18 Chrome automation tools via the Claude in Chrome extension with native messaging host.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+      </div>
+      <h3>Multiple Profiles</h3>
+      <p>Run multiple instances side by side with fully isolated state, config, and session data per account.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
+      </div>
+      <h3>Custom Themes</h3>
+      <p>97 bundled dual light/dark palettes (Catppuccin, Nord, Gruvbox, Mario, and more) plus your own. Live reload: <a href="https://github.com/InioX/matugen">matugen</a>, <a href="https://github.com/dylanaraps/pywal">pywal</a> or <a href="https://codeberg.org/explosion-mental/wallust">wallust</a> recolor the app on every wallpaper change.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+      </div>
+      <h3>Quick Entry</h3>
+      <p>Global hotkey opens a floating prompt on the monitor where your cursor is. 5-25ms toggle latency.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/></svg>
+      </div>
+      <h3>Third-Party Inference</h3>
+      <p>Route through Vertex AI, Bedrock, Azure AI Foundry, or any Anthropic-compatible gateway.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
+      </div>
+      <h3>MCP Servers</h3>
+      <p>Model Context Protocol servers work natively. Configure in your Claude Desktop settings.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+      </div>
+      <h3>Auto Updates</h3>
+      <p>CI checks for new upstream versions every 2 hours. Packages land in your repo within minutes.</p>
+    </div>
+  </div>
+</section>
+
+<!-- COMPATIBILITY -->
+<section id="compatibility" class="fade-in">
+  <div class="section-label">Compatibility</div>
+  <h2>Every distro, every session type</h2>
+  <p>Tested across distributions, architectures, and display servers.</p>
+
+  <div class="compat-grid" style="margin-bottom: 2rem;">
+    <table>
+      <thead>
+        <tr>
+          <th>Distribution</th>
+          <th>Package</th>
+          <th>x86_64</th>
+          <th>ARM64</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Arch Linux / Manjaro</td>
+          <td>.pkg.tar.zst (pacman)</td>
+          <td><span class="check">&#10003;</span></td>
+          <td><span class="check">&#10003;</span></td>
+        </tr>
+        <tr>
+          <td>Ubuntu 22.04+</td>
+          <td>.deb (APT)</td>
+          <td><span class="check">&#10003;</span></td>
+          <td><span class="check">&#10003;</span></td>
+        </tr>
+        <tr>
+          <td>Debian 12+</td>
+          <td>.deb (APT)</td>
+          <td><span class="check">&#10003;</span></td>
+          <td><span class="check">&#10003;</span></td>
+        </tr>
+        <tr>
+          <td>Fedora 40+</td>
+          <td>.rpm (DNF)</td>
+          <td><span class="check">&#10003;</span></td>
+          <td><span class="check">&#10003;</span></td>
+        </tr>
+        <tr>
+          <td>RHEL 9+</td>
+          <td>.rpm (DNF)</td>
+          <td><span class="check">&#10003;</span></td>
+          <td><span class="check">&#10003;</span></td>
+        </tr>
+        <tr>
+          <td>NixOS</td>
+          <td>Nix flake</td>
+          <td><span class="check">&#10003;</span></td>
+          <td><span class="check">&#10003;</span></td>
+        </tr>
+        <tr>
+          <td>Any (glibc)</td>
+          <td>AppImage</td>
+          <td><span class="check">&#10003;</span></td>
+          <td><span class="check">&#10003;</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 style="font-size: 1rem; margin-bottom: 1rem;">Session types</h3>
+  <div class="compat-grid">
+    <table>
+      <thead>
+        <tr>
+          <th>Session</th>
+          <th>Compositors</th>
+          <th>Input</th>
+          <th>Screenshots</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>X11</td>
+          <td>GNOME, KDE, i3, ...</td>
+          <td>x11-bridge (bundled)</td>
+          <td>x11-bridge (bundled)</td>
+        </tr>
+        <tr>
+          <td>Wayland (wlroots)</td>
+          <td>Sway, Hyprland</td>
+          <td>ydotool</td>
+          <td>grim</td>
+        </tr>
+        <tr>
+          <td>Wayland (GNOME)</td>
+          <td>GNOME Shell</td>
+          <td>ydotool</td>
+          <td>portal + pipewire</td>
+        </tr>
+        <tr>
+          <td>Wayland (KDE)</td>
+          <td>KDE Plasma</td>
+          <td>kwin-portal-bridge</td>
+          <td>kwin-portal-bridge</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- COWORK -->
+<section id="cowork" class="fade-in">
+  <div class="section-label">Agentic workspace</div>
+  <h2>Cowork</h2>
+  <p>Claude Desktop's agentic workspace - delegate a goal to a sandboxed Claude Code agent that reads, edits, and creates files and returns a deliverable, with live artifacts and concurrent sessions.</p>
+
+  <div class="cowork-box">
+    <div class="cowork-mode">
+      <div class="badge badge-default">Bundled</div>
+      <h3>Official native backend</h3>
+      <p>Cowork runs on the native VM backend Anthropic ships in the official Linux build (cowork-linux-helper + virtiofsd + smol-bin + QEMU/OVMF). Our repackage preserves it - there is nothing extra to install.</p>
+    </div>
+    <div class="cowork-mode">
+      <div class="badge badge-default">Requirement</div>
+      <h3>/dev/kvm</h3>
+      <p>The native VM backend needs hardware virtualization. Make sure <code>/dev/kvm</code> is available on the host (most desktops and laptops have it).</p>
+    </div>
+  </div>
+</section>
+
+<!-- ENTERPRISE / THIRD-PARTY INFERENCE -->
+<section id="enterprise" class="fade-in">
+  <div class="section-label">Enterprise</div>
+  <h2>Bring your own inference</h2>
+  <p>Run Claude Desktop entirely on your own backend - no personal claude.ai login required. Point Chat, Code, and Cowork at <strong>Vertex AI</strong>, <strong>Bedrock</strong>, <strong>Azure AI Foundry</strong>, or any <strong>Anthropic-compatible gateway</strong> (LiteLLM, Portkey, in-house proxies) through a single <code>/etc/claude-desktop/managed-settings.json</code>. Deployable fleet-wide via MDM, GPO, or a dropped JSON file - and it works on Linux today.</p>
+
+  <div class="cowork-box">
+    <div class="cowork-mode">
+      <div class="badge badge-default">5-minute local demo</div>
+      <h3>LiteLLM gateway</h3>
+      <p>Stand up a local LiteLLM proxy, drop one JSON file, and you're running Cowork against your own endpoint. No claude.ai account, no cloud setup. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/third-party-inference.md#5-minute-local-quickstart-litellm-container">Quickstart →</a></p>
+    </div>
+    <div class="cowork-mode">
+      <div class="badge badge-exp">Fleet rollout</div>
+      <h3>Vertex AI, Bedrock, Foundry</h3>
+      <p>Worked examples with <code>gcloud</code> ADC and provider-specific keys. Configure interactively via <strong>Developer → Configure Third-Party Inference</strong>, then export and redeploy. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/third-party-inference.md">Linux guide →</a></p>
+    </div>
+  </div>
+
+  <div class="install-block" style="margin-top: 1.5rem;">
+    <button class="copy-btn" data-copy='{
+  "inferenceProvider": "gateway",
+  "inferenceGatewayBaseUrl": "http://127.0.0.1:4000",
+  "inferenceGatewayApiKey": "sk-your-gateway-token",
+  "inferenceGatewayAuthScheme": "bearer",
+  "inferenceModels": [
+    { "name": "claude-opus-4-8" },
+    { "name": "claude-sonnet-4-6" }
+  ],
+  "disableDeploymentModeChooser": true,
+  "betaFeaturesEnabled": true,
+  "chatTabEnabled": true,
+  "coworkTabEnabled": true,
+  "isClaudeCodeForDesktopEnabled": true
+}'>Copy</button>
+    <pre>// /etc/claude-desktop/managed-settings.json
+{
+  "inferenceProvider": "gateway",
+  "inferenceGatewayBaseUrl": "http://127.0.0.1:4000",
+  "inferenceGatewayApiKey": "sk-your-gateway-token",
+  "inferenceGatewayAuthScheme": "bearer",
+  "inferenceModels": [
+    { "name": "claude-opus-4-8" },
+    { "name": "claude-sonnet-4-6" }
+  ],
+  "disableDeploymentModeChooser": true,
+
+  // Surfaces - Chat, Cowork, Code tabs
+  "betaFeaturesEnabled": true,
+  "chatTabEnabled": true,
+  "coworkTabEnabled": true,
+  "isClaudeCodeForDesktopEnabled": true
+}</pre>
+  </div>
+  <p style="font-size: 0.8125rem; color: var(--text-dim); margin-top: 0.5rem; text-align: center;">One file, no Anthropic sign-in - Chat, Cowork &amp; Code, all enabled. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/third-party-inference.md#maximum-managed-settingsjson-every-key">See every key →</a></p>
+
+  <div class="install-note" style="margin-top: 1.25rem;">
+    Official key reference:
+    <a href="https://claude.com/docs/cowork/3p/configuration">Configuration reference</a> -
+    <a href="https://support.claude.com/en/articles/12622667-enterprise-configuration-for-claude-desktop">Enterprise configuration</a> -
+    <a href="https://support.claude.com/en/articles/14680753-extend-claude-cowork-with-third-party-platforms">3P platforms guide</a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div>
+    <p>This is an unofficial community package, not supported by or affiliated with Anthropic.</p>
+    <p style="margin-top: 0.25rem;">
+      <a href="https://github.com/patrickjaja/claude-desktop-extra">Source</a>
+      &middot;
+      <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/CHANGELOG.md">Changelog</a>
+      &middot;
+      <a href="https://github.com/patrickjaja/claude-desktop-extra/issues">Issues</a>
+      &middot;
+      <a href="https://www.reddit.com/r/ClaudeAI/comments/1r871b0/claude_desktop_on_linux_chat_cowork_code/">Reddit</a>
+    </p>
+  </div>
+  <div class="footer-badges">
+    <img src="https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-desktop-extra/badges/version-check.json" alt="Version" loading="lazy">
+    <img src="https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-desktop-extra/badges/pacman-repo.json" alt="Pacman" loading="lazy">
+    <img src="https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-desktop-extra/badges/apt-repo.json" alt="APT" loading="lazy">
+    <img src="https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-desktop-extra/badges/rpm-repo.json" alt="RPM" loading="lazy">
+    <img src="https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-desktop-extra/badges/appimage.json" alt="AppImage" loading="lazy">
+    <a href="https://www.reddit.com/r/ClaudeAI/comments/1r871b0/claude_desktop_on_linux_chat_cowork_code/"><img src="https://img.shields.io/badge/Reddit-Discussion-FF4500?logo=reddit&logoColor=white" alt="Reddit" loading="lazy"></a>
+  </div>
+</footer>
+
+<script>
+  // Distro-specific hero commands and install tab mapping
+  var distroCommands = {
+    arch:    'curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-pacman.sh | sudo bash\nsudo pacman -Syu claude-desktop-extra',
+    debian:  'curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install.sh | sudo bash\nsudo apt install claude-desktop-extra',
+    fedora:  'curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-rpm.sh | sudo bash\nsudo dnf install claude-desktop-extra',
+    nix:     'nix run github:patrickjaja/claude-desktop-extra',
+    appimage:'wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/Claude_Desktop-x86_64.AppImage\nchmod +x Claude_Desktop-x86_64.AppImage\n./Claude_Desktop-x86_64.AppImage'
+  };
+
+  function selectTab(id) {
+    document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+    var btn = document.querySelector('[data-tab="' + id + '"]');
+    if (btn) btn.classList.add('active');
+    var panel = document.getElementById('tab-' + id);
+    if (panel) panel.classList.add('active');
+  }
+
+  function updateHero(id) {
+    var el = document.getElementById('hero-terminal');
+    var lines = (distroCommands[id] || distroCommands.arch).split('\n');
+    var html = '<div><span class="terminal-comment"># install in one command</span></div>';
+    lines.forEach(function(line, i) {
+      html += '<div><span class="terminal-prompt">$</span> <span class="terminal-cmd">' + line + '</span>';
+      if (i === lines.length - 1) html += '<span class="cursor"></span>';
+      html += '</div>';
+    });
+    el.innerHTML = html;
+  }
+
+  // Detect distro from User-Agent
+  function detectDistro() {
+    var ua = navigator.userAgent;
+    if (/Ubuntu|Debian/i.test(ua)) return 'debian';
+    if (/Fedora/i.test(ua)) return 'fedora';
+    if (/Arch/i.test(ua)) return 'arch';
+    if (/NixOS/i.test(ua)) return 'nix';
+    if (/Windows|Mac OS/i.test(ua)) return 'appimage';
+    return 'debian';
+  }
+
+  var detected = detectDistro();
+  selectTab(detected);
+  updateHero(detected);
+
+  // Tab switching - also updates hero
+  document.querySelectorAll('.tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = btn.dataset.tab;
+      selectTab(id);
+      updateHero(id);
+    });
+  });
+
+  // Copy button
+  document.querySelectorAll('.copy-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var text = btn.dataset.copy;
+      navigator.clipboard.writeText(text).then(function() {
+        btn.textContent = 'Copied!';
+        setTimeout(function() { btn.textContent = 'Copy'; }, 1500);
+      });
+    });
+  });
+
+  // Fade-in on scroll
+  var obs = new IntersectionObserver(function(entries) {
+    entries.forEach(function(e) { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.1 });
+  document.querySelectorAll('.fade-in').forEach(function(el) { obs.observe(el); });
+
+  // Mobile nav toggle
+  document.querySelector('.nav-toggle').addEventListener('click', function() {
+    document.querySelector('.nav-links').classList.toggle('open');
+  });
+</script>
+
 </body>
 </html>
