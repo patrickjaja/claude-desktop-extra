@@ -24,6 +24,6 @@
 
 The full, tinted and extends templates replace the whole theme: render them to `~/.config/Claude/themes.d/matugen.json` and set `"activeTheme": "matugen"` or pick **Matugen** in the picker. No post_hook is needed for any template; if you set `"themeWatch": false`, add `post_hook = 'claude-desktop --reload-theme'`. The `warning` and `success` roles come from matugen's `[config.custom_colors]` (e.g. `success = "#3fb950"`, `warning = "#f5a524"`).
 
-Token values are HSL triplets `"H S% L%"` built from matugen's `.hue`, `.saturation` and `.lightness` formats; the `--claude-*` chrome variables take `.hex`. pywal and wallust users can write the same JSON shape by hand or from their own templates - any file in `themes.d/` is a theme, whatever produced it.
+Token values are HSL triplets `"H S% L%"` built from matugen's `.hue`, `.saturation` and `.lightness` formats; the `--claude-*` chrome variables take `.hex`. [pywal](https://github.com/dylanaraps/pywal) and [wallust](https://codeberg.org/explosion-mental/wallust) users can write the same JSON shape by hand or from their own templates - any file in `themes.d/` is a theme, whatever produced it.
 
 A complete, copyable desktop setup (matugen `config.toml`, GTK color template, live-reload wrapper themes, Variety hook) is in [`example-xfce-variety/`](example-xfce-variety/). The GTK part is XFCE specific; the Claude Desktop part works on any desktop.

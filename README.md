@@ -16,7 +16,7 @@
 Anthropic publishes an official Claude Desktop [Linux `.deb`](https://code.claude.com/docs/en/desktop-linux) (Ubuntu 22.04+ / Debian 12+, amd64 + arm64). This project - **claude-desktop-extra** - takes that official build, repackages it for **Arch, Fedora/RHEL, NixOS, and AppImage** (and offers its own Debian/Ubuntu `.deb`), and layers on Linux-only value-adds the official build lacks:
 
 - [**Computer Use**](#computer-use) - desktop automation (screenshot, click, type, scroll, teach mode).
-- [**Custom Themes**](#custom-themes) - 97 bundled dual light/dark palettes (7 built-in, 6 gaming, 84 community), each with its own loading spinner, switchable live from a Ctrl+Shift+T picker, or roll your own.
+- [**Custom Themes**](#custom-themes) - 97 bundled dual light/dark palettes (7 built-in, 6 gaming, 84 community), each with its own loading spinner, switchable live from a Ctrl+Shift+T picker, or roll your own. Theme files reload live, so wallpaper-driven color tools ([matugen](https://github.com/InioX/matugen), [pywal](https://github.com/dylanaraps/pywal), [wallust](https://codeberg.org/explosion-mental/wallust)) recolor the app on every wallpaper change.
 - [**Multiple Profiles**](#multiple-profiles) - run several instances side by side, each logged in to a different account with fully isolated state.
 - [**Quick Entry**](#quick-entry) - global hotkey popup (Ctrl+Alt+Space), multi-monitor and Wayland-aware.
 - [**Hardware Buddy**](docs/feature-flags.md) - enables the Nibblet BLE pet device on Linux: forces the feature flag so the BLE transport arms, and turns on Chromium Web Bluetooth (via BlueZ) so the in-app scan can find the device - both are off by default upstream on Linux.
@@ -315,7 +315,11 @@ Recolor the whole app - chat, sidebar, Code/Cowork, dialogs, Quick Entry - with 
 |-------------------|--------------------|
 | ![Mario theme - light](themes/mario/2026-06-26_14-46-chat-light.png) | ![Mario theme - dark](themes/mario/2026-06-26_14-46-chat-dark.png) |
 
-Browse all 97 with their swatches in **[themes/PALETTES.md](themes/PALETTES.md)**. Theme files reload live, so wallpaper-driven color tools (matugen, pywal, wallust) can recolor the app on every wallpaper change - drop their output into `~/.config/Claude/themes.d/`, or `extend` a bundled theme with just a dynamic accent: **[dynamic themes](docs/themes.md#6-dynamic-themes-from-your-wallpaper-matugen-pywal-wallust)**. The palette tables, the config file, custom CSS and spinners, and how to author your own: **[docs/themes.md](docs/themes.md)**.
+Browse all 97 with their swatches in **[themes/PALETTES.md](themes/PALETTES.md)**.
+
+**Wallpaper-driven themes (matugen, pywal, wallust)** - theme files reload live, no restart. Drop a generated file into `~/.config/Claude/themes.d/`, name it as `themeOverlay` in the config, and the wallpaper's colors ride on top of whatever theme you picked; a hook script switches light and dark from the wallpaper's brightness. Ready-made matugen templates and a complete example are in [`contrib/matugen/`](contrib/matugen/), the four-step recipe in [docs/themes.md](docs/themes.md#6-dynamic-themes-from-your-wallpaper-matugen-pywal-wallust).
+
+![PlayStation theme with wallpaper-tinted backgrounds via matugen](themes/matugen-2026-09-08_01-54.png)
 
 ## Multiple Profiles
 

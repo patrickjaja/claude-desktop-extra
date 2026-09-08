@@ -278,7 +278,7 @@ running); in-app code can call `globalThis.__cdbThemes.reload(reason)`. Named pr
 Every `*.json`/`*.jsonc` file in `~/.config/Claude/themes.d/` is one theme named after the
 file stem (`matugen.json` -> `matugen`), or several as `{"themes": {...}}`. Same name in
 several places: `.jsonc` > `.json` > `themes.d` > built-ins > community. Color generators
-(matugen, pywal, wallust) should write here, never into `claude-desktop-extra.json`, which
+([matugen](https://github.com/InioX/matugen), [pywal](https://github.com/dylanaraps/pywal), [wallust](https://codeberg.org/explosion-mental/wallust)) should write here, never into `claude-desktop-extra.json`, which
 the Extra settings page rewrites. Full guide with a matugen recipe:
 [docs/themes.md](../docs/themes.md#6-dynamic-themes-from-your-wallpaper-matugen-pywal-wallust).
 

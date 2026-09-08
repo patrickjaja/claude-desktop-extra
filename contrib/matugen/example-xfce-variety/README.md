@@ -10,7 +10,7 @@ drives Claude Desktop through `themes.d/` and `themeOverlay`.
 
 | File | Installed to | Purpose |
 |------|--------------|---------|
-| `config.toml` | `~/.config/matugen/config.toml` | matugen templates: GTK3/GTK4 colors, Claude overlay (accents), overlay-bg (backgrounds), full theme |
+| `config.toml` | `~/.config/matugen/config.toml` | [matugen](https://github.com/InioX/matugen) templates: GTK3/GTK4 colors, Claude overlay (accents), overlay-bg (backgrounds), full theme |
 | `templates/gtk-colors.css` | `~/.config/matugen/templates/` | libadwaita named colors for adw-gtk3 |
 | `reload-gtk.sh` | `~/.config/matugen/` | matugen `post_hook`: flips the XSETTINGS theme name between two identical wrapper themes so running GTK3 apps re-parse |
 | `wrapper-theme/*.in` | `~/.themes/adw-gtk3-matugen[-light]{,-b}/` | adw-gtk3 plus the generated `colors.css`, dark and light, two copies each |

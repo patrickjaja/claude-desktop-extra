@@ -88,11 +88,11 @@ The full schema (`chatFont`, `spinner`, `customCss`, `category`), the token refe
 
 ## 6. Dynamic themes from your wallpaper (matugen, pywal, wallust)
 
-![PlayStation theme with wallpaper-tinted backgrounds via matugen and themeOverlay](../themes/matugen-2026-09-08_01-54.png)
+![PlayStation theme with wallpaper-tinted backgrounds via [matugen](https://github.com/InioX/matugen) and themeOverlay](../themes/matugen-2026-09-08_01-54.png)
 
 *The built-in PlayStation theme with `"themeOverlay": "wallpaper-bg"`: backgrounds and light/dark follow the wallpaper, accents and glyph stay.*
 
-Themes reload live. Edit `claude-desktop-extra.json`/`.jsonc` or anything in `~/.config/Claude/themes.d/` and the active theme is re-applied in every open window within about 300 ms, no restart. Atomic tmp-and-rename writers (matugen, pywal, wallust) are handled. Three ways to trigger a reload:
+Themes reload live. Edit `claude-desktop-extra.json`/`.jsonc` or anything in `~/.config/Claude/themes.d/` and the active theme is re-applied in every open window within about 300 ms, no restart. Atomic tmp-and-rename writers (matugen, [pywal](https://github.com/dylanaraps/pywal), [wallust](https://codeberg.org/explosion-mental/wallust)) are handled. Three ways to trigger a reload:
 
 - **File watcher** (default) - on by default; `"themeWatch": false` in the `.jsonc` turns it off.
 - **CLI** - `claude-desktop --reload-theme` asks the running instance to re-read its theme files (over the Quick Entry socket) and prints one JSON line, `{ok, changed, name, windows}`. Exits 1 with `Claude Desktop is not running` when no instance is up.
