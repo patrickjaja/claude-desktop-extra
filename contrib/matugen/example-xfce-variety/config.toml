@@ -52,3 +52,9 @@ output_path = '~/.config/Claude/themes.d/wallpaper-bg.json'
 [templates.claude-desktop]
 input_path = '~/.config/matugen/templates/claude-desktop.json'
 output_path = '~/.config/Claude/themes.d/matugen.json'
+
+# Full wallpaper theme as an overlay: every color from the wallpaper, the picked theme keeps
+# only its spinner / glyph / chatFont  -> "themeOverlay": "wallpaper-full"
+[templates.claude-desktop-overlay-full]
+input_path = '~/.config/matugen/templates/claude-desktop-overlay-full.json'
+output_path = '~/.config/Claude/themes.d/wallpaper-full.json'

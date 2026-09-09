@@ -12,6 +12,9 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   `thickFrame: false` leave it; a transparent window drops it but also drops the buttons). The
   matugen example therefore derives the GTK headerbar color from the same ramp as Claude's backgrounds,
   so the frame blends in; `--native-titlebar` is the other way to get rid of it.
+- The mode script decides dark unless the wallpaper's mean luma exceeds 0.6 (was 0.55): a bright sky over
+  dark ground reads as dark to people. The light background ramps of the overlay-bg and tinted templates
+  sit at 97 to 86 percent lightness instead of 99 to 90, so a low-chroma wallpaper still tints them.
 - **Overlay control in the theme UIs.** A `themeOverlay` recolored the app while the Ctrl+Shift+T
   picker and Settings -> Extra -> Themes still showed the picked theme as plain "active", and the only
   way to turn it off was the config file. Both now carry an Overlay bar: with an overlay active it

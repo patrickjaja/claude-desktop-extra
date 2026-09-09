@@ -17,7 +17,7 @@ put "$here/reload-gtk.sh"                      "$m/reload-gtk.sh";              
 put "$contrib/set-mode-from-wallpaper.sh"      "$m/set-mode-from-wallpaper.sh";  chmod +x "$m/set-mode-from-wallpaper.sh"
 put "$here/templates/gtk-colors-dark.css"      "$m/templates/gtk-colors-dark.css"
 put "$here/templates/gtk-colors-light.css"     "$m/templates/gtk-colors-light.css"
-for t in claude-desktop-overlay claude-desktop-overlay-bg claude-desktop; do
+for t in claude-desktop-overlay claude-desktop-overlay-bg claude-desktop-overlay-full claude-desktop; do
   put "$contrib/$t.json" "$m/templates/$t.json"
 done
 

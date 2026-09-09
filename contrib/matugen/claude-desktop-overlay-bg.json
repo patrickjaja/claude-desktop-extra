@@ -3,14 +3,14 @@
   "name": "Wallpaper backgrounds (overlay)",
   "hidden": true,
   "light": {
-    "--bg-000": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 99%",
-    "--bg-100": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 98%",
-    "--bg-200": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 95%",
-    "--bg-300": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 95%",
-    "--bg-400": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 90%",
-    "--bg-500": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 90%",
-    "--pictogram-400": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 95%",
-    "--claude-background-color": "{{colors.primary_container.light.hex | set_lightness: 98.0}}"
+    "--bg-000": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 97%",
+    "--bg-100": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 95%",
+    "--bg-200": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 92%",
+    "--bg-300": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 92%",
+    "--bg-400": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 88%",
+    "--bg-500": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 88%",
+    "--pictogram-400": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 92%",
+    "--claude-background-color": "{{colors.primary_container.light.hex | set_lightness: 95.0}}"
   },
   "dark": {
     "--bg-000": "{{colors.primary_container.dark.hue}} {{colors.primary_container.dark.saturation}}% 25%",

@@ -112,7 +112,7 @@ Tested on Arch, XFCE 4 / X11, with the Variety wallpaper switcher and matugen 4.
    input_path = '~/.config/matugen/templates/claude-desktop-overlay.json'
    output_path = '~/.config/Claude/themes.d/wallpaper-accent.json'
    ```
-2. Point your wallpaper tool's post-change command (Variety's `set_wallpaper` script, or any hook) at `~/.config/matugen/set-mode-from-wallpaper.sh "$WALLPAPER"`. The script measures the image's mean luma (light above 0.55, `CDB_MODE_THRESHOLD` overrides), runs matugen in that mode with `-t scheme-fidelity` (keeps the wallpaper's own chroma; the default tonal-spot scheme turns grey wallpapers into saturated blue) and sets the desktop-wide light/dark preference (the GNOME and xapp portal `color-scheme` keys, which is what Electron reads through xdg-desktop-portal, plus the adw-gtk3 variant on XFCE). If you do not want the desktop preference touched, use a fixed-mode `matugen image "$WALLPAPER" -m dark` line instead.
+2. Point your wallpaper tool's post-change command (Variety's `set_wallpaper` script, or any hook) at `~/.config/matugen/set-mode-from-wallpaper.sh "$WALLPAPER"`. The script measures the image's mean luma (light above 0.6, `CDB_MODE_THRESHOLD` overrides), runs matugen in that mode with `-t scheme-fidelity` (keeps the wallpaper's own chroma; the default tonal-spot scheme turns grey wallpapers into saturated blue) and sets the desktop-wide light/dark preference (the GNOME and xapp portal `color-scheme` keys, which is what Electron reads through xdg-desktop-portal, plus the adw-gtk3 variant on XFCE). If you do not want the desktop preference touched, use a fixed-mode `matugen image "$WALLPAPER" -m dark` line instead.
 3. Add `"themeOverlay": "wallpaper-accent"` to `claude-desktop-extra.jsonc`, next to `activeTheme`.
 4. Set Claude Desktop Settings → Appearance → **System**, then pick any theme in the Ctrl+Shift+T picker. Which of the two palettes the app shows is Anthropic's own Appearance setting, not something our config can drive; System is the only value that follows the desktop preference. Leave it on Dark or Light if you want a fixed mode (then the script is not needed, see the alternative in step 2).
 
@@ -122,6 +122,7 @@ From then on every wallpaper change recolors the accents, brand and status color
 
 - [`claude-desktop.json`](../contrib/matugen/claude-desktop.json) - the full theme: surfaces, text, accents, borders, status colors and renderer chrome from the Material You scheme. Material You keeps dark surfaces near-black by design.
 - [`claude-desktop-tinted.json`](../contrib/matugen/claude-desktop-tinted.json) - the same, but the backgrounds take the wallpaper hue and chroma from the scheme's primary container color at fixed lightness steps, so a grey wallpaper gives grey-blue surfaces and a colorful one colorful surfaces. `-t scheme-vibrant` or `-t scheme-expressive` on the matugen command pushes more color everywhere.
+- [`claude-desktop-overlay-full.json`](../contrib/matugen/claude-desktop-overlay-full.json) - the whole tinted palette as an overlay: every color follows the wallpaper, the picked theme contributes only its spinner, glyph and chat font. `"themeOverlay": "wallpaper-full"`.
 - [`claude-desktop-overlay-bg.json`](../contrib/matugen/claude-desktop-overlay-bg.json) - the inverse of the recommended overlay: only the backgrounds follow the wallpaper (tinted primary tones), the active theme keeps its accents and glyph. `"themeOverlay": "wallpaper-bg"`.
 - [`claude-desktop-extends.json`](../contrib/matugen/claude-desktop-extends.json) - `"extends": "mario"` plus only the accent, brand and status ramps; swap `mario` for any theme you like.
 
@@ -149,6 +150,8 @@ Write the same JSON shape into `themes.d/<name>.json`; the watcher picks it up, 
 - **`themes.d/` generator file** - hand-written `wal.json`, `extends` plus three tokens: [pywal / wallust](#pywal--wallust--anything-else).
 - **matugen flow** - overlay template, mode script, `themeOverlay`, Appearance = System: [matugen (official recipe)](#matugen-official-recipe).
 - **[contrib/matugen/claude-desktop-overlay.json](../contrib/matugen/claude-desktop-overlay.json)** - accent-only matugen template for `themeOverlay` (recommended).
+- **[contrib/matugen/claude-desktop-overlay-bg.json](../contrib/matugen/claude-desktop-overlay-bg.json)** - backgrounds-only overlay: the picked theme keeps its accents and glyph, the surfaces follow the wallpaper.
+- **[contrib/matugen/claude-desktop-overlay-full.json](../contrib/matugen/claude-desktop-overlay-full.json)** - full-palette overlay: every color from the wallpaper, the picked theme keeps only its spinner, glyph and chat font.
 - **[contrib/matugen/claude-desktop.json](../contrib/matugen/claude-desktop.json)** - full wallpaper-driven theme template for matugen.
 - **[contrib/matugen/claude-desktop-tinted.json](../contrib/matugen/claude-desktop-tinted.json)** - full template with wallpaper-tinted backgrounds.
 - **[contrib/matugen/claude-desktop-extends.json](../contrib/matugen/claude-desktop-extends.json)** - compact matugen template, wallpaper accent on top of `mario`.

@@ -3,7 +3,7 @@
 # (docs/themes.md, "matugen (official recipe)"): light/dark follows the wallpaper.
 #
 # Measures the wallpaper's mean luma with ImageMagick, picks "light" above the threshold
-# (0.55, override with CDB_MODE_THRESHOLD) and "dark" below, runs matugen in that mode with the
+# (0.6, override with CDB_MODE_THRESHOLD; biased toward dark, a bright sky over dark ground still counts as dark) and "dark" below, runs matugen in that mode with the
 # scheme-fidelity type (CDB_MATUGEN_SCHEME overrides), and
 # sets the desktop-wide color-scheme preference so Claude Desktop's Appearance = System follows:
 #   - gsettings org.gnome.desktop.interface color-scheme (xdg-desktop-portal-gtk) and
@@ -25,7 +25,7 @@ if [ -z "$wp" ] || [ ! -r "$wp" ]; then
   echo "usage: $0 <wallpaper>" >&2
   exit 2
 fi
-threshold="${CDB_MODE_THRESHOLD:-0.55}"
+threshold="${CDB_MODE_THRESHOLD:-0.6}"
 
 # matugen decodes raster formats only; rasterize anything else (SVG, ...) to a temp PNG.
 case "${wp,,}" in

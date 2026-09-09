@@ -10,13 +10,14 @@
    input_path = '~/.config/matugen/templates/claude-desktop-overlay.json'
    output_path = '~/.config/Claude/themes.d/wallpaper-accent.json'
    ```
-2. Make your wallpaper tool's post-change command `~/.config/matugen/set-mode-from-wallpaper.sh "$WALLPAPER"`. It measures the image's mean luma (light above 0.55, `CDB_MODE_THRESHOLD` overrides), runs `matugen image -m <mode>` and sets the desktop-wide light/dark preference (gsettings color-scheme, adw-gtk3 variant on XFCE). Prefer a fixed mode and an untouched desktop preference? Use `matugen image "$WALLPAPER" -m dark` there instead.
+2. Make your wallpaper tool's post-change command `~/.config/matugen/set-mode-from-wallpaper.sh "$WALLPAPER"`. It measures the image's mean luma (light above 0.6, `CDB_MODE_THRESHOLD` overrides), runs `matugen image -m <mode>` and sets the desktop-wide light/dark preference (gsettings color-scheme, adw-gtk3 variant on XFCE). Prefer a fixed mode and an untouched desktop preference? Use `matugen image "$WALLPAPER" -m dark` there instead.
 3. Put `"themeOverlay": "wallpaper-accent"` into `~/.config/Claude/claude-desktop-extra.jsonc`.
 4. Set Claude Desktop Settings -> Appearance -> System and pick any theme in the Ctrl+Shift+T picker. Which palette the app shows is Anthropic's own Appearance setting, not something our config can drive; System is the only value that follows the desktop preference. Keep Dark or Light for a fixed mode (then use the plain `matugen image ... -m dark` line instead of the script).
 
 **Templates**
 
 - `claude-desktop-overlay.json` - accent, brand, danger, success and warning ramps plus the accent-clay/border chrome, no `extends`; made for `themeOverlay`.
+- `claude-desktop-overlay-full.json` - every color token from the wallpaper as an overlay (the tinted theme minus name/spinner); the picked theme keeps only its spinner, glyph and chatFont. Pair with `"themeOverlay": "wallpaper-full"`.
 - `claude-desktop-overlay-bg.json` - the inverse: only the background ramp (`--bg-*`, `--claude-background-color`) from the wallpaper, tinted primary tones; the active theme keeps its accents and glyph. Pair with `"themeOverlay": "wallpaper-bg"`.
 - `claude-desktop.json` - a full theme: surfaces, text, accents, borders, status colors and renderer chrome from the Material You scheme (dark surfaces stay near-black, as Material You intends).
 - `claude-desktop-tinted.json` - the full theme with backgrounds from the primary tonal palette (`palettes.primary._<tone>`: dark tones 25 to 5, light tones 99 to 90), so the wallpaper hue tints the surfaces. Add `-t scheme-vibrant` or `-t scheme-expressive` to the matugen call for more color.
