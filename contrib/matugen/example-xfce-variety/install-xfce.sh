@@ -15,7 +15,8 @@ put() { # put <src> <dst>: copy unless the destination exists
 put "$here/config.toml"                        "$m/config.toml"
 put "$here/reload-gtk.sh"                      "$m/reload-gtk.sh";               chmod +x "$m/reload-gtk.sh"
 put "$contrib/set-mode-from-wallpaper.sh"      "$m/set-mode-from-wallpaper.sh";  chmod +x "$m/set-mode-from-wallpaper.sh"
-put "$here/templates/gtk-colors.css"           "$m/templates/gtk-colors.css"
+put "$here/templates/gtk-colors-dark.css"      "$m/templates/gtk-colors-dark.css"
+put "$here/templates/gtk-colors-light.css"     "$m/templates/gtk-colors-light.css"
 for t in claude-desktop-overlay claude-desktop-overlay-bg claude-desktop; do
   put "$contrib/$t.json" "$m/templates/$t.json"
 done

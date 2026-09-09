@@ -422,7 +422,7 @@ per mode:
 |----------|---------|
 | `--claude-accent-clay` | Accent (logo, highlights) |
 | `--claude-foreground-color` | Primary text |
-| `--claude-background-color` | Window background |
+| `--claude-background-color` | Window background; also painted onto the main window itself (the frame the content view leaves around the app), falls back to `--bg-100` |
 | `--claude-secondary-color` | Secondary / muted text |
 | `--claude-border` / `--claude-border-300` / `--claude-border-300-more` | Borders (include alpha, e.g. `#b496b420`) |
 | `--claude-text-100` / `-200` / `-400` / `-500` / `--claude-description-text` | Text ramp / hint text |

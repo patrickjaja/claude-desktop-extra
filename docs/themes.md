@@ -112,7 +112,7 @@ Tested on Arch, XFCE 4 / X11, with the Variety wallpaper switcher and matugen 4.
    input_path = '~/.config/matugen/templates/claude-desktop-overlay.json'
    output_path = '~/.config/Claude/themes.d/wallpaper-accent.json'
    ```
-2. Point your wallpaper tool's post-change command (Variety's `set_wallpaper` script, or any hook) at `~/.config/matugen/set-mode-from-wallpaper.sh "$WALLPAPER"`. The script measures the image's mean luma (light above 0.55, `CDB_MODE_THRESHOLD` overrides), runs matugen in that mode and sets the desktop-wide light/dark preference (the GNOME and xapp portal `color-scheme` keys, which is what Electron reads through xdg-desktop-portal, plus the adw-gtk3 variant on XFCE). If you do not want the desktop preference touched, use a fixed-mode `matugen image "$WALLPAPER" -m dark` line instead.
+2. Point your wallpaper tool's post-change command (Variety's `set_wallpaper` script, or any hook) at `~/.config/matugen/set-mode-from-wallpaper.sh "$WALLPAPER"`. The script measures the image's mean luma (light above 0.55, `CDB_MODE_THRESHOLD` overrides), runs matugen in that mode with `-t scheme-fidelity` (keeps the wallpaper's own chroma; the default tonal-spot scheme turns grey wallpapers into saturated blue) and sets the desktop-wide light/dark preference (the GNOME and xapp portal `color-scheme` keys, which is what Electron reads through xdg-desktop-portal, plus the adw-gtk3 variant on XFCE). If you do not want the desktop preference touched, use a fixed-mode `matugen image "$WALLPAPER" -m dark` line instead.
 3. Add `"themeOverlay": "wallpaper-accent"` to `claude-desktop-extra.jsonc`, next to `activeTheme`.
 4. Set Claude Desktop Settings → Appearance → **System**, then pick any theme in the Ctrl+Shift+T picker. Which of the two palettes the app shows is Anthropic's own Appearance setting, not something our config can drive; System is the only value that follows the desktop preference. Leave it on Dark or Light if you want a fixed mode (then the script is not needed, see the alternative in step 2).
 
@@ -121,11 +121,13 @@ From then on every wallpaper change recolors the accents, brand and status color
 **Alternatives** that replace the whole theme instead of overlaying one (same `config.toml` shape with `output_path = '~/.config/Claude/themes.d/matugen.json'`, then `"activeTheme": "matugen"` or **Matugen** in the picker):
 
 - [`claude-desktop.json`](../contrib/matugen/claude-desktop.json) - the full theme: surfaces, text, accents, borders, status colors and renderer chrome from the Material You scheme. Material You keeps dark surfaces near-black by design.
-- [`claude-desktop-tinted.json`](../contrib/matugen/claude-desktop-tinted.json) - the same, but the backgrounds come from the primary tonal palette (`palettes.primary._<tone>`), so the wallpaper hue tints the surfaces too. `-t scheme-vibrant` or `-t scheme-expressive` on the matugen command pushes more color everywhere.
+- [`claude-desktop-tinted.json`](../contrib/matugen/claude-desktop-tinted.json) - the same, but the backgrounds take the wallpaper hue and chroma from the scheme's primary container color at fixed lightness steps, so a grey wallpaper gives grey-blue surfaces and a colorful one colorful surfaces. `-t scheme-vibrant` or `-t scheme-expressive` on the matugen command pushes more color everywhere.
 - [`claude-desktop-overlay-bg.json`](../contrib/matugen/claude-desktop-overlay-bg.json) - the inverse of the recommended overlay: only the backgrounds follow the wallpaper (tinted primary tones), the active theme keeps its accents and glyph. `"themeOverlay": "wallpaper-bg"`.
 - [`claude-desktop-extends.json`](../contrib/matugen/claude-desktop-extends.json) - `"extends": "mario"` plus only the accent, brand and status ramps; swap `mario` for any theme you like.
 
 Template values are HSL triplets built from matugen's `.hue`/`.saturation`/`.lightness` formats; [contrib/matugen/README.md](../contrib/matugen/README.md) has the details.
+
+**Window frame on X11.** Since Claude Desktop v1.49585.0 (Electron 44) a thin frame surrounds the app on X11: Electron 43+ gives frameless windows a 4 px client-side border painted in the GTK theme's headerbar color, and no window option removes it without also losing the window buttons. The example setup derives the GTK headerbar color from the same ramp as Claude's backgrounds so the frame blends in; `claude-desktop --native-titlebar` avoids it entirely.
 
 ### pywal / wallust / anything else
 

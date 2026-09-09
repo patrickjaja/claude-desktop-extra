@@ -4,6 +4,14 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-09-09
 
+### Dynamic themes: greyscale wallpapers and the window frame
+
+- The thin frame around the app since v1.49585.0 is Electron 43+ behavior, not ours: frameless X11
+  windows get a 4 px client-side border painted in the GTK theme's headerbar color, which no window
+  option removes while keeping the window buttons (`roundedCorners: false`, `hasShadow: false`,
+  `thickFrame: false` leave it; a transparent window drops it but also drops the buttons). The
+  matugen example therefore derives the GTK headerbar color from the same ramp as Claude's backgrounds,
+  so the frame blends in; `--native-titlebar` is the other way to get rid of it.
 ### Upstream bump to Claude Desktop v1.49585.0
 
 The auto-release failed on a renamed file, not on a re-minify: the bundled Microsoft 365 MCP server
@@ -74,8 +82,8 @@ Entry socket, and `globalThis.__cdbThemes.reload(reason)` from inside the app (r
   whatever theme is active, per mode (spinner, font, CSS, name and category of the overlay are
   ignored); `""` or absent turns it off. Pick any theme, keep your wallpaper accents.
 - **matugen templates** in `contrib/matugen/`: an accent-only overlay (recommended, pairs with
-  `themeOverlay`), a backgrounds-only overlay (both `"hidden": true`, so they never show up in the picker as a base), a full theme, a tinted variant whose backgrounds come from the primary tonal
-  palette, and a compact `extends` variant, with the `config.toml` snippet; tested on Arch /
+  `themeOverlay`), a backgrounds-only overlay (both `"hidden": true`, so they never show up in the picker as a base), a full theme, a tinted variant whose backgrounds carry the wallpaper hue at fixed lightness
+  steps, and a compact `extends` variant, with the `config.toml` snippet; tested on Arch /
   XFCE 4 / X11 with Variety and matugen 4.2. pywal and wallust users can produce the same JSON
   shape.
 - **Light/dark from the wallpaper**: `contrib/matugen/set-mode-from-wallpaper.sh` is the recipe's

@@ -3,7 +3,8 @@
 # (docs/themes.md, "matugen (official recipe)"): light/dark follows the wallpaper.
 #
 # Measures the wallpaper's mean luma with ImageMagick, picks "light" above the threshold
-# (0.55, override with CDB_MODE_THRESHOLD) and "dark" below, runs matugen in that mode, and
+# (0.55, override with CDB_MODE_THRESHOLD) and "dark" below, runs matugen in that mode with the
+# scheme-fidelity type (CDB_MATUGEN_SCHEME overrides), and
 # sets the desktop-wide color-scheme preference so Claude Desktop's Appearance = System follows:
 #   - gsettings org.gnome.desktop.interface color-scheme (xdg-desktop-portal-gtk) and
 #     org.x.apps.portal color-scheme (xdg-desktop-portal-xapp: XFCE, Cinnamon, MATE) - the portal
@@ -44,7 +45,10 @@ fi
 if awk -v l="$luma" -v t="$threshold" 'BEGIN { exit !(l > t) }'; then mode=light; else mode=dark; fi
 echo "set-mode-from-wallpaper: luma=$luma threshold=$threshold -> $mode"
 
-matugen image "$wp" -m "$mode" -q
+# scheme-fidelity keeps the wallpaper's own chroma: a grey wallpaper gives grey-blue surfaces,
+# a colorful one stays colorful. matugen's default (scheme-tonal-spot) forces a fixed high
+# chroma, which turns near-grey wallpapers into saturated blue. Override with CDB_MATUGEN_SCHEME.
+matugen image "$wp" -m "$mode" -t "${CDB_MATUGEN_SCHEME:-scheme-fidelity}" -q
 
 if command -v gsettings >/dev/null 2>&1; then
   gsettings set org.gnome.desktop.interface color-scheme "prefer-$mode" 2>/dev/null || true

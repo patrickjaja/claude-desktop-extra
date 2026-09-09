@@ -11,7 +11,7 @@ drives Claude Desktop through `themes.d/` and `themeOverlay`.
 | File | Installed to | Purpose |
 |------|--------------|---------|
 | `config.toml` | `~/.config/matugen/config.toml` | [matugen](https://github.com/InioX/matugen) templates: GTK3/GTK4 colors, Claude overlay (accents), overlay-bg (backgrounds), full theme |
-| `templates/gtk-colors.css` | `~/.config/matugen/templates/` | libadwaita named colors for adw-gtk3 |
+| `templates/gtk-colors-{dark,light}.css` | `~/.config/matugen/templates/` | libadwaita named colors for adw-gtk3; the headerbar color follows Claude's background ramp because Electron 43+ paints the 4 px frame of frameless X11 windows in that color |
 | `reload-gtk.sh` | `~/.config/matugen/` | matugen `post_hook`: flips the XSETTINGS theme name between two identical wrapper themes so running GTK3 apps re-parse |
 | `wrapper-theme/*.in` | `~/.themes/adw-gtk3-matugen[-light]{,-b}/` | adw-gtk3 plus the generated `colors.css`, dark and light, two copies each |
 | `../set-mode-from-wallpaper.sh` | `~/.config/matugen/` | the wallpaper post-change command: luma -> light/dark, runs matugen, sets the desktop preference |

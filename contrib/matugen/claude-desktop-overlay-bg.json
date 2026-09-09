@@ -3,23 +3,23 @@
   "name": "Wallpaper backgrounds (overlay)",
   "hidden": true,
   "light": {
-    "--bg-000": "{{palettes.primary._99.hue}} {{palettes.primary._99.saturation}}% {{palettes.primary._99.lightness}}%",
-    "--bg-100": "{{palettes.primary._98.hue}} {{palettes.primary._98.saturation}}% {{palettes.primary._98.lightness}}%",
-    "--bg-200": "{{palettes.primary._95.hue}} {{palettes.primary._95.saturation}}% {{palettes.primary._95.lightness}}%",
-    "--bg-300": "{{palettes.primary._95.hue}} {{palettes.primary._95.saturation}}% {{palettes.primary._95.lightness}}%",
-    "--bg-400": "{{palettes.primary._90.hue}} {{palettes.primary._90.saturation}}% {{palettes.primary._90.lightness}}%",
-    "--bg-500": "{{palettes.primary._90.hue}} {{palettes.primary._90.saturation}}% {{palettes.primary._90.lightness}}%",
-    "--pictogram-400": "{{palettes.primary._95.hue}} {{palettes.primary._95.saturation}}% {{palettes.primary._95.lightness}}%",
-    "--claude-background-color": "{{palettes.primary._98.hex}}"
+    "--bg-000": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 99%",
+    "--bg-100": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 98%",
+    "--bg-200": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 95%",
+    "--bg-300": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 95%",
+    "--bg-400": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 90%",
+    "--bg-500": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 90%",
+    "--pictogram-400": "{{colors.primary_container.light.hue}} {{colors.primary_container.light.saturation}}% 95%",
+    "--claude-background-color": "{{colors.primary_container.light.hex | set_lightness: 98.0}}"
   },
   "dark": {
-    "--bg-000": "{{palettes.primary._25.hue}} {{palettes.primary._25.saturation}}% {{palettes.primary._25.lightness}}%",
-    "--bg-100": "{{palettes.primary._20.hue}} {{palettes.primary._20.saturation}}% {{palettes.primary._20.lightness}}%",
-    "--bg-200": "{{palettes.primary._15.hue}} {{palettes.primary._15.saturation}}% {{palettes.primary._15.lightness}}%",
-    "--bg-300": "{{palettes.primary._10.hue}} {{palettes.primary._10.saturation}}% {{palettes.primary._10.lightness}}%",
-    "--bg-400": "{{palettes.primary._10.hue}} {{palettes.primary._10.saturation}}% {{palettes.primary._10.lightness}}%",
-    "--bg-500": "{{palettes.primary._5.hue}} {{palettes.primary._5.saturation}}% {{palettes.primary._5.lightness}}%",
-    "--pictogram-400": "{{palettes.primary._25.hue}} {{palettes.primary._25.saturation}}% {{palettes.primary._25.lightness}}%",
-    "--claude-background-color": "{{palettes.primary._20.hex}}"
+    "--bg-000": "{{colors.primary_container.dark.hue}} {{colors.primary_container.dark.saturation}}% 25%",
+    "--bg-100": "{{colors.primary_container.dark.hue}} {{colors.primary_container.dark.saturation}}% 20%",
+    "--bg-200": "{{colors.primary_container.dark.hue}} {{colors.primary_container.dark.saturation}}% 15%",
+    "--bg-300": "{{colors.primary_container.dark.hue}} {{colors.primary_container.dark.saturation}}% 10%",
+    "--bg-400": "{{colors.primary_container.dark.hue}} {{colors.primary_container.dark.saturation}}% 10%",
+    "--bg-500": "{{colors.primary_container.dark.hue}} {{colors.primary_container.dark.saturation}}% 5%",
+    "--pictogram-400": "{{colors.primary_container.dark.hue}} {{colors.primary_container.dark.saturation}}% 25%",
+    "--claude-background-color": "{{colors.primary_container.dark.hex | set_lightness: 20.0}}"
   }
 }

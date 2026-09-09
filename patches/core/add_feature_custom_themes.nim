@@ -192,7 +192,30 @@ const GAMING_COUNT = jsonLen(GAMING_THEMES_JSON)
 const THEME_INJECTION_JS_HEAD =
   """;(function(){
 if(process.platform!=="linux")return;
-var _path=require("path"),_fs=require("fs"),_app=require("electron").app;
+var _path=require("path"),_fs=require("fs"),_app=require("electron").app,_nt=require("electron").nativeTheme,_BW=require("electron").BrowserWindow;
+// The effective app mode: upstream sets nativeTheme.themeSource from its Appearance setting, so
+// shouldUseDarkColors is the mode the renderer shows (system/light/dark all resolve here).
+function __cdb_isDark(){try{return !!(_nt&&_nt.shouldUseDarkColors)}catch(e){return false}}
+// Window chrome color per mode: the theme's --claude-background-color (hex), else --bg-100 / --bg-000
+// converted from the "H S% L%" triplet. Upstream paints the frameless main window with a stock
+// gray/white (nativeTheme-driven) that a content-view inset exposes as a frame around the app;
+// __cdb_paintWindow repaints it with the active theme's color so the frame matches.
+function __cdb_hslHex(t){var m=/^\s*([\d.]+)\s+([\d.]+)%\s+([\d.]+)%\s*$/.exec(String(t||""));if(!m)return null;var h=(+m[1])%360,sa=+m[2]/100,l=+m[3]/100,c=(1-Math.abs(2*l-1))*sa,x=c*(1-Math.abs((h/60)%2-1)),mm=l-c/2,r=0,g=0,b=0;if(h<60){r=c;g=x}else if(h<120){r=x;g=c}else if(h<180){g=c;b=x}else if(h<240){g=x;b=c}else if(h<300){r=x;b=c}else{r=c;b=x}function q(v){v=Math.round((v+mm)*255);v=v<0?0:v>255?255:v;return (v<16?"0":"")+v.toString(16)}return "#"+q(r)+q(g)+q(b)}
+function __cdb_chromeHex(vars){if(!vars)return null;var v=vars["--claude-background-color"];if(typeof v==="string"&&/^#[0-9a-f]{6}$/i.test(v.trim()))return v.trim();return __cdb_hslHex(vars["--bg-100"])||__cdb_hslHex(vars["--bg-000"])}
+var __cdb_STOCK_CHROME={light:"#fcfcfb",dark:"#151515"};
+function __cdb_paintWindow(wc){
+try{
+if(!_BW||!_BW.fromWebContents||wc.isDestroyed())return false;
+var url=wc.getURL()||"";
+if(!/\/main_window\//.test(url))return false;
+var w=_BW.fromWebContents(wc);
+if(!w||(w.isDestroyed&&w.isDestroyed()))return false;
+var dark=__cdb_isDark(),c=__cdb_state.chrome,hex=(c&&(dark?c.dark:c.light))||(dark?__cdb_STOCK_CHROME.dark:__cdb_STOCK_CHROME.light);
+w.setBackgroundColor(hex);
+return true;
+}catch(e){__cdb_log("window background: "+e.message);return false}
+}
+function __cdb_paintAll(){var n=0;__cdb_wcKeys.forEach(function(_k,wc){if(__cdb_paintWindow(wc))n++});return n}
 function __cdb_toCss(v){
 if(typeof v==="string")return v;
 if(Array.isArray(v))return v.filter(function(x){return typeof x==="string"}).join("\n");
@@ -433,6 +456,10 @@ __cdb_log("Overlay '"+overlay.name+"' merged over '"+name+"' ("+Object.keys(over
 // Emit light first, dark second so dark wins on a specificity tie (both single-class/attr).
 var css=":root,[data-mode=light]{"+__cdb_block(v.light)+"}";
 css+=".darkTheme,[data-mode=dark],.dark{"+__cdb_block(v.dark)+"}";
+// Documents without a mode attribute (the local window shell around the content view) would
+// otherwise resolve the LIGHT block in dark mode and paint a light frame around the app.
+// Give :root the variant of the effective app mode; an explicit [data-mode=light] still wins.
+if(__cdb_isDark())css+=":root:not([data-mode=light]){"+__cdb_block(v.dark)+"}";
 // Element overrides (emit ONCE; reference semantic tokens so they are mode-correct).
 css+=""
 +"html,body{color:var(--claude-foreground-color)!important}"
@@ -524,7 +551,7 @@ css+="svg[data-cdb-spinner].cdb-anim-pulse{animation:cdbPulse 1.2s ease-in-out i
 css+="svg[data-cdb-spinner].cdb-anim-flip [data-cdb-frame=\"1\"]{animation:cdbFlipA 1s steps(2,jump-none) infinite}";
 css+="svg[data-cdb-spinner].cdb-anim-flip [data-cdb-frame=\"2\"]{animation:cdbFlipB 1s steps(2,jump-none) infinite}";
 if(spinnerJson!=="null")__cdb_log("Spinner spec present ("+spinnerJson.length+" chars JSON) for '"+name+"'");
-return {css:css,font:fontFlag,spinnerJson:spinnerJson,overlay:overlay?overlay.name:null};
+return {css:css,font:fontFlag,spinnerJson:spinnerJson,overlay:overlay?overlay.name:null,chrome:{light:__cdb_chromeHex(v.light),dark:__cdb_chromeHex(v.dark)}};
 }
 // --- activeTheme persistence (comment-preserving) --------------------------
 // Walk the RAW text tracking string/comment state and return the value span of
@@ -605,7 +632,7 @@ return __cdb_writeFile(__cdb_cfgPathC,__cdb_template(val));
 }
 // --- live stylesheet bookkeeping ------------------------------------------
 // What is applied right now (rewritten by apply(), read by every later window).
-var __cdb_state={name:null,src:"",css:"",font:false,spinnerJson:"null",overlay:null};
+var __cdb_state={name:null,src:"",css:"",font:false,spinnerJson:"null",overlay:null,chrome:null};
 // webContents -> the insertCSS key we inserted last (null = nothing inserted).
 var __cdb_wcKeys=new Map();
 function __cdb_trackWc(wc){
@@ -619,6 +646,7 @@ if(wc.isDestroyed())return;
 var old=__cdb_wcKeys.get(wc);
 __cdb_wcKeys.set(wc,null);
 if(old){var r=wc.removeInsertedCSS(old);if(r&&r.catch)r.catch(function(){})}
+__cdb_paintWindow(wc);
 if(!__cdb_state.css)return;
 var q=wc.insertCSS(__cdb_state.css);
 if(q&&q.then)q.then(function(k){if(!wc.isDestroyed())__cdb_wcKeys.set(wc,k)},function(e){__cdb_log("insertCSS rejected: "+(e&&e.message))});
@@ -680,7 +708,7 @@ return out;
 function __cdb_applyTheme(name){
 try{
 if(name===null||name===undefined||name===""){
-__cdb_state={name:null,src:"",css:"",font:false,spinnerJson:"null",overlay:null};
+__cdb_state={name:null,src:"",css:"",font:false,spinnerJson:"null",overlay:null,chrome:null};
 var m=__cdb_restyleAll(),ms=__cdb_spinnerAll(),rp=__cdb_persist("");
 if(!rp.ok)return {ok:false,error:"reverted "+m+" window(s) but could not save: "+rp.error};
 __cdb_log("Reverted to the stock look in "+m+" window(s), restored the glyph in "+ms);
@@ -691,7 +719,7 @@ var canon=__cdb_resolveName(name),cfg=__cdb_loadCfg(),hit=__cdb_lookup(cfg,canon
 if(!hit)return {ok:false,error:"'"+name+"' is not a user, built-in, or community theme"};
 var built=__cdb_buildCss(cfg,hit.theme,canon);
 if(!built)return {ok:false,error:"'"+canon+"' has neither light/dark variants nor --token keys"};
-__cdb_state={name:canon,src:hit.src,css:built.css,font:built.font,spinnerJson:built.spinnerJson,overlay:built.overlay};
+__cdb_state={name:canon,src:hit.src,css:built.css,font:built.font,spinnerJson:built.spinnerJson,overlay:built.overlay,chrome:built.chrome};
 var n=__cdb_restyleAll(),ns=__cdb_spinnerAll(),p=__cdb_persist(canon);
 if(!p.ok)return {ok:false,error:"applied to "+n+" window(s) but could not save: "+p.error};
 __cdb_log("Applied "+hit.src+" theme '"+canon+"' to "+n+" window(s) (spinner pushed to "+ns+"), saved to "+p.path);
@@ -703,7 +731,7 @@ return {ok:true,saved:_path.basename(p.path)};
 // An unset activeTheme reverts to stock. Identical output -> no window is touched.
 function __cdb_reload(reason){
 try{
-var cfg=__cdb_loadCfg(),raw=cfg.activeTheme,next={name:null,src:"",css:"",font:false,spinnerJson:"null",overlay:null};
+var cfg=__cdb_loadCfg(),raw=cfg.activeTheme,next={name:null,src:"",css:"",font:false,spinnerJson:"null",overlay:null,chrome:null};
 if(cfg.__parseError)return {ok:false,error:"a config file has a syntax error (see log); keeping the current theme"};
 if(raw!==null&&raw!==undefined&&raw!==""){
 if(typeof raw!=="string")return {ok:false,error:"activeTheme must be a string"};
@@ -711,7 +739,7 @@ var canon=__cdb_resolveName(raw),hit=__cdb_lookup(cfg,canon);
 if(!hit)return {ok:false,error:"'"+raw+"' is not a user, built-in, or community theme"};
 var built=__cdb_buildCss(cfg,hit.theme,canon);
 if(!built)return {ok:false,error:"'"+canon+"' has neither light/dark variants nor --token keys"};
-next={name:canon,src:hit.src,css:built.css,font:built.font,spinnerJson:built.spinnerJson,overlay:built.overlay};
+next={name:canon,src:hit.src,css:built.css,font:built.font,spinnerJson:built.spinnerJson,overlay:built.overlay,chrome:built.chrome};
 }
 if(next.name===__cdb_state.name&&next.css===__cdb_state.css&&next.font===__cdb_state.font&&next.spinnerJson===__cdb_state.spinnerJson&&next.overlay===__cdb_state.overlay)return {ok:true,changed:false,name:next.name,overlay:next.overlay};
 __cdb_state=next;
@@ -800,7 +828,7 @@ __cdb_log("Press Ctrl+Shift+T to browse every theme, or define \""+__cdb_name0+"
 var __cdb_built0=__cdb_buildCss(__cdb_cfg0,__cdb_hit0.theme,__cdb_name0);
 if(!__cdb_built0)__cdb_log("Theme '"+__cdb_name0+"' has neither light/dark variants nor --token keys; nothing applied");
 else{
-__cdb_state={name:__cdb_name0,src:__cdb_hit0.src,css:__cdb_built0.css,font:__cdb_built0.font,spinnerJson:__cdb_built0.spinnerJson,overlay:__cdb_built0.overlay};
+__cdb_state={name:__cdb_name0,src:__cdb_hit0.src,css:__cdb_built0.css,font:__cdb_built0.font,spinnerJson:__cdb_built0.spinnerJson,overlay:__cdb_built0.overlay,chrome:__cdb_built0.chrome};
 __cdb_log("Loaded "+__cdb_hit0.src+" theme '"+__cdb_name0+"' (dual-variant) with element overrides");
 }
 }
@@ -810,6 +838,8 @@ __cdb_log("Loaded "+__cdb_hit0.src+" theme '"+__cdb_name0+"' (dual-variant) with
 __cdb_log("Error applying config: "+e.message)
 }
 __cdb_startWatch(typeof __cdb_cfg0==="object"?__cdb_cfg0:null);
+// Appearance light/dark flips rebuild the sheet so the :root fallback follows the new mode.
+try{if(_nt&&_nt.on)_nt.on("updated",function(){setTimeout(function(){var r=__cdb_reload("nativeTheme "+(__cdb_isDark()?"dark":"light"));if(r&&!r.ok)__cdb_log("nativeTheme reload: "+r.error);__cdb_paintAll()},50)})}catch(e){__cdb_log("nativeTheme hook error: "+e.message)}
 // Reads __cdb_state at dom-ready, so a window opened after a live switch gets
 // the CURRENT theme rather than whatever was active at startup.
 _app.on("web-contents-created",function(_ev,wc){

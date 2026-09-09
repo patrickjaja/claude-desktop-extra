@@ -334,7 +334,7 @@ await runSuite(async () => {
       activeTheme: active, themeWatch: false,
       themes: { "harness-a": { dark: V("0 0% 4%") }, "harness-b": { dark: V("0 0% 6%") } },
     });
-    const { themes: T, appEvents, diag, userData } = installEngine({ config: cfgOf("harness-a") });
+    const { themes: T, appEvents, diag, userData, nativeTheme } = installEngine({ config: cfgOf("harness-a") });
     r.ok(diag.some((m) => m === "[CustomThemes] watcher disabled (themeWatch:false)"), "startup logs the opt-out");
     r.ok(!diag.some((m) => /watching .* for config changes/.test(m)), "and no watching line");
     const wc = attach(appEvents);
@@ -370,6 +370,33 @@ await runSuite(async () => {
     writeCfg(userData, Object.assign(cfgOf("harness-b"), { themeOverlay: "ov-hidden" }));
     res2 = T.reload("test: hidden overlay");
     r.ok(res2.ok === true && res2.overlay === "ov-hidden" && tokenRe("--bg-000", "0 0% 9%").test(wc.sheet()), "hidden theme still works as themeOverlay", JSON.stringify(res2));
+
+    // :root fallback follows the effective app mode (window shell documents have no data-mode).
+    r.ok(!/:root:not\(\[data-mode=light\]\)/.test(wc.sheet()), "light mode: no dark :root fallback block");
+    nativeTheme.shouldUseDarkColors = true;
+    nativeTheme.emit("updated");
+    await wait(150);
+    r.ok(/:root:not\(\[data-mode=light\]\)\{[^}]*--bg-000:0 0% 9%/.test(wc.sheet()), "dark mode: :root fallback carries the dark variant (with overlay)", wc.sheet().slice(-200));
+    r.ok(diag.some((m) => /reload \(nativeTheme dark\): applied/.test(m)), "attributed to nativeTheme", JSON.stringify(diag.filter((m) => /nativeTheme/.test(m))));
+    nativeTheme.shouldUseDarkColors = false;
+    nativeTheme.emit("updated");
+    await wait(150);
+    r.ok(!/:root:not\(\[data-mode=light\]\)/.test(wc.sheet()), "back to light: fallback block removed again");
+
+    // The frameless main window's own background follows the theme (upstream paints stock white/gray).
+    const shell = mkWc("file:///usr/lib/claude-desktop/resources/app.asar/.vite/renderer/main_window/index.html");
+    appEvents["web-contents-created"]({}, shell); shell.fire("dom-ready");
+    await settle();
+    r.ok(shell.win.bg.slice(-1)[0] === "#171717", "shell window painted with the theme chrome color (overlay --bg-000 0 0% 9% -> #171717)", JSON.stringify(shell.win.bg));
+    r.ok(wc.win.bg.length === 0, "content view window is left alone", JSON.stringify(wc.win.bg));
+    nativeTheme.shouldUseDarkColors = true;
+    nativeTheme.emit("updated");
+    await wait(150);
+    r.ok(shell.win.bg.length >= 2 && shell.win.bg.slice(-1)[0] === "#171717", "repainted after a nativeTheme flip", JSON.stringify(shell.win.bg));
+    T.apply("");
+    await settle();
+    r.ok(shell.win.bg.slice(-1)[0] === "#151515", "stock revert repaints the stock dark window color", JSON.stringify(shell.win.bg));
+    nativeTheme.shouldUseDarkColors = false;
   }
 
   // ------------------------------------------------------------------ [7] overlay

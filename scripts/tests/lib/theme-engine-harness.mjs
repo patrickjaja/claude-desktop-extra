@@ -78,7 +78,10 @@ export function installEngine({ config, files } = {}) {
       JSON.stringify(config, null, 2));
   }
   const appEvents = {};
-  const fakeElectron = { app: { getPath: () => userData, on: (e, f) => (appEvents[e] = f) } };
+  const ntEvents = {};
+  const nativeTheme = { shouldUseDarkColors: false, on: (e, f) => (ntEvents[e] = f), emit: (e) => ntEvents[e] && ntEvents[e]() };
+  const BrowserWindow = { fromWebContents: (wc) => wc.win || null };
+  const fakeElectron = { app: { getPath: () => userData, on: (e, f) => (appEvents[e] = f) }, nativeTheme, BrowserWindow };
   const orig = Module._load;
   Module._load = function (req, ...rest) {
     return req === "electron" ? fakeElectron : orig.call(this, req, ...rest);
@@ -90,7 +93,7 @@ export function installEngine({ config, files } = {}) {
   } finally {
     Module._load = orig;
   }
-  return { themes: globalThis.__cdbThemes, appEvents, diag, userData };
+  return { themes: globalThis.__cdbThemes, appEvents, diag, userData, nativeTheme };
 }
 
 /** A webContents that records every insertCSS / executeJavaScript it is handed. */
@@ -108,6 +111,8 @@ export function mkWc(url = "https://claude.ai/new") {
     executeJavaScript: (s) => { wc.js.push(s); return Promise.resolve(); },
     fire: (e) => ev[e] && ev[e](),
     sheet: () => wc.css[wc.css.length - 1],
+    // the BrowserWindow this webContents belongs to; records setBackgroundColor calls
+    win: { bg: [], isDestroyed: () => false, setBackgroundColor: (c) => wc.win.bg.push(c) },
   };
   return wc;
 }
