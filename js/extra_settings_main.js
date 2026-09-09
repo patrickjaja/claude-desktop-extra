@@ -337,7 +337,7 @@
     };
   }
 
-  // The managed-config key catalog of Claude Desktop v1.46388.2 (143 keys), read out of the
+  // The managed-config key catalog of Claude Desktop v1.49585.0 (143 keys), read out of the
   // bundle's own schema (flat key, zod leaf type, scopes, title). Upstream drives
   // its 3P Setup wizard from that schema; we cannot reach it from here (it is
   // module-scoped in index.pre.js), so this is a PINNED COPY and is therefore

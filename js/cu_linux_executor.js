@@ -935,7 +935,7 @@ globalThis.__linuxExecutor={
     if(_useWlBridge()){
       _logFirstUse("type",_wlBridge().name+(opts&&opts.viaClipboard?" (clipboard)":""));
       if(opts&&opts.viaClipboard){
-        _electron.clipboard.writeText(text,"clipboard");
+        await _electron.clipboard.writeText(text,"clipboard");
         _wlBridgeCall(["key-sequence","--keys","ctrl+v"]);
       }else{
         _wlBridgeCall(["type","--text",text]);
@@ -943,7 +943,7 @@ globalThis.__linuxExecutor={
     }else if(_wayland&&_checkYdotool()){
       _logFirstUse("type","ydotool"+(opts&&opts.viaClipboard?" (clipboard)":""));
       if(opts&&opts.viaClipboard){
-        _electron.clipboard.writeText(text,"clipboard");
+        await _electron.clipboard.writeText(text,"clipboard");
         _ydotool(["key","29:1","47:1","47:0","29:0"]);
       }else{
         _ydotool(["type","--",text]);
@@ -951,19 +951,22 @@ globalThis.__linuxExecutor={
     }else{
       _logFirstUse("type","x11-bridge"+(opts&&opts.viaClipboard?" (clipboard)":""));
       if(opts&&opts.viaClipboard){
-        _electron.clipboard.writeText(text,"clipboard");
+        await _electron.clipboard.writeText(text,"clipboard");
         _x11Bridge(["key-sequence","--keys","ctrl+v"]);
       }else{
         _x11Bridge(["type","--text",text]);
       }
     }
   },
+  // Electron 44 (v1.49585.0+) made clipboard.readText/writeText Promise-returning;
+  // awaiting is a no-op on older sync builds and mandatory now (paste must not fire
+  // before the write lands, and a rejection must stay inside the try).
   async readClipboard(){
-    try{return _electron.clipboard.readText("clipboard")||""}
+    try{return (await _electron.clipboard.readText("clipboard"))||""}
     catch(e){return""}
   },
   async writeClipboard(text){
-    _electron.clipboard.writeText(text||"","clipboard");
+    await _electron.clipboard.writeText(text||"","clipboard");
   }
 };
 })();

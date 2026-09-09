@@ -4,7 +4,7 @@ Reusable prompts for updating the packages when a new official Claude Desktop Li
 
 **Normally you don't need this file.** New upstream versions are released automatically: `version-check.yml` detects them (2-hourly) and dispatches a full release run; the strict patches are the gate (every sub-patch applies or the build fails loud). Green run → released unattended, `.upstream-version` bumped, tracking issue closed. Use these prompts when the **auto-release failed** (a comment on the tracking issue links the failed run) or for a deliberate deep audit. The first question for every failing patch: did the re-minify move the anchor (fix the regex), or did upstream natively implement what we patch (**remove the patch** — the expected direction over time, since Anthropic maintains 1p Linux support; do NOT convert to a regression guard)?
 
-This project repackages Anthropic's **official Linux `.deb`** (apt repo `https://downloads.claude.ai/claude-desktop/apt`); it bundles Electron 42.5.1 and a native Cowork VM backend. We download it, verify it, extract its `app.asar`, apply our patches, and repackage for Arch/Fedora/RHEL/Nix/AppImage + our own Debian/Ubuntu `.deb`.
+This project repackages Anthropic's **official Linux `.deb`** (apt repo `https://downloads.claude.ai/claude-desktop/apt`); it bundles its own Electron (44.2.0 as of v1.49585.0) and a native Cowork VM backend. We download it, verify it, extract its `app.asar`, apply our patches, and repackage for Arch/Fedora/RHEL/Nix/AppImage + our own Debian/Ubuntu `.deb`.
 
 ## How to find the latest version
 

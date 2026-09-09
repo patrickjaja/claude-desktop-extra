@@ -9,7 +9,7 @@ These environment variables tune `claude-desktop` at launch. All are optional; w
 | `CLAUDE_CONFIG_DIR` | path | Override Claude Code's config dir. Auto-set by the launcher when `CLAUDE_PROFILE` is active |
 | `CLAUDE_DISABLE_GPU` | `1`, `full` | Fix white screen on some GPU/driver combos ([#13](https://github.com/patrickjaja/claude-desktop-extra/issues/13)). `1` disables compositing only, `full` disables GPU entirely |
 | `CLAUDE_USE_XWAYLAND` | `1` | Force XWayland instead of native Wayland |
-| `CLAUDE_ENABLE_VULKAN` | `1` | Keep Vulkan enabled on native Wayland. Default off: Chromium (Electron 42) refuses to pair Vulkan with `--ozone-platform=wayland`, causing a silent no-window startup. Only affects Wayland |
+| `CLAUDE_ENABLE_VULKAN` | `1` | Keep Vulkan enabled on native Wayland. Default off: Chromium (observed on Electron 42) refuses to pair Vulkan with `--ozone-platform=wayland`, causing a silent no-window startup. Only affects Wayland |
 | `CLAUDE_MENU_BAR` | `auto`, `visible`, `hidden` | Menu bar visibility (default: `auto`, toggle with Alt) |
 | `CLAUDE_DEV_TOOLS` | `detach` | Open Chromium DevTools on launch |
 | `CLAUDE_ELECTRON` | path | Override Electron binary path. Electron auto-loads the `resources/app.asar` next to the binary |

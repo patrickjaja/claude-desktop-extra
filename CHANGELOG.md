@@ -2,6 +2,57 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-09-09
+
+### Upstream bump to Claude Desktop v1.49585.0
+
+The auto-release failed on a renamed file, not on a re-minify: the bundled Microsoft 365 MCP server
+moved from `resources/office365-mcp/office365-mcp.mjs` to `office365-mcp-stdio.mjs`, so the patch
+orchestrator could not find the target of `fix_office365_mcp_open_url` and stopped before applying
+anything. The server is still forked through the MCP node host as a utilityProcess, so the
+sign-in delegation to the main process keeps working unchanged; only the target path moved. One
+further patch lost its anchor. Nothing was upstreamed and no patch was added or removed (47 patches).
+
+- **Sensitive directories** (`fix_sensitive_dirs_linux`): upstream rebuilt the protected-path list as
+  a tiered `{sub, family, tier}` array and dropped its macOS and Windows entries from the bundle. The
+  Linux keyring, NSS certificate and XDG autostart directories are now injected as full entries of that
+  shape, anchored on the array opening rather than on the vanished Windows block.
+- **Electron 42.10.0 -> 44.2.0.** Two consequences for us:
+  - Electron 44 made the main-process clipboard API return Promises. Upstream awaits every call now,
+    and the Computer Use executor (`js/cu_linux_executor.js`) follows: the clipboard-paste path waits
+    for the write to land before sending Ctrl+V, and `read_clipboard` / `write_clipboard` await their
+    results instead of returning a pending promise or letting a rejection escape.
+  - ANGLE is statically linked, so `libEGL.so` and `libGLESv2.so` no longer ship in the install tree.
+    Nothing of ours referenced them; `CLAUDE_GPU_BACKEND=angle-gl` still works because it only passes
+    the `--use-angle` switches. The main binary's linked libraries and glibc floor are unchanged, so
+    no package dependency changed. The Nix package comment now names Electron 44 as the expected major.
+- **Feature flags**: the GrowthBook override template grows from 291 to 299 catalogued flags (8
+  added, none of the templated ones removed). New upstream behaviour worth knowing: flag
+  `3634338308` is a server-side kill switch that latches local Cowork tasks off with an
+  "organization's Cowork settings" message; it is catalogued as do-not-enable. Other new flags gate
+  the `ccd_window` MCP tools, cloud memory sync for Cowork sessions, and a bare Alt tap opening the
+  main menu. `enable_local_agent_mode` needed no change.
+- **Deployment panel**: the managed-settings key catalog is unchanged at 143 keys; the 3P directory
+  resolver and mode decision still match upstream.
+- **Built-in MCP**: new backend server `ccd_window` (open session in split, close split, sidebar and
+  layout tools) and a per-session `memory` relay server for first-party Cowork sessions. Neither is
+  platform-gated. Nothing removed or renamed.
+- **JS diff**: new renderer service `WindowLayout`, Cowork space memory copy, remembered SSH passwords
+  stored through `safeStorage`, lazily pooled Code worktrees, a Gerrit git-host provider, and a quit
+  watchdog. The Cowork VM layer (virtiofsd, cowork-linux-helper, smol image) is rename-only; the
+  Claude Code environment allowlist is unchanged. Agent SDK 0.3.260 -> 0.3.265.
+- **ion-dist**: the 3P setup SPA patch still hits its two sites (Linux org-plugins mount path);
+  no new config keys in the SPA.
+- **Platform gates**: no new Linux-blocking gate, no new native module, no new binary to build for
+  aarch64. Every darwin/win32 count went down (the removed sensitive-dirs blocks, a Windows Git Bash
+  preflight, one macOS path helper). New capability keys `coworkScheduledTaskRepoint` and
+  `localSessionsWithoutGit` are supported on Linux. The new remote-control folder serving excludes
+  Windows only. A "web-origin mark" quarantine feature is compiled out of the Linux bundle by a
+  build-time constant. New remembered-SSH-passwords store encrypts through `safeStorage` and refuses
+  to save without a real keyring backend.
+- **Anchors**: the file-index worker search hook and the four utilityProcess fork sites are unchanged;
+  the remote panel-tabs and quick-open anchors can only be confirmed at runtime.
+
 ## 2026-09-08
 
 ### Dynamic themes (issue #242)

@@ -815,7 +815,7 @@ _create_profile() {
 
     # Mirror the other files in the Electron install dir back as symlinks so
     # the per-profile binary can find its sibling shared libraries
-    # (RPATH=$ORIGIN looks for libffmpeg.so, libEGL.so, etc.) and Chromium can
+    # (RPATH=$ORIGIN looks for libffmpeg.so etc.) and Chromium can
     # find its data files (.pak, locales/, resources/, version, icudtl.dat).
     # Profile-agnostic: shared across all profiles in the lib dir.
     _mirror_profile_siblings \
@@ -1626,7 +1626,7 @@ case $platform_mode in
         ELECTRON_ARGS+=('--ozone-platform=wayland')
         ELECTRON_ARGS+=('--enable-wayland-ime')
         ELECTRON_ARGS+=('--wayland-text-input-version=3')
-        # On GPUs where Chromium (Electron 42) brings up Vulkan - real Intel/AMD/
+        # On GPUs where Chromium (observed on Electron 42) brings up Vulkan - real Intel/AMD/
         # NVIDIA with a recent Mesa driver - it refuses to pair Vulkan with
         # --ozone-platform=wayland: the Wayland surface factory fails and NO window
         # is ever created (silent no-UI startup, seen on Ubuntu/GNOME Wayland).

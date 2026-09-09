@@ -175,7 +175,7 @@ fi
 INSTALLED_SIZE=$(du -sk "$DEB_ROOT" | cut -f1)
 
 # Create control file.
-# Depends mirror the official Claude Desktop .deb's runtime needs (Electron 42).
+# Depends mirror the official Claude Desktop .deb's runtime needs (Electron 44 as of v1.49585.0; its NEEDED set is unchanged since Electron 42).
 log_info "Creating control file..."
 cat > "$DEB_ROOT/DEBIAN/control" << EOF
 Package: claude-desktop-extra

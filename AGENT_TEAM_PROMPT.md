@@ -13,7 +13,7 @@ You coordinate teammates, plan work, and handle update strategy. You do NOT writ
 ## Project
 
 **claude-desktop-extra** (`/home/patrickjaja/development/claude-desktop-extra/`)
-   Repackages Anthropic's **official Claude Desktop Linux `.deb`** (apt repo `https://downloads.claude.ai/claude-desktop/apt`; bundles Electron 42.5.1 and a native Cowork VM backend) as native packages for the distros Anthropic does not ship (Arch via our own pacman repo, Fedora/RHEL, NixOS, AppImage) plus our own Debian/Ubuntu `.deb`.
+   Repackages Anthropic's **official Claude Desktop Linux `.deb`** (apt repo `https://downloads.claude.ai/claude-desktop/apt`; bundles its own Electron (44.2.0 as of v1.49585.0) and a native Cowork VM backend) as native packages for the distros Anthropic does not ship (Arch via our own pacman repo, Fedora/RHEL, NixOS, AppImage) plus our own Debian/Ubuntu `.deb`.
    Nim patches in `patches/` (grouped into `linux/`, `community/` and `core/`, compiled to native binaries) fix Linux-specific code in the minified Electron `app.asar` JS bundle and add our value-adds (Computer Use, custom themes, multi-profile, Quick Entry).
    Build: `./scripts/build-local.sh` (auto-downloads the latest official `.deb`, verifies it, extracts `app.asar`, patches, repackages).
    Install: `sudo pacman -U build/claude-desktop-extra-*-x86_64.pkg.tar.zst` (requires sudo — ASK the user).

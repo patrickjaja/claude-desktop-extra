@@ -1,4 +1,4 @@
-# @patch-target: app.asar.contents/resources/office365-mcp/office365-mcp.mjs
+# @patch-target: app.asar.contents/resources/office365-mcp/office365-mcp-stdio.mjs
 # @patch-type: nim
 #
 # Delegate the M365 local connector's OAuth browser-open to the Electron main
@@ -16,7 +16,11 @@
 #   opens the browser via shell.openExternal. This patch reuses exactly that
 #   mechanism for the local M365 flow:
 #
-#   Child side (this file): in the browser-open helper (v1.17377.x: $4o), on
+#   Child side (this file): the target moved from office365-mcp.mjs to
+#   office365-mcp-stdio.mjs in v1.49585.0 (the server now pins
+#   MCP_TRANSPORT=stdio itself; it is still forked through the nodeHost
+#   utilityProcess, so process.parentPort is present). In the browser-open
+#   helper (v1.17377.x: $4o; v1.49585.0: gKo), on
 #   Linux and when running under utilityProcess (process.parentPort present),
 #   post {type:"open-url",url} to the parent instead of spawning xdg-open,
 #   keeping the original log/stderr-hint semantics. Falls through to the

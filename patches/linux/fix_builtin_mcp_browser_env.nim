@@ -11,8 +11,9 @@
 #   only ["HOME","LOGNAME","PATH","SHELL","TERM","USER"], stripping DISPLAY,
 #   WAYLAND_DISPLAY, XDG_*, DBUS_SESSION_BUS_ADDRESS, BROWSER, etc.
 #
-#   office365-mcp.mjs opens the OAuth URL with `spawn("xdg-open", [url])` and
-#   passes no `env`, so it inherits the stripped MCP-process env. Without the
+#   office365-mcp-stdio.mjs (office365-mcp.mjs before v1.49585.0) opens the
+#   OAuth URL with `spawn("xdg-open", [url])` and passes no `env`, so it
+#   inherits the stripped MCP-process env. Without the
 #   display/session vars, xdg-open's has_display() is false, it skips the
 #   x-scheme-handler/https default-browser resolution, falls through to the
 #   text-only browser list (www-browser:links2:elinks:links:lynx:w3m), finds

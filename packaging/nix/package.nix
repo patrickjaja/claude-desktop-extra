@@ -64,7 +64,7 @@ let
   # consume only the tarball's claude-desktop/resources/ (our patched app.asar +
   # upstream app resources + bridges) and merge it into the nixpkgs electron dist
   # so Electron finds the exe-adjacent resources/app.asar (OnlyLoadAppFromAsar
-  # fuse). Pin `electron` to the major version the app expects (Electron 42; see
+  # fuse). Pin `electron` to the major version the app expects (Electron 44; see
   # the tarball's claude-desktop/version) via an override at call site if your
   # nixpkgs default diverges.
 in

@@ -93,7 +93,7 @@
     "// flags with a switch per flag. It writes claude-desktop-extra.json; entries you",
     "// put here win per flag id, and that panel shows those as locked.",
     "// Every GrowthBook flag observed being read from the feature store in Claude",
-    "// Desktop v1.46388.2 is listed below, commented out. Uncomment a line to force",
+    "// Desktop v1.49585.0 is listed below, commented out. Uncomment a line to force",
     "// it; separate multiple active entries with commas (a trailing comma after the",
     "// last one is fine). true/false for switches; flags marked (value flag)",
     "// carry numbers/strings/objects - a bare true may be meaningless for those.",
@@ -105,7 +105,7 @@
     "// (Code / Cowork / Computer Use enablement) are NOT listed - they bypass this",
     "// file entirely. Active overrides are logged to logs/claude-patches.log.",
     "// Flag IDs are Anthropic-internal and can vanish or change meaning in any",
-    "// release (this list reflects v1.46388.2). If the app misbehaves, empty this",
+    "// release (this list reflects v1.49585.0). If the app misbehaves, empty this",
     "// file first.",
     "{",
     "  // \"activeTheme\": \"mario\",",
@@ -128,6 +128,7 @@
     "  \"growthbookOverrides\": {",
     "    // \"17519066\": true, // external-browser URL block",
     "    // \"28927217\": true, // launch preview last-frame cache - persists preview JPEG frames under userData (default ON) (new in v1.46388.2)",
+    "    // \"30891128\": true, // rc-serve tool-hosts offered gate (toolHostsOffered / wantsGitEntry in the remote-control serve device; quartet with 1183214304/3764441751/1410651677) (new in v1.49585.0)",
     "    // \"36693946\": true, // Computer Use gate-reconcile listener - a flip re-announces the CU bridge alongside 1291166712/2486083521/40173473 (new in v1.34493.1)",
     "    // \"40173473\": true, // Computer Use win32 sub-gate - the chicago settings/stub path additionally requires this flag on Windows (new in v1.34493.1)",
     "    // \"49458538\": true, // folder-access request UI mode - card tier (733405693 adds classifier; dialog when off); observed for the folder_access_announce reconcile. Replaces 1421481645 (new in v1.40609.0)",
@@ -196,6 +197,7 @@
     "    // \"919579692\": true, // PreviewOriginPolicy disable - ON skips the credentialed-nav origin-policy check for launch preview (new in v1.32352.1)",
     "    // \"922442190\": true, // session transport attestation gate (paired with 371539023/2023768496)",
     "    // \"939257113\": true, // Dispatch child session detection - isRemoteDispatchChild qualifier",
+    "    // \"946844604\": true, // Cowork memory remote sync v2 gate - with canSyncCoworkMemoryRemotely() and not HIPAA-restricted; OFF answers refusal flag_off (new in v1.49585.0)",
     "    // \"959099749\": true, // ccdGitEngine - CCD git engine feature (async merger override since v1.28929.0) (new in v1.26832.0)",
     "    // \"975112542\": true, // Cowork memory remote sync - canSyncCoworkMemoryRemotely()",
     "    // \"976614668\": true, // remote-control-at-startup feature gate - pairs with 2229805612 (new in v1.37937.0)",
@@ -235,6 +237,7 @@
     "    // \"1480778051\": true, // render_rss_bytes memory-telemetry suppression (ON = skip emission)",
     "    // \"1544796833\": true, // session-concurrency limits, e.g. maxConcurrentPerSession (value flag)",
     "    // \"1549258603\": true, // LAM OAuth 401 refresh via resolveSdkOauthToken path",
+    "    // \"1550954491\": true, // bare Alt-key tap opens the main menu popup in the main/design window (default ON) (new in v1.49585.0)",
     "    // \"1569828280\": true, // Binary-asset-fetch gate - if(!et('1569828280')){...gate_off...skipping binary asset fetch}",
     "    // \"1595132361\": true, // CLAUDE_CODE_QUESTION_EXTENDED env for local-agent sessions (new in v1.46388.2)",
     "    // \"1603637451\": true, // skills folder limits config - skillMdMaxBytes / assetMaxBytes / maxFilesPerSkill / folderBudgetBytes / resendSettleMs (value flag) (new in v1.46388.2)",
@@ -268,6 +271,7 @@
     "    // \"1947305033\": true, // augments a tool description",
     "    // \"1972091654\": true, // askClaude device RPC",
     "    // \"1978029737\": true, // pluginsSyncIntervalMs (value flag)",
+    "    // \"1986048577\": true, // routine sheet late-window ms (resolveRoutineSheetLateWindowMs) - default 7200000, clamped 60000..86400000, <=0 disables (value flag) (new in v1.49585.0)",
     "    // \"1992087837\": true, // chillingSlothPool worktree warm pool - feature left the registry in v1.28929.0, flag still gates warm-pool isEnabled",
     "    // \"2004571505\": true, // LocalMcpServerManager closeServerByName path gate (default ON) (new in v1.37937.0)",
     "    // \"2016258596\": true, // device-tool artifact storage/read gate (artifact_read_gate_off telemetry when OFF)",
@@ -311,6 +315,7 @@
     "    // \"2529235968\": true, // shadowRemoteServers - shadow remote plugin MCP servers with local ones (new in v1.37937.0)",
     "    // \"2537760906\": true, // scheduled-task pending-permission auto-deny after the wait budget (new in v1.46388.2)",
     "    // \"2576868839\": true, // isSignalWakeKillswitchOn - SSH signal-wake kill-switch (new in v1.40609.0)",
+    "    // \"2595385640\": true, // session-storage inventory telemetry - folder walk allowed (sibling of the 1028094019 emitter gate) (new in v1.49585.0)",
     "    // \"2605355193\": true, // plugin hot-reload for running sessions (default ON) (new in v1.40609.0)",
     "    // \"2614807392\": true, // Session feature A",
     "    // \"2654621331\": true, // EventLogging telemetry flush-interval ms - live listener (value flag) (new in v1.32352.1)",
@@ -351,6 +356,7 @@
     "    // \"3045399524\": true, // session config: enabled/alwaysLoad (value flag)",
     "    // \"3046457088\": true, // cowork taskRunFinished permission-resolve routing (new in v1.26832.0)",
     "    // \"3046702961\": true, // app-menu Code entries when the Code surface is enabled (default ON); observed for menu rebuild (new in v1.40609.0)",
+    "    // \"3076393065\": true, // ccd_window MCP tools - open_session_in / close_split / set_sidebar_collapsed / get_window_layout (split-view layout of Code sessions) (new in v1.49585.0)",
     "    // \"3093186863\": true, // SSH reattach kill-switch - ON forces reattach off regardless of CLAUDE_DESKTOP_SSH_REATTACH (new in v1.34493.1)",
     "    // \"3123045134\": true, // resolveCloudBranch - cloud branch resolution (OFF throws Feature disabled) (new in v1.26832.0)",
     "    // \"3142047527\": true, // app-menu rebuild observer (new in v1.40609.0)",
@@ -376,9 +382,11 @@
     "    // \"3555657854\": true, // org-scoped plugin-bridge MCP config loading",
     "    // \"3558849738\": true, // Dispatch/Spaces gate",
     "    // \"3572572142\": true, // sessions-bridge init - live listener",
+    "    // \"3576697941\": true, // storeReadCache boot latch - a flip writes the storeReadCacheLatched preference (sibling of the 2685067074 earlyWindowShow latch) (new in v1.49585.0)",
     "    // \"3586389629\": true, // APe interval ms (value flag)",
     "    // \"3602629573\": true, // JitlessPolicy process kill-switch (live listener; feeds ProcessKillSwitchEngaged)",
     "    // \"3633961296\": true, // plugin enabled-state backfill",
+    "    // \"3634338308\": true, // DO NOT ENABLE: ON latches Cowork local tasks OFF (coworkLocalTasksOffLatched pref, yukonSilver reports disabled_by_org_policy); peeked on every network fetch (new in v1.49585.0)",
     "    // \"3640318556\": true, // remote-tools bridge WS URL: device-level /bridge vs per-session path (new in v1.32352.1)",
     "    // \"3646818354\": true, // shouldKillOnIdlePause() returns !Ct('3646818354') - when ON, the session is NOT killed on ",
     "    // \"3691521536\": true, // Stealth updater - nudge updates when no active sessions",
@@ -427,7 +435,7 @@
   // rather than keeping a second copy means the .jsonc template and the Extra
   // settings page can never disagree about which flags exist.
   var CATALOG_RE = /^\s*\/\/\s*"(\d+)"\s*:\s*[^,]*,\s*\/\/\s*(.*)$/;
-  var CATALOG_EXPECTED = 291;
+  var CATALOG_EXPECTED = 299;
 
   function flagCatalog() {
     if (catalogCache) return catalogCache;
