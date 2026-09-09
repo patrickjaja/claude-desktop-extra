@@ -385,6 +385,12 @@
   padding-top: 1px;
 }
 
+/* A button in a row's aside sits on the row's own line - the standalone button
+   margin (below a notice) would push it off it. */
+.cdbx-row-aside .cdbx-btn {
+  margin-top: 0;
+}
+
 .cdbx-value {
   max-width: 190px;
   padding: 2px 7px;

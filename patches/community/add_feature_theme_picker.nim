@@ -9,10 +9,14 @@
 # neither a restart nor an editor.
 #
 # This patch owns only the WINDOW and the IPC. All theme knowledge lives in
-# patches/add_feature_custom_themes.nim, which installs `globalThis.__cdbThemes`
-# ({version,list,active,apply}) on every Linux start. If that registry is
-# missing, the four channels below answer {ok:false,error:...} and the page shows
-# the reason instead of a dead grid.
+# patches/core/add_feature_custom_themes.nim, which installs
+# `globalThis.__cdbThemes` ({version,list,active,apply,overlay,overlays,
+# setOverlay}) on every Linux start. If that registry is missing, the channels
+# below answer {ok:false,error:...} and the page shows the reason instead of a
+# dead grid. The three overlay channels additionally answer
+# {ok:false,error:"not supported by this build"} when the registry predates
+# version 3 (no overlays()/setOverlay()); the page then simply draws no overlay
+# bar.
 #
 # Open mechanism (stable Electron APIs only, no knowledge of the app bundle):
 #   app.on("web-contents-created") -> wc.on("before-input-event")
@@ -83,6 +87,7 @@ return true;
 }
 function __cdbPk_api(){return globalThis.__cdbThemes||null}
 function __cdbPk_noEngine(){return {ok:false,error:"the custom themes patch did not install globalThis.__cdbThemes in this build"}}
+function __cdbPk_noOverlay(){return {ok:false,error:"not supported by this build"}}
 function __cdbPk_dir(){return _path.join(_app.getPath("userData"),"cdb-theme-picker")}
 // Written on every open so an upgraded package can never serve the previous
 // version's page out of userData.
@@ -122,6 +127,13 @@ var __cdbPk_chans={
 "cdb-themes:list":function(){var a=__cdbPk_api();if(!a)return __cdbPk_noEngine();try{return {ok:true,entries:a.list()}}catch(e){return {ok:false,error:e.message}}},
 "cdb-themes:active":function(){var a=__cdbPk_api();if(!a)return __cdbPk_noEngine();try{return {ok:true,name:a.active()}}catch(e){return {ok:false,error:e.message}}},
 "cdb-themes:apply":function(_e,name){var a=__cdbPk_api();if(!a)return __cdbPk_noEngine();try{return a.apply(name)}catch(e){return {ok:false,error:e.message}}},
+// themeOverlay: the engine merges one theme's tokens over whatever theme is
+// active. Read-only channels report the current overlay and the candidates
+// (user / generator themes, hidden ones first); set-overlay persists and applies.
+// "" turns it off. An engine older than version 3 has no overlays()/setOverlay().
+"cdb-themes:overlay":function(){var a=__cdbPk_api();if(!a)return __cdbPk_noEngine();if(typeof a.overlay!=="function")return __cdbPk_noOverlay();try{return {ok:true,overlay:a.overlay()||null}}catch(e){return {ok:false,error:e.message}}},
+"cdb-themes:overlays":function(){var a=__cdbPk_api();if(!a)return __cdbPk_noEngine();if(typeof a.overlays!=="function")return __cdbPk_noOverlay();try{return {ok:true,entries:a.overlays()||[]}}catch(e){return {ok:false,error:e.message}}},
+"cdb-themes:set-overlay":function(_e,name){var a=__cdbPk_api();if(!a)return __cdbPk_noEngine();if(typeof a.setOverlay!=="function")return __cdbPk_noOverlay();try{return a.setOverlay(typeof name==="string"?name:"")}catch(e){return {ok:false,error:e.message}}},
 "cdb-themes:close":function(){__cdbPk_close();return {ok:true}}
 };
 if(_ipc){
@@ -157,11 +169,11 @@ const PICKER_JS =
 const EXPECTED_PATCHES = 1
 
 # Positive end-state markers (Rule 6): the build tag, the exported opener, the
-# apply channel the page calls, and the opt-out gate on the hotkey. An "already
-# applied" run must find all four.
+# apply and set-overlay channels the page calls, and the opt-out gate on the
+# hotkey. An "already applied" run must find all five.
 const MARKERS = [
   "__cdb_theme_picker", "globalThis.__cdbOpenThemePicker=", "\"cdb-themes:apply\"",
-  "if(!__cdbPk_enabled())return;",
+  "\"cdb-themes:set-overlay\"", "if(!__cdbPk_enabled())return;",
 ]
 
 proc markersPresent(s: string): int =

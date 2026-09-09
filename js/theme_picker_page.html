@@ -84,6 +84,76 @@ h1{
 .search input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
 .search svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);width:13px;height:13px;stroke:var(--fog-500);fill:none;stroke-width:2}
 
+/* ---- overlay bar ----------------------------------------------------- */
+/* themeOverlay merges one theme's tokens over whatever card is picked. It is
+   invisible in the grid on its own, so it gets a bar of its own between the
+   header and the sections: what is merged and how to stop it, or a select to
+   start one. Hidden entirely when nothing is active and nothing could be. */
+.overlay-bar{
+  flex:0 0 auto;
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px 12px;
+  padding:9px var(--pad);
+  border-bottom:1px solid var(--line);
+  background:var(--ink-800);
+  font-size:12.5px;
+  color:var(--fog-400);
+}
+.overlay-bar[hidden]{display:none}
+.overlay-k{
+  font-family:var(--mono);
+  font-size:10.5px;
+  font-weight:500;
+  letter-spacing:0.13em;
+  text-transform:uppercase;
+  color:var(--accent);
+}
+.overlay-name{color:var(--fog-100);font-weight:600}
+.overlay-note{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.overlay-bar select{
+  padding:5px 8px;
+  border:1px solid var(--line);
+  border-radius:7px;
+  background:var(--ink-700);
+  color:var(--fog-100);
+  font-family:var(--mono);
+  font-size:11.5px;
+  max-width:260px;
+}
+.overlay-bar select:focus{outline:none;border-color:var(--accent)}
+.overlay-bar button{
+  padding:5px 11px;
+  border:1px solid var(--line);
+  border-radius:7px;
+  background:var(--ink-700);
+  color:var(--fog-100);
+  font:inherit;
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+}
+.overlay-bar button:hover{border-color:#3a3a46;background:var(--ink-600)}
+.overlay-bar button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.overlay-bar button[disabled]{opacity:.45;cursor:default}
+/* The picked card is not what is on screen while an overlay is merged over it;
+   the badge next to its check mark says so. */
+.card-ov{
+  flex:0 0 auto;
+  display:none;
+  padding:0 6px;
+  border:1px solid var(--accent);
+  border-radius:20px;
+  color:var(--accent);
+  font-family:var(--mono);
+  font-size:9px;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  line-height:15px;
+}
+.card[aria-pressed="true"][data-overlay="1"] .card-ov{display:inline-block}
+
 /* ---- scroll body ----------------------------------------------------- */
 main{flex:1 1 auto;overflow-y:auto;padding:6px var(--pad) 26px;scrollbar-width:thin;scrollbar-color:var(--ink-600) transparent}
 section{margin-top:22px}
@@ -284,6 +354,8 @@ kbd{
     </label>
   </header>
 
+  <div class="overlay-bar" id="overlay-bar" role="region" aria-label="Theme overlay" hidden></div>
+
   <main id="main">
     <p class="notice" id="error" hidden></p>
     <p class="notice" id="empty" hidden></p>
@@ -319,7 +391,7 @@ kbd{
   var SWATCH = ["--bg-000", "--text-000", "--accent-brand", "--accent-pro-100", "--danger-100", "--warning-100", "--success-100"];
   var SECTIONS = ["custom", "gaming", "common"];
   var LABEL = { custom: "Your themes", gaming: "Gaming", common: "Common" };
-  var state = { entries: [], active: null, cards: [] };
+  var state = { entries: [], active: null, cards: [], overlay: null, overlays: [] };
   var toastTimer = null;
 
   function $(id) { return document.getElementById(id); }
@@ -372,6 +444,7 @@ kbd{
 
     var head = el("span", "card-head");
     head.appendChild(el("span", "card-title", entry.displayName));
+    head.appendChild(el("span", "card-ov", "overlay"));
     head.appendChild(el("span", "card-check", "✓"));
     b.appendChild(head);
     b.appendChild(el("span", "card-slug", entry.name || "stock"));
@@ -415,7 +488,108 @@ kbd{
       var c = state.cards[i];
       var on = (c.dataset.name || "") === (state.active || "");
       c.setAttribute("aria-pressed", on ? "true" : "false");
+      c.setAttribute("data-overlay", state.overlay ? "1" : "0");
     }
+  }
+
+  // ---- themeOverlay -----------------------------------------------------
+  // The bridge grew these three calls with the overlay feature; an older preload
+  // (or a stub without them) means no bar, never an error.
+  function overlayApi() {
+    var t = window.cdbThemes;
+    if (!t || typeof t.overlay !== "function" || typeof t.overlays !== "function" ||
+        typeof t.setOverlay !== "function") return null;
+    return t;
+  }
+  function overlayLabel(name) {
+    var i;
+    for (i = 0; i < state.overlays.length; i++) {
+      if (state.overlays[i].name === name) return state.overlays[i].displayName || name;
+    }
+    for (i = 0; i < state.entries.length; i++) {
+      if (state.entries[i].name === name) return state.entries[i].displayName || name;
+    }
+    return name;
+  }
+  // Both reads at once; a build that answers "not supported" leaves both empty,
+  // which renders as no bar.
+  function fetchOverlay() {
+    var t = overlayApi();
+    if (!t) return Promise.resolve();
+    return Promise.all([t.overlay(), t.overlays()]).then(function (res) {
+      var o = res[0], l = res[1];
+      state.overlay = (o && o.ok && o.overlay) ? String(o.overlay) : null;
+      state.overlays = (l && l.ok && Array.isArray(l.entries)) ? l.entries : [];
+    }, function () {
+      state.overlay = null;
+      state.overlays = [];
+    });
+  }
+  function setOverlay(name) {
+    var t = overlayApi();
+    if (!t) return;
+    var bar = $("overlay-bar");
+    var buttons = bar.querySelectorAll("button");
+    for (var i = 0; i < buttons.length; i++) buttons[i].disabled = true;
+    t.setOverlay(name).then(function (r) {
+      if (!r || !r.ok) {
+        toast((r && r.error) || "Could not change the overlay", true);
+        renderOverlay();
+        return;
+      }
+      fetchOverlay().then(function () {
+        renderOverlay();
+        markActive();
+        var where = r.saved || "claude-desktop-extra.jsonc";
+        toast(state.overlay ? "Overlay " + overlayLabel(state.overlay) + " on - saved to " + where
+                            : "Overlay off - saved to " + where);
+      });
+    }, function (e) {
+      toast("Could not reach the theme engine: " + (e && e.message), true);
+      renderOverlay();
+    });
+  }
+  function renderOverlay() {
+    var bar = $("overlay-bar");
+    bar.textContent = "";
+    if (state.overlay) {
+      bar.appendChild(el("span", "overlay-k", "Overlay"));
+      bar.appendChild(el("span", "overlay-name", overlayLabel(state.overlay)));
+      bar.appendChild(el("span", "overlay-note", "merges its colors over every theme you pick"));
+      var off = el("button", null, "Turn off");
+      off.type = "button";
+      off.id = "overlay-off";
+      off.addEventListener("click", function () { setOverlay(""); });
+      bar.appendChild(off);
+      bar.hidden = false;
+      return;
+    }
+    if (!state.overlays.length) {
+      bar.hidden = true;
+      return;
+    }
+    bar.appendChild(el("span", "overlay-k", "Overlay"));
+    var sel = el("select");
+    sel.id = "overlay-pick";
+    sel.setAttribute("aria-label", "Theme to merge over the picked theme");
+    var none = el("option", null, "none");
+    none.value = "";
+    sel.appendChild(none);
+    for (var i = 0; i < state.overlays.length; i++) {
+      var o = state.overlays[i];
+      var opt = el("option", null, o.displayName || o.name);
+      opt.value = o.name;
+      sel.appendChild(opt);
+    }
+    bar.appendChild(sel);
+    var go = el("button", null, "Apply");
+    go.type = "button";
+    go.id = "overlay-apply";
+    go.disabled = true;
+    sel.addEventListener("change", function () { go.disabled = !sel.value; });
+    go.addEventListener("click", function () { if (sel.value) setOverlay(sel.value); });
+    bar.appendChild(go);
+    bar.hidden = false;
   }
 
   function toast(msg, bad) {
@@ -595,6 +769,7 @@ kbd{
     }
     var n2 = state.entries.length - 1;
     $("tally").textContent = n2 + " palettes";
+    renderOverlay();
     markActive();
     paintAccent();
   }
@@ -615,9 +790,11 @@ kbd{
       }
       state.entries = [{ name: "", displayName: "Claude default", source: "stock" }].concat(l.entries || []);
       state.active = (a && a.ok) ? (a.name || null) : null;
-      render();
-      var first = state.cards.filter(function (c) { return c.getAttribute("aria-pressed") === "true"; })[0];
-      (first || $("search")).focus();
+      return fetchOverlay().then(function () {
+        render();
+        var first = state.cards.filter(function (c) { return c.getAttribute("aria-pressed") === "true"; })[0];
+        (first || $("search")).focus();
+      });
     }, function (e) {
       fail("Could not reach the theme engine", (e && e.message) || "");
     });

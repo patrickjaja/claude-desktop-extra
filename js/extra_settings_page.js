@@ -1169,6 +1169,122 @@
     });
   }
 
+  // --- the theme overlay row ------------------------------------------------
+  // `themeOverlay` merges one theme's tokens over whatever theme is active; the
+  // matugen/pywal recipes drive it. Without this row the grid shows the picked
+  // theme as active while something else recolors the app and the only way out
+  // is the config file. Active: name + Turn off. Inactive with candidates
+  // (user/generator themes, hidden ones first): a select + Apply. Inactive with
+  // nothing to pick: no row. The bridge half is newer than the page's first
+  // release, so a preload without the three calls means no row, not an error.
+  function renderOverlayRow(panel, before, onChange) {
+    if (!api || typeof api.themesOverlay !== "function" ||
+        typeof api.themesOverlays !== "function" || typeof api.themesSetOverlay !== "function") return;
+
+    var head = el("div", "cdbx-sec-h cdbx-hide");
+    head.appendChild(el("span", "cdbx-sec-t", "Overlay"));
+    var host = el("div", "cdbx-list cdbx-hide");
+    panel.insertBefore(head, before);
+    panel.insertBefore(host, before);
+
+    var state = { overlay: null, entries: [] };
+
+    function labelOf(name) {
+      for (var i = 0; i < state.entries.length; i++) {
+        if (state.entries[i].name === name) return state.entries[i].displayName || name;
+      }
+      return name;
+    }
+
+    function fetchState() {
+      return Promise.all([api.themesOverlay(), api.themesOverlays()]).then(function (res) {
+        var o = res[0], l = res[1];
+        state.overlay = (!failed(o) && o.overlay) ? String(o.overlay) : null;
+        state.entries = (!failed(l) && Array.isArray(l.entries)) ? l.entries : [];
+      }, function () {
+        state.overlay = null;
+        state.entries = [];
+      });
+    }
+
+    function draw() {
+      clear(host);
+      var show = !!state.overlay || state.entries.length > 0;
+      head.classList.toggle("cdbx-hide", !show);
+      host.classList.toggle("cdbx-hide", !show);
+      if (onChange) onChange(state.overlay, state.overlay ? labelOf(state.overlay) : "");
+      if (!show) return;
+
+      var node = el("div", "cdbx-row cdbx-overlay-row");
+      var main = el("div", "cdbx-row-main");
+      var aside = el("div", "cdbx-row-aside");
+      node.appendChild(main);
+      node.appendChild(aside);
+      host.appendChild(node);
+
+      function busy(on) {
+        var controls = aside.querySelectorAll("button,select");
+        for (var i = 0; i < controls.length; i++) controls[i].disabled = on;
+      }
+      function set(name) {
+        busy(true);
+        api.themesSetOverlay(name).then(function (r) {
+          if (failed(r)) {
+            busy(false);
+            toast("Could not change the overlay: " + reason(r), true);
+            return;
+          }
+          fetchState().then(function () {
+            draw();
+            var where = r.saved || "the config file";
+            toast(state.overlay ? "Overlay " + labelOf(state.overlay) + " on - saved to " + where
+                                : "Overlay off - saved to " + where);
+          });
+        }, function (err) {
+          busy(false);
+          toast("Could not change the overlay: " + (err && err.message ? err.message : String(err)), true);
+        });
+      }
+
+      if (state.overlay) {
+        main.appendChild(el("div", "cdbx-id", "Overlay: " + labelOf(state.overlay)));
+        main.appendChild(el("div", "cdbx-note",
+          "Merges its colors over every theme you pick, so the active theme below is not quite what is on screen."));
+        main.appendChild(el("div", "cdbx-state", "set as themeOverlay in the config file"));
+        var off = el("button", "cdbx-btn", "Turn off");
+        off.type = "button";
+        off.addEventListener("click", function () { set(""); });
+        aside.appendChild(off);
+        return;
+      }
+
+      main.appendChild(el("div", "cdbx-id", "Overlay"));
+      main.appendChild(el("div", "cdbx-note",
+        "Merge a generated theme's colors over whatever theme you pick - the way a wallpaper-driven " +
+        "palette (matugen, pywal, wallust) follows the theme you like."));
+      main.appendChild(el("div", "cdbx-state", "off"));
+      var select = el("select", "cdbx-select");
+      select.setAttribute("aria-label", "theme to merge over the active theme");
+      var none = el("option", null, "none");
+      none.value = "";
+      select.appendChild(none);
+      state.entries.forEach(function (e) {
+        var opt = el("option", null, e.displayName || e.name);
+        opt.value = e.name;
+        select.appendChild(opt);
+      });
+      var go = el("button", "cdbx-btn", "Apply");
+      go.type = "button";
+      go.disabled = true;
+      select.addEventListener("change", function () { go.disabled = !select.value; });
+      go.addEventListener("click", function () { if (select.value) set(select.value); });
+      aside.appendChild(select);
+      aside.appendChild(go);
+    }
+
+    fetchState().then(draw);
+  }
+
   function renderThemes(panel) {
     clear(panel);
     panel.appendChild(el("div", "cdbx-h1", "Themes"));
@@ -1194,6 +1310,15 @@
 
       var host = el("div", "cdbx-sections");
       panel.appendChild(host);
+
+      // The overlay row sits above the filter. Its callback re-draws the grid so
+      // the active card's badge says "overlay" exactly while one is merged.
+      var overlayName = null;
+      renderOverlayRow(panel, search, function (name) {
+        if (name === overlayName) return;
+        overlayName = name;
+        if (typeof draw === "function") draw(search.value);
+      });
 
       // The file a click here writes to. Which of the two it is depends on what
       // exists on disk, so it comes from the main process and the link follows
@@ -1231,7 +1356,7 @@
         node.appendChild(dots);
         node.appendChild(el("div", "cdbx-cardname", entry.displayName));
         node.appendChild(el("div", "cdbx-badge",
-          entry.source + (entry.name === active ? " - active" : "")));
+          entry.source + (entry.name === active ? (overlayName ? " - active + overlay" : " - active") : "")));
 
         node.addEventListener("click", function () {
           api.themesApply(entry.name).then(function (res) {

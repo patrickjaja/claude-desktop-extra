@@ -35,8 +35,8 @@ import {
 // look like a right one. Values stay in the "H S% L%" form upstream's
 // `hsl(var(--bg-100) / <alpha>)` utilities require.
 const THEME = {
-  light: { "--bg-000": "0 80% 90%", "--bg-100": "120 60% 88%", "--bg-200": "200 60% 86%", "--bg-300": "260 60% 84%" },
-  dark: { "--bg-000": "0 80% 20%", "--bg-100": "120 60% 18%", "--bg-200": "200 60% 16%", "--bg-300": "260 60% 26%" },
+  light: { "--bg-000": "0 80% 90%", "--bg-100": "120 60% 88%", "--bg-200": "200 60% 86%", "--bg-300": "260 60% 84%", "--bg-400": "40 60% 80%" },
+  dark: { "--bg-000": "0 80% 20%", "--bg-100": "120 60% 18%", "--bg-200": "200 60% 16%", "--bg-300": "260 60% 26%", "--bg-400": "40 60% 10%" },
 };
 
 /*
@@ -80,6 +80,12 @@ const UPSTREAM_CSS = `
 .to-bg-100\\/0{--tw-gradient-to:color-mix(in oklab, hsl(var(--bg-100) / 1) 0%, transparent)}
 .to-bg-100\\/0{--tw-gradient-stops:var(--tw-gradient-via-stops,var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))}
 .from-60\\%{--tw-gradient-from-position:60%}
+
+/* v1.49585.0 CDS layer (MainWindowPage-*.css + DevTools 2026-09-09): the neutral ramp aliases
+   the gray palette in light and INVERTS it in dark; the mode pills read the ramp directly. */
+.cds-root{--cds-gray-60:#edece8;--cds-gray-840:#181817;--cds-neutral-60:var(--cds-gray-60)}
+[data-mode=dark] .cds-root:not([data-mode=light]):not([data-mode=system]),.cds-root[data-mode=dark]{--cds-neutral-60:var(--cds-gray-840)}
+.dframe-root[data-variant=web] .df-pills[data-segmented]{background:var(--cds-neutral-60)}
 .to-transparent{--tw-gradient-to:transparent;--tw-gradient-stops:var(--tw-gradient-via-stops,var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))}
 `;
 
@@ -90,9 +96,12 @@ const UPSTREAM_CSS = `
  *   bubble     - a user message bubble (bg-bg-300); --bg-300 is NOT re-scoped, so it is
  *                the control token: it must stay themed in every run
  *   disclaimer - role="note" data-disclaimer, the strip under the composer
+ *   pills      - the "Chat and Cowork | Code" mode pills track (.df-pills[data-segmented]),
+ *                painted from --cds-neutral-60 (v1.49585.0); the frame sits inside .cds-root
  */
 const FRAGMENT = `
-<div class="dframe-root" data-variant="web">
+<div class="cds-root dframe-root" data-variant="web">
+  <div id="pills" class="df-pills" data-segmented="true"></div>
   <div class="dframe-content">
     <div class="dframe-content-inner">
       <div id="header" class="sticky top-0 z-10 mb-2 flex w-screen items-center justify-end gap-3 bg-gradient-to-b from-bg-100 from-60% to-transparent px-6 pb-7 pt-3"></div>
@@ -171,6 +180,13 @@ function probe(mode) {
   var bub = getComputedStyle(document.getElementById("bubble")).backgroundColor;
   check(tag + "user bubble (bg-bg-300) stays on the theme ramp",
     near(colorsIn(bub)[0] || [], wantBubble), bub + " want rgb(" + wantBubble + ")");
+
+  if (EXPECT.pills) {
+    var wantPills = hslToRgb(EXPECT[mode].pills);
+    var pills = getComputedStyle(document.getElementById("pills")).backgroundColor;
+    check(tag + "mode pills track (--cds-neutral-60) is " + EXPECT.pillsName[mode],
+      near(colorsIn(pills)[0] || [], wantPills), pills + " want rgb(" + wantPills + ")");
+  }
 }
 probe("dark");
 probe("light");
@@ -199,6 +215,31 @@ await runSuite(async () => {
     "sheet re-asserts --bg-100 on .dframe-content-inner");
   r.ok(sheet.includes(".dframe-root{--df-bg-page-hsl:var(--cdb-bg-100)!important"),
     "sheet puts the frame page-bg token on the theme");
+
+  // v1.49585.0 CDS layer: the sheet must carry the token map (upstream inverts the neutral
+  // ramp in dark, so the page side is per mode; the text side and the semantic fills are shared).
+  r.section("CDS layer remap (v1.49585.0): the sheet carries the token map");
+  r.ok(/:root,\[data-mode=light\],\.cds-root,\.epitaxy-root\{[^}]*--cds-neutral-60:hsl\(var\(--bg-400\)\)!important/.test(sheet),
+    "light page-side rule maps the pills track (--cds-neutral-60) to --bg-400");
+  r.ok(/\[data-mode=dark\][^{]*\{[^}]*--cds-neutral-60:hsl\(var\(--bg-100\)\)!important/.test(sheet),
+    "dark page-side rule maps --cds-neutral-60 to --bg-100 (one step above the page, as stock)");
+  r.ok(sheet.includes("--cds-neutral-900:hsl(var(--text-000))!important"),
+    "shared text side pins --cds-neutral-900 (source of alpha/border/tooltip) to --text-000");
+  r.ok((sheet.match(/--cds-neutral-150:color-mix\(in srgb,hsl\(var\(--bg-(500|000)\)\) 85%,hsl\(var\(--text-500\)\)\)!important/g) || []).length >= 2,
+    "the 150..400 color-mix steps are emitted for both anchors (--bg-500 light, --bg-000 dark)");
+  r.ok(sheet.includes("--cds-fill-accent:hsl(var(--accent-100))!important") &&
+       sheet.includes("--cds-text-accent:hsl(var(--accent-000))!important"),
+    "accent fill and text map onto the --accent-* ramp");
+  r.ok(sheet.includes("--cds-fill-brand:hsl(var(--brand-000))!important") &&
+       sheet.includes("--cds-clay-emphasized:hsl(var(--brand-000))!important"),
+    "brand fill and clay-emphasized map onto --brand-000");
+  r.ok(sheet.includes("--cds-bg-danger:hsl(var(--danger-900))!important") &&
+       sheet.includes("--cds-on-success:hsl(var(--oncolor-100))!important"),
+    "status backgrounds and on-colors map onto the status ramps / --oncolor-100");
+  r.ok(/\.dframe-root\{[^}]*--df-hover:hsl\(var\(--text-000\) \/ 0\.06\)!important;--df-selected:hsl\(var\(--text-000\) \/ 0\.12\)!important/.test(sheet),
+    "sidebar row states (--df-hover / --df-selected) are an alpha of --text-000");
+  r.ok(!/--cds-(alpha-\d|gray-\d+|switch-knob|slider-handle|fill-warning):/.test(sheet),
+    "derived alphas, the gray palette, the white knob and the warning fill are deliberately NOT overridden");
 
   const control = stripScopeFix(sheet);
   r.ok(control.length < sheet.length && !control.includes("--cdb-bg-100)!important"),
@@ -241,8 +282,9 @@ await runSuite(async () => {
   const fixedPage = join(out, "fixed.html");
   writeFileSync(fixedPage, page(sheet, {
     label: "fixed", wantName: "the theme's --bg-100",
-    dark: { bg100: THEME.dark["--bg-100"], bg300: THEME.dark["--bg-300"], other: STOCK.dark },
-    light: { bg100: THEME.light["--bg-100"], bg300: THEME.light["--bg-300"], other: STOCK.light },
+    pills: true, pillsName: { light: "the theme's --bg-400", dark: "the theme's --bg-100" },
+    dark: { bg100: THEME.dark["--bg-100"], bg300: THEME.dark["--bg-300"], other: STOCK.dark, pills: THEME.dark["--bg-100"] },
+    light: { bg100: THEME.light["--bg-100"], bg300: THEME.light["--bg-300"], other: STOCK.light, pills: THEME.light["--bg-400"] },
   }));
   const fixedLines = readProbe(dumpDom(chromium, fixedPage), "probe");
   if (!fixedLines) throw new Error("the fixed page wrote no probe output");

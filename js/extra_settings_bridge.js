@@ -40,6 +40,19 @@
     themesApply: function (name) {
       return ipcRenderer.invoke("cdb-themes:apply", name);
     },
+    // themeOverlay: the theme merged over whatever is picked, the themes that
+    // can be, and the switch. All three are the theme picker's channels; the
+    // main side re-validates the name ("" = off) and answers
+    // {ok:false,error:"not supported by this build"} on an engine without it.
+    themesOverlay: function () {
+      return ipcRenderer.invoke("cdb-themes:overlay");
+    },
+    themesOverlays: function () {
+      return ipcRenderer.invoke("cdb-themes:overlays");
+    },
+    themesSetOverlay: function (name) {
+      return ipcRenderer.invoke("cdb-themes:set-overlay", String(name || ""));
+    },
 
     // GrowthBook feature flags.
     flagsCatalog: function () {

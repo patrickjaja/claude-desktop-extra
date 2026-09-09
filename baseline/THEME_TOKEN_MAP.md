@@ -6,6 +6,8 @@
 > Captured **2026-06-26** at `https://claude.ai/epitaxy/session_...`, 17 stylesheets, 65 scans.
 > **The app was in DARK mode when captured**, so `resolvedTokensBySurface` values are the *resolved DARK* values.
 > `declaredTokensBySelector` (1563 entries) contains BOTH light and dark *authored* declarations.
+> **Section 7** was added against **v1.49585.0** (2026-09-09) from the offline CDS sheet
+> `MainWindowPage-*.css` in the app bundle plus a light-mode DevTools capture of `.cds-root`.
 
 This doc is **version-sensitive**. Token *names* are stable across releases (they are public design-system contracts, not minified), but the **selector architecture** and **primitive layer** (`--_gray-*`, `--cds-*`) can change. Re-validate against a fresh extract on each upstream bump.
 
@@ -296,6 +298,105 @@ A full parallel design system, **hex-based**, keyed off `.cds-root`. This is new
 
 ### g. Misc effect tokens
 `--*-background-blur` family (`--hud-background-blur`, `--primary-elevated-background-blur=24px`, `--prompt-blur-background-blur=100px`, `--stroke-shadow-background-blur=20px`), `--font-opsz`, `--font-weight-*`.
+
+---
+
+## 7. CDS layer remap (v1.49585.0)
+
+claude.ai now paints the mode pills, chips, filled buttons and the sidebar row states from the
+`--cds-*` design-system ramp (`.dframe-root[data-variant=web] .df-pills[data-segmented]{background:var(--cds-neutral-60)}`,
+`hover:bg-[var(--df-hover)]`, `data-[selected=focused]:bg-[var(--df-selected)]`). The theme engine
+(`__cdb_buildCss` in `patches/core/add_feature_custom_themes.nim`) remaps the tokens below; every
+declaration is `!important` on `:root,.cds-root,.epitaxy-root,[data-mode=dark],[data-mode=light]`
+(shared) or on the per-mode selector groups (page side of the neutral ramp).
+
+**Two facts the mapping rests on - re-check both on every bump:**
+
+1. **Dark mode inverts `--cds-neutral-*`.** Light: `--cds-neutral-0:var(--cds-gray-0)` ... `-900:var(--cds-gray-900)`.
+   Dark (`[data-mode=dark] .cds-root:not(...)`): `--cds-neutral-0:var(--cds-gray-900)` ... `-900:var(--cds-gray-0)`.
+   So `neutral-N` means "N/900 of the way from the page toward the text" in BOTH modes. Our `--bg-*`
+   is lightest-first in both modes (bg-000 = the elevated panel even in dark), so the page side of
+   the ramp (0..400) is emitted per mode and the text side (450..900) once, onto `--text-*`.
+2. **The alphas derive from `--cds-neutral-900`:** `--cds-alpha-1: hsl(from var(--cds-neutral-900) h s l / 5%)`
+   (0..9 = 0/5/10/20/35/50/60/70/85/95%), declared once on `.cds-root`. `--cds-border` (alpha-2),
+   `--cds-border-strong` (alpha-3), `--cds-border-stronger`, `--cds-fill-ghost-*`, `--cds-fill-control*`,
+   `--cds-fill-disabled`, `--cds-bg-neutral*`, `--cds-bg-user-message`, `--cds-skeleton-*`,
+   `--cds-slider-track/-fill`, `--cds-switch-track*`, `--cds-text-disabled`, plus `--cds-tooltip-bg/fg`
+   (neutral-900/0 light, surface-3/text-primary dark) and `--cds-segmented-control-thumb/track`
+   (surface-popover/alpha-1 light, alpha-2/alpha-1 dark) are all `var()` chains onto tokens we
+   remap, resolved on the same element - they follow and are NOT overridden.
+
+### 7a. Neutral ramp, page side (per mode)
+
+| Token | Stock light | Stock dark | Ours light | Ours dark |
+|---|---|---|---|---|
+| `--cds-neutral-0` | gray-0 `#fff` | gray-900 `#0b0b0b` | `hsl(var(--bg-000))` | `hsl(var(--bg-300))` |
+| `--cds-neutral-10` | gray-10 | gray-890 (= page) | `bg-100` | `bg-200` |
+| `--cds-neutral-20` | gray-20 (= page) | gray-880 | `bg-200` | `bg-200` |
+| `--cds-neutral-30`, `-40` | gray-30/40 | gray-870/860 | `bg-300` | `bg-100` |
+| `--cds-neutral-50`, `-60` (pills track), `-70` | gray-50/60/70 | gray-850/840/830 | `bg-400` | `bg-100` |
+| `--cds-neutral-80`, `-90`, `-100` | gray-80/90/100 | gray-820/810/800 | `bg-500` | `bg-000` |
+| `--cds-neutral-150/200/250/300/350/400` | 81/74/68/63/57/53% L | 17/22/27/32/37/42% L | `color-mix(in srgb, hsl(var(--bg-500)) 85/70/55/40/25/12%, hsl(var(--text-500)))` | same with `--bg-000` as anchor |
+| `--cds-fill-field` | `#ffffff80` | alpha-1 | `hsl(var(--bg-000) / 0.5)` | `var(--cds-alpha-1)` |
+| `--cds-fill-secondary` | `#ffffff1a` | alpha-2 | `hsl(var(--bg-000) / 0.1)` | `var(--cds-alpha-2)` |
+
+The dark ladder keeps stock's relation to the surfaces already remapped in section 3: page-bg ->
+bg-200, surface-1/2 -> bg-100, surface-3/popover -> bg-000; neutral-0 dips below the page. The
+mix percentages were fitted on stock light (bg-500 88.6% L, text-500 43.7%) and reproduce every
+stop within ~2 lightness points.
+
+### 7b. Neutral ramp, text side (shared)
+
+| Token | Ours |
+|---|---|
+| `--cds-neutral-450`, `-500` | `hsl(var(--text-500))` |
+| `--cds-neutral-550/600/650` | `color-mix(in srgb, hsl(var(--text-500)) 65/40/20%, hsl(var(--text-300)))` |
+| `--cds-neutral-700` | `hsl(var(--text-300))` |
+| `--cds-neutral-750/800` | `color-mix(in srgb, hsl(var(--text-300)) 60/30%, hsl(var(--text-000)))` |
+| `--cds-neutral-900` | `hsl(var(--text-000))` |
+| `--cds-neutral-810..890` | left stock (unreferenced outside the dark surface aliases we already override) |
+
+### 7c. Semantic tokens (shared; our accent and status ramps are mode-correct)
+
+| CDS token | Stock light | Stock dark | Ours |
+|---|---|---|---|
+| `--cds-page-bg`, `--cds-surface-*`, `--cds-text-primary/secondary/muted`, `--cds-border`, `--cds-clay` | | | unchanged from section 3 |
+| `--cds-clay-emphasized`, `--cds-fill-brand` | `#c6613f` | same | `hsl(var(--brand-000))` (stock brand-000 = `15 54.2% 51.2%` = `#c6613f`) |
+| `--cds-fill-brand-hover` | clay | same | `hsl(var(--accent-brand))` |
+| `--cds-fill-primary` / `-hover` | neutral-900 / -750 | gray-0 / gray-100 | `text-000` / `text-200` |
+| `--cds-on-primary` | neutral-0 | neutral-0 | `hsl(var(--bg-000))` |
+| `--cds-fill-accent` / `-hover` | blue-450 / -400 | same | `accent-100` / `color-mix(in srgb, hsl(var(--accent-100)) 85%, hsl(var(--text-000)))` (hover steps toward the text, mode-correct) |
+| `--cds-text-accent` | blue-600 | blue-300 | `accent-000` (light 40% / dark 67% L - same polarity as stock) |
+| `--cds-bg-accent` (`-chip`, `-muted` follow) | blue-100 | blue-800 | `accent-900` |
+| `--cds-border-accent` | blue-250 | blue-700 | `hsl(var(--accent-100) / 0.5)` |
+| `--cds-radio-group-card-selected` | blue-50 | blue-850 | `accent-900` |
+| `--cds-fill-pro` / `-hover`, `--cds-text-pro`, `--cds-bg-pro`, `--cds-border-pro` | violet-450/-400, -600, -100, -250 | same, -300, -800, -700 | `accent-pro-100` / mix 85% toward text-000, `accent-pro-000`, `accent-pro-900`, `hsl(var(--accent-pro-100) / 0.5)` |
+| `--cds-fill-danger` / `-hover`, `--cds-text-danger`, `--cds-bg-danger`, `--cds-border-danger` | red-450/-400, -600, -100, -250 | same, -300, -800, -700 | `danger-100` / mix 85% toward text-000, `danger-000`, `danger-900`, `hsl(var(--danger-100) / 0.5)` |
+| `--cds-fill-success` / `-hover`, `--cds-text-success`, `--cds-bg-success`, `--cds-border-success` | green-450/-400, -600, -100, -250 | same, -400, -800, -700 | `success-100` / mix 85% toward text-000, `success-000`, `success-900`, `hsl(var(--success-100) / 0.5)` |
+| `--cds-text-warning`, `--cds-bg-warning`, `--cds-border-warning` | yellow-600, -100, -250 | yellow-300, -800, -700 | `warning-000`, `warning-900`, `hsl(var(--warning-100) / 0.5)` |
+| `--cds-on-accent/-brand/-danger/-pro` | gray-0 | gray-0 | `hsl(var(--oncolor-100))` |
+| `--cds-on-success` | gray-900 (dark text on bright green) | gray-900 | `hsl(var(--oncolor-100))` - our `--success-100` is a dark green (26.9% L light), black on it fails |
+
+### 7d. Desktop frame (`.dframe-root`)
+
+| Token | Stock (dark capture) | Ours |
+|---|---|---|
+| `--df-hover` | `hsl(from #fff h s l / 5%)` | `hsl(var(--text-000) / 0.06)` |
+| `--df-selected` | `hsl(from #fff h s l / 10%)` | `hsl(var(--text-000) / 0.12)` |
+| `--df-z1/z2`, `--df-sidebar-bg`, `--df-surface-primary`, `--df-bg-page(-hsl)` | | unchanged (section 4) |
+| `--df-row-h`, `--df-row-px`, `--df-radius-pill`, `--df-row-gap`, `--df-row-font`, `--df-row-ctl`, `--df-nav-scrollbar-lane` | metrics | not touched |
+
+### 7e. Deliberately left stock
+
+- `--cds-gray-*`: the raw palette. `--cds-gray-0` / `-900` are used as literal white / black.
+- `--cds-switch-knob`, `--cds-slider-handle`: `var(--cds-gray-0)` in both modes - a white knob on a translucent track is the stock intent in dark too.
+- `--cds-fill-warning(-hover)`, `--cds-on-warning`, `--cds-bg-highlight`: the bright yellow `#fab219` fill also paints the text highlight (`color-mix(fill-warning 33%, transparent)`); our `--warning-*` ramp has no bright member.
+- `--cds-backdrop`, `--cds-shadow-*`, `--cds-button-on-content*`: black / white alphas.
+- Chart (`--cds-chart-*`) and git-status (`--cds-*-git-*`) tokens.
+
+Verified by `scripts/tests/core/test-theme-scope.mjs`: the sheet carries the map, and a headless
+Chromium probe of `.df-pills[data-segmented]` resolves to the theme's `--bg-400` (light) /
+`--bg-100` (dark) through upstream's own `var(--cds-neutral-60)` chain.
 
 ---
 

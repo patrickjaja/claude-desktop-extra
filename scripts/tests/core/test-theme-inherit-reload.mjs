@@ -69,8 +69,8 @@ await runSuite(async () => {
     const by = {};
     T.list().forEach((e) => (by[e.name] = e));
     const mario = by["mario"], mm = by["my-mario"];
-    r.ok(T.version === 2 && typeof T.reload === "function" && typeof T.themesDir === "string",
-       "registry is version 2 with reload() and themesDir", JSON.stringify({ v: T.version, td: T.themesDir }));
+    r.ok(T.version === 3 && typeof T.reload === "function" && typeof T.setOverlay === "function" && typeof T.overlays === "function" && typeof T.themesDir === "string",
+       "registry is version 3 with reload(), setOverlay(), overlays() and themesDir", JSON.stringify({ v: T.version, td: T.themesDir }));
     r.ok(mm && mm.dark["--accent-brand"] === "200 80% 60%", "child's dark override wins");
     r.ok(mm && mm.dark["--bg-000"] === mario.dark["--bg-000"] && mm.dark["--text-000"] === mario.dark["--text-000"],
        "the base's other dark tokens survive", mm && mm.dark["--bg-000"]);
@@ -472,6 +472,111 @@ await runSuite(async () => {
     await settle();
     r.ok(e2.themes.active() === null && e2.themes.overlay() === null && wc2.css.length === 0, "no activeTheme + overlay -> stock look, nothing injected",
        JSON.stringify({ css: wc2.css.length }));
+  }
+
+  // ------------------------------------------------------- [8] setOverlay / overlays
+  r.section("[8] setOverlay() persists themeOverlay comment-preservingly and re-applies; overlays() lists candidates");
+  {
+    const OV = { light: { "--accent-brand": "301 50% 50%" }, dark: { "--accent-brand": "300 50% 50%" }, name: "Acc" };
+    const darkBlock = (sheet) => sheet.slice(sheet.indexOf(".darkTheme,"));
+    // Seeded as raw text (not via `config`) so the leading comment is really on disk.
+    const SEED = '// leading comment that must survive every persist\n{\n  // "themeOverlay": "commented-out-example",\n  "activeTheme": "nord",\n  "themeWatch": false,\n  "themes": {\n    "acc": ' + JSON.stringify(OV) + ',\n    "vis": {"dark": {"--bg-000": "0 0% 33%"}},\n    "no-tokens": {"name": "No Tokens", "chatFont": "serif", "light": {}, "dark": {}},\n    "ext-child": {"extends": "ov-hidden", "name": "Ext Child"}\n  }\n}\n';
+    const files = {
+      "claude-desktop-extra.jsonc": SEED,
+      "themes.d/ov-hidden.json": JSON.stringify({ hidden: true, dark: { "--accent-brand": "40 40% 40%" } }),
+      "themes.d/ov-plain.json": JSON.stringify({ dark: { "--accent-brand": "41 41% 41%" } }),
+      "themes.d/zz-meta.json": JSON.stringify({ hidden: true, chatFont: "monospace" }),
+    };
+    const { themes: T, appEvents, diag, userData } = installEngine({ files });
+    const jsoncPath = join(userData, "claude-desktop-extra.jsonc");
+    const raw = () => readFileSync(jsoncPath, "utf8");
+    const nord = T.list().find((e) => e.name === "nord");
+    const wc = attach(appEvents);
+    await settle();
+    r.ok(T.active() === "nord" && T.overlay() === null && wc.css.length === 1, "startup: nord, no overlay (the commented-out key is not read)");
+    r.ok(T.list().every((e) => e.hidden === false), "list() entries carry hidden:false");
+
+    const cands = T.overlays();
+    r.ok(Array.isArray(cands) && cands.map((c) => c.name).join(",") === "ov-hidden,acc,ext-child,ov-plain,vis",
+       "overlays(): hidden first, then alphabetical; token-less themes excluded", JSON.stringify(cands.map((c) => c.name)));
+    r.ok(cands.every((c) => c.source === "custom") && !cands.some((c) => c.name === "mario" || c.name === "nord"),
+       "built-ins and community palettes are not candidates");
+    r.ok(cands[0].hidden === true && cands[1].hidden === false && cands[1].displayName === "Acc" && cands[2].displayName === "Ext Child",
+       "entries carry hidden + displayName", JSON.stringify(cands[1]));
+    r.ok(!cands.some((c) => c.name === "zz-meta"), "a hidden theme without tokens is not a candidate either");
+
+    let res = T.setOverlay("ov-hidden");
+    await settle();
+    r.ok(res.ok === true && res.overlay === "ov-hidden" && res.changed === true && res.saved === "claude-desktop-extra.jsonc",
+       "setOverlay('ov-hidden') -> {ok,overlay,changed:true,saved}", JSON.stringify(res));
+    r.ok(T.overlay() === "ov-hidden" && tokenRe("--accent-brand", "40 40% 40%").test(darkBlock(wc.sheet())), "state.overlay set, sheet carries the overlay token");
+    r.ok(raw().indexOf("// leading comment that must survive every persist") === 0, "the leading comment survived", raw().slice(0, 60));
+    r.ok(/"themeOverlay": "ov-hidden"/.test(raw()) && /"themeOverlay": "commented-out-example"/.test(raw()) && /"activeTheme": "nord"/.test(raw()),
+       "the key was inserted, the commented-out example and activeTheme untouched", raw());
+    r.ok(diag.filter((m) => /Overlay set to 'ov-hidden'/.test(m)).length === 1, "one log line", diag.filter((m) => /Overlay set/.test(m)).join(" | "));
+    res = T.setOverlay("ov-hidden");
+    r.ok(res.ok === true && res.changed === false && res.overlay === "ov-hidden", "setting the same overlay again -> changed:false", JSON.stringify(res));
+    r.ok(raw().split('"themeOverlay"').length === 3, "the key is rewritten in place, never duplicated (1 real + 1 commented)");
+
+    res = T.setOverlay("nordic");
+    await settle();
+    r.ok(res.ok === true && res.overlay === "nord" && /"themeOverlay": "nord"/.test(raw()), "aliases resolve; the canonical name is persisted", JSON.stringify(res));
+    const unchanged = raw();
+    res = T.setOverlay("nope");
+    r.ok(res.ok === false && /'nope' is not a user, built-in, or community theme/.test(res.error), "setOverlay('nope') -> ok:false", JSON.stringify(res));
+    r.ok(raw() === unchanged && T.overlay() === "nord", "and the file and state are untouched");
+    res = T.setOverlay("no-tokens");
+    r.ok(res.ok === false && /'no-tokens' has neither light\/dark variants nor --token keys/.test(res.error), "a token-less theme is refused", JSON.stringify(res));
+    r.ok(raw() === unchanged, "file untouched again");
+    res = T.setOverlay(42);
+    r.ok(res.ok === false && raw() === unchanged, "a non-string is refused", JSON.stringify(res));
+
+    res = T.setOverlay("acc");
+    await settle();
+    r.ok(res.ok === true && res.overlay === "acc" && tokenRe("--accent-brand", "300 50% 50%").test(darkBlock(wc.sheet())), "setOverlay('acc') applies", JSON.stringify(res));
+    r.ok(T.apply("mario").ok === true, "apply('mario') persists activeTheme...");
+    await settle();
+    r.ok(/"activeTheme": "mario"/.test(raw()) && /"themeOverlay": "acc"/.test(raw()) && T.overlay() === "acc" && T.active() === "mario",
+       "...and leaves themeOverlay intact (state keeps the overlay)", raw());
+    r.ok(raw().indexOf("// leading comment") === 0, "comment still there after the activeTheme persist");
+
+    res = T.setOverlay("");
+    await settle();
+    r.ok(res.ok === true && res.overlay === null && res.changed === true, "setOverlay('') -> overlay:null, changed:true", JSON.stringify(res));
+    r.ok(/"themeOverlay": ""/.test(raw()) && T.overlay() === null, "the key becomes \"\", state.overlay null");
+    r.ok(!tokenRe("--accent-brand", "300 50% 50%").test(darkBlock(wc.sheet())) && tokenRe("--accent-brand", T.list().find((e) => e.name === "mario").dark["--accent-brand"]).test(darkBlock(wc.sheet())),
+       "tokens revert to the base theme");
+    res = T.setOverlay(null);
+    r.ok(res.ok === true && res.changed === false && res.overlay === null, "setOverlay(null) is the same as '' (no-op now)", JSON.stringify(res));
+    r.ok(diag.filter((m) => /Overlay cleared/.test(m)).length === 2, "clearing is logged");
+    r.ok(/"activeTheme": "mario"/.test(raw()) && tokenRe("--bg-000", nord.dark["--bg-000"]).test(darkBlock(wc.sheet())) === false, "activeTheme still mario");
+
+    // A config that is only `{}` gets the key inserted after the brace and stays parseable.
+    const e2 = installEngine({ files: { "claude-desktop-extra.jsonc": "{}", "themes.d/ov.json": JSON.stringify({ hidden: true, dark: { "--bg-000": "0 0% 9%" } }) } });
+    const raw2 = () => readFileSync(join(e2.userData, "claude-desktop-extra.jsonc"), "utf8");
+    res = e2.themes.setOverlay("ov");
+    r.ok(res.ok === true && res.overlay === "ov" && res.changed === false, "{} file: setOverlay ok (no active theme -> nothing visible changes)", JSON.stringify(res));
+    r.ok(/^\{\n  "themeOverlay": "ov",\}$/.test(raw2()), "the key was inserted after the brace", JSON.stringify(raw2()));
+    const wc2 = attach(e2.appEvents);
+    r.ok(e2.themes.apply("mario").ok === true, "apply('mario') on top parses the trailing-comma file");
+    await settle();
+    r.ok(e2.themes.overlay() === "ov" && e2.themes.active() === "mario" && tokenRe("--bg-000", "0 0% 9%").test(darkBlock(wc2.sheet())),
+       "both keys live in the file and the overlay applies", raw2());
+
+    // No config file at all: the commented template is created with the key inserted.
+    const e3 = installEngine({ files: { "themes.d/ov.json": JSON.stringify({ dark: { "--bg-000": "0 0% 9%" } }) } });
+    res = e3.themes.setOverlay("ov");
+    const raw3 = readFileSync(join(e3.userData, "claude-desktop-extra.jsonc"), "utf8");
+    r.ok(res.ok === true && res.saved === "claude-desktop-extra.jsonc" && /"themeOverlay": "ov",/.test(raw3) && /"activeTheme": "",/.test(raw3) && raw3.indexOf("// claude-desktop-extra.jsonc") === 0,
+       "no config -> commented template created with themeOverlay + activeTheme \"\"", JSON.stringify(res));
+    r.ok(e3.themes.reload("test").ok === true, "and it parses");
+
+    // Only the legacy .json exists: it is the write target.
+    const e4 = installEngine({ files: { "claude-desktop-extra.json": JSON.stringify({ activeTheme: "nord", themeWatch: false }), "themes.d/ov.json": JSON.stringify({ dark: { "--bg-000": "0 0% 9%" } }) } });
+    res = e4.themes.setOverlay("ov");
+    r.ok(res.ok === true && res.saved === "claude-desktop-extra.json" && JSON.parse(readFileSync(join(e4.userData, "claude-desktop-extra.json"), "utf8").replace(/,(\s*[}\]])/g, "$1")).themeOverlay === "ov",
+       ".json is the fallback target when no .jsonc exists", JSON.stringify(res));
+    r.ok(e4.themes.overlays().length === 1 && e4.themes.overlays()[0].name === "ov" && e4.themes.overlays()[0].hidden === false, "overlays() with a single visible candidate");
   }
 
   r.done();

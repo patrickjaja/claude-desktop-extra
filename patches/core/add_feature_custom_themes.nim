@@ -44,11 +44,19 @@
 # REGISTRY + LIVE APPLY: `globalThis.__cdbThemes` is installed on every Linux start,
 # even with no config file and no activeTheme, so the theme picker
 # (patches/add_feature_theme_picker.nim) always has something to talk to:
-#   { version:2, list(), active(), overlay(), apply(name), reload(reason), configPath, themesDir }
+#   { version:3, list(), active(), overlay(), apply(name), reload(reason),
+#     setOverlay(name), overlays(), configPath, themesDir }
 # apply() rebuilds the stylesheet, swaps it in every tracked webContents
 # (removeInsertedCSS of the key we inserted last + insertCSS the new sheet), and
 # persists activeTheme. Windows opened later read the CURRENT theme, not a
 # startup-frozen string. Passing "" or null reverts to the stock look.
+# setOverlay(name) persists "themeOverlay" the same comment-preserving way (""/null
+# clears it) and reloads; the name must resolve and carry at least one "--" token, else
+# {ok:false,error}. Success: {ok:true, overlay:<canon|null>, changed:<bool>, saved:<file>}.
+# overlays() lists the candidate overlays: every theme from the config files and
+# themes.d/ (source "custom") with at least one "--" token after "extends" resolution,
+# as {name, displayName, hidden, source}, hidden ones first, then alphabetical.
+# Built-ins and community palettes are never candidates (an overlay is user authored).
 # The early "nothing to do" exits now only skip the STARTUP css application.
 #
 # INHERITANCE: a theme may carry "extends": "<theme-name>". __cdb_effective() resolves
@@ -67,8 +75,9 @@
 # chatFont, spinner, customCss, name and category are ignored, the active theme keeps
 # its own. The overlay resolves through the normal lookup (user, themes.d, built-in,
 # community; may itself use "extends"). No active theme -> no overlay (stock stays
-# stock). A missing overlay theme is logged and skipped. It lives inside
-# __cdb_buildCss, so every caller gets it; it is never persisted and never listed.
+# stock). A missing or token-less overlay theme is logged and skipped. It lives inside
+# __cdb_buildCss, so every caller gets it; it is never listed. Only setOverlay()
+# persists it (and Settings through that).
 #
 # RELOAD + FILE WATCH: __cdb_reload(reason) re-reads the config from disk and re-applies
 # cfg.activeTheme to every live window WITHOUT persisting anything (the file is the
@@ -79,10 +88,11 @@
 # config disables the watcher. Watcher failures are logged and never block theming.
 #
 # PERSISTENCE is a surgical text edit so user comments survive: the raw .jsonc is
-# scanned comment-aware for the real "activeTheme" key and only its VALUE is
-# replaced. Missing key -> inserted after the opening brace; .jsonc absent ->
-# .json is edited instead; neither present -> a minimal commented .jsonc is created.
-# .jsonc is the primary target because it wins the per-key merge.
+# scanned comment-aware for the real top-level key ("activeTheme" for apply(),
+# "themeOverlay" for setOverlay()) and only its VALUE is replaced. Missing key ->
+# inserted after the opening brace; .jsonc absent -> .json is edited instead; neither
+# present -> a minimal commented .jsonc is created. .jsonc is the primary target
+# because it wins the per-key merge. __cdb_persistKey(key, value) is the one writer.
 #
 # Derived aliases: after each variant's var list we append --accent-main-*/-secondary-*
 # aliases mapping onto the REAL --accent-*/--accent-pro-* tokens (stock v1.15962 has NO
@@ -433,17 +443,30 @@ return null;
 // neither light/dark variants nor --token keys.
 // Only the "--" tokens of a var map (the overlay contributes tokens, nothing else).
 function __cdb_tokensOnly(m){var o={},k;for(k in (m||{})){if(k.indexOf("--")===0)o[k]=m[k]}return o}
+// True when a variants pair carries at least one "--" token in either mode.
+function __cdb_hasTokens(v){return !!v&&(Object.keys(__cdb_tokensOnly(v.light)).length+Object.keys(__cdb_tokensOnly(v.dark)).length)>0}
+// Resolve an overlay NAME to its per-mode tokens: {ok:true,name,light,dark}, or
+// {ok:false,error} when unknown or token-less. Shared by the css build (via
+// cfg.themeOverlay) and setOverlay() (validating before it persists).
+function __cdb_overlayOf(cfg,raw){
+var canon=__cdb_resolveName(raw),hit=__cdb_lookup(cfg,canon);
+if(!hit)return {ok:false,error:"'"+raw+"' is not a user, built-in, or community theme"};
+var ov=__cdb_variants(hit.theme);
+if(!__cdb_hasTokens(ov))return {ok:false,error:"'"+canon+"' has neither light/dark variants nor --token keys"};
+return {ok:true,name:canon,light:__cdb_tokensOnly(ov.light),dark:__cdb_tokensOnly(ov.dark)};
+}
 // The overlay named by cfg.themeOverlay, resolved and reduced to its per-mode tokens;
 // null when unset, unknown (logged) or token-less (logged).
 function __cdb_overlayFor(cfg){
 var raw=cfg&&cfg.themeOverlay;
 if(typeof raw!=="string"||!raw)return null;
-var canon=__cdb_resolveName(raw),hit=__cdb_lookup(cfg,canon);
-if(!hit){__cdb_log("themeOverlay '"+raw+"' is not a user, built-in, or community theme; ignoring the overlay");return null}
-var ov=__cdb_variants(hit.theme);
-if(!ov){__cdb_log("themeOverlay '"+canon+"' has neither light/dark variants nor --token keys; ignoring the overlay");return null}
-return {name:canon,light:__cdb_tokensOnly(ov.light),dark:__cdb_tokensOnly(ov.dark)};
+var r=__cdb_overlayOf(cfg,raw);
+if(!r.ok){__cdb_log("themeOverlay "+r.error+"; ignoring the overlay");return null}
+return r;
 }
+// The 150..400 stops of the CDS neutral ramp: color-mix steps from a per-mode page anchor
+// (--bg-500 light, --bg-000 dark) toward --text-500; percentages fitted to stock lightness.
+function __cdb_cdsMix(a){var p={150:85,200:70,250:55,300:40,350:25,400:12},k,o="";for(k in p)o+="--cds-neutral-"+k+":color-mix(in srgb,hsl(var("+a+")) "+p[k]+"%,hsl(var(--text-500)))!important;";return o}
 function __cdb_buildCss(cfg,theme,name){
 theme=__cdb_effective(cfg,theme,name);
 var v=__cdb_variants(theme);
@@ -466,9 +489,10 @@ css+=""
 +"#root,[id=root]{background:hsl(var(--bg-000))!important}"
 +".dframe-sidebar{background-color:hsl(var(--bg-200))!important}"
 +".dframe-content,.dframe-main,main.dframe-main{background-color:hsl(var(--bg-100))!important}"
-+".dframe-root{--df-z1:var(--bg-100)!important;--df-z2:var(--bg-200)!important;--df-sidebar-bg:hsl(var(--bg-200))!important;--df-surface-primary:hsl(var(--bg-100))!important}"
++".dframe-root{--df-z1:var(--bg-100)!important;--df-z2:var(--bg-200)!important;--df-sidebar-bg:hsl(var(--bg-200))!important;--df-surface-primary:hsl(var(--bg-100))!important;--df-hover:hsl(var(--text-000) / 0.06)!important;--df-selected:hsl(var(--text-000) / 0.12)!important}"
 +"[data-darker] .dframe-sidebar{background-color:hsl(var(--bg-300))!important}"
 +":root,.cds-root,.epitaxy-root,[data-mode=dark],[data-mode=light]{--cds-page-bg:hsl(var(--bg-200))!important;--cds-surface-0:hsl(var(--bg-200))!important;--cds-surface-1:hsl(var(--bg-100))!important;--cds-surface-2:hsl(var(--bg-100))!important;--cds-surface-3:hsl(var(--bg-000))!important;--cds-surface-panel:hsl(var(--bg-100))!important;--cds-surface-popover:hsl(var(--bg-000))!important;--surface-primary:hsl(var(--bg-100))!important;--surface-primary-elevated:hsl(var(--bg-000))!important;--surface-popover:hsl(var(--bg-000))!important;--surface-panel:hsl(var(--bg-100))!important;--surface-hud:hsl(var(--bg-200))!important;--cds-text-primary:hsl(var(--text-000))!important;--cds-text-secondary:hsl(var(--text-200))!important;--cds-text-muted:hsl(var(--text-400))!important;--cds-border:hsl(var(--border-200) / 0.18)!important;--cds-clay:hsl(var(--accent-brand))!important}"
++":root,.cds-root,.epitaxy-root,[data-mode=dark],[data-mode=light]{--cds-neutral-450:hsl(var(--text-500))!important;--cds-neutral-500:hsl(var(--text-500))!important;--cds-neutral-550:color-mix(in srgb,hsl(var(--text-500)) 65%,hsl(var(--text-300)))!important;--cds-neutral-600:color-mix(in srgb,hsl(var(--text-500)) 40%,hsl(var(--text-300)))!important;--cds-neutral-650:color-mix(in srgb,hsl(var(--text-500)) 20%,hsl(var(--text-300)))!important;--cds-neutral-700:hsl(var(--text-300))!important;--cds-neutral-750:color-mix(in srgb,hsl(var(--text-300)) 60%,hsl(var(--text-000)))!important;--cds-neutral-800:color-mix(in srgb,hsl(var(--text-300)) 30%,hsl(var(--text-000)))!important;--cds-neutral-900:hsl(var(--text-000))!important;--cds-fill-primary:hsl(var(--text-000))!important;--cds-fill-primary-hover:hsl(var(--text-200))!important;--cds-on-primary:hsl(var(--bg-000))!important;--cds-fill-accent:hsl(var(--accent-100))!important;--cds-fill-accent-hover:color-mix(in srgb,hsl(var(--accent-100)) 85%,hsl(var(--text-000)))!important;--cds-text-accent:hsl(var(--accent-000))!important;--cds-bg-accent:hsl(var(--accent-900))!important;--cds-border-accent:hsl(var(--accent-100) / 0.5)!important;--cds-radio-group-card-selected:hsl(var(--accent-900))!important;--cds-on-accent:hsl(var(--oncolor-100))!important;--cds-fill-brand:hsl(var(--brand-000))!important;--cds-fill-brand-hover:hsl(var(--accent-brand))!important;--cds-clay-emphasized:hsl(var(--brand-000))!important;--cds-on-brand:hsl(var(--oncolor-100))!important;--cds-fill-pro:hsl(var(--accent-pro-100))!important;--cds-fill-pro-hover:color-mix(in srgb,hsl(var(--accent-pro-100)) 85%,hsl(var(--text-000)))!important;--cds-text-pro:hsl(var(--accent-pro-000))!important;--cds-bg-pro:hsl(var(--accent-pro-900))!important;--cds-border-pro:hsl(var(--accent-pro-100) / 0.5)!important;--cds-on-pro:hsl(var(--oncolor-100))!important;--cds-fill-danger:hsl(var(--danger-100))!important;--cds-fill-danger-hover:color-mix(in srgb,hsl(var(--danger-100)) 85%,hsl(var(--text-000)))!important;--cds-text-danger:hsl(var(--danger-000))!important;--cds-bg-danger:hsl(var(--danger-900))!important;--cds-border-danger:hsl(var(--danger-100) / 0.5)!important;--cds-on-danger:hsl(var(--oncolor-100))!important;--cds-fill-success:hsl(var(--success-100))!important;--cds-fill-success-hover:color-mix(in srgb,hsl(var(--success-100)) 85%,hsl(var(--text-000)))!important;--cds-text-success:hsl(var(--success-000))!important;--cds-bg-success:hsl(var(--success-900))!important;--cds-border-success:hsl(var(--success-100) / 0.5)!important;--cds-on-success:hsl(var(--oncolor-100))!important;--cds-text-warning:hsl(var(--warning-000))!important;--cds-bg-warning:hsl(var(--warning-900))!important;--cds-border-warning:hsl(var(--warning-100) / 0.5)!important}"
 +".epitaxy-top-scrim{background:linear-gradient(hsl(var(--bg-100)),transparent)!important}"
 +".epitaxy-bottom-scrim{background:linear-gradient(transparent,hsl(var(--bg-100)))!important}"
 +".bg-white{background-color:hsl(var(--bg-000))!important}"
@@ -496,6 +520,19 @@ css+=""
 +".darkTheme [role=dialog],[data-mode=dark] [role=dialog]{box-shadow:0 0 0 1px hsl(var(--accent-brand) / 0.35),0 12px 40px rgba(0,0,0,0.5),0 0 30px hsl(var(--accent-brand) / 0.1)!important}"
 +".darkTheme [role=menu],.darkTheme [role=listbox],[data-mode=dark] [role=menu],[data-mode=dark] [role=listbox]{box-shadow:0 0 0 1px hsl(var(--accent-brand) / 0.3),0 8px 24px rgba(0,0,0,0.4)!important}"
 +".darkTheme button:not([disabled]):hover,[data-mode=dark] button:not([disabled]):hover{box-shadow:0 0 12px hsl(var(--accent-brand) / 0.3)!important}";
+// CDS neutral ramp, page side (0..400). Upstream inverts --cds-neutral-* per mode (dark:
+// neutral-0 = gray-900, neutral-900 = gray-0), so "N" means "N/900 from the page toward the
+// text" in BOTH modes. Our --bg-* is lightest-first in both modes, hence a per-mode ladder;
+// the text side (450..900) lives in the shared block above because --text-* is already
+// mode-correct. --cds-alpha-*, --cds-border*, tooltip and segmented-control tokens derive
+// from --cds-neutral-900 upstream (hsl(from ...)) and follow without a line of their own.
+// Light first, dark second: dark wins on a specificity tie, and the :is() forms give it
+// (0,2,0) over the light rule's bare .cds-root on the same element.
+var cdsLight="--cds-neutral-0:hsl(var(--bg-000))!important;--cds-neutral-10:hsl(var(--bg-100))!important;--cds-neutral-20:hsl(var(--bg-200))!important;--cds-neutral-30:hsl(var(--bg-300))!important;--cds-neutral-40:hsl(var(--bg-300))!important;--cds-neutral-50:hsl(var(--bg-400))!important;--cds-neutral-60:hsl(var(--bg-400))!important;--cds-neutral-70:hsl(var(--bg-400))!important;--cds-neutral-80:hsl(var(--bg-500))!important;--cds-neutral-90:hsl(var(--bg-500))!important;--cds-neutral-100:hsl(var(--bg-500))!important;"+__cdb_cdsMix("--bg-500")+"--cds-fill-field:hsl(var(--bg-000) / 0.5)!important;--cds-fill-secondary:hsl(var(--bg-000) / 0.1)!important";
+var cdsDark="--cds-neutral-0:hsl(var(--bg-300))!important;--cds-neutral-10:hsl(var(--bg-200))!important;--cds-neutral-20:hsl(var(--bg-200))!important;--cds-neutral-30:hsl(var(--bg-100))!important;--cds-neutral-40:hsl(var(--bg-100))!important;--cds-neutral-50:hsl(var(--bg-100))!important;--cds-neutral-60:hsl(var(--bg-100))!important;--cds-neutral-70:hsl(var(--bg-100))!important;--cds-neutral-80:hsl(var(--bg-000))!important;--cds-neutral-90:hsl(var(--bg-000))!important;--cds-neutral-100:hsl(var(--bg-000))!important;"+__cdb_cdsMix("--bg-000")+"--cds-fill-field:var(--cds-alpha-1)!important;--cds-fill-secondary:var(--cds-alpha-2)!important";
+css+=":root,[data-mode=light],.cds-root,.epitaxy-root{"+cdsLight+"}";
+css+=".darkTheme,[data-mode=dark],.dark,:is(.darkTheme,[data-mode=dark],.dark) :is(.cds-root,.epitaxy-root),:is(.cds-root,.epitaxy-root):is(.darkTheme,[data-mode=dark],.dark){"+cdsDark+"}";
+if(__cdb_isDark())css+=":root:not([data-mode=light]),:root:not([data-mode=light]) :is(.cds-root,.epitaxy-root){"+cdsDark+"}";
 // SCOPE: upstream's desktop frame RE-SCOPES --bg-100 inside the chat subtree --
 // `.dframe-content-inner{--bg-100:var(--df-bg-page-hsl)}` -- and --df-bg-page-hsl is a
 // hardcoded stock gray on .dframe-root (e.g. `0 0% 5.5%` for dark + darker-default).
@@ -553,11 +590,12 @@ css+="svg[data-cdb-spinner].cdb-anim-flip [data-cdb-frame=\"2\"]{animation:cdbFl
 if(spinnerJson!=="null")__cdb_log("Spinner spec present ("+spinnerJson.length+" chars JSON) for '"+name+"'");
 return {css:css,font:fontFlag,spinnerJson:spinnerJson,overlay:overlay?overlay.name:null,chrome:{light:__cdb_chromeHex(v.light),dark:__cdb_chromeHex(v.dark)}};
 }
-// --- activeTheme persistence (comment-preserving) --------------------------
+// --- top-level key persistence (comment-preserving) -------------------------
 // Walk the RAW text tracking string/comment state and return the value span of
-// the first REAL "activeTheme" key. A commented-out example line is skipped,
-// which a plain regex over the raw text would happily clobber.
-function __cdb_scanActive(s){
+// the first REAL occurrence of `key` ("activeTheme", "themeOverlay"). A
+// commented-out example line is skipped, which a plain regex over the raw text
+// would happily clobber.
+function __cdb_scanKey(s,key){
 var i=0,n=s.length,st,str,j,vs;
 while(i<n){
 var c=s[i];
@@ -567,7 +605,7 @@ if(c!=='"'){i++;continue}
 st=i;i++;
 while(i<n){if(s[i]==="\\"){i+=2;continue}if(s[i]==='"')break;i++}
 str=s.slice(st+1,i);i++;
-if(str!=="activeTheme")continue;
+if(str!==key)continue;
 j=i;while(j<n&&" \t\r\n".indexOf(s[j])>=0)j++;
 if(s[j]!==":")continue;
 j++;while(j<n&&" \t\r\n".indexOf(s[j])>=0)j++;
@@ -612,24 +650,34 @@ return ["// claude-desktop-extra.jsonc - local Claude Desktop config. Comments a
 "}",
 ""].join("\n");
 }
-// .jsonc is the primary target because it wins the merge; fall back to .json,
-// else create a commented .jsonc.
-function __cdb_persist(name){
-var val=JSON.stringify(name||""),targets=[__cdb_cfgPathC,__cdb_cfgPath],i,p,raw,span,out,at;
+// Insert `"key": val,` right after the opening brace of the top-level object.
+function __cdb_insertKey(raw,key,val){
+var at=__cdb_scanBrace(raw);
+if(at<0)return null;
+return raw.slice(0,at+1)+"\n  "+JSON.stringify(key)+": "+val+","+raw.slice(at+1);
+}
+// Write a JSON string value for one top-level key into the first existing config
+// file: .jsonc is the primary target because it wins the merge; fall back to .json;
+// else create a commented .jsonc. An existing key is rewritten in place (comments
+// and every other key untouched), a missing one is inserted after the opening brace.
+function __cdb_persistKey(key,value){
+var val=JSON.stringify(typeof value==="string"?value:""),targets=[__cdb_cfgPathC,__cdb_cfgPath],i,p,raw,span,out;
 for(i=0;i<targets.length;i++){
 p=targets[i];raw=__cdb_readRaw(p);
 if(raw===null)continue;
-span=__cdb_scanActive(raw);
+span=__cdb_scanKey(raw,key);
 if(span)out=raw.slice(0,span.s)+val+raw.slice(span.e);
 else{
-at=__cdb_scanBrace(raw);
-if(at<0)return {ok:false,error:"no JSON object found in "+p};
-out=raw.slice(0,at+1)+"\n  \"activeTheme\": "+val+","+raw.slice(at+1);
+out=__cdb_insertKey(raw,key,val);
+if(out===null)return {ok:false,error:"no JSON object found in "+p};
 }
 return __cdb_writeFile(p,out);
 }
-return __cdb_writeFile(__cdb_cfgPathC,__cdb_template(val));
+out=__cdb_template(key==="activeTheme"?val:'""');
+if(key!=="activeTheme")out=__cdb_insertKey(out,key,val);
+return __cdb_writeFile(__cdb_cfgPathC,out);
 }
+function __cdb_persist(name){return __cdb_persistKey("activeTheme",name||"")}
 // --- live stylesheet bookkeeping ------------------------------------------
 // What is applied right now (rewritten by apply(), read by every later window).
 var __cdb_state={name:null,src:"",css:"",font:false,spinnerJson:"null",overlay:null,chrome:null};
@@ -695,7 +743,7 @@ if(theme&&theme.hidden===true){delete map[name];return}
 var v=__cdb_variants(theme);
 if(!v)return;
 if(!map[name])order.push(name);
-map[name]={name:name,displayName:(theme&&typeof theme.name==="string"&&theme.name)||__cdb_pretty(name),source:src,category:(theme&&typeof theme.category==="string"&&theme.category)||"",light:v.light,dark:v.dark};
+map[name]={name:name,displayName:(theme&&typeof theme.name==="string"&&theme.name)||__cdb_pretty(name),source:src,category:(theme&&typeof theme.category==="string"&&theme.category)||"",hidden:false,light:v.light,dark:v.dark};
 }
 for(k in __cdb_community)put(k,"community",__cdb_community[k]);
 for(k in __cdb_builtins)put(k,"builtin",__cdb_builtins[k]);
@@ -749,7 +797,42 @@ __cdb_log("reload ("+reason+"): applied '"+(next.name||"")+"' to "+n+" window(s)
 return {ok:true,changed:true,name:next.name,overlay:next.overlay,windows:n};
 }catch(e){return {ok:false,error:(e&&e.message)||String(e)}}
 }
-globalThis.__cdbThemes={version:2,list:__cdb_listEntries,active:function(){return __cdb_state.name},overlay:function(){return __cdb_state.overlay},apply:__cdb_applyTheme,reload:__cdb_reload,configPath:__cdb_cfgPathC,themesDir:__cdb_themesDir};
+// Persist "themeOverlay" and re-apply. "" or null clears it. The name must resolve and
+// carry at least one "--" token (checked BEFORE the file is touched), so a typo can
+// never land in the config. Reload does the visual work; the file stays the truth.
+function __cdb_setOverlay(name){
+try{
+var canon=null,cfg,r,p,rl;
+if(name!==null&&name!==undefined&&name!==""){
+if(typeof name!=="string")return {ok:false,error:"overlay name must be a string"};
+cfg=__cdb_loadCfg();
+r=__cdb_overlayOf(cfg,name);
+if(!r.ok)return {ok:false,error:r.error};
+canon=r.name;
+}
+p=__cdb_persistKey("themeOverlay",canon||"");
+if(!p.ok)return {ok:false,error:"could not save themeOverlay: "+p.error};
+rl=__cdb_reload("overlay");
+if(!rl.ok)return {ok:false,error:"saved themeOverlay to "+_path.basename(p.path)+" but could not apply it: "+rl.error};
+__cdb_log((canon?"Overlay set to '"+canon+"'":"Overlay cleared")+", saved to "+p.path+(rl.changed?" (re-applied)":" (no visible change)"));
+return {ok:true,overlay:canon,changed:rl.changed===true,saved:_path.basename(p.path)};
+}catch(e){return {ok:false,error:(e&&e.message)||String(e)}}
+}
+// Candidate overlays for Settings: every user theme (config files + themes.d/) that
+// yields at least one "--" token after "extends" resolution. Hidden ones first (that
+// is what generator files set), then alphabetical. Built-ins/community are not
+// candidates; setOverlay() still accepts them for hand-written configs.
+function __cdb_overlayCandidates(){
+var cfg=__cdb_loadCfg(),out=[],k,t;
+for(k in (cfg.themes||{})){
+t=__cdb_effective(cfg,cfg.themes[k],k);
+if(!__cdb_hasTokens(__cdb_variants(t)))continue;
+out.push({name:k,displayName:(t&&typeof t.name==="string"&&t.name)||__cdb_pretty(k),hidden:!!(t&&t.hidden===true),source:"custom"});
+}
+out.sort(function(a,b){if(a.hidden!==b.hidden)return a.hidden?-1:1;return a.name<b.name?-1:(a.name>b.name?1:0)});
+return out;
+}
+globalThis.__cdbThemes={version:3,list:__cdb_listEntries,active:function(){return __cdb_state.name},overlay:function(){return __cdb_state.overlay},apply:__cdb_applyTheme,reload:__cdb_reload,setOverlay:__cdb_setOverlay,overlays:__cdb_overlayCandidates,configPath:__cdb_cfgPathC,themesDir:__cdb_themesDir};
 // --- file watcher -----------------------------------------------------------
 // Watch DIRECTORIES, not files: our writer and tools like matugen write tmp+rename,
 // which orphans a file-level inotify watch. Events for the two config files (and
@@ -878,7 +961,8 @@ const THEME_INJECTION_JS =
 const MARKERS = [
   "__cdb_dualvariant", "globalThis.__cdbThemes=",
   "__cdb_builtins[__cdb_gk]=__cdb_gaming[__cdb_gk]", "window.__cdbSpinnerApply",
-  "reload:__cdb_reload", "function __cdb_effective(",
+  "reload:__cdb_reload", "function __cdb_effective(", "setOverlay:__cdb_setOverlay",
+  "function __cdb_persistKey(",
 ]
 
 proc apply*(input: string): string =

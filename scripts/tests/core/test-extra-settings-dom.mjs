@@ -766,6 +766,57 @@ async function themesPanel(themesItem) {
      "and the link follows it too: " + window.__revealCalls.join(","));
   ok(labels() === "Your themes:1 | Gaming:3 | Common:5 | More:1",
      "the sections survive a re-render after apply");
+
+  // The overlay row: what themeOverlay merges over the picked theme, above the
+  // filter, with a way to turn it off - and a way to pick one when it is off.
+  function overlayRow() { return document.querySelector(".cdbx-panel .cdbx-overlay-row"); }
+  function activeBadge() {
+    var on = document.querySelector(".cdbx-panel .cdbx-card.cdbx-on");
+    return on ? on.querySelector(".cdbx-badge").textContent : "";
+  }
+  let row = overlayRow();
+  ok(!!row, "the Themes panel renders the overlay row");
+  if (row) {
+    ok(row.querySelector(".cdbx-id").textContent === "Overlay: Wallpaper accent",
+       "it names the active overlay by display name, resolved from the candidates (the grid never lists a hidden theme): " +
+       row.querySelector(".cdbx-id").textContent);
+    ok(/over every theme you pick/.test(row.querySelector(".cdbx-note").textContent), "it says what the overlay does");
+    const off = row.querySelector(".cdbx-row-aside .cdbx-btn");
+    ok(!!off && off.textContent === "Turn off", "it offers Turn off");
+    ok(!row.querySelector("select"), "no select while an overlay is active");
+    const search = document.querySelector(".cdbx-panel .cdbx-search");
+    ok(!!search && row.closest(".cdbx-list").compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING,
+       "the row sits above the filter box");
+    ok(/active \+ overlay/.test(activeBadge()), "the active card's badge says an overlay is merged over it: " + activeBadge());
+
+    off.click();
+    await sleep(80);
+    ok(window.__overlayCalls.join(",") === "", 'Turn off called setOverlay(""): ' + JSON.stringify(window.__overlayCalls));
+    row = overlayRow();
+    ok(!!row, "the row stays because there are candidates");
+    const select = row && row.querySelector("select.cdbx-select");
+    ok(!!select, "and now carries a select");
+    const opts = select ? Array.from(select.options).map(function (o) { return o.value + "=" + o.textContent; }).join("|") : "";
+    ok(opts === "=none|wallpaper-accent=Wallpaper accent|my-own=My-own|my-neon=My-neon",
+       "listing none first, then the candidates in engine order: " + opts);
+    const apply = row && row.querySelector(".cdbx-row-aside .cdbx-btn");
+    ok(!!apply && apply.textContent === "Apply", "and an Apply button");
+    ok(apply.disabled, "Apply is disabled while none is selected");
+    ok(!/overlay/.test(activeBadge()), "the badge dropped the overlay note: " + activeBadge());
+
+    select.value = "my-own";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    ok(!apply.disabled, "choosing a candidate enables Apply");
+    apply.click();
+    await sleep(80);
+    ok(window.__overlayCalls.join(",") === ",my-own", "Apply called setOverlay with the chosen name: " + JSON.stringify(window.__overlayCalls));
+    row = overlayRow();
+    ok(!!row && row.querySelector(".cdbx-id").textContent === "Overlay: My-own",
+       "the row names the new overlay: " + (row ? row.querySelector(".cdbx-id").textContent : "no row"));
+    ok(/active \+ overlay/.test(activeBadge()), "and the badge is back: " + activeBadge());
+    ok(labels() === "Your themes:1 | Gaming:3 | Common:5 | More:1",
+       "the sections survive the overlay re-render");
+  }
 }
 
 // The invariant the broken injection violated: a <ul> may only ever hold <li>
@@ -1264,12 +1315,30 @@ window.__deployState = {
   ]
 };
 window.claudeAppBindings = {};
+// The overlay fixture: a matugen-style hidden template is merged over the
+// active theme, and the user's own themes are the other candidates. setOverlay
+// records the call and flips what overlay() answers next, like the engine.
+window.__overlay = "wallpaper-accent";
+window.__overlayCalls = [];
+window.__overlays = [
+  { name: "wallpaper-accent", displayName: "Wallpaper accent", hidden: true, source: "custom" },
+  { name: "my-own", displayName: "My-own", hidden: false, source: "custom" },
+  { name: "my-neon", displayName: "My-neon", hidden: false, source: "custom" }
+];
 window.cdbExtra = {
   themesList: stub({ ok: true, entries: window.__themes, active: "mario",
     configPath: "/home/u/.config/Claude/claude-desktop-extra.jsonc",
     savePath: "/home/u/.config/Claude/claude-desktop-extra.json" }),
   themesApply: function () {
     return Promise.resolve({ ok: true, saved: "/home/u/.config/Claude/claude-desktop-extra.jsonc" });
+  },
+  themesOverlay: function () { return Promise.resolve({ ok: true, overlay: window.__overlay }); },
+  themesOverlays: function () { return Promise.resolve({ ok: true, entries: window.__overlays }); },
+  themesSetOverlay: function (name) {
+    window.__overlayCalls.push(name);
+    window.__overlay = name || null;
+    return Promise.resolve({ ok: true, overlay: window.__overlay, changed: true,
+      saved: "/home/u/.config/Claude/claude-desktop-extra.jsonc" });
   },
   flagsCatalog: function () {
     return Promise.resolve({ ok: true, count: window.__flagCatalog.length, entries: window.__flagCatalog });

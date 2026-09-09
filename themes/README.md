@@ -433,12 +433,21 @@ Newer surfaces don't read `--bg-*` directly - the patch maps them onto your
 `--bg-*` / `--text-*` automatically, so the whole UI recolors out of the box:
 
 - **`--cds-*`** (Console Design System): popovers, the Cowork / Code frame, Settings
-  dialogs. The patch maps `--cds-surface-*`, `--cds-text-*`, `--cds-border`,
-  `--cds-clay` onto your semantic tokens.
+  dialogs, the mode pills, chips and filled buttons. The patch maps the surfaces
+  (`--cds-surface-*`, `--cds-page-bg`), the whole `--cds-neutral-*` ramp (page side
+  per mode onto `--bg-*`, text side onto `--text-*`) and the semantic fills, text,
+  backgrounds, borders and on-colors for accent, brand, pro, danger, success and
+  warning (`--cds-fill-*`, `--cds-text-*`, `--cds-bg-*`, `--cds-border-*`,
+  `--cds-on-*`) onto your tokens. Alphas, borders, tooltips and the segmented control
+  derive from `--cds-neutral-900` upstream, so they follow without a line of their own.
+  Left stock on purpose: the raw `--cds-gray-*` palette, the white switch knob and
+  slider handle, and the yellow warning fill (it also paints text highlights).
 - **`--df-*`** (Desktop Frame): the window chrome - sidebar (`--df-z2`), content
   panes (`--df-z1`). These are a neutral gray ramp independent of `--bg-*`; the
   patch overrides `.dframe-sidebar` / `.dframe-content` and the `--df-z*` /
-  `--df-surface-primary` / `--df-sidebar-bg` tokens to match your `--bg-*` hue.
+  `--df-surface-primary` / `--df-sidebar-bg` tokens, plus the sidebar row states
+  `--df-hover` / `--df-selected` (an alpha of your `--text-000`), to match your
+  `--bg-*` hue.
 
 You author only `--bg-*` / `--text-*` / `--accent-*` (+ the `--claude-*` hex chrome);
 the CDS and DF layers follow.

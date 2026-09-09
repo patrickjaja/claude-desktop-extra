@@ -12,6 +12,26 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   `thickFrame: false` leave it; a transparent window drops it but also drops the buttons). The
   matugen example therefore derives the GTK headerbar color from the same ramp as Claude's backgrounds,
   so the frame blends in; `--native-titlebar` is the other way to get rid of it.
+- **Overlay control in the theme UIs.** A `themeOverlay` recolored the app while the Ctrl+Shift+T
+  picker and Settings -> Extra -> Themes still showed the picked theme as plain "active", and the only
+  way to turn it off was the config file. Both now carry an Overlay bar: with an overlay active it
+  names it and offers Turn off, and the active card gets an `overlay` badge; with none active it lists
+  your own themes (hidden generator templates included) in a select with Apply. Backed by three new
+  picker IPC channels (`cdb-themes:overlay`, `cdb-themes:overlays`, `cdb-themes:set-overlay`) that
+  forward to the theme engine and answer "not supported by this build" on an engine without it. New
+  harness `scripts/tests/community/test-picker-overlay.mjs`; the Extra DOM suite covers the row.
+- **Themes reach the new CDS token layer.** claude.ai now styles the mode pills ("Chat and Cowork"
+  / "Code"), chips, filled buttons and the sidebar row states from `--cds-neutral-*`, `--cds-fill-*`
+  and `--df-hover` / `--df-selected` tokens the engine did not remap, so they stayed Anthropic gray
+  and blue under any theme. The engine now maps the whole neutral ramp (per mode: upstream inverts
+  it in dark, so neutral-0 is the page side and neutral-900 the text side in both modes), the
+  accent / brand / pro / danger / success fills, texts, backgrounds, borders and on-colors, the
+  warning text / background / border, and the frame's hover / selected rows onto the theme's tokens.
+  Alphas, borders, tooltips and the segmented control derive from `--cds-neutral-900` upstream and
+  follow. The gray palette, the white switch knob and the yellow warning fill (it also paints text
+  highlights) stay stock. Reference: `baseline/THEME_TOKEN_MAP.md` section 7; the theme-scope
+  harness proves the pills track resolves to the theme in both modes.
+
 ### Upstream bump to Claude Desktop v1.49585.0
 
 The auto-release failed on a renamed file, not on a re-minify: the bundled Microsoft 365 MCP server
