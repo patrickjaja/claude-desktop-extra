@@ -31,6 +31,13 @@
 #                              (frame:true + titleBarStyle:"default"). Default
 #                              is the integrated titlebar with overlay. Also
 #                              via --native-titlebar.
+#   CLAUDE_NO_WINDOW_CONTROLS=1
+#                            - Frameless window with no window-control buttons
+#                              (frame:false + hasShadow:false, no overlay).
+#                              Removes the 4 px border Chromium paints around
+#                              frameless windows on xfwm4/i3/Awesome. Close or
+#                              minimize via your WM (e.g. Alt+F4). Also via
+#                              --no-window-controls.
 
 set -euo pipefail
 
@@ -118,6 +125,7 @@ fi
 #   --profile=NAME / --profile NAME: sets CLAUDE_PROFILE
 #   --no-systemd-scope:              sets CLAUDE_DISABLE_SYSTEMD_SCOPE=1
 #   --native-titlebar:               sets CLAUDE_NATIVE_TITLEBAR=1
+#   --no-window-controls:            sets CLAUDE_NO_WINDOW_CONTROLS=1
 #   --1p / --3p:                     persist deploymentMode before launch
 _deployment_mode=""
 _filtered_args=()
@@ -142,6 +150,10 @@ while (( $# > 0 )); do
             ;;
         --native-titlebar)
             export CLAUDE_NATIVE_TITLEBAR=1
+            shift
+            ;;
+        --no-window-controls)
+            export CLAUDE_NO_WINDOW_CONTROLS=1
             shift
             ;;
         --1p|--3p)
@@ -984,8 +996,13 @@ _diagnose() {
     # XDG_CURRENT_DESKTOP. Surfaced here so a mismatch between the two is visible
     # when triaging KDE-Wayland routing reports (issue #194).
     echo "XDG_SESSION_DESKTOP = ${XDG_SESSION_DESKTOP:-(unset)}"
+    # The mode is resolved from env/flag OR the extra config before the launch
+    # flow reaches here, so ${_titlebar_source} / ${_no_controls_source} name
+    # where it actually came from.
     if [[ "${CLAUDE_NATIVE_TITLEBAR:-}" == '1' ]]; then
-        echo "Titlebar = native (CLAUDE_NATIVE_TITLEBAR=1)"
+        echo "Titlebar = native (${_titlebar_source:-CLAUDE_NATIVE_TITLEBAR=1})"
+    elif [[ "${CLAUDE_NO_WINDOW_CONTROLS:-}" == '1' ]]; then
+        echo "Titlebar = frameless, no window controls (${_no_controls_source:-CLAUDE_NO_WINDOW_CONTROLS=1})"
     else
         echo "Titlebar = integrated (default)"
     fi
@@ -1331,6 +1348,12 @@ Options:
   --native-titlebar          Restore the native window frame instead of the
                             integrated (overlay) titlebar. Same as setting
                             CLAUDE_NATIVE_TITLEBAR=1.
+  --no-window-controls      Drop the window-control buttons from the
+                            integrated titlebar. Removes the 4 px frame
+                            Chromium draws around frameless windows on
+                            xfwm4/i3/Awesome; close and minimize via your WM
+                            (e.g. Alt+F4). Same as setting
+                            CLAUDE_NO_WINDOW_CONTROLS=1.
   --no-systemd-scope        Skip the systemd --user --scope wrapper for this
                             launch. Use in sandboxes (bwrap, distrobox, ...)
                             where the systemd private socket is unreachable.
@@ -1342,6 +1365,9 @@ Environment variables:
                             and the Claude Code child process so per-profile
                             sockets and config dirs are picked up automatically.
   CLAUDE_NATIVE_TITLEBAR=1  Restore the native window frame (same as --native-titlebar).
+  CLAUDE_NO_WINDOW_CONTROLS=1
+                            Frameless window with no window-control buttons
+                            (same as --no-window-controls).
   CLAUDE_USE_XWAYLAND=1     Force XWayland instead of native Wayland.
   CLAUDE_MENU_BAR=visible   Menu bar mode: auto (default), visible, hidden.
   CLAUDE_GPU_BACKEND=angle-gl Render via ANGLE-GL (keeps GPU accel; fixes
@@ -1575,15 +1601,153 @@ fi
 # Build Electron arguments
 # ---------------------------------------------------------------------------
 
+# Titlebar mode resolution: env var / CLI flag OR persisted config.
+#
+# Both modes are also Settings -> Extra -> Community toggles, persisted as
+# `nativeTitlebar` / `noWindowControls` in <userData>/claude-desktop-extra.json
+# (the .jsonc variant wins and locks them, matching the app's own precedence).
+# The BrowserWindow patch reads those keys directly, but the launcher-side
+# effects only fire off the env vars: --disable-features=CustomTitlebar,
+# ELECTRON_USE_SYSTEM_TITLE_BAR and - the one that actually breaks - the
+# WaylandWindowDecorations feature flag. Without resolving the config here, a
+# config-driven native frame on Wayland would come up with NO decorations.
+#
+# We only ever turn a mode ON from the config: an explicitly set env var (or
+# the CLI flag, which sets one) always wins and is never overridden or unset,
+# including an explicit CLAUDE_NATIVE_TITLEBAR=0 meaning "not native".
+#
+# Known limitation - 1p userData only. We read $config_dir, the dir this
+# launcher passes as --user-data-dir. A 3p deployment relocates userData to
+# <userData>-3p, so the Extra page writes claude-desktop-extra.json THERE and a
+# 3p user's saved switch is not seen here. Scope of the gap: `noWindowControls`
+# is unaffected either way (the launcher contributes no argument for it - bare
+# mode is purely a BrowserWindow decision), so this is `nativeTitlebar` only,
+# on Wayland only, and costs only the WaylandWindowDecorations feature flag.
+# Workaround: pass --native-titlebar or set CLAUDE_NATIVE_TITLEBAR=1, which the
+# precedence above deliberately lets win.
+#
+# Deliberately NOT fixed by also probing "${config_dir}-3p": that inverts the
+# precedence for anyone who used 3p once and switched back, because their stale
+# -3p file would outrank their live 1p config silently and permanently. And a
+# correct 3p decision cannot be faked cheaply here - upstream keys it off
+# /etc/claude-desktop/managed-settings.json carrying an inferenceProvider OR a
+# user-writable store under <userData>-3p/configLibrary, with a persisted
+# `deploymentMode` able to force 1p while 3p config is still on disk. Any
+# shortcut we invent diverges from the app's own resolver and mis-reads
+# somebody's config, so we stay honest about the gap instead of guessing.
+_titlebar_source='CLAUDE_NATIVE_TITLEBAR=1'
+_no_controls_source='CLAUDE_NO_WINDOW_CONTROLS=1'
+
+# Echo whichever of the requested keys $1 resolves to boolean true. Degrades
+# silently to "no keys": no python3, an unreadable file and malformed JSON are
+# all treated as absent, because a broken config file must never stop the app
+# from starting. Always returns 0 so `set -e` cannot trip over it.
+_cdb_extra_true_keys() {
+    local _file="$1"
+    shift
+    command -v python3 >/dev/null 2>&1 || return 0
+    python3 - "$_file" "$@" 2>/dev/null <<'PY' || true
+import json, sys
+
+path, keys = sys.argv[1], sys.argv[2:]
+try:
+    with open(path, encoding="utf-8") as fh:
+        raw = fh.read()
+except OSError:
+    sys.exit(0)
+
+# Strip // and /* */ comments so the .jsonc variant parses, skipping anything
+# inside a string literal so a URL or a Windows path is left intact.
+out, i, n, in_str = [], 0, len(raw), False
+while i < n:
+    c = raw[i]
+    if in_str:
+        out.append(c)
+        if c == "\\" and i + 1 < n:
+            out.append(raw[i + 1])
+            i += 2
+            continue
+        if c == '"':
+            in_str = False
+        i += 1
+    elif c == '"':
+        in_str = True
+        out.append(c)
+        i += 1
+    elif c == "/" and i + 1 < n and raw[i + 1] == "/":
+        while i < n and raw[i] != "\n":
+            i += 1
+    elif c == "/" and i + 1 < n and raw[i + 1] == "*":
+        i += 2
+        while i + 1 < n and not (raw[i] == "*" and raw[i + 1] == "/"):
+            i += 1
+        i += 2
+    else:
+        out.append(c)
+        i += 1
+
+try:
+    data = json.loads("".join(out))
+except ValueError:
+    sys.exit(0)
+if not isinstance(data, dict):
+    sys.exit(0)
+
+# `is True` on purpose: only a real JSON `true` counts. The string "true" and
+# the number 1 are NOT on, so a hand-edited config cannot half-enable a mode
+# here while the app's own boolean read says off.
+for key in keys:
+    if data.get(key) is True:
+        print(key)
+PY
+    return 0
+}
+
+# Pick the config file in THIS shell, not inside the command substitution below
+# (a subshell's variable assignments would be lost), so the log can name it.
+_cdb_extra_src=''
+for _cdb_extra_f in "$config_dir/claude-desktop-extra.jsonc" \
+                    "$config_dir/claude-desktop-extra.json"; do
+    if [[ -f "$_cdb_extra_f" && -r "$_cdb_extra_f" ]]; then
+        _cdb_extra_src="$_cdb_extra_f"
+        break
+    fi
+done
+
+_cdb_extra_keys=' '
+if [[ -n "$_cdb_extra_src" ]]; then
+    _cdb_extra_keys=" $(_cdb_extra_true_keys "$_cdb_extra_src" \
+        nativeTitlebar noWindowControls | tr '\n' ' ')"
+fi
+
+if [[ -z "${CLAUDE_NATIVE_TITLEBAR:-}" && "$_cdb_extra_keys" == *' nativeTitlebar '* ]]; then
+    export CLAUDE_NATIVE_TITLEBAR=1
+    _titlebar_source="nativeTitlebar in ${_cdb_extra_src##*/}"
+fi
+if [[ -z "${CLAUDE_NO_WINDOW_CONTROLS:-}" && "$_cdb_extra_keys" == *' noWindowControls '* ]]; then
+    export CLAUDE_NO_WINDOW_CONTROLS=1
+    _no_controls_source="noWindowControls in ${_cdb_extra_src##*/}"
+fi
+
+# Titlebar modes are mutually exclusive; the native frame wins.
+if [[ "${CLAUDE_NATIVE_TITLEBAR:-}" == '1' && "${CLAUDE_NO_WINDOW_CONTROLS:-}" == '1' ]]; then
+    log "Titlebar: native ($_titlebar_source) and no window controls ($_no_controls_source) are mutually exclusive; using native"
+    unset CLAUDE_NO_WINDOW_CONTROLS
+    _no_controls_source=''
+fi
+
 ELECTRON_ARGS=()
 
-# Titlebar mode: integrated (default) vs native (opt-out).
+# Titlebar mode: integrated (default) vs bare (frameless, no controls) vs
+# native (opt-out).
 # In native mode, disable Chromium's CustomTitlebar feature so Electron
-# renders the system frame. In integrated mode, keep it enabled so
+# renders the system frame. In integrated and bare mode, keep it enabled so
 # titleBarOverlay works.
 if [[ "${CLAUDE_NATIVE_TITLEBAR:-}" == '1' ]]; then
     ELECTRON_ARGS+=('--disable-features=CustomTitlebar')
-    log 'Titlebar: native (CLAUDE_NATIVE_TITLEBAR=1)'
+    log "Titlebar: native ($_titlebar_source)"
+elif [[ "${CLAUDE_NO_WINDOW_CONTROLS:-}" == '1' ]]; then
+    log "Titlebar: frameless, no window controls ($_no_controls_source)"
 else
     log 'Titlebar: integrated (default)'
 fi
@@ -1832,6 +1996,11 @@ fi
 # Pass through CLAUDE_NATIVE_TITLEBAR if set (env var, not just --flag)
 if [[ -n "${CLAUDE_NATIVE_TITLEBAR:-}" ]]; then
     export CLAUDE_NATIVE_TITLEBAR
+fi
+
+# Pass through CLAUDE_NO_WINDOW_CONTROLS if set (env var, not just --flag)
+if [[ -n "${CLAUDE_NO_WINDOW_CONTROLS:-}" ]]; then
+    export CLAUDE_NO_WINDOW_CONTROLS
 fi
 
 # Pass through CLAUDE_MENU_BAR if set (auto/visible/hidden)

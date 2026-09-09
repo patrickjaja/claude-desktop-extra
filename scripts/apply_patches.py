@@ -33,7 +33,7 @@ PATCH_SUBDIRS = ("linux", "core", "community")
 # forgotten `git mv` changes what gets discovered, the build must fail rather
 # than quietly ship a release with a patch missing. Bump this when you add or
 # remove a patch.
-EXPECTED_PATCH_COUNT = 47
+EXPECTED_PATCH_COUNT = 48
 
 
 def discover_patch_files(patches_dir: Path):

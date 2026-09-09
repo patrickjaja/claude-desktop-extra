@@ -6,12 +6,38 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ### Dynamic themes: greyscale wallpapers and the window frame
 
-- The thin frame around the app since v1.49585.0 is Electron 43+ behavior, not ours: frameless X11
-  windows get a 4 px client-side border painted in the GTK theme's headerbar color, which no window
-  option removes while keeping the window buttons (`roundedCorners: false`, `hasShadow: false`,
-  `thickFrame: false` leave it; a transparent window drops it but also drops the buttons). The
-  matugen example therefore derives the GTK headerbar color from the same ramp as Claude's backgrounds,
-  so the frame blends in; `--native-titlebar` is the other way to get rid of it.
+- **The thin frame around the app is root-caused, and there is now a mode that removes it.** It is
+  not an Electron regression as such: Chromium refuses to set `_GTK_FRAME_EXTENTS` on xfwm4 (a
+  hardcoded carve-out guarding an xfwm4 bug that was fixed back in 2021) and on window managers that
+  never advertise the hint (i3, Awesome), and then paints a 4 px resize band *inside* the window,
+  colored from the GTK headerbar. Electron 43 inherited that path when it replaced its own frameless
+  view with Chromium's (electron/electron#51161); the border is still present in 44.3.0 and in
+  45.0.0-alpha.5, so waiting for a newer Electron does not help. Upstream: electron/electron#52024.
+- **Two new switches in Settings -> Extra -> Community Features: Hide window controls and Native
+  titlebar.** Chromium only paints that band while the window controls overlay is on or the window has
+  a shadow, so **Hide window controls** opens the main window frameless with no overlay and
+  `hasShadow: false`, and the frame disappears completely. Dragging the window edges still resizes it -
+  the band keeps its input region, it just is not painted - but there are no min/max/close buttons, so
+  you close and minimize through your WM (Alt+F4 and friends). **Native titlebar** gives you the system
+  window frame instead, which also avoids the band because the window is no longer frameless. Each is a
+  persisted config key (`noWindowControls`, `nativeTitlebar`) that the launcher flags
+  `--no-window-controls` and `--native-titlebar` still override per launch, and native wins over hiding
+  the controls whichever surface each came from.
+- Neither switch can apply live: the window frame is fixed when the window is created, and Electron has
+  no `setFrame` while `setTitleBarOverlay(false)` throws outright. So the Community panel grew its first
+  restart affordance - a bar that appears only while a saved switch and the running window disagree,
+  the same conditional shape the Deployment panel uses, rather than a notice that nags permanently.
+- The same patch stopped writing a window `icon` it never actually set: upstream passes its own `icon`
+  later in the same options object and the last key wins, so the path we spliced in had been discarded
+  from the day it was written. A new guard now fails the build if upstream ever adds its own `frame`,
+  `hasShadow`, `titleBarStyle`, `titleBarOverlay` or `autoHideMenuBar` after our splice point, because
+  that would silently drop the window mode with no error anywhere - which is exactly what the `icon`
+  key had been doing unnoticed.
+- Without that mode, the frame can only be disguised, not removed: the matugen example derives the GTK
+  headerbar color from the same ramp as Claude's backgrounds so the band blends into the window, which
+  leaves a 1 px hairline (Chromium draws the band's outline in a contrasting shade of the fill, so an
+  exact color match can never hide it). Maximizing the window also removes it, and `--native-titlebar`
+  avoids it by using the system frame.
 - The mode script decides dark unless the wallpaper's mean luma exceeds 0.6 (was 0.55): a bright sky over
   dark ground reads as dark to people. The light background ramps of the overlay-bg and tinted templates
   sit at 97 to 86 percent lightness instead of 99 to 90, so a low-chroma wallpaper still tints them.

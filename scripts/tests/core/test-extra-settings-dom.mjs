@@ -233,9 +233,11 @@ async function type(value) {
   await sleep(30);
 }
 
-// Community Features: only our own switches, all of them live, plus the filter
-// bar over them. Nothing that needs a restart may appear here - that notice and
-// Anthropic's flag list moved to their own panel, asserted below.
+// Community Features: only our own switches, live except for the two window
+// modes, plus the filter bar over them. No STANDING restart notice may appear
+// here - Anthropic's flag list has that, in its own panel, asserted below. The
+// window modes' bar is conditional and starts hidden, which is asserted as
+// such.
 async function featuresPanel(featuresItem) {
   featuresItem.click();
   await sleep(120);
@@ -245,8 +247,18 @@ async function featuresPanel(featuresItem) {
   ok(panel.querySelector(".cdbx-h1").textContent === "Community Features",
      "the heading spells the full name out even though the nav row says Community: " +
      panel.querySelector(".cdbx-h1").textContent);
-  ok(!panel.querySelector(".cdbx-notice"),
-     "no restart notice here - every switch in this panel applies live");
+  // The only notice this panel may hold is the window modes' restart bar, and
+  // with the fixture's saved settings matching the running window it has to be
+  // hidden: a bar that is always up is a nag, not information.
+  const notices = panel.querySelectorAll(".cdbx-notice");
+  ok(notices.length === 1, "exactly one notice in this panel, the window restart bar (" + notices.length + ")");
+  if (notices.length === 1) {
+    ok(notices[0].classList.contains("cdbx-hide"),
+       "hidden while the saved window modes and the running window agree");
+    ok(notices[0].querySelector(".cdbx-notice-title").textContent === "Restart Claude Desktop to apply",
+       "titled: " + notices[0].querySelector(".cdbx-notice-title").textContent);
+    ok(!!notices[0].querySelector(".cdbx-btn"), "and it carries a Restart now button");
+  }
   // The config file row, the same footnote the Themes and Anthropic Features
   // panels carry. It arrives from an async paths() read, so give it a tick.
   await sleep(60);
@@ -312,6 +324,195 @@ async function featuresPanel(featuresItem) {
     ok(qo.getAttribute("aria-checked") === "true", "the switch reflects the write");
   }
 
+  // --- the two window modes. Three mutually exclusive outcomes behind two
+  // switches (native titlebar > no window controls > integrated), so the pair
+  // is checked together: the override has to be visible in the overridden row,
+  // and the restart bar has to follow the disagreement rather than just latch.
+  const wcSel = '.cdbx-switch[aria-label="open the main window frameless, without window-control buttons or a shadow"]';
+  const ntSel = '.cdbx-switch[aria-label="use the system window frame instead of this app\'s integrated titlebar"]';
+  const wc = panel.querySelector(wcSel);
+  const nt = panel.querySelector(ntSel);
+  ok(!!wc, "renders the Hide window controls switch");
+  ok(!!nt, "renders the Native titlebar switch");
+  if (wc && nt) {
+    const wcRow = wc.closest(".cdbx-row");
+    const ntRow = nt.closest(".cdbx-row");
+    const bar = panel.querySelector(".cdbx-notice");
+    const wcState = function () { return wcRow.querySelector(".cdbx-state").textContent; };
+    const barUp = function () { return !bar.classList.contains("cdbx-hide"); };
+    ok(wcRow.querySelector(".cdbx-id").textContent === "Hide window controls", "titled Hide window controls");
+    ok(ntRow.querySelector(".cdbx-id").textContent === "Native titlebar", "titled Native titlebar");
+    ok(wc.getAttribute("aria-checked") === "false" && nt.getAttribute("aria-checked") === "false",
+       "both off by default (opt-in)");
+    ok(!wc.disabled && !nt.disabled, "both switches live when nothing locks or overrides them");
+    ok(wcState() === "off - window buttons, integrated titlebar",
+       "the controls row's plain wording while native is off: " + wcState());
+    ok(ntRow.querySelector(".cdbx-state").textContent === "off - the titlebar is this app's own",
+       "the native row's off wording holds for both other modes: " +
+       ntRow.querySelector(".cdbx-state").textContent);
+
+    // Flipping native on: the other row must SAY it is overridden, refuse the
+    // click, and the restart bar must come up.
+    nt.click();
+    await sleep(80);
+    ok((window.__ntCalls || []).length === 1 && window.__ntCalls[0] === true,
+       "clicking it calls nativeTitlebarSet(true) exactly once: " + JSON.stringify(window.__ntCalls));
+    ok(wcState() === "off - overridden by the native titlebar",
+       "the overridden row says so, in its own state line: " + wcState());
+    ok(wc.disabled === true, "and its switch is disabled while it cannot take effect");
+    ok(wc.title === "The native titlebar is on, and it wins over this",
+       "with a title that explains why: " + wc.title);
+    const wcBefore = (window.__wcCalls || []).length;
+    wc.click();
+    await sleep(60);
+    ok((window.__wcCalls || []).length === wcBefore, "a click on the disabled switch writes nothing");
+    ok(barUp(), "the restart bar is up: enabled true, active false");
+
+    // ... and flipping it straight back must take the bar down again, not leave
+    // a restart owed for a change that is no longer pending.
+    nt.click();
+    await sleep(80);
+    ok(!barUp(), "flipping it back takes the bar down - nothing is owed any more");
+    ok(wc.disabled === false, "and the other switch is live again");
+    ok(wcState() === "off - window buttons, integrated titlebar", "with its plain wording back: " + wcState());
+
+    // The same, driven from the other row.
+    wc.click();
+    await sleep(80);
+    ok((window.__wcCalls || []).length === wcBefore + 1 && window.__wcCalls[wcBefore] === true,
+       "the controls switch writes once it is live again: " + JSON.stringify(window.__wcCalls));
+    ok(wcState() === "on - no window buttons, no frame", "its on wording: " + wcState());
+    ok(barUp(), "and it raises the bar on its own");
+    nt.click();
+    await sleep(80);
+    ok(wcState() === "on, but the native titlebar overrides it",
+       "on plus native on is spelled out, not left to the reader: " + wcState());
+    nt.click();
+    await sleep(80);
+    wc.click();
+    await sleep(80);
+    ok(!barUp(), "and back to both agreeing, bar down");
+  }
+
+  // A saved window mode the running window does not have: the bar must be up
+  // from the first paint, and the override must survive the lock suffix.
+  {
+    window.__ntState = { ok: true, enabled: true, active: false, lockedByJsonc: false, source: "json", envForced: false };
+    window.__wcState = { ok: true, enabled: false, active: false, lockedByJsonc: true, source: "jsonc", envForced: false };
+    featuresItem.click();
+    await sleep(200);
+    const p2 = document.querySelector(".cdbx-panel");
+    const wc2 = p2.querySelector(wcSel);
+    const nt2 = p2.querySelector(ntSel);
+    ok(!!wc2 && !!nt2, "both window rows render again on a re-entry");
+    if (wc2 && nt2) {
+      ok(nt2.getAttribute("aria-checked") === "true", "the native switch reflects enabled:true from disk");
+      const line = wc2.closest(".cdbx-row").querySelector(".cdbx-state").textContent;
+      ok(line === "off - overridden by the native titlebar - set in claude-desktop-extra.jsonc",
+         "the override wording and the .jsonc lock suffix survive together: " + line);
+      ok(wc2.disabled === true, "and the overridden, locked switch is disabled");
+      const bar2 = p2.querySelector(".cdbx-notice");
+      ok(!!bar2 && !bar2.classList.contains("cdbx-hide"),
+         "the restart bar is up on load, because the saved mode is not the running one");
+      const seen = window.__relaunchCalls;
+      bar2.querySelector(".cdbx-btn").click();
+      await sleep(60);
+      ok(window.__relaunchCalls === seen + 1, "its Restart now button relaunches the app");
+      // The flags panel below counts the same global and expects its own click
+      // to be the first one, so hand the counter back as it was found.
+      window.__relaunchCalls = seen;
+    }
+    window.__ntState = null;
+    window.__wcState = null;
+  }
+
+  // A launcher flag or env var forcing a mode on for this run. The switch must
+  // keep showing what is SAVED and stay usable, the line must say both, and no
+  // restart may be offered: the flag decides the next start the same way, so a
+  // restart cannot close the gap and the bar would be promising a lie.
+  {
+    window.__wcState = { ok: true, enabled: false, active: true, lockedByJsonc: false, source: "default", envForced: true };
+    window.__ntState = { ok: true, enabled: false, active: false, lockedByJsonc: false, source: "default", envForced: false };
+    featuresItem.click();
+    await sleep(200);
+    const p3 = document.querySelector(".cdbx-panel");
+    const wc3 = p3.querySelector(wcSel);
+    if (wc3) {
+      const line = wc3.closest(".cdbx-row").querySelector(".cdbx-state").textContent;
+      ok(line === "on for this run by a launcher flag - saved: off",
+         "the forced row names the flag AND what is saved: " + line);
+      ok(wc3.getAttribute("aria-checked") === "false",
+         "the switch still shows the saved value, not the forced one");
+      ok(!wc3.disabled, "and stays usable - the saved value is still the user's to change");
+      const bar3 = p3.querySelector(".cdbx-notice");
+      ok(!!bar3 && bar3.classList.contains("cdbx-hide"),
+         "no restart bar for a difference a restart cannot resolve");
+    }
+    // The same row with the flag on top of a saved on, so the wording is not
+    // secretly keyed to the saved value being off.
+    window.__wcState = { ok: true, enabled: true, active: true, lockedByJsonc: false, source: "json", envForced: true };
+    featuresItem.click();
+    await sleep(200);
+    const wc3b = document.querySelector(".cdbx-panel").querySelector(wcSel);
+    if (wc3b) {
+      const line = wc3b.closest(".cdbx-row").querySelector(".cdbx-state").textContent;
+      ok(line === "on for this run by a launcher flag - saved: on", "saved on, forced on: " + line);
+    }
+
+    // A flag forcing the NATIVE titlebar overrides the other row just as
+    // thoroughly as a saved native does, so the other row must say so - but its
+    // switch stays usable, because a flag is not something the user can undo
+    // from this page and the saved value is still worth setting for a launch
+    // without it.
+    window.__ntState = { ok: true, enabled: false, active: true, lockedByJsonc: false, source: "default", envForced: true };
+    window.__wcState = { ok: true, enabled: true, active: true, lockedByJsonc: false, source: "json", envForced: false };
+    featuresItem.click();
+    await sleep(200);
+    const p3c = document.querySelector(".cdbx-panel");
+    const wc3c = p3c.querySelector(wcSel);
+    const nt3c = p3c.querySelector(ntSel);
+    if (wc3c && nt3c) {
+      const wcLine = wc3c.closest(".cdbx-row").querySelector(".cdbx-state").textContent;
+      ok(wcLine === "on, but the native titlebar overrides it",
+         "a forced native titlebar still overrides the other row: " + wcLine);
+      ok(!wc3c.disabled, "and that row stays usable, since no switch here can undo a flag");
+      const ntLine = nt3c.closest(".cdbx-row").querySelector(".cdbx-state").textContent;
+      ok(ntLine === "on for this run by a launcher flag - saved: off",
+         "while the native row names the flag and what is saved: " + ntLine);
+      ok(nt3c.getAttribute("aria-checked") === "false", "its switch shows the saved off");
+      const bar3c = p3c.querySelector(".cdbx-notice");
+      ok(!!bar3c && bar3c.classList.contains("cdbx-hide"),
+         "and no bar: the forced row cannot be resolved by a restart and the other row agrees");
+    }
+    window.__wcState = null;
+    window.__ntState = null;
+  }
+
+  // active not a boolean: no window had been built when the value was read, so
+  // there is nothing to compare and no bar to raise, however the saved settings
+  // read.
+  {
+    window.__wcState = { ok: true, enabled: true, active: null, lockedByJsonc: false, source: "json", envForced: false };
+    window.__ntState = { ok: true, enabled: true, active: null, lockedByJsonc: false, source: "json", envForced: false };
+    featuresItem.click();
+    await sleep(200);
+    const p4 = document.querySelector(".cdbx-panel");
+    const bar4 = p4.querySelector(".cdbx-notice");
+    ok(!!p4.querySelector(wcSel) && !!p4.querySelector(ntSel), "both rows still render with active unknown");
+    ok(!!bar4 && bar4.classList.contains("cdbx-hide"),
+       "and the bar stays down: an unknown running value is not a disagreement");
+    window.__wcState = null;
+    window.__ntState = null;
+  }
+
+  // Back to the default fixture for the rest of this walk-through. The panel
+  // element itself is reused across renders, so the panel handle still points
+  // at it - only the nodes captured above are gone, and everything below
+  // re-queries. (No backticks in here: this whole driver is one String.raw
+  // template, and one stray backtick ends it.)
+  featuresItem.click();
+  await sleep(200);
+
   const glow = panel.querySelector(".cdbx-switch[aria-label='calm the Cowork glow']");
   ok(!!glow, "the Cowork glow switch renders in the Community Features panel");
   if (glow) {
@@ -345,17 +546,34 @@ async function featuresPanel(featuresItem) {
     ok(pick.getAttribute("aria-checked") === "true", "and it turns back on");
   }
 
-  // This panel carries no restart notice, so every row has to say for itself
-  // that it needs no restart - verified per feature against the code that
-  // consumes each pref, see the comment above renderFeatures.
-  const notes = Array.from(panel.querySelectorAll(".cdbx-row .cdbx-note"));
-  ok(notes.length > 0 && notes.every(function (n) {
-       return n.textContent.toLowerCase().indexOf("applies live") >= 0;
-     }),
-     "every row's note says it applies live (" + notes.length + " rows): " +
-     notes.filter(function (n) { return n.textContent.toLowerCase().indexOf("applies live") < 0; })
-       .map(function (n) { return n.closest(".cdbx-row").querySelector(".cdbx-id").textContent; })
-       .join(",") || "all of them");
+  // This panel carries no STANDING restart notice, so every row has to say for
+  // itself which of the two it is - verified per feature against the code that
+  // consumes each pref, see the comment above renderFeatures. The window modes
+  // are the only rows a restart is allowed to reach: they are BrowserWindow
+  // constructor options with no live setter on Electron 44. Every other row
+  // must promise live, and a row that quietly stops promising it trips this.
+  const RESTART_ROWS = ["Hide window controls", "Native titlebar"];
+  const rowNotes = Array.from(panel.querySelectorAll(".cdbx-row")).map(function (r) {
+    return {
+      title: r.querySelector(".cdbx-id").textContent,
+      note: r.querySelector(".cdbx-note").textContent.toLowerCase()
+    };
+  });
+  const liveRows = rowNotes.filter(function (r) { return RESTART_ROWS.indexOf(r.title) < 0; });
+  const restartRows = rowNotes.filter(function (r) { return RESTART_ROWS.indexOf(r.title) >= 0; });
+  const missing = function (list, needle, want) {
+    return list.filter(function (r) { return (r.note.indexOf(needle) >= 0) !== want; })
+      .map(function (r) { return r.title; }).join(",");
+  };
+  ok(liveRows.length === rowNotes.length - RESTART_ROWS.length && liveRows.length > 0,
+     "the panel is " + liveRows.length + " live rows plus the " + RESTART_ROWS.length + " window modes");
+  ok(!missing(liveRows, "applies live", true),
+     "every live row's note says it applies live; these do not: " + missing(liveRows, "applies live", true));
+  ok(restartRows.length === RESTART_ROWS.length && !missing(restartRows, "after a restart", true),
+     "and each window mode's note says it takes effect after a restart; these do not: " +
+     missing(restartRows, "after a restart", true));
+  ok(!missing(restartRows, "applies live", false),
+     "and neither of them also claims to apply live: " + missing(restartRows, "applies live", false));
 
   // --- the filter bar. Rows are HIDDEN, never re-rendered: a redraw would
   // re-fire every row's async read and lose the state the user just set.
@@ -1368,6 +1586,15 @@ window.cdbExtra = {
   },
   quickOpenRead: function () { return Promise.resolve(window.__quickOpenState || { ok: true, enabled: false, lockedByJsonc: false, source: "default" }); },
   quickOpenSet: function (enabled) { window.__quickOpenCalls = (window.__quickOpenCalls || []).concat([enabled]); return Promise.resolve({ ok: true, enabled: enabled }); },
+  // The two window modes. Three fields the page treats as three different
+  // facts, so a fixture that conflated any of them could not tell the states
+  // apart: "enabled" is the SAVED setting, "active" what this window was built
+  // with (null = no window existed when it was read), and "envForced" a
+  // launcher flag that decides this run whatever is saved.
+  windowControlsRead: function () { return Promise.resolve(window.__wcState || { ok: true, enabled: false, active: false, lockedByJsonc: false, source: "default", envForced: false }); },
+  windowControlsSet: function (enabled) { window.__wcCalls = (window.__wcCalls || []).concat([enabled]); return Promise.resolve({ ok: true, enabled: enabled, path: "/tmp/window-controls.json" }); },
+  nativeTitlebarRead: function () { return Promise.resolve(window.__ntState || { ok: true, enabled: false, active: false, lockedByJsonc: false, source: "default", envForced: false }); },
+  nativeTitlebarSet: function (enabled) { window.__ntCalls = (window.__ntCalls || []).concat([enabled]); return Promise.resolve({ ok: true, enabled: enabled, path: "/tmp/window-controls.json" }); },
   diffViewsRead: function () { return Promise.resolve(window.__diffViewsState); },
   diffViewsSet: function (enabled) {
     window.__diffViewsCalls.push(enabled);

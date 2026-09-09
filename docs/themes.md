@@ -128,7 +128,15 @@ From then on every wallpaper change recolors the accents, brand and status color
 
 Template values are HSL triplets built from matugen's `.hue`/`.saturation`/`.lightness` formats; [contrib/matugen/README.md](../contrib/matugen/README.md) has the details.
 
-**Window frame on X11.** Since Claude Desktop v1.49585.0 (Electron 44) a thin frame surrounds the app on X11: Electron 43+ gives frameless windows a 4 px client-side border painted in the GTK theme's headerbar color, and no window option removes it without also losing the window buttons ([electron/electron#52024](https://github.com/electron/electron/issues/52024); X11 only, Wayland draws a real shadow there). The example setup derives the GTK headerbar color from the same ramp as Claude's backgrounds so the frame blends in; `claude-desktop --native-titlebar` avoids it entirely.
+**Window frame on X11.** Since Claude Desktop v1.49585.0 (Electron 44) a thin frame can surround the app on X11. It appears on xfwm4 (XFCE) and on window managers that do not advertise `_GTK_FRAME_EXTENTS` (i3, Awesome): Chromium then paints a 4 px resize band inside the window, colored from the GTK theme's headerbar ([electron/electron#52024](https://github.com/electron/electron/issues/52024); a newer Electron does not fix it). Most other desktops - GNOME, KDE - are unaffected and get a real shadow instead. Three ways out, in increasing order of how much they change:
+
+- Match it: this page's setup derives the GTK headerbar color from the same ramp as Claude's backgrounds, so the band blends into the window. A 1 px hairline stays, because Chromium outlines the band in a contrasting shade of its own fill.
+- **Hide window controls** in Settings -> Extra -> Community Features removes the frame entirely by dropping the min/max/close buttons (you then close and minimize through your WM). Window edges still resize normally. Also `claude-desktop --no-window-controls` for a single launch.
+- **Native titlebar**, in the same place, uses the system frame instead of the integrated titlebar. Also `claude-desktop --native-titlebar`.
+
+Both are read when the main window is created, so they take effect on the next start; the panel shows a restart bar while a saved switch and the running window disagree.
+
+Maximizing the window also makes the band disappear on its own.
 
 ### pywal / wallust / anything else
 

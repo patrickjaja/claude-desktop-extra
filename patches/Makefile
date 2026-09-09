@@ -77,6 +77,12 @@ community/add_feature_panel_tabs: \
 
 community/add_feature_panel_tabs_bridge: ../js/panel_tabs_bridge.js
 
+# No window controls: the patch embeds the synchronous pref reader AND the IPC
+# half via staticRead, so a change to either has to rebuild the binary.
+community/add_feature_window_controls: \
+  ../js/window_controls_pref.js \
+  ../js/window_controls_main.js
+
 # Files quick open: the worker patch embeds the multi-piece search helper; the
 # main patch embeds the main-process module AND the page script; the bridge
 # patch embeds the preload snippet.

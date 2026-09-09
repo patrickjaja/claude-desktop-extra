@@ -18,7 +18,7 @@ Each row below says what a patch does and why you would want it. The mechanism -
 
 ## Community features
 
-**9 patches**, each with a switch in Settings → **Extra** → **Community Features**. They reshape first-party surfaces, so they are asked for rather than assumed: turning one off is a full retreat to upstream's own behavior. Off by default, except the theme picker.
+**10 patches**, each with a switch in Settings → **Extra** → **Community Features**. They reshape first-party surfaces, so they are asked for rather than assumed: turning one off is a full retreat to upstream's own behavior. Off by default, except the theme picker.
 
 | Patch | What it does & why it exists |
 |-------|------------------------------|
@@ -31,6 +31,7 @@ Each row below says what a patch does and why you would want it. The mechanism -
 | [`add_feature_files_quick_open.nim`](patches/community/add_feature_files_quick_open.nim) | <kbd>Ctrl</kbd>+<kbd>P</kbd> on the Code tab opens a VS Code-style quick-open box over the Files panel; arrow keys or mouse, <kbd>Enter</kbd> opens the file as a tab in the panel, `:42` jumps to a line, an empty query lists recently opened files |
 | [`add_feature_files_quick_open_bridge.nim`](patches/community/add_feature_files_quick_open_bridge.nim) | The narrow preload bridge the quick-open box talks through: one fixed channel per call, because the page behind it is remote code |
 | [`add_feature_files_quick_open_worker.nim`](patches/community/add_feature_files_quick_open_worker.nim) | Teaches Anthropic's fuzzy file index VS Code's space-separated pieces - `user service` finds `user-service.spec.ts`, in any word order. Upstream treats the space as a character to find and returns nothing. Also fixes the Files panel's own filter and the composer's `@` picker. Gated by an env var read at worker start, so flipping the switch reaches the file index on its next start (after a restart) |
+| [`add_feature_window_controls.nim`](patches/community/add_feature_window_controls.nim) | Backs the two titlebar switches - **Hide window controls** and **Native titlebar** - with a persisted config key each, so the window shape is a setting rather than a launcher flag. Hiding the controls is the only way from inside the app to remove the thin border Chromium paints inside frameless windows on xfwm4, i3 and Awesome ([electron#52024](https://github.com/electron/electron/issues/52024)): it drops the controls overlay and the shadow together, which is what stops Chromium painting it. Both are read when the main window is created, so they take effect on the next start |
 
 Panel tabs and Files quick open depend on DOM anchors in remote claude.ai code; they are inventoried with re-derivation recipes in [`baseline/PANEL_TABS_ANCHORS.md`](baseline/PANEL_TABS_ANCHORS.md) and [`baseline/FILES_QUICK_OPEN_ANCHORS.md`](baseline/FILES_QUICK_OPEN_ANCHORS.md) and re-validated on each upstream bump.
 
@@ -69,7 +70,7 @@ Panel tabs and Files quick open depend on DOM anchors in remote claude.ai code; 
 | [`fix_epitaxy_autoscroll.nim`](patches/linux/fix_epitaxy_autoscroll.nim) | Keeps the Code and Cowork transcript following a running response; a few pixels of routine drift while streaming used to unpin it for good |
 | [`fix_ion_dist_linux.nim`](patches/linux/fix_ion_dist_linux.nim) | Adds the Linux org-plugins path to the third-party configuration app, which knew only macOS and Windows locations |
 | [`fix_marketplace_linux.nim`](patches/linux/fix_marketplace_linux.nim) | Makes plugin operations work on Linux, and lists your home-scoped CLI plugins as Personal Plugins |
-| [`fix_native_frame.nim`](patches/linux/fix_native_frame.nim) | Gives Linux the integrated titlebar upstream builds only for Windows; opt back out with `--native-titlebar` |
+| [`fix_native_frame.nim`](patches/linux/fix_native_frame.nim) | Gives Linux the integrated titlebar upstream builds only for Windows. Two opt-outs: `--native-titlebar` for the system frame, or `--no-window-controls` for a frameless window without buttons, which is what removes the thin frame Chromium paints on xfwm4/i3/Awesome |
 | [`fix_office365_mcp_open_url.nim`](patches/linux/fix_office365_mcp_open_url.nim) | Has the bundled Microsoft 365 server ask the app to open its sign-in page; on KDE the direct attempt silently did nothing until the login timed out ([#139](https://github.com/patrickjaja/claude-desktop-extra/issues/139)) |
 | [`fix_open_in_editor_linux.nim`](patches/linux/fix_open_in_editor_linux.nim) | Makes "Open in VS Code / Cursor / Zed / Windsurf" find your editor; the check upstream uses answers only on macOS and Windows, so Linux editors always looked missing |
 | [`fix_process_argv_renderer.nim`](patches/linux/fix_process_argv_renderer.nim) | Fixes Dispatch responses not rendering: the Claude Code web bundle reads `process.argv`, which the preload never exposed |

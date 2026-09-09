@@ -1109,6 +1109,306 @@
     });
   }
 
+  // --- window: the three window modes ---------------------------------------
+  // Two switches, three mutually exclusive outcomes, resolved by the main side
+  // as: native titlebar > no window controls > integrated titlebar (default).
+  // So the two rows below cannot be read in isolation - a user who sets both
+  // would otherwise be left guessing which one the window actually got. The
+  // "Hide window controls" row therefore states when the native titlebar has
+  // taken it over, and linkWindowRows() keeps that statement true while the
+  // page is open. The page NEVER writes the other key to force the issue: the
+  // resolution is the window patch's job, this is only the report of it.
+  //
+  // Both rows are ours, opt-in, and the ONLY rows in this panel that do NOT
+  // apply live: frame and controls overlay are decided when the BrowserWindow
+  // is constructed, and Electron 44 has no way back - setHasShadow(false) works
+  // on a live window, but setTitleBarOverlay(false) throws and there is no
+  // setFrame at all. So every note and every toast here says "restart", and
+  // none of them pretends otherwise. renderToggleRow has no slot for a per-row
+  // button, which is why "Restart now" is a bar above the rows rather than a
+  // button on each - and a bar can say it once for both modes anyway.
+
+  // What the native titlebar pref last read as, and the read response of each
+  // row - kept because both of the cross-row jobs below outlive the moment
+  // renderToggleRow hands a response over. null means "not known yet", which is
+  // why describe() below stays neutral until it is: a state line must not claim
+  // an override it has not seen, and the restart bar must not appear over a
+  // disagreement nobody has established.
+  var windowNative = null;
+  var windowControlsRes = null;
+  var windowNativeRes = null;
+
+  // "Is the native titlebar what the window gets?" - which is the saved value
+  // OR a launcher flag forcing it, because a flag overrides the other row just
+  // as thoroughly as the saved setting does. Only the other row's state line
+  // asks this; the native switch itself keeps showing what is saved.
+  function nativeInForce() {
+    if (windowNativeRes && windowNativeRes.envForced === true) return true;
+    return windowNative === true;
+  }
+
+  function renderWindowControlsRow(panel) {
+    return renderToggleRow(panel, {
+      section: "Window",
+      title: "Hide window controls",
+      note: "Opens the main window with no frame, no minimize/maximize/close buttons and no drop " +
+        "shadow. On xfwm4 (XFCE), i3 and Awesome, Chromium draws a thin 4px border inside a " +
+        "frameless window, and dropping the controls overlay together with the shadow is the only " +
+        "way from inside the app to be rid of it. The price is the buttons: you minimize, maximize " +
+        "and close through your window manager instead - Alt+F4 and whatever else it binds. " +
+        "Dragging the window edges still resizes as usual. Off keeps the integrated titlebar the " +
+        "official build ships, and the native titlebar below wins over this either way. Takes " +
+        "effect after a restart - the frame is fixed when the window is created, so nothing " +
+        "changes until you quit and reopen Claude Desktop.",
+      ariaLabel: "open the main window frameless, without window-control buttons or a shadow",
+      read: "windowControlsRead",
+      write: "windowControlsSet",
+      lockFile: "claude-desktop-extra.jsonc",
+      // Opt-in: only an explicit true is on, so a shape we do not understand
+      // renders as off rather than claiming a feature that is not running.
+      // Called once, with the read response - which linkWindowRows() needs
+      // later than renderToggleRow keeps it, to rebuild this row's state line
+      // (lock suffix included) when the native switch moves, and to compare
+      // `active` against the switch for the restart bar.
+      isOn: function (res) { windowControlsRes = res; return res.enabled === true; },
+      // Reads the response out of windowControlsRes rather than its own second
+      // argument, because linkWindowRows() rebuilds this line from outside too
+      // and both paths have to reach the same facts.
+      describe: function (on) {
+        // Precedence first: while the native titlebar is what the window gets -
+        // saved on, or forced on for this run - nothing else about this row is
+        // what the user got.
+        if (nativeInForce()) {
+          return on
+            ? "on, but the native titlebar overrides it"
+            : "off - overridden by the native titlebar";
+        }
+        // A launcher flag or env var decides this run whatever is saved, so the
+        // line has to say both - the switch keeps showing the saved value.
+        if (windowControlsRes && windowControlsRes.envForced === true) {
+          return "on for this run by a launcher flag - saved: " + (on ? "on" : "off");
+        }
+        return on ? "on - no window buttons, no frame" : "off - window buttons, integrated titlebar";
+      },
+      writeArg: function (next) { return next; },
+      toast: function (next) {
+        return next
+          ? "Window controls hidden - restart Claude Desktop to open the window frameless"
+          : "Window controls back - restart Claude Desktop to get the titlebar back";
+      },
+      errorPrefix: "Could not change the window controls: "
+    });
+  }
+
+  // The mode that hands the whole titlebar back to the window manager. It wins
+  // over the row above, which is why its own describe() says nothing about what
+  // happens when it is off - that is the other row's line to write.
+  function renderNativeTitlebarRow(panel) {
+    return renderToggleRow(panel, {
+      section: "Window",
+      title: "Native titlebar",
+      note: "Swaps this app's integrated titlebar for your system's own window frame, so the " +
+        "titlebar, its buttons and its right-click menu are the ones your window manager draws " +
+        "for every other application. It also avoids the thin 4px border xfwm4 (XFCE), i3 and " +
+        "Awesome leave behind, because the window is not frameless at all any more - at the cost " +
+        "of a second bar above the app's own header. This wins over \"Hide window controls\": with " +
+        "both on you get the system frame. Takes effect after a restart - the frame is fixed when " +
+        "the window is created, so nothing changes until you quit and reopen Claude Desktop.",
+      ariaLabel: "use the system window frame instead of this app's integrated titlebar",
+      read: "nativeTitlebarRead",
+      write: "nativeTitlebarSet",
+      lockFile: "claude-desktop-extra.jsonc",
+      // Opt-in, and the value the row above reports its override from - so it is
+      // recorded here, where it is first known, rather than read back out of the
+      // DOM. The whole response is kept for the restart bar's `active` half.
+      isOn: function (res) {
+        windowNativeRes = res;
+        windowNative = res.enabled === true;
+        return windowNative;
+      },
+      describe: function (on) {
+        if (windowNativeRes && windowNativeRes.envForced === true) {
+          return "on for this run by a launcher flag - saved: " + (on ? "on" : "off");
+        }
+        return on ? "on - system window frame" : "off - the titlebar is this app's own";
+      },
+      writeArg: function (next) { return next; },
+      toast: function (next) {
+        return next
+          ? "Native titlebar on - restart Claude Desktop to get the system window frame"
+          : "Native titlebar off - restart Claude Desktop to get the integrated titlebar back";
+      },
+      errorPrefix: "Could not change the native titlebar: "
+    });
+  }
+
+  // The restart bar for the two window modes, built the way the Deployment
+  // panel's is: created hidden and shown only while the window you are looking
+  // at and the setting on disk disagree. That is the only moment it means
+  // anything, and it is what makes flipping a switch and flipping it straight
+  // back take the bar away again instead of leaving a nag behind.
+  function renderWindowRestartBar(panel) {
+    if (!api || typeof api.appRelaunch !== "function") return null;
+
+    var notice = el("div", "cdbx-notice cdbx-info cdbx-hide");
+    notice.appendChild(el("div", "cdbx-notice-title", "Restart Claude Desktop to apply"));
+    notice.appendChild(el("div", "cdbx-notice-body",
+      "A window's frame is fixed when the window is created, so the window mode you just chose is " +
+      "saved but not running yet. Quitting and reopening from your desktop launcher is the cleanest " +
+      "way: \"Restart now\" relaunches the app directly and so skips the launcher's systemd scope " +
+      "and environment."));
+    var restart = el("button", "cdbx-btn", "Restart now");
+    restart.type = "button";
+    restart.addEventListener("click", function () {
+      restart.disabled = true;
+      restart.textContent = "Restarting...";
+      api.appRelaunch().then(function (res) {
+        if (failed(res)) {
+          restart.disabled = false;
+          restart.textContent = "Restart now";
+          toast("Could not restart: " + reason(res), true);
+        }
+      }, function (err) {
+        restart.disabled = false;
+        restart.textContent = "Restart now";
+        toast("Could not restart: " + (err && err.message ? err.message : String(err)), true);
+      });
+    });
+    notice.appendChild(restart);
+    panel.appendChild(notice);
+    return notice;
+  }
+
+  // The cross-row wiring for the Window group. renderToggleRow renders each row
+  // on its own and only ever rewrites its OWN state line, so both of the things
+  // these two rows cannot say alone are done from the outside, on the nodes it
+  // hands back:
+  //   * the override. windowNative is filled in by the native row's isOn (and by
+  //     our own read below, in case that row is missing), so describe() can
+  //     speak to it; every later move of the native switch - which
+  //     renderToggleRow only sets after a write succeeds - is picked up and the
+  //     other line rewritten. While native wins, the overridden switch is
+  //     disabled, because flipping it would write a pref that changes nothing
+  //     about the window you get.
+  //   * the restart bar, from `enabled` (what the next start will use) against
+  //     `active` (what this window was built with). `active` cannot change
+  //     without a restart, so it is taken from each row's read response and the
+  //     live half is read off the switch - which means a flip and a flip back
+  //     land back on "agrees" and take the bar down again.
+  // Nothing here writes a pref: the three modes are resolved by the window
+  // patch, this only reports it. A browser without MutationObserver gets the
+  // one-shot version: correct on load, stale only after a flip.
+  function linkWindowRows(rows, bar) {
+    var native = null;
+    var controls = null;
+    rows.forEach(function (row) {
+      if (row.spec.read === "nativeTitlebarRead") native = row;
+      if (row.spec.read === "windowControlsRead") controls = row;
+    });
+
+    var toggle = controls ? controls.host.querySelector(".cdbx-switch") : null;
+    var stateLine = controls ? controls.host.querySelector(".cdbx-state") : null;
+    var nativeToggle = native ? native.host.querySelector(".cdbx-switch") : null;
+    // Either row alone is enough to owe a restart, so this is not "both or
+    // nothing" - but with neither there is nothing to wire up.
+    if (!toggle && !nativeToggle) return;
+
+    // A row is owed a restart when what the next start will use differs from
+    // what this window was built with. Three cases answer "no" before that
+    // comparison is even meaningful: no response; `active` not a boolean, which
+    // is "no window had been built when this was read" and so nothing to
+    // compare against; and envForced, where the launcher flag decides this run
+    // and would decide the next one exactly the same way - a restart cannot
+    // close that gap, so offering one would be a false promise. A bar nobody
+    // can justify is worse than no bar.
+    function pending(res, sw) {
+      if (!res || typeof res.active !== "boolean" || res.envForced === true) return false;
+      var next = sw ? sw.getAttribute("aria-checked") === "true" : res.enabled === true;
+      return next !== res.active;
+    }
+
+    function syncBar() {
+      if (!bar) return;
+      var owed = pending(windowControlsRes, toggle) || pending(windowNativeRes, nativeToggle);
+      bar.classList.toggle("cdbx-hide", !owed);
+    }
+
+    function syncOverride() {
+      // Not known yet, or this row's own read has not landed / has failed -
+      // in either case its line is not ours to rewrite.
+      if (!toggle || !stateLine || windowNative === null) return;
+      var text = stateLine.textContent || "";
+      if (text === "Loading..." || text.indexOf("Unavailable") === 0) return;
+
+      var locked = !!(windowControlsRes && windowControlsRes.lockedByJsonc);
+      var on = toggle.getAttribute("aria-checked") === "true";
+      // describe() takes its facts from windowControlsRes, so the rebuild here
+      // says exactly what the row's own read path would have said.
+      var want = controls.spec.describe(on) +
+        (locked ? " - set in " + controls.spec.lockFile : "");
+      if (stateLine.textContent !== want) stateLine.textContent = want;
+
+      // Assign only on a real change: this row's own switch is observed below,
+      // and rewriting an attribute with the value it already has would notify
+      // us right back.
+      //
+      // Disabled for a SAVED native titlebar, not for a forced one. A saved
+      // native is something the user can undo right here, so blocking a write
+      // that would change nothing is a kindness; a launcher flag is not, and
+      // taking the switch away then would leave no way to set the saved value
+      // up for a launch without the flag. The state line tells the truth in
+      // both cases regardless.
+      var off = windowNative === true || locked;
+      if (toggle.disabled !== off) toggle.disabled = off;
+      var title = windowNative === true
+        ? "The native titlebar is on, and it wins over this"
+        : (locked ? "Edit " + controls.spec.lockFile + " to change this" : "");
+      if (toggle.title !== title) toggle.title = title;
+    }
+
+    function sync() {
+      syncBar();
+      syncOverride();
+    }
+
+    // The native row may be absent on a partially updated install (older
+    // preload, newer page) - then this read is the only source for its half of
+    // both jobs. It never overwrites what the row's own isOn already
+    // established, so with the row present it cannot race it.
+    if (api && typeof api.nativeTitlebarRead === "function") {
+      api.nativeTitlebarRead().then(function (res) {
+        if (!failed(res) && windowNativeRes === null) {
+          windowNativeRes = res;
+          windowNative = res.enabled === true;
+        }
+        sync();
+      }, function () {});
+    }
+
+    if (typeof MutationObserver !== "function") return;
+    var observer = new MutationObserver(function (records) {
+      // aria-checked on the native switch is a value renderToggleRow writes
+      // only from its read or after a write it saw succeed, so every record on
+      // it is committed truth - and the ONLY way this page hears about a flip,
+      // since isOn() runs once per row.
+      for (var i = 0; i < records.length; i++) {
+        if (nativeToggle && records[i].target === nativeToggle) {
+          windowNative = nativeToggle.getAttribute("aria-checked") === "true";
+        }
+      }
+      sync();
+    });
+    // The native switch: its read filling in, and every successful flip after.
+    if (nativeToggle) {
+      observer.observe(nativeToggle, { attributes: true, attributeFilter: ["aria-checked"] });
+    }
+    // And the other one, so its late read - which enables the switch and writes
+    // the line itself - does not undo the override.
+    if (toggle) {
+      observer.observe(toggle, { attributes: true, attributeFilter: ["aria-checked", "disabled"] });
+    }
+  }
+
   // --- motion: the pulsing Cowork glow ------------------------------------
   // Ours and it applies live, so it is a row in Community Features rather than a
   // nav entry of its own.
@@ -1427,12 +1727,14 @@
   }
 
   // --- community features panel --------------------------------------------
-  // Only our own switches live here, and every one of them applies live - which
-  // is why this panel has no restart notice. Anthropic's own flags, which do
-  // need a restart, are a nav entry of their own.
+  // Only our own switches live here, and all but the two window modes apply
+  // live - which is why this panel has no standing restart notice, only the
+  // conditional bar the two window rows raise while the running window and the
+  // saved setting disagree. Anthropic's own flags, which always need a restart,
+  // are a nav entry of their own and carry a permanent notice.
   //
-  // "Applies live" was verified per row, not assumed - each note says so, and
-  // this is where each one gets it from:
+  // "Applies live" was verified per row, not assumed - each live row's note says
+  // so, and this is where each one gets it from:
   //   * diff view modes - the main side flips its own `prefEnabled` inside the
   //     pref-set handler and replays upstream's invalidation (nudgeRefetch), so
   //     the git IPC rewrite stops or starts at once; the page half re-reads
@@ -1445,11 +1747,21 @@
   //   * theme picker - the hotkey re-reads the config file on every press.
   // The two polled ones are the reason their notes promise "within a few
   // seconds" rather than "instantly".
+  //
+  // The two exceptions are the Window rows, and they are exceptions in the
+  // other direction, verified just as concretely: frame, controls overlay and
+  // native titlebar are all BrowserWindow constructor options, and Electron 44
+  // has no live setter for any of them - setHasShadow(false) works, but
+  // setTitleBarOverlay(false) throws and setFrame does not exist. So those two
+  // notes and toasts say "after a restart", and the restart bar below appears
+  // for exactly as long as that restart is still owed.
 
   var FEATURE_ROWS = [
     renderDiffViewsRow,
     renderPanelTabsRow,
     renderFilesQuickOpenRow,
+    renderWindowControlsRow,
+    renderNativeTitlebarRow,
     renderGlowRow,
     renderThemePickerRow
   ];
@@ -1459,11 +1771,16 @@
     panel.appendChild(el("div", "cdbx-h1", "Community Features"));
     panel.appendChild(el("div", "cdbx-sub",
       "Optional features this package adds on top of the official build - each one is a single patch " +
-      "in patches/community/, and each applies live."));
+      "in patches/community/, and each applies live unless its row says it needs a restart."));
 
     var search = el("input", "cdbx-search");
     search.type = "search";
     panel.appendChild(search);
+
+    // Above the rows, because it is the one thing here that is not a row and not
+    // filtered away when you type. Hidden until a window mode is actually owed a
+    // restart.
+    var restartBar = renderWindowRestartBar(panel);
 
     var rows = [];
     FEATURE_ROWS.forEach(function (render) {
@@ -1472,6 +1789,10 @@
       var row = render(panel);
       if (row) rows.push(row);
     });
+    // The two Window rows are three mutually exclusive modes and the only rows
+    // that outlive a flip, so they are the one pair here that cannot report
+    // itself row by row.
+    linkWindowRows(rows, restartBar);
     search.placeholder = "Filter " + rows.length + " features by name or description";
     // Nothing to filter is not a filter bar: an install whose preload predates
     // every one of these switches gets the explanation below instead.

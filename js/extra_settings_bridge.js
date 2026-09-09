@@ -122,6 +122,29 @@
       return ipcRenderer.invoke("cdb-qopen:pref-set", enabled === true);
     },
 
+    // Frameless main window, no window-control buttons, no shadow. BOTH channels
+    // are owned by patches/community/add_feature_window_controls.nim, not by the
+    // settings patch - the same cross-patch arrangement as panelTabsRead/Set.
+    // The pref is read when the window is created, so a flip here only reaches
+    // the next start; the page half says so and offers a restart. set() takes a
+    // plain boolean and the main side re-validates the type.
+    windowControlsRead: function () {
+      return ipcRenderer.invoke("cdb-wc:pref-read");
+    },
+    windowControlsSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-wc:pref-set", enabled === true);
+    },
+
+    // Native titlebar - the third window mode, owned by the same patch and read
+    // at the same moment (window creation). It WINS over windowControls* above;
+    // that precedence lives in the main side, the page only reports it.
+    nativeTitlebarRead: function () {
+      return ipcRenderer.invoke("cdb-wc:native-read");
+    },
+    nativeTitlebarSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-wc:native-set", enabled === true);
+    },
+
     // Deployment mode (1P / 3P) and the third-party configuration the app boots
     // from. deployMode() takes only "1p"/"3p"; deploySet() only keys the main
     // side finds in its own catalog, and stored secrets never come back through

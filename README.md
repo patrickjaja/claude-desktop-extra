@@ -351,7 +351,7 @@ The official 3P docs cover only macOS and Windows. **[docs/third-party-inference
 
 The official Linux build ships one cross-platform JS bundle that gates plenty of features to macOS and Windows, and some of its behavior misfires on a Linux desktop. We apply a set of surgical JS patches to the `app.asar` at repackage time - one directory per purpose:
 
-- **[`patches/community/`](PATCHES.md#community-features)** (9 patches) - optional features you switch on yourself in Settings → **Extra** → **Community Features**. Off unless you ask for them (the theme picker is the exception, on by default).
+- **[`patches/community/`](PATCHES.md#community-features)** (10 patches) - optional features you switch on yourself in Settings → **Extra** → **Community Features**. Off unless you ask for them (the theme picker is the exception, on by default).
 - **[`patches/core/`](PATCHES.md#core-infrastructure)** (7 patches) - always-on infrastructure the rest builds on: the Extra settings pages themselves, the theme engine, the flag-override mechanism, and the multi-profile plumbing.
 - **[`patches/linux/`](PATCHES.md#linux-compatibility)** (31 patches) - upstream features still gated to macOS/Windows in the shared bundle, or that break in a Linux environment. Always on, nothing to configure.
 
@@ -379,7 +379,8 @@ Flags this project adds on top of the official build (run `claude-desktop --help
 | `--reload-theme` | Ask the running instance to re-read its [theme](#custom-themes) files and re-apply the active theme; prints `{ok, changed, name, windows}`, exits 1 when the app is not running. Only needed with `"themeWatch": false`, the file watcher does it automatically otherwise |
 | `--install-gnome-hotkey [ACCEL]` | Bind the Quick Entry hotkey on GNOME, where the portal doesn't (default `Ctrl+Alt+Space`); `--uninstall-gnome-hotkey` removes it |
 | `--1p` / `--3p` | Select personal claude.ai (1P) vs [third-party inference](docs/third-party-inference.md) (3P) mode by persisting the upstream `deploymentMode` key; replaces the removed upstream `--boot-1p-once` flag. The same switch is in the app under Settings → **Extra** → **Deployment**. See [switching back to 1P](docs/third-party-inference.md#common-gotchas) |
-| `--native-titlebar` | Use the native window frame instead of the integrated titlebar (same as `CLAUDE_NATIVE_TITLEBAR=1`) |
+| `--native-titlebar` | Use the native window frame instead of the integrated titlebar. Overrides the **Native titlebar** switch in Settings → **Extra** → **Community Features** for this launch |
+| `--no-window-controls` | Drop the min/max/close buttons, which removes the thin frame Chromium paints around frameless windows on xfwm4, i3 and Awesome; window edges still resize, and you close or minimize through your WM. Overrides the **Hide window controls** switch in Settings → **Extra** → **Community Features** for this launch |
 | `--no-systemd-scope` | Skip the `systemd --user --scope` wrapper for this launch (same as `CLAUDE_DISABLE_SYSTEMD_SCOPE=1`) |
 | `--diagnose` | Print session type, portal status, and hotkey state for issue reports |
 | `--integrate` / `--unintegrate` | Register / remove the `claude://` handler and menu entry (AppImage only; happens automatically on launch) |
@@ -393,6 +394,7 @@ Flags this project adds on top of the official build (run `claude-desktop --help
 | `CLAUDE_DISABLE_GPU` | `1`, `full` | Fix white screen on some GPU/driver combos ([#13](https://github.com/patrickjaja/claude-desktop-extra/issues/13)). `1` disables compositing only, `full` disables GPU entirely |
 | `CLAUDE_PROFILE` | name | Select a [profile](#multiple-profiles) by name (also `claude-desktop-NAME` / `--profile=NAME`) |
 | `CLAUDE_NATIVE_TITLEBAR` | `1` | Restore the native window frame instead of the integrated titlebar (same as `--native-titlebar`) |
+| `CLAUDE_NO_WINDOW_CONTROLS` | `1` | Frameless window with no window-control buttons, which removes the thin frame Chromium paints on xfwm4/i3/Awesome (same as `--no-window-controls`) |
 | `CLAUDE_USE_XWAYLAND` | `1` | Force XWayland instead of native Wayland. Also fixes "app exits after seconds" GPU crashes ([#180](https://github.com/patrickjaja/claude-desktop-extra/issues/180), see [wayland.md](wayland.md)) |
 | `CLAUDE_PASSWORD_STORE` | backend, `auto` | Force the Chromium keyring backend (`gnome-libsecret`, `kwallet6`, `basic`, ...). Default: on desktops Chromium gives no keyring backend (Hyprland, sway, XFCE, ...), a running Secret Service is used automatically so sign-in persists ([#191](https://github.com/patrickjaja/claude-desktop-extra/issues/191)). `auto` disables that detection |
 | `CLAUDE_KEEP_TTY` | `1` | Keep the controlling terminal instead of calling `setsid` when launched as a background job on one. Only affects `startx`/`xinit` sessions, where a panel or menu launch would otherwise let the app's `bash -l -i -c` environment probe `SIGTTIN` the whole desktop process group ([#213](https://github.com/patrickjaja/claude-desktop-extra/pull/213)) |
