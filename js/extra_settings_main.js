@@ -1540,10 +1540,41 @@
   }
 
   // --- page installation ---------------------------------------------------
-  // insertCSS survives navigations within a webContents, so it is inserted once
-  // per webContents; the page script is idempotent on its own side and re-runs
-  // after a real reload.
-  var __cdbEx_styled = new WeakSet();
+  // insertCSS is scoped to the document that is live when it runs, so the sheet
+  // is re-inserted on every dom-ready: a full navigation (the SSO /login round
+  // trip is the usual one) replaces the document and would otherwise leave the
+  // Extra panel unstyled for the rest of the process. The key from the previous
+  // document is dropped first so sheets cannot stack. The page script is
+  // idempotent on its own side and re-runs the same way.
+  //
+  // webContents -> the insertCSS key we inserted last (null = nothing inserted).
+  var __cdbEx_cssKeys = new WeakMap();
+
+  function __cdbEx_styleOne(wc) {
+    try {
+      if (wc.isDestroyed()) return;
+      var old = __cdbEx_cssKeys.get(wc);
+      __cdbEx_cssKeys.set(wc, null);
+      // removeInsertedCSS is a silent no-op for a key whose document is gone -
+      // measured on Electron 44.3.0, it resolves even for a key that was never
+      // issued, so a resolve is no evidence anything was removed and the catch
+      // below is defensive only. Dropping the key still matters: the key is a
+      // per-webContents counter that keeps climbing across documents, so a
+      // long-lived webContents would otherwise accumulate entries.
+      if (old) {
+        var r = wc.removeInsertedCSS(old);
+        if (r && r.catch) r.catch(function () {});
+      }
+      var q = wc.insertCSS(__cdbEx_pageCss);
+      if (q && q.then) q.then(function (k) {
+        if (!wc.isDestroyed()) __cdbEx_cssKeys.set(wc, k);
+      }, function (err) {
+        __cdbEx_log("insertCSS rejected: " + ((err && err.message) || String(err)));
+      });
+    } catch (e) {
+      __cdbEx_log("insertCSS error: " + e.message);
+    }
+  }
 
   _app.on("web-contents-created", function (_ev, wc) {
     wc.on("dom-ready", function () {
@@ -1551,10 +1582,7 @@
         var url = wc.getURL() || "";
         if (!/^https?:\/\//i.test(url)) return;
         if (/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(url)) return;
-        if (!__cdbEx_styled.has(wc)) {
-          __cdbEx_styled.add(wc);
-          wc.insertCSS(__cdbEx_pageCss).catch(function () {});
-        }
+        __cdbEx_styleOne(wc);
         wc.executeJavaScript(__cdbEx_pageSrc).then(function (status) {
           // Deduped: every OAuth popup and helper view reports "skipped", and a
           // line per navigation would be noise.

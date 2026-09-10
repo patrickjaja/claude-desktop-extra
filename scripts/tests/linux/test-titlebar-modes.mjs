@@ -44,17 +44,32 @@
 //
 //   (globalThis.__cdbNativeTb ? !!globalThis.__cdbNativeTb() : process.env.CLAUDE_NATIVE_TITLEBAR==="1")
 //
-// The reader ORs the config key with the env var, so when it is present it is
-// the single authority and the `: process.env...` arm is not consulted. Sections
-// [1]-[6] run with the readers ABSENT - the degradation path. Sections [9]-[10]
-// run with them present, which is the path users actually hit. Section [0b]
-// pins the guard that makes the absent case degrade instead of crash, and runs
-// first so a lost guard is reported by name rather than crashing [1].
+// The reader resolves the config key against the env var, so when it is present
+// it is the single authority and the `: process.env...` arm is not consulted.
+// Sections [1]-[6] run with the readers ABSENT - the degradation path. Sections
+// [9]-[10] run with them present as stubs, which is the path users actually
+// hit. Section [0b] pins the guard that makes the absent case degrade instead
+// of crash, and runs first so a lost guard is reported by name rather than
+// crashing [1].
+//
+// Sections [13]-[14] drop the stubs and load the REAL reader source,
+// js/window_controls_pref.js, against a fixture config dir and a controlled
+// process.env - that is where the env-vs-config truth table and the memo
+// contract are pinned. See the comment above section [13].
 //
 // Exit codes follow the repo convention: 0 = PASS, 3 = SKIP, other = FAIL.
 
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, accessSync, constants } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  accessSync,
+  constants,
+} from "node:fs";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -187,6 +202,82 @@ function runPatchExpectingFailure(dir, name, src) {
       out: String(e.stdout || "") + String(e.stderr || ""),
     };
   }
+}
+
+// ------------------------------------------------- the REAL reader, loaded
+// Sections [9]-[10] stub the readers, because what they assert is what
+// fix_native_frame does with an answer. Sections [13]-[14] assert how that
+// answer is REACHED, so they need the real thing:
+// js/window_controls_pref.js, the file
+// patches/community/add_feature_window_controls.nim injects verbatim.
+//
+// It is an IIFE that installs globalThis.__cdbNativeTb / __cdbNoWinCtl, needs
+// only fs/path/electron, and locates its config through
+// require("electron").app.getPath("userData") - so a vm context with a require
+// shim gives full control over both surfaces (the env it reads and the dir it
+// reads from) without touching the real HOME or needing Electron. A FRESH
+// context per case also means a fresh globalThis, i.e. a fresh memo: the memo
+// deliberately survives for the life of a process, so cases could not share one.
+const PREF_SRC = readFileSync(join(ROOT, "js", "window_controls_pref.js"), "utf8");
+const nodeRequire = createRequire(import.meta.url);
+const JSON_NAME = "claude-desktop-extra.json";
+const JSONC_NAME = "claude-desktop-extra.jsonc";
+
+let prefCaseSeq = 0;
+// `config` / `jsonc`: null writes no file at all, an object is written as that
+// file's whole content. `{}` is therefore "the file exists, the key does not",
+// which is the row the truth table calls "absent".
+function loadPref({ env = {}, config = null, jsonc = null } = {}) {
+  const dir = join(scratch, "userdata-" + ++prefCaseSeq);
+  mkdirSync(dir, { recursive: true });
+  if (config !== null) writeFileSync(join(dir, JSON_NAME), JSON.stringify(config));
+  if (jsonc !== null) writeFileSync(join(dir, JSONC_NAME), JSON.stringify(jsonc));
+  const askedPaths = [];
+  const sandbox = {
+    console,
+    process: { platform: "linux", env: { ...env } },
+    require(id) {
+      if (id === "electron") {
+        return { app: { getPath: (n) => (askedPaths.push(n), dir) } };
+      }
+      return nodeRequire(id);
+    },
+  };
+  vm.runInNewContext(PREF_SRC, vm.createContext(sandbox));
+  return { sandbox, dir, askedPaths };
+}
+
+// The two modes as the reader defines them, and the eight-row truth table each
+// one has to satisfy. Driving both modes off ONE table is deliberate: they are
+// the same code path parameterised by a mode object, so a fix that lands on
+// only one of them is a bug the table catches by construction.
+const PREF_MODES = [
+  { key: "nativeTitlebar", env: "CLAUDE_NATIVE_TITLEBAR", global: "__cdbNativeTb" },
+  { key: "noWindowControls", env: "CLAUDE_NO_WINDOW_CONTROLS", global: "__cdbNoWinCtl" },
+];
+
+// `env: undefined` means the variable is genuinely not in the environment.
+const TRUTH_TABLE = [
+  { env: undefined, saved: undefined, want: false, note: "nothing asks for it" },
+  { env: undefined, saved: true, want: true, note: "the saved switch decides" },
+  { env: undefined, saved: false, want: false, note: "the saved switch decides" },
+  { env: "1", saved: undefined, want: true, note: "the flag turns it on" },
+  { env: "1", saved: false, want: true, note: "the flag overrides a saved off" },
+  { env: "0", saved: undefined, want: false, note: "nothing to override" },
+  {
+    env: "0",
+    saved: true,
+    want: false,
+    note: "THE REGRESSION: the flag must override a saved ON",
+  },
+  { env: "", saved: true, want: true, note: "empty is not set, so config decides" },
+];
+
+function fmtEnv(v) {
+  return v === undefined ? "unset" : JSON.stringify(v);
+}
+function fmtSaved(v) {
+  return v === undefined ? "absent" : String(v);
 }
 
 // The injection the TWO-mode patch used to emit, reconstructed. `frame` and
@@ -894,6 +985,194 @@ try {
       check(
         "it does not pass vacuously",
         /\[OK\] no upstream duplicate/.test(r.out),
+        false
+      );
+    }
+  }
+
+  // ------------------------------- [13] the reader's own env-vs-config table
+  section(
+    "[13] THE READER ITSELF: js/window_controls_pref.js resolves env vs saved config"
+  );
+  {
+    // WHY THREE STATES, NOT A BOOLEAN. scripts/claude-desktop-launcher.sh
+    // documents an explicitly set variable as always winning "in both
+    // directions", and acts on it: seeing CLAUDE_NATIVE_TITLEBAR=0 it withholds
+    // every native-mode argument it would otherwise pass
+    // (--disable-features=CustomTitlebar, ELECTRON_USE_SYSTEM_TITLE_BAR, and the
+    // WaylandWindowDecorations flag). The reader used to do
+    //
+    //   v = envForced(mode.env) || readPrefFromDisk(mode.key).value === true;
+    //
+    // where envForced is `process.env[k] === "1"` - so "0" was indistinguishable
+    // from unset and a saved `true` still built the native window. On Wayland
+    // that is the worst possible disagreement: a native frame with NO
+    // decorations, because the launcher withheld the flag that draws them.
+    // Hence envDecision(): true / false / null, with null alone deferring to the
+    // saved key. The `env="0" + saved=true` rows below are that fix; the rest of
+    // the table is what must not move while fixing it.
+    for (const mode of PREF_MODES) {
+      for (const row of TRUTH_TABLE) {
+        const env = row.env === undefined ? {} : { [mode.env]: row.env };
+        const { sandbox } = loadPref({
+          env,
+          config: row.saved === undefined ? {} : { [mode.key]: row.saved },
+        });
+        check(
+          `${mode.global}() env=${fmtEnv(row.env)} saved=${fmtSaved(row.saved)} ` +
+            `(${row.note})`,
+          sandbox[mode.global](),
+          row.want
+        );
+      }
+    }
+
+    // The .jsonc is the human-owned file and outranks the .json, but it is
+    // still only the SAVED half - an explicit env var outranks both. Pinned so
+    // the "locked" source cannot quietly become a third precedence level.
+    for (const mode of PREF_MODES) {
+      const locked = loadPref({
+        env: { [mode.env]: "0" },
+        jsonc: { [mode.key]: true },
+        config: { [mode.key]: true },
+      });
+      check(
+        `${mode.global}() env="0" beats a jsonc-locked saved true as well`,
+        locked.sandbox[mode.global](),
+        false
+      );
+      const unset = loadPref({ jsonc: { [mode.key]: true }, config: { [mode.key]: false } });
+      check(
+        `${mode.global}() with no env var: the jsonc-locked true outranks the json false`,
+        unset.sandbox[mode.global](),
+        true
+      );
+    }
+
+    // No config file at all is the first-launch state and must read as off,
+    // not as a crash and not as a truthy leftover.
+    for (const mode of PREF_MODES) {
+      const { sandbox, askedPaths } = loadPref({});
+      check(`${mode.global}() with no config file at all`, sandbox[mode.global](), false);
+      check(
+        `${mode.global} resolves its config dir from Electron's userData ` +
+          "(profile-aware), not from HOME",
+        askedPaths.includes("userData"),
+        true
+      );
+    }
+
+    // Each mode is independent: one mode's variable must never decide the
+    // other's. A shared-helper refactor that captured the wrong mode object
+    // would still satisfy the table above if both were driven together, so the
+    // cross-talk case is asserted separately.
+    {
+      const { sandbox } = loadPref({
+        env: { CLAUDE_NATIVE_TITLEBAR: "0" },
+        config: { nativeTitlebar: true, noWindowControls: true },
+      });
+      check(
+        'CLAUDE_NATIVE_TITLEBAR="0" forces native off',
+        sandbox.__cdbNativeTb(),
+        false
+      );
+      check(
+        "and does not touch the OTHER mode's saved switch",
+        sandbox.__cdbNoWinCtl(),
+        true
+      );
+    }
+
+    // savedFor() must stay disk-only. The Settings row renders the toggle from
+    // it and compares it against activeFor() to decide whether a restart is
+    // pending, so folding the env var into it would render the switch as OFF
+    // for a user whose saved key is ON - and then show no restart notice.
+    {
+      const mode = PREF_MODES[0];
+      const { sandbox } = loadPref({
+        env: { [mode.env]: "0" },
+        config: { [mode.key]: true },
+      });
+      const pref = sandbox.__cdbWinCtlPref;
+      const saved = pref.savedFor(pref.MODES[mode.key]);
+      check("savedFor() reports the stored value, not the env-forced one", saved.value, true);
+      check("savedFor() source names the file it came from", saved.source, "json");
+      check(
+        'savedFor().envForced is the two-state "is the flag forcing it ON" flag, ' +
+          'and "0" is not forcing it on',
+        saved.envForced,
+        false
+      );
+      check(
+        "while the mode function honours the env override",
+        sandbox[mode.global](),
+        false
+      );
+    }
+  }
+
+  // ---------------------------------------------- [14] the memo is a contract
+  section("[14] the memo: one answer per mode per process, stable afterwards");
+  {
+    // patches/linux/fix_native_frame.nim calls these functions while it builds
+    // the main window's options, and frame / titleBarStyle / hasShadow are
+    // constructor-only on Linux (setTitleBarOverlay(false) throws, there is no
+    // setFrame). So the answer has to be a fact about the PROCESS: every window
+    // built in it must be built the same way, whatever happens to the config
+    // file or the environment in between. The memo is what makes that true, and
+    // it is also what activeFor() reports to the Settings UI as "what the open
+    // window was actually built with".
+    for (const mode of PREF_MODES) {
+      const { sandbox, dir } = loadPref({ config: { [mode.key]: true } });
+      const pref = sandbox.__cdbWinCtlPref;
+      check(
+        `${mode.global}: activeFor() is null before anything asks ` +
+          '("nothing has asked yet" is not "off")',
+        pref.activeFor(pref.MODES[mode.key]),
+        null
+      );
+      check(`${mode.global}: the first call answers from disk`, sandbox[mode.global](), true);
+      check(
+        `${mode.global}: activeFor() now reports the running value`,
+        pref.activeFor(pref.MODES[mode.key]),
+        true
+      );
+      // Move BOTH surfaces under the running process's feet.
+      writeFileSync(join(dir, JSON_NAME), JSON.stringify({ [mode.key]: false }));
+      sandbox.process.env[mode.env] = "0";
+      check(
+        `${mode.global}: a later call is unchanged after the config flips`,
+        sandbox[mode.global](),
+        true
+      );
+      check(
+        `${mode.global}: and unchanged again after the env var flips too`,
+        sandbox[mode.global](),
+        true
+      );
+      check(
+        `${mode.global}: activeFor() still reports what the window was built with`,
+        pref.activeFor(pref.MODES[mode.key]),
+        true
+      );
+      // savedFor() is the deliberate opposite: uncached, so the Settings row
+      // sees what it just wrote and can detect the pending restart.
+      check(
+        `${mode.global}: savedFor() is NOT memoized and sees the new value`,
+        pref.savedFor(pref.MODES[mode.key]).value,
+        false
+      );
+    }
+    // The mirror direction: a memoized FALSE must not be re-derived into true
+    // by a later env var either. `false` is a real cached answer, not "empty".
+    for (const mode of PREF_MODES) {
+      const { sandbox, dir } = loadPref({ config: {} });
+      check(`${mode.global}: the first call answers false`, sandbox[mode.global](), false);
+      writeFileSync(join(dir, JSON_NAME), JSON.stringify({ [mode.key]: true }));
+      sandbox.process.env[mode.env] = "1";
+      check(
+        `${mode.global}: a memoized false stays false for the process lifetime`,
+        sandbox[mode.global](),
         false
       );
     }

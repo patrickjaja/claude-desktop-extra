@@ -7,7 +7,6 @@
 # Environment variables:
 #   CLAUDE_USE_XWAYLAND=1    - Force XWayland instead of native Wayland (escape hatch
 #                              for users on Electron <40 that can't update; see below)
-#   CLAUDE_MENU_BAR          - Menu bar mode: auto (default), visible, hidden
 #   CLAUDE_GPU_BACKEND=angle-gl - Render via ANGLE's GL backend instead of the
 #                              native Wayland/GBM path (keeps GPU acceleration;
 #                              fixes GPU-process crashes on some drivers, e.g.
@@ -67,6 +66,35 @@ APP_ID='claude'
 # assignment after profile resolution below.
 
 # ---------------------------------------------------------------------------
+# PATH
+# ---------------------------------------------------------------------------
+# Guarantee a usable PATH. When Claude is launched from a .desktop file
+# (GNOME/XFCE/KDE menu), the systemd --user scope can start with an EMPTY PATH -
+# the display-manager-spawned graphical session and the systemd user manager
+# often carry no PATH. That breaks any feature that resolves a binary via $PATH;
+# in particular the native Cowork VM backend probes for `qemu-system-x86_64` by
+# walking process.env.PATH, so an empty PATH makes Cowork report "VM not
+# supported" and the workspace Download button do nothing - even though qemu is
+# installed. (Terminal launches are unaffected: they inherit the shell's PATH.)
+# We export an explicit PATH that always includes the standard system bindirs
+# (where qemu/virtiofsd live), appended to whatever the launcher inherited, and
+# propagate it into the scope with --setenv at exec time.
+#
+# This runs FIRST, before anything else in the file: the launcher itself shells
+# out to mkdir, find, ps, python3, gsettings, gdbus and setsid long before it
+# reaches the exec, and with an inherited empty PATH the very first `mkdir` in
+# the Logging block below died with "command not found" and the app never
+# started at all.
+_claude_path="${PATH:-}"
+for _d in /usr/local/bin /usr/bin /bin /usr/local/sbin /usr/sbin /sbin; do
+    case ":${_claude_path}:" in
+        *":${_d}:"*) : ;;                       # already present
+        *) _claude_path="${_claude_path:+${_claude_path}:}${_d}" ;;
+    esac
+done
+export PATH="$_claude_path"
+
+# ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
 # Defined up here (before any caller) because functions like _appimage_integrate
@@ -74,7 +102,12 @@ APP_ID='claude'
 # at call time, so a later definition would print "log: command not found" (#142).
 
 LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/claude-desktop"
-mkdir -p "$LOG_DIR"
+# Never fatal. Under `set -e` an unwritable ~/.cache (root-owned after one
+# `sudo claude-desktop`, a full disk, a quota) made this the first thing that
+# ran and the last: the launcher exited 1 before anything else, and from a
+# desktop icon the user saw an app that simply does not open. Logging is a
+# convenience; it must not be able to stop the app from starting.
+mkdir -p "$LOG_DIR" 2>/dev/null || true
 LOG_FILE="$LOG_DIR/launcher.log"
 # Only written when we detach from a controlling terminal (see the tty-detach
 # block in the Launch section). Terminal launches keep the caller's stdio.
@@ -97,7 +130,11 @@ for _lf in "$LOG_FILE" "$STDIO_LOG"; do
     fi
 done
 
-log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_FILE"; }
+# The group's redirect covers the append's OWN failure too: bash applies
+# redirections left to right, so `>> "$LOG_FILE" 2>/dev/null` would still print
+# "No such file or directory" to the real stderr before the suppression took
+# effect. An unwritable log must be completely silent, not merely non-fatal.
+log() { { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_FILE"; } 2>/dev/null || true; }
 
 # ---------------------------------------------------------------------------
 # Profile resolution
@@ -106,10 +143,17 @@ log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_FILE"; }
 # logins, logs, spaces.json, custom themes), its own cowork + Quick Entry
 # sockets, its own Claude Code config dir, and its own systemd scope name.
 #
-# Resolution order (later wins):
-#   1. CLAUDE_PROFILE env var (so child processes inherit)
-#   2. Invocation basename matching `claude-desktop-<name>` (symlink-launched)
-#   3. --profile=<name> or --profile <name> on argv
+# Resolution order (strongest first):
+#   1. --profile=<name> or --profile <name> on argv - overwrites whatever is set
+#   2. CLAUDE_PROFILE env var (so child processes inherit the running profile)
+#   3. Invocation basename matching `claude-desktop-<name>` (symlink-launched),
+#      consulted only when the env var is empty
+#
+# So an exported CLAUDE_PROFILE BEATS the basename: running claude-desktop-work
+# from a shell that exports CLAUDE_PROFILE=personal launches `personal`. That is
+# deliberate - a profile's own child processes must stay in their profile - but
+# it is the opposite of what a symlink's name suggests, so pass --profile
+# explicitly when you need to be sure.
 #
 # The bare name `default` is reserved and means "no suffix; paths unchanged
 # from the v1 single-instance layout". Empty is the same as default. Valid
@@ -145,7 +189,9 @@ while (( $# > 0 )); do
             shift
             ;;
         --no-systemd-scope)
-            CLAUDE_DISABLE_SYSTEMD_SCOPE=1
+            # Exported like its neighbours below: the SSO URL re-exec replaces
+            # this process, and an unexported value would not survive it.
+            export CLAUDE_DISABLE_SYSTEMD_SCOPE=1
             shift
             ;;
         --native-titlebar)
@@ -242,10 +288,15 @@ if [[ -z "${CLAUDE_PROFILE:-}" ]]; then
     if [[ -n "$_claude_url" ]]; then
         _runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
         # Most recently modified marker, max 5 min old, name validates as profile.
+        # `|| _marker=""` because 2>/dev/null hides find's message but not its
+        # status: with pipefail, a missing or unreadable runtime dir (su - user,
+        # a container, a non-systemd session) failed the assignment and set -e
+        # exited 1 with no output at all - every claude:// link, and so every
+        # SSO callback, silently did nothing.
         _marker=$(find "$_runtime_dir" -maxdepth 1 -type f \
             -name 'claude-desktop-pending-auth-*' -mmin -5 \
             -printf '%T@ %p\n' 2>/dev/null \
-            | sort -nr | head -1 | awk '{print $2}')
+            | sort -nr | head -1 | awk '{print $2}') || _marker=""
         if [[ -n "$_marker" && -f "$_marker" ]]; then
             _routed_profile="${_marker##*/claude-desktop-pending-auth-}"
             if [[ "$_routed_profile" =~ ^[a-zA-Z0-9_-]+$ ]]; then
@@ -361,10 +412,23 @@ if [[ -z "$ELECTRON_BIN" ]]; then
 fi
 
 if [[ -z "$ELECTRON_BIN" || ! -x "$ELECTRON_BIN" ]]; then
-    echo >&2 'claude-desktop: Claude Desktop Electron binary not found.'
-    echo >&2 "Searched: /usr/lib/claude-desktop/${APP_ID}, /usr/lib/claude-desktop-bin/${APP_ID}"
-    echo >&2 'Set CLAUDE_ELECTRON=/path/to/claude to override.'
-    exit 1
+    # Subcommands that report or clean up need no binary, and refusing them here
+    # meant the tools for diagnosing and undoing a broken install were exactly
+    # the ones a broken install disabled: --diagnose could not run, and
+    # --delete-profile / --unintegrate could not remove the symlinks and
+    # .desktop files left behind after the package was uninstalled.
+    case "${1:-}" in
+        --help|-h|--version|-V|--list-profiles|--diagnose|--unintegrate|\
+        --uninstall-gnome-hotkey|--install-gnome-hotkey|--delete-profile|--delete-profile=*)
+            echo >&2 'claude-desktop: Electron binary not found; continuing (this subcommand does not need it).'
+            ;;
+        *)
+            echo >&2 'claude-desktop: Claude Desktop Electron binary not found.'
+            echo >&2 "Searched: /usr/lib/claude-desktop/${APP_ID}, /usr/lib/claude-desktop-bin/${APP_ID}"
+            echo >&2 'Set CLAUDE_ELECTRON=/path/to/claude to override.'
+            exit 1
+            ;;
+    esac
 fi
 
 # Informational: the asar Electron will auto-load. The hard existence check
@@ -535,6 +599,13 @@ _materialise_profile_binary() {
 _mirror_profile_siblings() {
     local src_dir="$1" dst_dir="$2" orig_bn="$3"
     local entry bn target
+    # Mirroring a directory onto itself would rm each link and recreate it
+    # pointing at its own path. That is reachable whenever --create-profile runs
+    # with a profile already active, because the source is then the per-profile
+    # directory rather than the install tree.
+    if [[ "$(cd "$src_dir" 2>/dev/null && pwd -P)" == "$(cd "$dst_dir" 2>/dev/null && pwd -P)" ]]; then
+        return 0
+    fi
     for entry in "$src_dir"/*; do
         [[ -e "$entry" ]] || continue
         bn="$(basename "$entry")"
@@ -545,6 +616,18 @@ _mirror_profile_siblings() {
             rm -f "$dst_dir/$bn"
             ln -s "$entry" "$dst_dir/$bn"
         fi
+    done
+    # Drop links to files this version no longer ships. The staleness check
+    # treats any dangling sibling as "needs refresh", and the loop above only
+    # visits names that still exist upstream - so without this a single removed
+    # file (libEGL.so, or a pre-rename LICENSE path) makes every later launch
+    # re-materialise the binary forever.
+    for entry in "$dst_dir"/*; do
+        [[ -L "$entry" ]] || continue
+        bn="$(basename "$entry")"
+        [[ "$bn" == "$orig_bn" ]] && continue
+        case "$bn" in "${APP_ID}"*) continue ;; esac
+        [[ -e "$entry" ]] || rm -f "$entry"
     done
 }
 
@@ -608,9 +691,20 @@ _refresh_profile_binary_if_stale() {
     log "Refreshing stale profile '$CLAUDE_PROFILE': $reason"
     echo >&2 "claude-desktop: refreshing stale per-profile binary ($reason)"
 
-    rm -f "$profile_bin"
-    if ! _materialise_profile_binary "$canonical" "$profile_bin"; then
-        echo >&2 "claude-desktop: failed to refresh per-profile binary; falling back to canonical for this launch"
+    # Materialise beside the old binary and rename over it, so a refresh that
+    # fails leaves the working binary in place. Deleting first meant a full disk,
+    # a quota, or a read-only home turned a stale binary into NO binary - and
+    # since the deletion outlives the launch, every later launch lost the
+    # per-profile identity too and --create-profile refused to repair it.
+    local _staged="${profile_bin}.new.$$"
+    rm -f "$_staged"
+    if ! _materialise_profile_binary "$canonical" "$_staged"; then
+        echo >&2 "claude-desktop: could not refresh the per-profile binary; keeping the existing one for this launch"
+        return 1
+    fi
+    if ! mv -f "$_staged" "$profile_bin"; then
+        rm -f "$_staged"
+        echo >&2 "claude-desktop: could not replace the per-profile binary; keeping the existing one for this launch"
         return 1
     fi
     _mirror_profile_siblings "$(dirname "$canonical")" "$(dirname "$profile_bin")" "$(basename "$canonical")"
@@ -703,7 +797,11 @@ Exec=${appimage_path} claude://code/new
 DESKTOP_EOF
 
     local appimage_icon=""
-    local here="${CLAUDE_ELECTRON%/*}"
+    # $ELECTRON_BIN, not $CLAUDE_ELECTRON: the latter is the raw env var, which
+    # is unset unless the AppImage AppRun exported it, and a bare expansion of an
+    # unset name is fatal under `set -u` - which aborted --integrate after the
+    # .desktop was written but before the claude:// handler was registered.
+    local here="${ELECTRON_BIN%/*}"
     if [[ -n "$here" ]]; then
         local appdir="${here}/../../.."
         if [[ -f "$appdir/claude-desktop.png" ]]; then
@@ -985,6 +1083,127 @@ _list_profiles() {
     fi
 }
 
+# Credential-store probes. Defined HERE, well above the password-store
+# decision further down, because --diagnose answers from the argv case and
+# returns long before that block is ever reached: a function defined after
+# the case would not exist yet when --diagnose calls it.
+_secret_service_available() {
+    # Owned or activatable org.freedesktop.secrets on the session bus.
+    # busctl list shows both running and activatable names.
+    #
+    # Each probe falls through to the next when it cannot answer: busctl being
+    # installed is not the same as busctl reaching the bus, and treating "the
+    # first tool we found said no" as the answer would report a keyring-less
+    # session on a machine that has one.
+    if command -v busctl &>/dev/null; then
+        busctl --user --no-pager list 2>/dev/null \
+            | grep -q '^org\.freedesktop\.secrets\b' && return 0
+    fi
+    if command -v dbus-send &>/dev/null; then
+        {
+            dbus-send --session --print-reply --dest=org.freedesktop.DBus \
+                /org/freedesktop/DBus org.freedesktop.DBus.ListNames 2>/dev/null
+            dbus-send --session --print-reply --dest=org.freedesktop.DBus \
+                /org/freedesktop/DBus org.freedesktop.DBus.ListActivatableNames 2>/dev/null
+        } | grep -q '"org\.freedesktop\.secrets"' && return 0
+    fi
+    if command -v gdbus &>/dev/null; then
+        gdbus call --session --dest org.freedesktop.DBus \
+            --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.ListActivatableNames 2>/dev/null \
+            | grep -q 'org\.freedesktop\.secrets' && return 0
+    fi
+    return 1
+}
+
+_kwallet_available() {
+    # Whether kwalletd can actually serve os_crypt. A bus-name check is NOT
+    # enough here: org.kde.kwalletd6 stays D-Bus activatable even when KWallet
+    # is switched off, and activation then fails ("unit failed"). So probe with
+    # a real method call, bounded by a short D-Bus timeout - the app's own
+    # kwalletd pre-flight warns that this call can otherwise block behind the
+    # wallet-creation wizard when kwalletd runs but has no wallet yet.
+    local _v _svc _obj
+    for _v in 6 5; do
+        _svc="org.kde.kwalletd${_v}"
+        _obj="/modules/kwalletd${_v}"
+        if command -v busctl &>/dev/null; then
+            busctl --user --no-pager --timeout=5 call \
+                "$_svc" "$_obj" org.kde.KWallet wallets &>/dev/null && return 0
+        elif command -v dbus-send &>/dev/null; then
+            dbus-send --session --print-reply --reply-timeout=5000 \
+                --dest="$_svc" "$_obj" org.kde.KWallet.wallets &>/dev/null && return 0
+        elif command -v gdbus &>/dev/null; then
+            gdbus call --session --timeout 5 --dest "$_svc" \
+                --object-path "$_obj" --method org.kde.KWallet.wallets &>/dev/null && return 0
+        else
+            # No way to probe - keep Chromium's KDE default untouched.
+            return 0
+        fi
+    done
+    return 1
+}
+
+# The password-store decision, asked as a question so that both the launch path
+# and --diagnose get the same answer from one implementation. Sets three globals
+# rather than echoing, because the reason has to survive alongside the verdict:
+#
+#   _pw_state   native    Chromium already maps this desktop to a real keyring
+#               libsecret Chromium would pick nothing usable, but a Secret
+#                         Service is on the bus - force gnome-libsecret
+#               none      no keyring at all; Chromium falls back to basic_text,
+#                         safeStorage reports encryption unavailable and the
+#                         sign-in does not survive a restart
+#   _pw_detail  the sentence explaining that verdict
+#   _pw_note    the kwallet fallback note, or empty
+#
+# It does NOT honour an explicit --password-store argument or
+# CLAUDE_PASSWORD_STORE; those are handled by the caller, which is why
+# --diagnose reports them separately.
+_pw_state=''
+_pw_detail=''
+_pw_note=''
+_pw_store_detect() {
+    _pw_note=''
+    local _de_keyring_native='' _de_is_kde='' _de
+    local -a _de_parts
+    # Skip desktops Chromium already maps to a keyring backend (GNOME-family ->
+    # libsecret, KDE -> kwallet). KDE is verified below, since that mapping is a
+    # dead end without kwalletd.
+    IFS=':' read -ra _de_parts <<< "${XDG_CURRENT_DESKTOP:-}"
+    for _de in "${_de_parts[@]}"; do
+        case "${_de,,}" in
+            kde)
+                _de_keyring_native=1
+                _de_is_kde=1
+                break
+                ;;
+            gnome|unity|deepin|cinnamon|x-cinnamon|pantheon|ukui)
+                _de_keyring_native=1
+                break
+                ;;
+        esac
+    done
+    # Chromium's kwallet mapping is only real if kwalletd answers.
+    if [[ -n "$_de_is_kde" ]] && ! _kwallet_available; then
+        _pw_note="kwalletd does not answer on the session bus - KDE's kwallet backend would yield no encryption, falling back to Secret Service detection"
+        _de_keyring_native=''
+    fi
+    if [[ -n "$_de_keyring_native" ]]; then
+        _pw_state='native'
+        _pw_detail="XDG_CURRENT_DESKTOP='${XDG_CURRENT_DESKTOP:-}' already gets a keyring backend from Chromium"
+        return 0
+    fi
+    if _secret_service_available; then
+        _pw_state='libsecret'
+        _pw_detail="Secret Service detected on session bus; XDG_CURRENT_DESKTOP='${XDG_CURRENT_DESKTOP:-}' gets no keyring backend from Chromium - adding --password-store=gnome-libsecret"
+        return 0
+    fi
+    _pw_state='none'
+    _pw_detail="no org.freedesktop.secrets provider on the session bus (XDG_CURRENT_DESKTOP='${XDG_CURRENT_DESKTOP:-}') - sign-in will NOT persist across restarts; install and unlock a keyring (gnome-keyring, kwalletd, KeePassXC) and relaunch"
+    return 0
+}
+
 _diagnose() {
     echo '=== claude-desktop --diagnose ==='
     echo
@@ -1070,6 +1289,35 @@ _diagnose() {
         echo "CLAUDE_APPIMAGE_PATH = (unset - not an AppImage)"
     fi
     echo "APP_ASAR = $APP_ASAR"
+    echo
+    # Without a keyring Chromium falls back to basic_text, safeStorage reports
+    # encryption unavailable and the sign-in does not survive a restart - the
+    # app then goes through /login on every launch. That is invisible from the
+    # outside, so name the backend, the probes behind it and the override that
+    # would change it.
+    echo '--- Credential store ---'
+    local _pw_forced='' _pw_arg
+    for _pw_arg in "$@"; do
+        [[ "$_pw_arg" == --password-store=* ]] && _pw_forced="$_pw_arg"
+    done
+    echo "CLAUDE_PASSWORD_STORE = ${CLAUDE_PASSWORD_STORE:-(unset)}"
+    echo "org.freedesktop.secrets on session bus = $(_secret_service_available && echo yes || echo no)"
+    echo "kwalletd answers on session bus = $(_kwallet_available && echo yes || echo no)"
+    if [[ -n "$_pw_forced" ]]; then
+        echo "Detection = SKIPPED (explicit $_pw_forced on the command line wins)"
+    elif [[ "${CLAUDE_PASSWORD_STORE:-}" == 'auto' ]]; then
+        echo "Detection = DISABLED (CLAUDE_PASSWORD_STORE=auto - Chromium chooses)"
+    elif [[ -n "${CLAUDE_PASSWORD_STORE:-}" ]]; then
+        echo "Detection = OVERRIDDEN (--password-store=${CLAUDE_PASSWORD_STORE})"
+    else
+        _pw_store_detect
+        [[ -n "$_pw_note" ]] && echo "Note: $_pw_note"
+        case "$_pw_state" in
+            native)    echo "Verdict = no flag added; $_pw_detail" ;;
+            libsecret) echo "Verdict = --password-store=gnome-libsecret; $_pw_detail" ;;
+            none)      echo "Verdict = NO KEYRING - $_pw_detail" ;;
+        esac
+    fi
     echo
     echo '--- xdg-desktop-portal GlobalShortcuts ---'
     if command -v gdbus &>/dev/null; then
@@ -1271,8 +1519,21 @@ _diagnose() {
 if [[ -n "$profile_suffix" ]]; then
     _refresh_profile_binary_if_stale || true
     _profile_bin="$HOME/.local/lib/claude-desktop/${APP_ID}${profile_suffix}"
-    if [[ -x "$_profile_bin" && "$ELECTRON_BIN" != "$_profile_bin" ]]; then
+    if [[ -x "$_profile_bin" ]]; then
         ELECTRON_BIN="$_profile_bin"
+    elif [[ "$ELECTRON_BIN" == "$_profile_bin" ]]; then
+        # The per-profile binary was chosen during resolution but is not usable
+        # now. Launching it would exec a path that is not there, so fall back to
+        # the canonical binary: the profile keeps its isolated state and only the
+        # per-profile WM identity is lost for this launch.
+        ELECTRON_BIN=''
+        for candidate in "/usr/lib/claude-desktop/${APP_ID}" "/usr/lib/claude-desktop-bin/${APP_ID}"; do
+            [[ -x "$candidate" ]] && { ELECTRON_BIN="$candidate"; break; }
+        done
+        if [[ -n "$ELECTRON_BIN" ]]; then
+            echo >&2 "claude-desktop: per-profile binary unavailable, using $ELECTRON_BIN for this launch"
+            log "per-profile binary unavailable; falling back to $ELECTRON_BIN"
+        fi
     fi
 
     # Silent-degradation hint: --profile=NAME isolates state but the
@@ -1369,7 +1630,6 @@ Environment variables:
                             Frameless window with no window-control buttons
                             (same as --no-window-controls).
   CLAUDE_USE_XWAYLAND=1     Force XWayland instead of native Wayland.
-  CLAUDE_MENU_BAR=visible   Menu bar mode: auto (default), visible, hidden.
   CLAUDE_GPU_BACKEND=angle-gl Render via ANGLE-GL (keeps GPU accel; fixes
                             GPU-process crashes on some drivers, e.g. Intel xe).
   CLAUDE_DISABLE_GPU=1      Disable GPU compositing (white screen fix).
@@ -1548,7 +1808,10 @@ fi
 # Display check
 # ---------------------------------------------------------------------------
 
-if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
+# --diagnose is exempt: it is deferred to after this point (it needs
+# platform_mode and electron_major), and it is the one subcommand people run
+# over SSH or from a VT precisely because the GUI will not come up.
+if [[ -z "${_diagnose_requested:-}" && -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
     echo >&2 'claude-desktop: No display server detected.'
     echo >&2 'Both $DISPLAY and $WAYLAND_DISPLAY are unset.'
     echo >&2 'Run from within an X11 or Wayland session, not a TTY.'
@@ -1614,7 +1877,11 @@ fi
 #
 # We only ever turn a mode ON from the config: an explicitly set env var (or
 # the CLI flag, which sets one) always wins and is never overridden or unset,
-# including an explicit CLAUDE_NATIVE_TITLEBAR=0 meaning "not native".
+# including an explicit CLAUDE_NATIVE_TITLEBAR=0 meaning "not native". The app
+# side honours the same rule - js/window_controls_pref.js reads the variable as
+# three-state, so "0" forces the mode off rather than deferring to the saved
+# switch. Both halves have to agree or the window comes up in a mode the
+# launcher withheld every argument for.
 #
 # Known limitation - 1p userData only. We read $config_dir, the dir this
 # launcher passes as --user-data-dir. A 3p deployment relocates userData to
@@ -1743,8 +2010,18 @@ ELECTRON_ARGS=()
 # In native mode, disable Chromium's CustomTitlebar feature so Electron
 # renders the system frame. In integrated and bare mode, keep it enabled so
 # titleBarOverlay works.
+# Chromium collapses duplicate switches into a map where the LAST one wins, so
+# every feature name has to go through these two lists and be emitted once. The
+# launcher used to pass two separate --disable-features= on a Wayland + native
+# titlebar launch, and only ordering luck decided that the survivor was the
+# Vulkan workaround rather than the titlebar one - appending another
+# --disable-features anywhere above would have silently cost Wayland users their
+# window. User-supplied values are folded in below for the same reason.
+_disable_features=()
+_enable_features=()
+
 if [[ "${CLAUDE_NATIVE_TITLEBAR:-}" == '1' ]]; then
-    ELECTRON_ARGS+=('--disable-features=CustomTitlebar')
+    _disable_features+=('CustomTitlebar')
     log "Titlebar: native ($_titlebar_source)"
 elif [[ "${CLAUDE_NO_WINDOW_CONTROLS:-}" == '1' ]]; then
     log "Titlebar: frameless, no window controls ($_no_controls_source)"
@@ -1767,25 +2044,39 @@ ELECTRON_ARGS+=('--enable-transparent-visuals')
 # exposes the API; nothing scans until the user opens the Buddy window.
 ELECTRON_ARGS+=('--enable-blink-features=WebBluetooth')
 
+# Chromium's setuid sandbox is orthogonal to the display backend, so the
+# decision is made here once rather than per session type. Every package we ship
+# gives Electron a working sandbox: the .deb, .rpm and pacman packages install
+# chrome-sandbox 4755 root (CI's smoke test fails the build otherwise) and the
+# Nix package uses the nixpkgs electron derivation, which carries its own
+# wrapper. The AppImage is the exception - its payload is a FUSE mount, which
+# cannot carry a SUID bit - so it, and only it, needs the sandbox turned off.
+#
+# This used to be added for EVERY Wayland and XWayland launch, which silently
+# disabled the sandbox for remote claude.ai content on packages that had a
+# perfectly good one. CLAUDE_DISABLE_SANDBOX=1 is the escape hatch if a session
+# turns out to need it.
+if [[ -n "${CLAUDE_APPIMAGE_PATH:-}" ]]; then
+    log 'AppImage: adding --no-sandbox (a FUSE mount cannot carry SUID)'
+    ELECTRON_ARGS+=('--no-sandbox')
+elif [[ "${CLAUDE_DISABLE_SANDBOX:-}" == '1' ]]; then
+    log 'Sandbox disabled by CLAUDE_DISABLE_SANDBOX=1'
+    ELECTRON_ARGS+=('--no-sandbox')
+fi
+
 case $platform_mode in
     x11)
         log 'X11 session detected'
-        if [[ -n "${CLAUDE_APPIMAGE_PATH:-}" ]]; then
-            log 'AppImage X11: adding --no-sandbox (FUSE cannot carry SUID)'
-            ELECTRON_ARGS+=('--no-sandbox')
-        fi
         ;;
     xwayland)
         log 'Using X11 backend via XWayland (CLAUDE_USE_XWAYLAND=1)'
-        ELECTRON_ARGS+=('--no-sandbox' '--ozone-platform=x11')
+        ELECTRON_ARGS+=('--ozone-platform=x11')
         ;;
     wayland)
         log 'Using native Wayland backend'
-        ELECTRON_ARGS+=('--no-sandbox')
+        _enable_features+=('UseOzonePlatform' 'GlobalShortcutsPortal')
         if [[ "${CLAUDE_NATIVE_TITLEBAR:-}" == '1' ]]; then
-            ELECTRON_ARGS+=('--enable-features=UseOzonePlatform,WaylandWindowDecorations,GlobalShortcutsPortal')
-        else
-            ELECTRON_ARGS+=('--enable-features=UseOzonePlatform,GlobalShortcutsPortal')
+            _enable_features+=('WaylandWindowDecorations')
         fi
         ELECTRON_ARGS+=('--ozone-platform=wayland')
         ELECTRON_ARGS+=('--enable-wayland-ime')
@@ -1800,13 +2091,50 @@ case $platform_mode in
         # xwayland use --ozone-platform=x11 and keep Vulkan. Opt out: CLAUDE_ENABLE_VULKAN=1.
         # log line: wayland_surface_factory.cc "'--ozone-platform=wayland' is not compatible with Vulkan"
         if [[ "${CLAUDE_ENABLE_VULKAN:-}" != '1' ]]; then
-            ELECTRON_ARGS+=('--disable-features=Vulkan')
+            _disable_features+=('Vulkan')
             log 'Vulkan disabled for Wayland surface compatibility (set CLAUDE_ENABLE_VULKAN=1 to keep it)'
         else
             log 'Vulkan kept on Wayland (CLAUDE_ENABLE_VULKAN=1)'
         fi
         ;;
 esac
+
+# Emit exactly one switch of each kind, folding in anything the user passed so
+# our entries are not silently discarded by Chromium's last-wins rule. A user
+# who passed --disable-features=Foo used to drop our Vulkan workaround (no window
+# on Wayland); one who passed --enable-features=Bar used to drop
+# GlobalShortcutsPortal (global hotkeys stopped working, with no message).
+# Folded in AND removed from the forwarded arguments: user args are appended
+# after ELECTRON_ARGS, so leaving the original in place would let it win the
+# last-wins race again and undo the merge we just did.
+_user_args=()
+for _uarg in "$@"; do
+    case "$_uarg" in
+        --disable-features=*) IFS=',' read -ra _uf <<< "${_uarg#*=}"; _disable_features+=("${_uf[@]}") ;;
+        --enable-features=*)  IFS=',' read -ra _uf <<< "${_uarg#*=}"; _enable_features+=("${_uf[@]}") ;;
+        *) _user_args+=("$_uarg") ;;
+    esac
+done
+if (( ${#_user_args[@]} > 0 )); then
+    set -- "${_user_args[@]}"
+else
+    set --
+fi
+_join_features() {
+    local -n _arr="$1"
+    local _seen=' ' _out='' _f
+    for _f in ${_arr[@]+"${_arr[@]}"}; do
+        [[ -z "$_f" ]] && continue
+        case "$_seen" in *" $_f "*) continue ;; esac
+        _seen="$_seen$_f "
+        _out="${_out:+$_out,}$_f"
+    done
+    printf '%s' "$_out"
+}
+_df="$(_join_features _disable_features)"
+_ef="$(_join_features _enable_features)"
+[[ -n "$_df" ]] && ELECTRON_ARGS+=("--disable-features=$_df")
+[[ -n "$_ef" ]] && ELECTRON_ARGS+=("--enable-features=$_ef")
 
 # Now that platform_mode and electron_major are known, service the --diagnose
 # subcommand if requested. Exits here — does not launch Electron.
@@ -1816,7 +2144,9 @@ if [[ -n ${_diagnose_requested:-} ]]; then
     # Note: CLAUDE_DISABLE_GPU flags are appended after this point, so they are
     # not reflected here; the platform/Vulkan/titlebar flags are.
     echo "electron_args = ${ELECTRON_ARGS[*]}"
-    _diagnose
+    # "$@" so the credential-store section can see an explicit
+    # --password-store= the caller passed alongside --diagnose.
+    _diagnose "$@"
     exit 0
 fi
 
@@ -1876,61 +2206,10 @@ esac
 #   CLAUDE_PASSWORD_STORE=<value>  force --password-store=<value>
 #   CLAUDE_PASSWORD_STORE=auto     disable detection (Chromium's own choice)
 #   an explicit --password-store=... argument always wins (detection skipped)
-
-_secret_service_available() {
-    # Owned or activatable org.freedesktop.secrets on the session bus.
-    # busctl list shows both running and activatable names.
-    if command -v busctl &>/dev/null; then
-        busctl --user --no-pager list 2>/dev/null \
-            | grep -q '^org\.freedesktop\.secrets\b'
-        return
-    fi
-    if command -v dbus-send &>/dev/null; then
-        {
-            dbus-send --session --print-reply --dest=org.freedesktop.DBus \
-                /org/freedesktop/DBus org.freedesktop.DBus.ListNames 2>/dev/null
-            dbus-send --session --print-reply --dest=org.freedesktop.DBus \
-                /org/freedesktop/DBus org.freedesktop.DBus.ListActivatableNames 2>/dev/null
-        } | grep -q '"org\.freedesktop\.secrets"'
-        return
-    fi
-    if command -v gdbus &>/dev/null; then
-        gdbus call --session --dest org.freedesktop.DBus \
-            --object-path /org/freedesktop/DBus \
-            --method org.freedesktop.DBus.ListActivatableNames 2>/dev/null \
-            | grep -q 'org\.freedesktop\.secrets'
-        return
-    fi
-    return 1
-}
-
-_kwallet_available() {
-    # Whether kwalletd can actually serve os_crypt. A bus-name check is NOT
-    # enough here: org.kde.kwalletd6 stays D-Bus activatable even when KWallet
-    # is switched off, and activation then fails ("unit failed"). So probe with
-    # a real method call, bounded by a short D-Bus timeout - the app's own
-    # kwalletd pre-flight warns that this call can otherwise block behind the
-    # wallet-creation wizard when kwalletd runs but has no wallet yet.
-    local _v _svc _obj
-    for _v in 6 5; do
-        _svc="org.kde.kwalletd${_v}"
-        _obj="/modules/kwalletd${_v}"
-        if command -v busctl &>/dev/null; then
-            busctl --user --no-pager --timeout=5 call \
-                "$_svc" "$_obj" org.kde.KWallet wallets &>/dev/null && return 0
-        elif command -v dbus-send &>/dev/null; then
-            dbus-send --session --print-reply --reply-timeout=5000 \
-                --dest="$_svc" "$_obj" org.kde.KWallet.wallets &>/dev/null && return 0
-        elif command -v gdbus &>/dev/null; then
-            gdbus call --session --timeout 5 --dest "$_svc" \
-                --object-path "$_obj" --method org.kde.KWallet.wallets &>/dev/null && return 0
-        else
-            # No way to probe - keep Chromium's KDE default untouched.
-            return 0
-        fi
-    done
-    return 1
-}
+#
+# The probes and the decision itself live near the top of this file, next to
+# _diagnose(), so that --diagnose can report the very same answer this block
+# acts on rather than a second implementation of the same rules.
 
 _pw_store_explicit=''
 for _arg in "$@"; do
@@ -1942,34 +2221,23 @@ done
 if [[ -z "$_pw_store_explicit" ]]; then
     case "${CLAUDE_PASSWORD_STORE:-}" in
         '')
-            # Skip desktops Chromium already maps to a keyring backend
-            # (GNOME-family -> libsecret, KDE -> kwallet). KDE is verified
-            # below, since that mapping is a dead end without kwalletd.
-            _de_keyring_native=''
-            _de_is_kde=''
-            IFS=':' read -ra _de_parts <<< "${XDG_CURRENT_DESKTOP:-}"
-            for _de in "${_de_parts[@]}"; do
-                case "${_de,,}" in
-                    kde)
-                        _de_keyring_native=1
-                        _de_is_kde=1
-                        break
-                        ;;
-                    gnome|unity|deepin|cinnamon|x-cinnamon|pantheon|ukui)
-                        _de_keyring_native=1
-                        break
-                        ;;
-                esac
-            done
-            # Chromium's kwallet mapping is only real if kwalletd answers.
-            if [[ -n "$_de_is_kde" ]] && ! _kwallet_available; then
-                log "kwalletd does not answer on the session bus - KDE's kwallet backend would yield no encryption, falling back to Secret Service detection"
-                _de_keyring_native=''
-            fi
-            if [[ -z "$_de_keyring_native" ]] && _secret_service_available; then
-                log "Secret Service detected on session bus; XDG_CURRENT_DESKTOP='${XDG_CURRENT_DESKTOP:-}' gets no keyring backend from Chromium - adding --password-store=gnome-libsecret"
-                ELECTRON_ARGS+=('--password-store=gnome-libsecret')
-            fi
+            _pw_store_detect
+            [[ -n "$_pw_note" ]] && log "$_pw_note"
+            case "$_pw_state" in
+                libsecret)
+                    log "$_pw_detail"
+                    ELECTRON_ARGS+=('--password-store=gnome-libsecret')
+                    ;;
+                none)
+                    # Chromium then falls back to basic_text, which yields no
+                    # usable key: safeStorage reports encryption unavailable and
+                    # the sign-in is not persisted, so the app goes through
+                    # /login on every start. Say so here - the silence was the
+                    # reason this state could not be told apart from a probe
+                    # that never ran.
+                    log "$_pw_detail"
+                    ;;
+            esac
             ;;
         auto)
             # Opt-out: let Chromium's own detection run unmodified.
@@ -2003,10 +2271,6 @@ if [[ -n "${CLAUDE_NO_WINDOW_CONTROLS:-}" ]]; then
     export CLAUDE_NO_WINDOW_CONTROLS
 fi
 
-# Pass through CLAUDE_MENU_BAR if set (auto/visible/hidden)
-if [[ -n "${CLAUDE_MENU_BAR:-}" ]]; then
-    export CLAUDE_MENU_BAR
-fi
 
 # Tell the app which launcher started it, so the XDG autostart entry written by
 # the "Start at login" toggle points back HERE instead of at the bundled Electron
@@ -2037,8 +2301,6 @@ fi
 # A stale lock from a crash blocks all launches with no error message.
 # The lock is a symlink whose target encodes "hostname-PID".
 
-lock_file="$config_dir/SingletonLock"
-
 # When a profile is active, redirect Electron's userData away from the default
 # ~/.config/Claude. This is what isolates SingletonLock, logins, logs, etc.
 # For the default profile, omit the flag so behavior is byte-identical to v1.
@@ -2047,14 +2309,19 @@ if [[ -n "$profile_suffix" ]]; then
     ELECTRON_ARGS+=("--user-data-dir=$config_dir")
 fi
 
-if [[ -L "$lock_file" ]]; then
+# Both userData dirs, because a 3p deployment (an inferenceProvider in
+# managed-settings.json) makes upstream relocate userData to the `-3p` suffix -
+# and a stale lock there blocks every launch just as silently. The
+# --reload-theme probe above already walks the same pair.
+for lock_file in "$config_dir/SingletonLock" "${config_dir}-3p/SingletonLock"; do
+    [[ -L "$lock_file" ]] || continue
     lock_target="$(readlink "$lock_file" 2>/dev/null)" || true
     lock_pid="${lock_target##*-}"
     if [[ "$lock_pid" =~ ^[0-9]+$ ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
         rm -f "$lock_file"
-        log "Removed stale SingletonLock (PID $lock_pid no longer running)"
+        log "Removed stale SingletonLock (PID $lock_pid no longer running): $lock_file"
     fi
-fi
+done
 
 # ---------------------------------------------------------------------------
 # Launch
@@ -2088,26 +2355,6 @@ log "Launching: $ELECTRON_BIN (auto-loads $APP_ASAR) ${ELECTRON_ARGS[*]} $*"
 # sandboxes (bwrap, distrobox, some container setups) where `systemd-run`
 # exists but the socket is filtered: without the probe we would `exec` into
 # systemd-run and die there, with no fallback. See issue #89.
-# Guarantee a usable PATH inside the Electron process. When Claude is launched
-# from a .desktop file (GNOME/XFCE/KDE menu), the systemd --user scope can start
-# with an EMPTY PATH - the display-manager-spawned graphical session and the
-# systemd user manager often carry no PATH. That breaks any feature that resolves
-# a binary via $PATH; in particular the native Cowork VM backend probes for
-# `qemu-system-x86_64` by walking process.env.PATH, so an empty PATH makes Cowork
-# report "VM not supported" and the workspace Download button do nothing - even
-# though qemu is installed. (Terminal launches are unaffected: they inherit the
-# shell's PATH.) We therefore export an explicit PATH that always includes the
-# standard system bindirs (where qemu/virtiofsd live), appended to whatever the
-# launcher inherited, and propagate it into the scope with --setenv.
-_claude_path="${PATH:-}"
-for _d in /usr/local/bin /usr/bin /bin /usr/local/sbin /usr/sbin /sbin; do
-    case ":${_claude_path}:" in
-        *":${_d}:"*) : ;;                       # already present
-        *) _claude_path="${_claude_path:+${_claude_path}:}${_d}" ;;
-    esac
-done
-export PATH="$_claude_path"
-
 # Detach from the controlling terminal when we are a BACKGROUND job on one.
 #
 # Sessions started with startx/xinit rather than a display manager run the
@@ -2151,7 +2398,12 @@ if [[ "${CLAUDE_KEEP_TTY:-}" != '1' ]] && _needs_tty_detach; then
     if command -v setsid &>/dev/null; then
         _setsid=(setsid)
         log "background job on a controlling terminal: detaching via setsid, stdio -> $STDIO_LOG"
-        exec </dev/null >>"$STDIO_LOG" 2>&1
+        # A failed redirect on `exec` terminates a non-interactive shell, so an
+        # unwritable stdout.log would stop the launch outright. Fall back to
+        # /dev/null: losing the app's output is survivable, not starting is not.
+        if ! { exec </dev/null >>"$STDIO_LOG" 2>&1; } 2>/dev/null; then
+            exec </dev/null >/dev/null 2>&1
+        fi
     else
         log 'WARNING: background job on a controlling terminal but setsid is missing (util-linux); the app env extraction can SIGTTIN the whole session process group'
     fi

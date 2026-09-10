@@ -144,6 +144,20 @@
     try { return process.env[envKey] === "1"; } catch (e) { return false; }
   }
 
+  // The env var as a THREE-state answer: true forces the mode on, false forces
+  // it off, null means "not set, let the saved config decide". The launcher
+  // documents an explicitly set variable as always winning, in both directions,
+  // so that CLAUDE_NATIVE_TITLEBAR=0 is a one-launch escape hatch from a saved
+  // switch. Reading it as a plain boolean made "0" mean the same as unset, and a
+  // saved `true` then quietly built the native window the user had just asked
+  // not to have.
+  function envDecision(envKey) {
+    var raw;
+    try { raw = process.env[envKey]; } catch (e) { return null; }
+    if (raw === undefined || raw === null || raw === "") return null;
+    return raw === "1";
+  }
+
   // The SAVED setting, uncached: what the config files say and nothing else.
   // Deliberately NOT ORed with the env var - a launcher flag doing the work
   // while nothing is saved would render the Settings switch as ON, which is
@@ -216,7 +230,8 @@
       if (cached !== null) return cached;
       var v = false;
       try {
-        v = envForced(mode.env) || readPrefFromDisk(mode.key).value === true;
+        var forced = envDecision(mode.env);
+        v = forced === null ? readPrefFromDisk(mode.key).value === true : forced;
       } catch (e) { v = false; }
       MEMO[mode.key] = v === true;
       return MEMO[mode.key];

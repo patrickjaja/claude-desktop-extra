@@ -80,11 +80,15 @@ function icon(cls) {
 
 const slug = (s) => s.replace(/\W+/g, "-").toLowerCase();
 
+// `noTestId` reproduces the rows upstream leaves untagged - the whole desktop-only
+// group is like that on the live nav, which is why the test ids may locate the nav
+// but must never be used to enumerate its rows.
 function item(label, opts = {}) {
   const cls = ROW_BASE + " " + (opts.selected ? ROW_ON : ROW_OFF) + (opts.badge ? " opacity-60" : "");
   const cur = opts.selected && opts.attr ? ' aria-current="page"' : "";
   const key = opts.key || slug(label);
-  return `<li data-testid="${key}-settings"><button type="button" id="row-${key}"${cur} ` +
+  const testid = opts.noTestId ? "" : ` data-testid="${key}-settings"`;
+  return `<li${testid}><button type="button" id="row-${key}"${cur} ` +
     `class="${cls}">${icon()}<span class="${LABEL_CLS}">${label}</span></button></li>`;
 }
 
@@ -143,6 +147,44 @@ const FIXTURE_NO_HEADERS = dialog(`
         item("Cowork")
       ].join("")}</ul>
       <ul class="${LIST_CLS}">${[item("Extensions"), item("Developer")].join("")}</ul>`);
+
+// Scenarios 6-7: the very same shape with the interface in Spanish. The nav is a
+// remote SPA and it is translated; nothing but the data-testid attributes and the
+// nesting survives a language change, so these two fixtures are what proves the
+// injection does not depend on English.
+//
+// The rows that keep an English word do so for a reason: "General" is spelled the
+// same in Spanish, and "Cowork", "Claude Code" and "Plugins" are product names the
+// SPA leaves untranslated. That is exactly the handful of accidental matches a
+// Spanish session reported, and it is why the label path finds a nav of four rows
+// there instead of eleven.
+//
+// `withTestIds` false is the same nav on a build that carries no test ids: the
+// label path is then the only way in, and the anchor has to be found by structure.
+const FIXTURE_ES = (withTestIds) => {
+  const es = (label, opts = {}) => item(label, Object.assign({ noTestId: !withTestIds }, opts));
+  return dialog(`
+      ${group("Ajustes", [
+        es("General", { selected: true, attr: true }),
+        es("Cuenta", { key: "account" }),
+        es("Uso", { key: "usage" }),
+        es("Capacidades", { key: "capabilities" }),
+        es("Claude Code", { key: "claude-code" }),
+        es("Cowork", { key: "cowork" })
+      ])}
+      ${group("Aplicación de escritorio", [
+        // Upstream tags no row of its desktop-only group, in any language.
+        item("General", { key: "desktop-general", noTestId: true }),
+        item("Extensiones", { key: "extensions", noTestId: true }),
+        item("Desarrollador", { key: "developer", noTestId: true })
+      ])}
+      ${group("Personalizar", [
+        es("Habilidades", { key: "skills" }),
+        es("Plugins", { key: "plugins" })
+      ])}
+      <div class="${HDR_CLS}">Organización de ejemplo</div>
+      <a id="row-org" href="/admin-settings/organization" class="orglink">${icon()}<span class="${LABEL_CLS}">Organización</span>${icon("text-muted")}</a>`);
+};
 
 // Scenario 5: exotic - one flat list of bare links, no lists, no group headers
 // and no icon of any kind. Every degradation at once: a fabricated <div> header
@@ -1294,6 +1336,8 @@ async function run() {
        "the shape diagnostic leaks no class names and no page text");
     ok(shape.indexOf("icon=box") >= 0, "the shape diagnostic records the icon-font box");
     ok(shape.indexOf("hdr[desktop app]") >= 0, "and which group header it anchored on");
+    ok(shape.indexOf("via=testid") >= 0,
+       "and that the nav itself was found language-independently: " + shape);
     ok(shape.length <= 300, "the shape diagnostic fits the diag channel (" + shape.length + ")");
     ok(diags.some(function (d) { return d.indexOf("cloned from") >= 0; }),
        "the install line reports the clone path");
@@ -1306,6 +1350,85 @@ async function run() {
       await flagsPanel(items[2]);
       await deployPanel(items[3]);
     }
+    return;
+  }
+
+  // --- the same nav in Spanish. Everything asserted here is placement and
+  //     diagnostics: the panels are English-independent and are covered by the
+  //     "real" scenario, so what these two pin is that a translated interface
+  //     reaches the SAME rendering - a cloned header and list pair - and never
+  //     the divider fallback.
+  if (kind.indexOf("es-") === 0) {
+    const byId = kind === "es-testid";
+    const hdr = document.querySelector(".cdbx-navhdr");
+    const list = document.querySelector(".cdbx-navlist");
+    ok(!!hdr && !!list, "a cloned header and list pair was built for a Spanish nav");
+    ok(!document.querySelector(".cdbx-navgroup-fb"),
+       "the divider fallback did NOT run - the group is a real clone");
+    if (!hdr || !list) return;
+    const kids = Array.from(box.children);
+    // Where the pair belongs: before the desktop group when the test ids are
+    // there to point at it, and otherwise before the last group that has a list
+    // of its own - never after the organization section, which has none.
+    const anchorText = byId ? "Aplicación de escritorio" : "Personalizar";
+    const anchorHdr = childByText(anchorText);
+    ok(!!anchorHdr, "the anchor header is in the fixture: " + anchorText);
+    ok(hdr.parentElement === box && list.parentElement === box,
+       "both are direct children of the scroll container");
+    ok(kids.indexOf(list) === kids.indexOf(hdr) + 1, "our header and list are adjacent siblings");
+    ok(anchorHdr && kids.indexOf(anchorHdr) === kids.indexOf(list) + 1,
+       "the pair sits immediately before the " + anchorText + " header");
+    ok(hdr.textContent.trim() === "Extra", "our header says Extra");
+    ok(list.children.length === LABELS.length, "our list holds exactly our own rows");
+    ok(items.every(function (it) { return it.tagName === "LI" && it.parentElement === list; }),
+       "our rows are <li> children of our cloned list");
+    ok(sameClasses(hdr, anchorHdr, ["cdbx-group", "cdbx-navhdr"]),
+       "our header carries the upstream header classes (" + hdr.className + ")");
+    assertMarkupIsValid();
+    ok(box.querySelectorAll("ul").length === 4,
+       "the three upstream lists are untouched and exactly one was added (" +
+       box.querySelectorAll("ul").length + ")");
+    LABELS.forEach(function (label, i) {
+      assertClonedRow(items[i], label, document.getElementById("row-skills").parentElement);
+    });
+
+    const shape = diags.find(function (d) { return d.indexOf("nav shape") >= 0; }) || "";
+    ok(!!shape, "a DOM-shape diagnostic was logged");
+    ok(shape.indexOf(byId ? "via=testid" : "via=labels") >= 0,
+       "it names the path the nav was found by: " + shape);
+    ok(shape.indexOf(byId ? "hdr[#structure]" : "hdr[#last-group]") >= 0,
+       "and the tier the anchor came from rather than its text: " + shape);
+    // The anchor's own text is the user's interface language. It is page content
+    // and it must not reach the log, so the whole line is checked for it.
+    const spanish = ["Ajustes", "Aplicaci", "Personalizar", "Habilidades", "Cuenta",
+                     "Capacidades", "Desarrollador", "Organizaci"];
+    const leaked = spanish.filter(function (w) {
+      return diags.some(function (d) { return d.indexOf(w) >= 0; });
+    });
+    ok(!leaked.length, "no translated page text reached the diag channel: " + (leaked.join(",") || "none"));
+    ok(!diags.some(function (d) { return d.indexOf("behind a divider") >= 0; }),
+       "and the fallback rendering was never reported");
+    ok(diags.some(function (d) {
+      return d.indexOf(byId ? "cloned from the group found by structure, not by label"
+                            : "cloned from the last group, found by structure") >= 0;
+    }),
+       "the install line names the anchor by tier, with no page text: " +
+       (diags.find(function (d) { return d.indexOf("Extra nav group added") >= 0; }) || "-"));
+
+    // Selection still migrates: aria-current is on a row of a group we did not
+    // anchor on, which is the case the re-scan in selectOurs exists for.
+    const upstreamSel = document.getElementById("row-general");
+    const before = upstreamSel.className;
+    await assertPanelMounts(items[0]);
+    ok(controlOf(items[0]).getAttribute("aria-current") === "page",
+       "our button took over aria-current");
+    ok(!upstreamSel.hasAttribute("aria-current"), "the upstream button gave it up");
+    ok(!controlOf(items[0]).classList.contains("cdbx-sel-fb"), "so no outline is needed");
+    document.getElementById("row-account").click();
+    await sleep(30);
+    ok(upstreamSel.className === before, "the upstream selected row is exactly restored");
+    ok(upstreamSel.getAttribute("aria-current") === "page", "aria-current came back");
+    ok(!document.querySelector(".cdbx-panel"), "the panel unmounts");
     return;
   }
 
@@ -1326,8 +1449,8 @@ async function run() {
     ok(!document.querySelector(".cdbx-navhdr,.cdbx-navlist"), "no cloned frame was claimed");
     ok(diags.some(function (d) { return d.indexOf("behind a divider") >= 0; }),
        "the fallback was reported through the diag channel");
-    ok(diags.some(function (d) { return d.indexOf("no known group header text") >= 0; }),
-       "and it says which anchor was missing");
+    ok(diags.some(function (d) { return d.indexOf("nor a group header shape") >= 0; }),
+       "and it says that neither the label nor the structural anchor was found");
 
     const sibling = document.getElementById("row-developer").parentElement;
     LABELS.forEach(function (label, i) { assertClonedRow(items[i], label, sibling); });
@@ -1665,6 +1788,8 @@ const scenarios = [
   ["real", FIXTURE_REAL(true, false)],
   ["real-classonly", FIXTURE_REAL(false, false)],
   ["real-ambiguous", FIXTURE_REAL(false, true)],
+  ["es-testid", FIXTURE_ES(true)],
+  ["es-labels", FIXTURE_ES(false)],
   ["no-headers", FIXTURE_NO_HEADERS],
   ["bare", FIXTURE_BARE]
 ];

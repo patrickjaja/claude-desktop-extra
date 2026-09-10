@@ -38,16 +38,26 @@ without a Claude Desktop release. It is the ground truth for:
 ## What to re-check when it drifts
 
 The installer writes one sanitized shape line to `~/.config/Claude/logs/claude-patches.log`
-(`[ExtraSettings] nav shape rows=... box=... hdr[...]=... list=... item=... icon=...`) - tag names and
-class counts only. Read it first; it names the anchor that was lost:
+(`[ExtraSettings] nav shape rows=... box=... hdr[...]=... list=... item=... icon=... via=...`) - tag
+names, class counts and our own tokens only, never page text. Read it first; it names the anchor that
+was lost:
 
 | Symptom in the log | What changed | Where to refit |
 |---|---|---|
-| `hdr[-]=-` | group header text or nesting | `GROUP_LABELS`, `findAnchor()` |
+| `via=labels` on an English install | the test ids are gone | `ROW_TESTID_SEL`, `findNavByTestId()` |
+| `hdr[#structure]` on an English install | group header text changed | `GROUP_LABELS` |
+| `hdr[#last-group]` | the marked group is no longer followed by a header | `ROW_TESTID_SEL`, `findAnchor()` tier 2 |
+| `hdr[-]=-` | group headers are no longer plain text siblings | `isGroupHeader()`, `findAnchor()` |
 | `list=-` | rows are no longer in a `<ul>` | `cellFor()`, `fabricateGroup()` |
 | `icon=svg` or `icon=none` | icon markup changed | `ICON_SEL`, `makeItem()` |
 | `... no nav container could be identified` | rows are no longer controls | `CONTROL_SEL`, `controlFor()` |
 | `no selected-row class diff` | selection marking changed | `SEL_ATTRS`, `findSelected()` |
+
+`via` says how the nav itself was found and `hdr[...]` how the insertion anchor was found. Only a
+tier-1 anchor is named by its label (`hdr[desktop app]`), because those labels are our own constants;
+a structurally found header is named by its tier, since its text is the user's interface language and
+page text never goes in this line. `via=testid` with `hdr[#structure]` is the normal, healthy line in
+every language other than English.
 
 Re-capture the nav (DevTools on the mainView, copy the `nav[aria-label="Settings"]` outer HTML plus the
 content pane's first two levels), update this file, then refit the fixtures in

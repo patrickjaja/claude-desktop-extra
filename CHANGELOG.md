@@ -2,6 +2,127 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-09-10
+
+### Settings -> Extra: styling that survives a login, and a nav group that lands in any language
+
+- **The Extra settings page kept its stylesheet for one document only.** Electron's `insertCSS` is
+  scoped to the document that is live when it runs, and the panel's sheet was inserted once per
+  `webContents` and never again. That is fine for the ordinary boot, where the first `https` page the
+  main window loads is the app itself, and wrong for every start that goes through `/login`: the sheet
+  landed on the login document, the app then replaced that document, and the one-shot guard blocked the
+  re-insert for the rest of the process. Settings -> Extra then rendered as unstyled text running past
+  the edge of the dialog. The sheet is now re-inserted on every `dom-ready`, dropping the previous
+  document's key first so sheets cannot stack, which is the same shape the theme engine has always
+  used. Measured on Electron 44.3.0, the bundled major: with the old shape the injected rule reads back
+  on the first page and is gone after a full navigation; with the new one it holds across both.
+- A rejected `insertCSS` now writes `insertCSS rejected: <reason>` to `claude-patches.log` instead of
+  being dropped by an empty handler, so the next failure of this kind leaves evidence. The old guard had
+  a second failure mode for the same reason: it marked the `webContents` before the insert resolved, so
+  one transient rejection killed the panel's styling permanently rather than for one load.
+- **The Extra nav group is no longer found by English text alone.** Both the settings nav and the group
+  header to insert next to were matched against English labels, so a translated interface fell through
+  to the divider fallback - and a language sharing fewer words with English than Spanish does would
+  have dropped below the match threshold and got no Extra group at all. The nav is now located by the
+  `data-testid` attributes upstream puts on its own rows, which are build hooks rather than UI text and
+  read the same in every language, and the rows are then enumerated off the container's structure so
+  the groups upstream leaves untagged still come along. The insertion anchor gained two structural
+  tiers behind the label match: the header that follows the marked group, which is the desktop group in
+  any language, and failing that the last group that has a list of its own.
+- The shape line in `claude-patches.log` grew a `via=` field saying how the nav was found, and names a
+  structurally found anchor by its tier (`hdr[#structure]`) rather than by its text, because that text
+  is the user's interface language and page content does not belong in the log. `via=testid` with
+  `hdr[#structure]` is the healthy line outside English.
+- Two new test harnesses cover this: the DOM suite gained the same captured nav in Spanish, with and
+  without the test ids, asserting the cloned header-and-list pair lands in the right place and that no
+  translated word reaches the diag channel; and a new main-process harness pins the stylesheet
+  lifetime, including that a `file://` first load does not consume the insert.
+
+### Launcher hardening
+
+An audit of `scripts/claude-desktop-launcher.sh` - the one file every package installs byte-identical -
+turned up nine defects, none of which had ever been reported. Each was reproduced before being fixed, and
+each fix was re-run against the previous behaviour to confirm it changes what it claims to.
+
+- **The Chromium sandbox was disabled for every Wayland and XWayland launch.** `--no-sandbox` was added
+  per session type rather than per package, so Wayland users ran remote claude.ai content unsandboxed
+  while the `.deb`, `.rpm` and pacman packages were busy installing `chrome-sandbox` 4755 root and CI was
+  failing the build if it was not. The sandbox has nothing to do with the display backend: only the
+  AppImage genuinely needs it off, because a FUSE mount cannot carry a SUID bit. It is now added for the
+  AppImage alone, with `CLAUDE_DISABLE_SANDBOX=1` as an escape hatch.
+- **A failed per-profile refresh deleted the profile's Electron binary and then launched it.** The
+  refresh removed the old binary before writing the new one, so a full disk, a quota or a read-only home
+  turned a stale binary into no binary - and the launcher went on to `exec` the path it had just deleted.
+  The deletion outlived the launch, so every later start silently lost the per-profile identity and
+  `--create-profile` refused to repair it. The replacement is now staged beside the old one and renamed
+  into place, and the promised fallback to the canonical binary actually happens.
+- **A sibling symlink to a file upstream had removed made every launch re-copy the binary, forever.** The
+  staleness check treats any dangling sibling as "needs refresh", but the repair only visited names that
+  still exist in the current install, so the trigger could never clear. On a separate `/home` without
+  reflink support that is a ~228 MB copy on every single start. Stale links are now pruned.
+- **`--create-profile` run while a profile was active pointed every shared symlink at itself**, breaking
+  the Electron install for all named profiles until the next launch repaired it. Mirroring a directory
+  onto itself is now a no-op.
+- **A stale `SingletonLock` in a 3p deployment blocked every launch.** The cleanup only knew the 1p
+  userData dir, although the `--reload-theme` probe a few hundred lines above already walked both.
+- **An unwritable `~/.cache` stopped the app from starting.** One `sudo claude-desktop` is enough to
+  leave the log dir root-owned, and under `set -e` the unguarded `mkdir` was the first thing the launcher
+  did. Logging is a convenience and can no longer abort the launch, or print anything when it fails.
+- **`PATH` was repaired 2100 lines after everything that needed it.** The block exists because a
+  `.desktop` launch can start with an empty `PATH`; it now runs first, instead of after the `mkdir`,
+  `find`, `ps`, `python3`, `gsettings` and `setsid` calls that were failing without it. With an empty
+  `PATH` the launcher used to die at line 77 with `mkdir: command not found`.
+- **Every `claude://` URL exited silently when `XDG_RUNTIME_DIR` was missing** (a `su - user` session, a
+  container, a non-systemd distro): `2>/dev/null` hid the message from `find` but not its status, and
+  `pipefail` turned that into a wordless exit 1, so SSO callbacks did nothing at all.
+- **`--diagnose` refused to run without a display** - over SSH or from a VT, which is exactly where a
+  user diagnosing a GUI that will not start would run it. It is now exempt from the display check, and
+  the subcommands that only report or clean up (`--help`, `--list-profiles`, `--unintegrate`,
+  `--delete-profile` and friends) no longer refuse to run when the Electron binary is missing, which is
+  precisely when someone needs them.
+- Chromium collapses duplicate switches last-wins, and the launcher emitted two `--disable-features=` on
+  a Wayland + native-titlebar launch. Only ordering luck decided the survivor was the Vulkan workaround
+  that prevents a silent no-window startup. Feature names are now accumulated and emitted once, with any
+  `--disable-features=` / `--enable-features=` the user passed folded in rather than silently replacing
+  ours.
+- The AppImage's `AppRun` left a trailing empty element in `LD_LIBRARY_PATH`, which the dynamic loader
+  reads as the current directory, so every AppImage launch searched `$PWD` for shared objects.
+- `CLAUDE_MENU_BAR` was advertised in `--help` and in the environment-variables doc and read by nothing
+  at all - the launcher exported it and no patch or bundle code ever looked at it. Removed rather than
+  left as a knob that quietly does nothing.
+- **`CLAUDE_NATIVE_TITLEBAR=0` meant opposite things to the launcher and the app.** The launcher
+  documents an explicitly set variable as winning in both directions and withholds every native-mode
+  argument when it sees `0`; the app read the same variable as a plain boolean, so `0` was
+  indistinguishable from unset and a saved `nativeTitlebar` switch still built the native window the user
+  had just asked not to have. The app now reads it as three-state - set to `1` forces on, set to `0`
+  forces off, unset defers to the saved switch - which restores the one-launch escape hatch from a saved
+  setting that leaves the window unusable.
+- Two comments that described the opposite of the code are corrected: profile resolution (an exported
+  `CLAUDE_PROFILE` beats the `claude-desktop-<name>` basename, not the other way round) and the claim
+  that a failed binary refresh fell back to the canonical binary.
+
+### Launcher: say when there is no keyring
+
+- **A session with no Secret Service provider now says so in `launcher.log`.** Without one, Chromium
+  falls back to `basic_text`, `safeStorage` reports encryption unavailable and the sign-in is not
+  persisted, so the app goes through `/login` on every start. That branch was silent, which made it
+  indistinguishable from a probe that never ran - and on a bare Wayland session (Hyprland, Sway, Niri)
+  it is the likeliest reason a user sees a login screen every time. The AppImage is the package where
+  this bites hardest: the `.deb`, `.rpm` and pacman packages pull a keyring in through their
+  dependencies, and an AppImage has no way to.
+- **`--diagnose` grew a `Credential store` section.** It names whether
+  `org.freedesktop.secrets` and `kwalletd` answer on the session bus, whether an explicit
+  `--password-store=` or `CLAUDE_PASSWORD_STORE` is overriding detection, and the verdict the launch path
+  will act on. The probes and the decision moved up next to `_diagnose()` and are now asked through one
+  shared function, because `--diagnose` answers from the argument dispatch and returns long before the
+  password-store block runs - so a second copy of those rules would have been free to drift from the one
+  that matters.
+- The Secret Service probe no longer stops at the first tool it finds. `busctl` being installed is not
+  the same as `busctl` reaching the bus, and answering from that one probe reported a keyring-less
+  session on machines that have one; all three probes now fall through to the next. On a machine where
+  the first probe was failing this switches the store off `basic_text`, which costs one extra sign-in
+  and then persists it.
+
 ## 2026-09-09
 
 ### Dynamic themes: greyscale wallpapers and the window frame

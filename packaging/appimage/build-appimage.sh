@@ -129,7 +129,11 @@ cat > "$APPDIR/AppRun" << 'EOF'
 SELF=$(readlink -f "$0")
 HERE=${SELF%/*}
 export PATH="${HERE}/usr/bin:${PATH}"
-export LD_LIBRARY_PATH="${HERE}/usr/lib/claude-desktop:${LD_LIBRARY_PATH}"
+# The :+ guard matters: LD_LIBRARY_PATH is unset on virtually every desktop,
+# so an unconditional ":${LD_LIBRARY_PATH}" left a trailing empty element,
+# which the dynamic loader reads as the current directory - every AppImage
+# launch then searched $PWD for shared objects.
+export LD_LIBRARY_PATH="${HERE}/usr/lib/claude-desktop${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
 # Tell the launcher where the bundled Electron lives. Electron auto-loads the
 # exe-adjacent resources/app.asar (OnlyLoadAppFromAsar fuse), so the launcher no

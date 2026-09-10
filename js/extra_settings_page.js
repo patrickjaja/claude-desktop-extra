@@ -84,6 +84,19 @@
   // that ends with Cowork.
   var GROUP_LABELS = ["desktop app", "customize", "settings"];
 
+  // Upstream tags most of its own settings rows with a data-testid. Unlike every
+  // entry in NAV_LABELS these are BUILD HOOKS, not user-visible text, so they
+  // read the same in every interface language - which is what lets us find the
+  // nav in a Spanish or Japanese session where hardly any label matches. Two
+  // things about them decide how they may be used: the attribute sits on the
+  // CELL (the <li>), not on the control inside it, and whole groups carry none
+  // at all (the desktop-only group has no test ids on any row). So they LOCATE
+  // the nav, and the rows are then enumerated structurally off the container -
+  // enumerating by test id would silently drop the untagged groups.
+  // Verified against live claude.ai on 2026-09-10; note that the data-privacy
+  // entry is the one id that does not end in "-settings".
+  var ROW_TESTID_SEL = '[data-testid$="-settings"],[data-testid="data-privacy-controls"]';
+
   var MIN_HITS = 3;
   var MIN_PANE_AREA = 20000;
 
@@ -187,6 +200,68 @@
     return row;
   }
 
+  // Locate the nav WITHOUT reading a single word of the interface: the marked
+  // cells say which <ul> is a group list, and the parent of the fullest one is
+  // the container where headers and lists alternate. Rows are then taken from
+  // the container's own structure so that the groups upstream leaves untagged
+  // come along with the rest. Returns the same record findNavByLabels does, or
+  // null when there are not enough marks to be sure this is the settings nav.
+  function findNavByTestId(dialog) {
+    var marked = dialog.querySelectorAll(ROW_TESTID_SEL);
+    if (marked.length < MIN_HITS) return null;
+
+    var lists = new Map();
+    for (var i = 0; i < marked.length; i++) {
+      // The mark can sit on the cell itself or on something inside it; the cell
+      // is whatever the group list holds directly.
+      var cell = marked[i];
+      var hops = 0;
+      while (cell && !isList(cell.parentElement) && hops++ < 4) cell = cell.parentElement;
+      if (!cell || !isList(cell.parentElement) || isOurs(cell)) continue;
+      lists.set(cell.parentElement, (lists.get(cell.parentElement) || 0) + 1);
+    }
+    var primary = null;
+    var primaryN = 0;
+    lists.forEach(function (n, list) {
+      if (n > primaryN) { primaryN = n; primary = list; }
+    });
+    var container = primary ? primary.parentElement : null;
+    if (!container) return null;
+
+    var rows = [];
+    var counts = new Map();
+    for (var k = 0; k < container.children.length; k++) {
+      var kid = container.children[k];
+      if (isOurs(kid)) continue;
+      if (isList(kid)) {
+        var n = 0;
+        for (var c = 0; c < kid.children.length; c++) {
+          var cell2 = kid.children[c];
+          if (isOurs(cell2)) continue;
+          var control = isControl(cell2) ? cell2 : cell2.querySelector(CONTROL_SEL);
+          if (!control || isOurs(control) || rows.indexOf(control) >= 0) continue;
+          rows.push(control);
+          n++;
+        }
+        counts.set(kid, n);
+      } else if (isControl(kid) && rows.indexOf(kid) < 0) {
+        // The list-less organization link is a direct child of the container.
+        rows.push(kid);
+      }
+    }
+    if (rows.length < MIN_HITS) return null;
+
+    var best = null;
+    var bestN = 0;
+    counts.forEach(function (n, list) {
+      if (n > bestN) { bestN = n; best = list; }
+    });
+    return {
+      ok: true, via: "testid", container: container, rows: rows,
+      primaryList: best || primary, leaves: rows.length
+    };
+  }
+
   // Locate the nav and the ONE container that holds every group: rows are the
   // controls the known labels sit in, and the container is the parent of the
   // biggest row list - which in the capture is exactly the scroll container
@@ -196,7 +271,7 @@
   // all, which is what tells "this was not the settings modal" (a confirm dialog,
   // a share sheet - stay quiet) apart from "this WAS the settings modal and we
   // failed" (worth one log line).
-  function findNav(dialog) {
+  function findNavByLabels(dialog) {
     var leaves = [];
     var all = dialog.querySelectorAll("*");
     for (var i = 0; i < all.length; i++) {
@@ -233,9 +308,19 @@
     }
     if (!container) return { ok: false, leaves: leaves.length, rows: rows.length };
     return {
-      ok: true, container: container, rows: rows,
+      ok: true, via: "labels", container: container, rows: rows,
       primaryList: primary, leaves: leaves.length
     };
+  }
+
+  // The language-independent path first, because it holds in every locale; the
+  // label path stays as the answer for a build that carries no test ids, and it
+  // is also the only one that can report how settings-like a dialog looked when
+  // nothing was found at all.
+  function findNav(dialog) {
+    var marked = findNavByTestId(dialog);
+    if (marked) return marked;
+    return findNavByLabels(dialog);
   }
 
   function containsAny(node, nodes) {
@@ -591,21 +676,65 @@
 
   // --- group building ------------------------------------------------------
 
-  // The insertion anchor: a DIRECT CHILD of the scroll container whose whole
-  // text is one of the known group labels and that holds no nav row. Upstream has
-  // no per-group wrapper - headers and lists are plain alternating siblings - so
-  // this header is both what we clone and what we insert in front of.
+  // A group header is a DIRECT CHILD of the scroll container that carries a
+  // short piece of text and no nav row at all - upstream has no per-group
+  // wrapper, so headers and lists are plain alternating siblings and a header is
+  // recognisable by what it does NOT contain.
+  function isGroupHeader(kid) {
+    if (!kid || kid.nodeType !== 1) return false;
+    if (isList(kid) || isControl(kid) || isOurs(kid)) return false;
+    if (kid.querySelector(CONTROL_SEL)) return false;
+    var text = (kid.textContent || "").trim();
+    return !!text && text.length <= 40;
+  }
+
+  // The insertion anchor: the header our own header and list go immediately in
+  // front of, and the header we clone. Three tiers, weakest assumption last.
+  //
+  // The label tier is first because it is exact - it names the group we want
+  // rather than deducing it - and it keeps working if upstream ever drops its
+  // test ids. It only works in English, so the two structural tiers behind it
+  // carry every other locale. Their `label` is a TOKEN, never the header's own
+  // text: that text is translated page content and must not reach a log line.
   function findAnchor(container) {
     var kids = container.children;
+    var i;
+
+    // Tier 1 - a group header we know by name.
     for (var g = 0; g < GROUP_LABELS.length; g++) {
-      for (var i = 0; i < kids.length; i++) {
-        var kid = kids[i];
-        if (isList(kid) || isControl(kid) || isOurs(kid)) continue;
-        if (kid.querySelector(CONTROL_SEL)) continue;
-        if ((kid.textContent || "").trim().toLowerCase() !== GROUP_LABELS[g]) continue;
-        return { header: kid, label: GROUP_LABELS[g] };
+      for (i = 0; i < kids.length; i++) {
+        if (!isGroupHeader(kids[i])) continue;
+        if ((kids[i].textContent || "").trim().toLowerCase() !== GROUP_LABELS[g]) continue;
+        return { header: kids[i], label: GROUP_LABELS[g], tier: "label" };
       }
     }
+
+    // Tier 2 - the header that follows the first marked group. On the desktop
+    // build that is the desktop-only group's header, i.e. the very same place
+    // tier 1 puts us, in any language.
+    var marked = container.querySelector(ROW_TESTID_SEL);
+    if (marked) {
+      var kid = marked;
+      var depth = 0;
+      while (kid && kid.parentElement !== container && depth++ < 8) kid = kid.parentElement;
+      if (kid && kid.parentElement === container && isList(kid) &&
+          isGroupHeader(kid.nextElementSibling)) {
+        return { header: kid.nextElementSibling, label: "#structure", tier: "structure" };
+      }
+    }
+
+    // Tier 3 - the last header that is actually followed by a list. Skipping the
+    // headers with no list of their own is what keeps us out of the organization
+    // section, whose header is followed by a bare link.
+    var last = null;
+    for (i = 0; i < kids.length; i++) {
+      if (!isGroupHeader(kids[i])) continue;
+      var next = kids[i].nextElementSibling;
+      if (!isList(next) || isOurs(next)) continue;
+      last = kids[i];
+    }
+    if (last) return { header: last, label: "#last-group", tier: "last-group" };
+
     return null;
   }
 
@@ -2750,7 +2879,16 @@
     if (mounted.container && mounted.container.isConnected) {
       var wide = selectionRows(mounted.container, mounted.rowTag);
       if (wide.length < 2) wide = selectionRows(mounted.container, null);
-      if (wide.length >= rows.length) rows = wide;
+      // The re-scan only replaces what we know if it is no narrower - and the
+      // comparison has to be like for like. `wide` holds rows of the major tag
+      // only, on purpose: a differently shaped row (the organization link) would
+      // otherwise read as a second deviation and make the diff ambiguous. So it
+      // is measured against the rows of that same tag, not against every row.
+      var sameTag = 0;
+      for (var r = 0; r < rows.length; r++) {
+        if (rows[r].tagName === mounted.rowTag) sameTag++;
+      }
+      if (wide.length >= sameTag) rows = wide;
     }
     var hit = findSelected(rows);
     if (!hit || (!hit.add.length && !hit.drop.length && !hit.attrs.length)) {
@@ -2838,7 +2976,7 @@
       diag("no-template", "[ExtraSettings] the settings nav offers no row to clone - Extra not added");
       return false;
     }
-    shapeDiag(container, anchor, list, template, found.rows.length);
+    shapeDiag(container, anchor, list, template, found.rows.length, found.via);
 
     // PRIMARY: two siblings before the anchor header, exactly as upstream lays
     // its own groups out. Both must live at the container's level or the pair
@@ -2851,7 +2989,8 @@
       container.insertBefore(built.list, anchor.header);
     } else {
       diag("fabricated", "[ExtraSettings] no group header to insert next to (" +
-        (anchor ? "its list is not a sibling of the header" : "no known group header text in the nav") +
+        (anchor ? "its list is not a sibling of the header" :
+          "neither a known group header text nor a group header shape in the nav") +
         ") - Extra appends its rows behind a divider instead");
       built = fabricateGroup(container, lastList(container), template);
     }
@@ -2887,7 +3026,10 @@
 
     diag("installed", "[ExtraSettings] Extra nav group added to the settings dialog (" +
       found.rows.length + " upstream nav rows, " +
-      (built.fallback ? "appended behind a divider" : "cloned from the \"" + built.label + "\" group") + ")");
+      (built.fallback ? "appended behind a divider" :
+        built.label === "#structure" ? "cloned from the group found by structure, not by label" :
+          built.label === "#last-group" ? "cloned from the last group, found by structure" :
+            "cloned from the \"" + built.label + "\" group") + ")");
     return true;
   }
 
@@ -2912,14 +3054,19 @@
   // One line, once per page: the structure we anchored on, for the next refit.
   // Which anchors were found matters as much as their shape - "hdr=-" is the
   // signature of upstream having renamed or restructured its group headers.
-  function shapeDiag(container, anchor, list, template, rowCount) {
+  //
+  // The anchor is named by its LABEL only when that label is one of ours; a
+  // structurally found header is named by the tier that found it, because its
+  // own text is the user's interface language and page text never goes in here.
+  function shapeDiag(container, anchor, list, template, rowCount, via) {
     diag("shape", ("[ExtraSettings] nav shape rows=" + rowCount +
       " box=" + shapeOf(container, 1) +
       " hdr[" + (anchor ? anchor.label : "-") + "]=" + (anchor ? shapeOf(anchor.header, 1) : "-") +
       " list=" + (list ? shapeOf(list, 1) : "-") +
       " item=" + shapeOf(template, 3) +
       " icon=" + (template.querySelector(ICON_SEL) ? "box" :
-        template.querySelector("svg") ? "svg" : "none")).slice(0, 290));
+        template.querySelector("svg") ? "svg" : "none") +
+      " via=" + (via || "-")).slice(0, 300));
   }
 
   function attached() {
