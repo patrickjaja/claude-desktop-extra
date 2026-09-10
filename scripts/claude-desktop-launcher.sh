@@ -1218,10 +1218,28 @@ _diagnose() {
     # The mode is resolved from env/flag OR the extra config before the launch
     # flow reaches here, so ${_titlebar_source} / ${_no_controls_source} name
     # where it actually came from.
+    # The saved switches are read by the APP, from its own userData dir; they are
+    # reported here so a triage log shows what is stored next to what is forced.
+    # No single filename here: the two files are merged PER KEY, so naming one
+    # would misreport where a value came from. List what was read instead.
+    local _files=''
+    [[ -n "${_cdb_extra_jsonc:-}" ]] && _files="claude-desktop-extra.jsonc"
+    [[ -n "${_cdb_extra_json:-}" ]] && _files="${_files:+$_files + }claude-desktop-extra.json"
+    echo "Extra config read = ${_files:-(none present)} in $config_dir"
+    echo "Saved nativeTitlebar = $([[ -n "${_saved_native:-}" ]] && echo true || echo false)"
+    echo "Saved noWindowControls = $([[ -n "${_saved_no_controls:-}" ]] && echo true || echo false)"
     if [[ "${CLAUDE_NATIVE_TITLEBAR:-}" == '1' ]]; then
         echo "Titlebar = native (${_titlebar_source:-CLAUDE_NATIVE_TITLEBAR=1})"
     elif [[ "${CLAUDE_NO_WINDOW_CONTROLS:-}" == '1' ]]; then
         echo "Titlebar = frameless, no window controls (${_no_controls_source:-CLAUDE_NO_WINDOW_CONTROLS=1})"
+    elif [[ -n "${CLAUDE_NATIVE_TITLEBAR:-}" || -n "${CLAUDE_NO_WINDOW_CONTROLS:-}" ]]; then
+        # Set but not to "1" - an explicit off, which the app honours as an
+        # override in its own right, so it is not "no override set".
+        echo "Titlebar = forced OFF by CLAUDE_NATIVE_TITLEBAR='${CLAUDE_NATIVE_TITLEBAR:-}' CLAUDE_NO_WINDOW_CONTROLS='${CLAUDE_NO_WINDOW_CONTROLS:-}' (overrides any saved switch)"
+    elif [[ -n "${_saved_native:-}" || -n "${_saved_no_controls:-}" ]]; then
+        # No override, but a switch IS stored - say so rather than reporting
+        # "integrated", which is what the launcher sees and not what will open.
+        echo "Titlebar = decided by the app from the saved switch above (no override set)"
     else
         echo "Titlebar = integrated (default)"
     fi
@@ -1864,139 +1882,148 @@ fi
 # Build Electron arguments
 # ---------------------------------------------------------------------------
 
-# Titlebar mode resolution: env var / CLI flag OR persisted config.
+# Titlebar mode: the launcher only carries an explicitly expressed intent.
 #
 # Both modes are also Settings -> Extra -> Community toggles, persisted as
 # `nativeTitlebar` / `noWindowControls` in <userData>/claude-desktop-extra.json
-# (the .jsonc variant wins and locks them, matching the app's own precedence).
-# The BrowserWindow patch reads those keys directly, but the launcher-side
-# effects only fire off the env vars: --disable-features=CustomTitlebar,
-# ELECTRON_USE_SYSTEM_TITLE_BAR and - the one that actually breaks - the
-# WaylandWindowDecorations feature flag. Without resolving the config here, a
-# config-driven native frame on Wayland would come up with NO decorations.
+# (the .jsonc variant wins and locks them). The BrowserWindow patch reads those
+# keys itself, from the userData dir the app actually uses, so the launcher does
+# not resolve them at all: it passes on `--native-titlebar` /
+# `--no-window-controls` and the two environment variables, and nothing else.
 #
-# We only ever turn a mode ON from the config: an explicitly set env var (or
-# the CLI flag, which sets one) always wins and is never overridden or unset,
-# including an explicit CLAUDE_NATIVE_TITLEBAR=0 meaning "not native". The app
-# side honours the same rule - js/window_controls_pref.js reads the variable as
-# three-state, so "0" forces the mode off rather than deferring to the saved
-# switch. Both halves have to agree or the window comes up in a mode the
-# launcher withheld every argument for.
+# The launcher used to read that config too, in order to derive the env vars and
+# from them three Chromium arguments. All three are gone from the bundled
+# Electron 44 - `--disable-features=CustomTitlebar`,
+# `--enable-features=WaylandWindowDecorations` and ELECTRON_USE_SYSTEM_TITLE_BAR
+# are not switch, feature or variable names it knows, so they had stopped doing
+# anything. What actually opens the native window is `frame:true` in
+# patches/linux/fix_native_frame.nim, decided app-side. Reading the config here
+# bought nothing and cost a real bug: it read the 1p dir unconditionally, so a
+# 3p deployment (userData relocated to <userData>-3p) had its saved switch
+# ignored. Leaving the decision entirely to the app fixes that.
 #
-# Known limitation - 1p userData only. We read $config_dir, the dir this
-# launcher passes as --user-data-dir. A 3p deployment relocates userData to
-# <userData>-3p, so the Extra page writes claude-desktop-extra.json THERE and a
-# 3p user's saved switch is not seen here. Scope of the gap: `noWindowControls`
-# is unaffected either way (the launcher contributes no argument for it - bare
-# mode is purely a BrowserWindow decision), so this is `nativeTitlebar` only,
-# on Wayland only, and costs only the WaylandWindowDecorations feature flag.
-# Workaround: pass --native-titlebar or set CLAUDE_NATIVE_TITLEBAR=1, which the
-# precedence above deliberately lets win.
-#
-# Deliberately NOT fixed by also probing "${config_dir}-3p": that inverts the
-# precedence for anyone who used 3p once and switched back, because their stale
-# -3p file would outrank their live 1p config silently and permanently. And a
-# correct 3p decision cannot be faked cheaply here - upstream keys it off
-# /etc/claude-desktop/managed-settings.json carrying an inferenceProvider OR a
-# user-writable store under <userData>-3p/configLibrary, with a persisted
-# `deploymentMode` able to force 1p while 3p config is still on disk. Any
-# shortcut we invent diverges from the app's own resolver and mis-reads
-# somebody's config, so we stay honest about the gap instead of guessing.
+# An explicitly set env var (or the CLI flag, which sets one) is an override in
+# BOTH directions: CLAUDE_NATIVE_TITLEBAR=0 forces the mode off even when the
+# saved switch is on. js/window_controls_pref.js reads the variable three-state
+# to honour exactly that, and defers to the saved switch when it is unset.
 _titlebar_source='CLAUDE_NATIVE_TITLEBAR=1'
 _no_controls_source='CLAUDE_NO_WINDOW_CONTROLS=1'
 
-# Echo whichever of the requested keys $1 resolves to boolean true. Degrades
-# silently to "no keys": no python3, an unreadable file and malformed JSON are
-# all treated as absent, because a broken config file must never stop the app
-# from starting. Always returns 0 so `set -e` cannot trip over it.
+# Echo whichever of the requested keys resolves to boolean true across the two
+# config files, $1 (.jsonc) then $2 (.json). The merge is PER KEY, not per file:
+# .jsonc wins for a key it defines and .json supplies the rest, which is exactly
+# what js/window_controls_pref.js does and what the .jsonc header documents.
+# Picking the first file that merely EXISTS was wrong - the .jsonc template ships
+# with the app, so its presence hid every switch the Extra panel had written to
+# .json. Degrades silently to "no keys": no python3, an unreadable file and
+# malformed JSON are all treated as absent, because a broken config file must
+# never stop the app from starting. Always returns 0 so `set -e` cannot trip.
 _cdb_extra_true_keys() {
-    local _file="$1"
-    shift
+    local _jsonc="$1" _json="$2"
+    shift 2
     command -v python3 >/dev/null 2>&1 || return 0
-    python3 - "$_file" "$@" 2>/dev/null <<'PY' || true
+    python3 - "$_jsonc" "$_json" "$@" 2>/dev/null <<'PY' || true
 import json, sys
 
-path, keys = sys.argv[1], sys.argv[2:]
-try:
-    with open(path, encoding="utf-8") as fh:
-        raw = fh.read()
-except OSError:
-    sys.exit(0)
+paths, keys = sys.argv[1:3], sys.argv[3:]
+raws = []
+for path in paths:
+    if not path:
+        raws.append("")
+        continue
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raws.append(fh.read())
+    except OSError:
+        raws.append("")
 
 # Strip // and /* */ comments so the .jsonc variant parses, skipping anything
 # inside a string literal so a URL or a Windows path is left intact.
-out, i, n, in_str = [], 0, len(raw), False
-while i < n:
-    c = raw[i]
-    if in_str:
-        out.append(c)
-        if c == "\\" and i + 1 < n:
-            out.append(raw[i + 1])
+def strip_comments(raw):
+    out, i, n, in_str = [], 0, len(raw), False
+    while i < n:
+        c = raw[i]
+        if in_str:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(raw[i + 1])
+                i += 2
+                continue
+            if c == '"':
+                in_str = False
+            i += 1
+        elif c == '"':
+            in_str = True
+            out.append(c)
+            i += 1
+        elif c == "/" and i + 1 < n and raw[i + 1] == "/":
+            while i < n and raw[i] != "\n":
+                i += 1
+        elif c == "/" and i + 1 < n and raw[i + 1] == "*":
             i += 2
-            continue
-        if c == '"':
-            in_str = False
-        i += 1
-    elif c == '"':
-        in_str = True
-        out.append(c)
-        i += 1
-    elif c == "/" and i + 1 < n and raw[i + 1] == "/":
-        while i < n and raw[i] != "\n":
+            while i + 1 < n and not (raw[i] == "*" and raw[i + 1] == "/"):
+                i += 1
+            i += 2
+        else:
+            out.append(c)
             i += 1
-    elif c == "/" and i + 1 < n and raw[i + 1] == "*":
-        i += 2
-        while i + 1 < n and not (raw[i] == "*" and raw[i + 1] == "/"):
-            i += 1
-        i += 2
-    else:
-        out.append(c)
-        i += 1
+    return "".join(out)
 
-try:
-    data = json.loads("".join(out))
-except ValueError:
-    sys.exit(0)
-if not isinstance(data, dict):
-    sys.exit(0)
+
+def parse(raw):
+    if not raw:
+        return {}
+    try:
+        data = json.loads(strip_comments(raw))
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+# Index 0 is the .jsonc and wins for any key it defines; index 1 is the .json.
+layers = [parse(r) for r in raws]
 
 # `is True` on purpose: only a real JSON `true` counts. The string "true" and
 # the number 1 are NOT on, so a hand-edited config cannot half-enable a mode
 # here while the app's own boolean read says off.
 for key in keys:
-    if data.get(key) is True:
-        print(key)
+    for layer in layers:
+        if isinstance(layer.get(key), bool):
+            if layer[key] is True:
+                print(key)
+            break
+
 PY
     return 0
 }
 
-# Pick the config file in THIS shell, not inside the command substitution below
-# (a subshell's variable assignments would be lost), so the log can name it.
-_cdb_extra_src=''
-for _cdb_extra_f in "$config_dir/claude-desktop-extra.jsonc" \
-                    "$config_dir/claude-desktop-extra.json"; do
-    if [[ -f "$_cdb_extra_f" && -r "$_cdb_extra_f" ]]; then
-        _cdb_extra_src="$_cdb_extra_f"
-        break
-    fi
-done
+# Both files, resolved in THIS shell so the diagnostic can name them (a
+# subshell's assignments would be lost). Neither is required.
+_cdb_extra_jsonc=''
+_cdb_extra_json=''
+[[ -f "$config_dir/claude-desktop-extra.jsonc" && -r "$config_dir/claude-desktop-extra.jsonc" ]] \
+    && _cdb_extra_jsonc="$config_dir/claude-desktop-extra.jsonc"
+[[ -f "$config_dir/claude-desktop-extra.json" && -r "$config_dir/claude-desktop-extra.json" ]] \
+    && _cdb_extra_json="$config_dir/claude-desktop-extra.json"
+_cdb_extra_src="${_cdb_extra_jsonc:-$_cdb_extra_json}"
 
 _cdb_extra_keys=' '
-if [[ -n "$_cdb_extra_src" ]]; then
-    _cdb_extra_keys=" $(_cdb_extra_true_keys "$_cdb_extra_src" \
+if [[ -n "$_cdb_extra_jsonc" || -n "$_cdb_extra_json" ]]; then
+    _cdb_extra_keys=" $(_cdb_extra_true_keys "$_cdb_extra_jsonc" "$_cdb_extra_json" \
         nativeTitlebar noWindowControls | tr '\n' ' ')"
 fi
 
-if [[ -z "${CLAUDE_NATIVE_TITLEBAR:-}" && "$_cdb_extra_keys" == *' nativeTitlebar '* ]]; then
-    export CLAUDE_NATIVE_TITLEBAR=1
-    _titlebar_source="nativeTitlebar in ${_cdb_extra_src##*/}"
-fi
-if [[ -z "${CLAUDE_NO_WINDOW_CONTROLS:-}" && "$_cdb_extra_keys" == *' noWindowControls '* ]]; then
-    export CLAUDE_NO_WINDOW_CONTROLS=1
-    _no_controls_source="noWindowControls in ${_cdb_extra_src##*/}"
-fi
+# The saved switches are NOT turned into env vars here - the app reads them
+# itself, from the right userData dir. They are resolved only so --diagnose can
+# report what is stored alongside what is forced.
+_saved_native=''
+_saved_no_controls=''
+case "$_cdb_extra_keys" in *' nativeTitlebar '*)  _saved_native=1 ;; esac
+case "$_cdb_extra_keys" in *' noWindowControls '*) _saved_no_controls=1 ;; esac
 
-# Titlebar modes are mutually exclusive; the native frame wins.
+# Titlebar modes are mutually exclusive and the native frame wins. Enforced
+# app-side too (fix_native_frame.nim's bare mode tests !NATIVE_ON), so this only
+# keeps the launcher's own arguments and logging self-consistent.
 if [[ "${CLAUDE_NATIVE_TITLEBAR:-}" == '1' && "${CLAUDE_NO_WINDOW_CONTROLS:-}" == '1' ]]; then
     log "Titlebar: native ($_titlebar_source) and no window controls ($_no_controls_source) are mutually exclusive; using native"
     unset CLAUDE_NO_WINDOW_CONTROLS
@@ -2006,10 +2033,9 @@ fi
 ELECTRON_ARGS=()
 
 # Titlebar mode: integrated (default) vs bare (frameless, no controls) vs
-# native (opt-out).
-# In native mode, disable Chromium's CustomTitlebar feature so Electron
-# renders the system frame. In integrated and bare mode, keep it enabled so
-# titleBarOverlay works.
+# native (opt-out). All three are BrowserWindow decisions made app-side; the
+# launcher only logs which one an explicit flag or variable asked for.
+#
 # Chromium collapses duplicate switches into a map where the LAST one wins, so
 # every feature name has to go through these two lists and be emitted once. The
 # launcher used to pass two separate --disable-features= on a Wayland + native
@@ -2021,7 +2047,9 @@ _disable_features=()
 _enable_features=()
 
 if [[ "${CLAUDE_NATIVE_TITLEBAR:-}" == '1' ]]; then
-    _disable_features+=('CustomTitlebar')
+    # No Chromium argument to add: `frame:true` in fix_native_frame.nim is what
+    # opens the native window. The CustomTitlebar feature this used to disable
+    # does not exist in the bundled Electron.
     log "Titlebar: native ($_titlebar_source)"
 elif [[ "${CLAUDE_NO_WINDOW_CONTROLS:-}" == '1' ]]; then
     log "Titlebar: frameless, no window controls ($_no_controls_source)"
@@ -2029,11 +2057,6 @@ else
     log 'Titlebar: integrated (default)'
 fi
 
-# Force ARGB visuals so `transparent:true` popups (Quick Entry) render their
-# outer window transparently on compositors that wouldn't otherwise expose
-# alpha. No-op on X11 when already supported. Fixes the "opaque rectangle
-# behind the rounded card" symptom (issue #39) on most Wayland configs.
-ELECTRON_ARGS+=('--enable-transparent-visuals')
 
 # Enable Chromium Web Bluetooth so the Hardware Buddy (Nibblet BLE) in-app scan
 # can enumerate devices. On macOS/Windows Web Bluetooth is on by default, but on
@@ -2074,10 +2097,11 @@ case $platform_mode in
         ;;
     wayland)
         log 'Using native Wayland backend'
-        _enable_features+=('UseOzonePlatform' 'GlobalShortcutsPortal')
-        if [[ "${CLAUDE_NATIVE_TITLEBAR:-}" == '1' ]]; then
-            _enable_features+=('WaylandWindowDecorations')
-        fi
+        # GlobalShortcutsPortal only. UseOzonePlatform and
+        # WaylandWindowDecorations are both retired feature names that the
+        # bundled Electron no longer knows - Ozone is the only path now, and
+        # server-side decorations are decided by the compositor.
+        _enable_features+=('GlobalShortcutsPortal')
         ELECTRON_ARGS+=('--ozone-platform=wayland')
         ELECTRON_ARGS+=('--enable-wayland-ime')
         ELECTRON_ARGS+=('--wayland-text-input-version=3')
@@ -2254,12 +2278,6 @@ fi
 # ---------------------------------------------------------------------------
 
 export ELECTRON_FORCE_IS_PACKAGED=true
-
-# In native titlebar mode, tell Electron to use the system frame.
-# In integrated mode (default), do NOT set this so titleBarOverlay works.
-if [[ "${CLAUDE_NATIVE_TITLEBAR:-}" == '1' ]]; then
-    export ELECTRON_USE_SYSTEM_TITLE_BAR=1
-fi
 
 # Pass through CLAUDE_NATIVE_TITLEBAR if set (env var, not just --flag)
 if [[ -n "${CLAUDE_NATIVE_TITLEBAR:-}" ]]; then

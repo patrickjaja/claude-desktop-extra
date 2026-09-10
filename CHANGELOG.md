@@ -2,6 +2,35 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-09-10 (later)
+
+### Launcher: five dead Chromium arguments removed, and the titlebar decision left to the app
+
+`strings` on the bundled Electron 44.2.0 says the launcher had been passing five things it no longer
+knows: the `CustomTitlebar` and `WaylandWindowDecorations` and `UseOzonePlatform` feature names, the
+`--enable-transparent-visuals` switch, and the `ELECTRON_USE_SYSTEM_TITLE_BAR` variable. Chromium ignores
+what it does not recognise, so none of them did anything, but their comments claimed they were
+load-bearing and one of them justified a whole config read.
+
+- All five are gone. What actually opens the native window is `frame:true` in
+  `patches/linux/fix_native_frame.nim`, decided app-side, and a Wayland launch now carries
+  `--enable-features=GlobalShortcutsPortal` alone. Verified on KDE Plasma 6 Wayland: native titlebar
+  mode from the saved switch produces the same real Breeze titlebar with the flags as without them.
+- **The launcher no longer reads the titlebar config at all** to decide anything. Its only reason to was
+  to derive those dead arguments, while `js/window_controls_pref.js` reads the same keys itself from the
+  userData dir the app is actually using. Dropping it removes the documented third-party limitation:
+  a 3p deployment relocates userData to `<userData>-3p`, which the launcher never looked at, so a saved
+  switch is now honoured there like anywhere else.
+- The config is still read for `--diagnose`, and that read had a bug of its own: it took the first of
+  `claude-desktop-extra.jsonc` / `.json` that merely EXISTED and stopped. The `.jsonc` ships as a
+  commented template, so its presence hid every switch the Extra panel had written to `.json`. Both
+  files are now merged **per key**, `.jsonc` winning for keys it defines, which is what the app does and
+  what the template's own header documents. This only ever affected the launcher's log line, never the
+  window.
+- `--diagnose` now reports which config files it read, the stored value of each switch, and whether an
+  environment variable is overriding it - including an explicit `=0`, which is an override in its own
+  right and used to be reported as "no override set".
+
 ## 2026-09-10
 
 ### Settings -> Extra: styling that survives a login, and a nav group that lands in any language

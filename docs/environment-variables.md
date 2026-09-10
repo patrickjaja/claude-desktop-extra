@@ -21,7 +21,7 @@ These environment variables tune `claude-desktop` at launch. All are optional; w
 
 `CLAUDE_NATIVE_TITLEBAR` and `CLAUDE_NO_WINDOW_CONTROLS` are overrides for what is otherwise a saved setting: both titlebar modes have a switch in Settings -> **Extra** -> **Community Features**, persisted per profile as `nativeTitlebar` / `noWindowControls` in `claude-desktop-extra.json`. The env var (or its launcher flag) wins over the saved value for that launch, and the native frame wins over hiding the controls whichever surface each came from.
 
-One limitation on [third-party / enterprise deployments](third-party-inference.md): upstream relocates userData to `<userData>-3p`, and the launcher reads the 1P config dir only, so a saved switch is not seen on the launcher side there. In practice that costs nothing for **Hide window controls** (the launcher contributes no argument for it) and only affects **Native titlebar** on Wayland, where the window would miss its `WaylandWindowDecorations` flag. Use `--native-titlebar` or `CLAUDE_NATIVE_TITLEBAR=1` there - both override the saved value and take the full launcher path.
+Both switches are read by the app itself, from the userData dir it is actually using, so they work the same on [third-party / enterprise deployments](third-party-inference.md) where upstream relocates userData to `<userData>-3p`. The launcher passes on `--native-titlebar` / `--no-window-controls` and the two variables and nothing else; setting a variable overrides the saved switch in both directions, so `CLAUDE_NATIVE_TITLEBAR=0` is a one-launch way back out of a saved setting.
 
 Set permanently in `~/.bashrc` / `~/.zshrc`, or pass per-launch: `CLAUDE_DISABLE_GPU=1 claude-desktop`
 
