@@ -15,15 +15,15 @@ See [plan.md](plan.md) and [SPEC.md](../SPEC.md). IDs refer to SPEC findings.
   - Verify: `bash scripts/run-feature-tests.sh linux`
 
 ### W2 patch-hygiene (+ X6)
-- [ ] T2.1 `enable_local_agent_mode.nim` (T1): drop Patch 1, 1b, 2, header guard, dead Patch 3 fallback; Patch 4 `== 1` + positive already-branch; EXPECTED 6 -> 2; move `__nav_spoof_applied` stale-input check into the orchestrator/probe stale-input refusal
+- [x] T2.1 `enable_local_agent_mode.nim` (T1): drop Patch 1, 1b, 2, header guard, dead Patch 3 fallback; Patch 4 `== 1` + positive already-branch; EXPECTED 6 -> 2; move `__nav_spoof_applied` stale-input check into the orchestrator/probe stale-input refusal
   - Acceptance: second run exits 0 with no change; delete CONSTRAINTS E1
-- [ ] T2.2 `fix_quick_entry_position.nim` (T2): anchor Patch 1 on the captured fallback fn (count 1), remove Patch 2, Patch 3 required `== 1`
+- [x] T2.2 `fix_quick_entry_position.nim` (T2): anchor Patch 1 on the captured fallback fn (count 1), remove Patch 2, Patch 3 required `== 1`
   - Verify: diff shows only `Lcr` rewritten, `c$r` untouched
-- [ ] T2.3 `fix_computer_use_linux.nim` (T3): Patch 2 anchored on the CU gate Set (count 1); drop Patch 7 (36 -> 35); 14c both Finder sites (== 2); 14a/14d `== 2`; marker-set idempotency; delete CONSTRAINTS E3
-- [ ] T2.4 `fix_startup_settings.nim` (T4): fold P1 into P3 preconditions, P2 into P4's anchor; 4 -> 2
-- [ ] T2.5 `fix_app_quit.nim` (T5): `== 1` + positive branch; delete CONSTRAINTS E2; note whether upstream's quit watchdog makes it redundant (report, do not remove)
-- [ ] T2.6 Exact-count pins + unique idempotency markers for the T6 list (excluding files owned by W1/W6/W7)
-- [ ] T2.7 X6 `fix_cross_device_rename.nim`: enumerate the 14 sites, prove which (if any) can cross filesystems (e.g. `/tmp` -> userData); pin to those or `git rm` + count -1; report the evidence before removing
+- [x] T2.3 `fix_computer_use_linux.nim` (T3): Patch 2 anchored on the CU gate Set (count 1); drop Patch 7 (36 -> 35); 14c both Finder sites (== 2); 14a/14d `== 2`; marker-set idempotency; delete CONSTRAINTS E3
+- [x] T2.4 `fix_startup_settings.nim` (T4): fold P1 into P3 preconditions, P2 into P4's anchor; 4 -> 2
+- [x] T2.5 `fix_app_quit.nim` (T5): `== 1` + positive branch; delete CONSTRAINTS E2; note whether upstream's quit watchdog makes it redundant (report, do not remove)
+- [x] T2.6 Exact-count pins + unique idempotency markers for the T6 list (excluding files owned by W1/W6/W7)
+- [x] T2.7 X6 `fix_cross_device_rename.nim`: enumerate the 14 sites, prove which (if any) can cross filesystems (e.g. `/tmp` -> userData); pin to those or `git rm` + count -1; report the evidence before removing
   - Verify for all of W2: `make`; probe shows 0 exceptions for E1-E3 and all ACTIVE; `run-feature-tests.sh linux` + `core`; `node --check`
 
 ### W3 packaging-deps
