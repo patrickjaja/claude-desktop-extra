@@ -243,6 +243,23 @@ safe("L1 AppImage create-profile", () => {
     existsSync(join(home, ".local/lib/claude-desktop/claude-work")), false);
 });
 
+// ---------------------------------------------------------------- L3
+console.log("L3: XWayland is chosen by $DISPLAY, not by compositor name");
+safe("L3", () => {
+  const f = ["_resolve_platform_mode"];
+  const mode = (env) => runFns(f, '_resolve_platform_mode; echo "$platform_mode"',
+    { ...baseEnv, ...env }).out;
+  check("X11 only", mode({ DISPLAY: ":0" }), "x11");
+  check("Wayland default", mode({ WAYLAND_DISPLAY: "wayland-1", DISPLAY: ":0" }), "wayland");
+  check("XWayland forced with DISPLAY",
+    mode({ WAYLAND_DISPLAY: "wayland-1", DISPLAY: ":0", CLAUDE_USE_XWAYLAND: "1" }), "xwayland");
+  check("Niri + xwayland-satellite DISPLAY honours the force",
+    mode({ WAYLAND_DISPLAY: "wayland-1", DISPLAY: ":1", NIRI_SOCKET: "/run/niri.sock",
+           XDG_CURRENT_DESKTOP: "niri", CLAUDE_USE_XWAYLAND: "1" }), "xwayland");
+  check("XWayland forced without DISPLAY stays native",
+    mode({ WAYLAND_DISPLAY: "wayland-1", CLAUDE_USE_XWAYLAND: "1" }), "wayland");
+});
+
 rmSync(scratch, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) {

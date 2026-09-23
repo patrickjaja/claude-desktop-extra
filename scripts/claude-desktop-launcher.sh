@@ -1931,31 +1931,31 @@ fi
 #
 # Escape hatch: CLAUDE_USE_XWAYLAND=1 still forces XWayland for users who
 # can't update Electron.
-
-is_wayland=false
-[[ -n "${WAYLAND_DISPLAY:-}" ]] && is_wayland=true
-
-# Determine platform mode: x11, wayland, or xwayland
-platform_mode=x11
-if [[ $is_wayland == true ]]; then
+#
+# Sets platform_mode to x11, wayland or xwayland. XWayland is only possible
+# when an X server is actually there, and $DISPLAY is the one honest signal for
+# that - not the compositor's name. Niri has no built-in XWayland but runs
+# xwayland-satellite, which exports DISPLAY; a compositor without any XWayland
+# leaves it unset, and --ozone-platform=x11 with no DISPLAY opens no window.
+_resolve_platform_mode() {
+    platform_mode=x11
+    [[ -n "${WAYLAND_DISPLAY:-}" ]] || return 0
     platform_mode=wayland
-
-    if (( electron_major > 0 && electron_major < 40 )); then
-        warn_msg="Electron $electron_major has a broken GlobalShortcutsPortal (electron/electron#49806, fixed in 40+/41+). Global hotkeys will only work when Claude Desktop has focus. Update your Electron package; Arch: sudo pacman -Syu electron. Escape hatch if you can't update: CLAUDE_USE_XWAYLAND=1."
-        log "$warn_msg"
-        echo >&2 "claude-desktop: $warn_msg"
-    fi
-
     if [[ "${CLAUDE_USE_XWAYLAND:-}" == '1' ]]; then
-        # User explicitly wants XWayland — respect it unless compositor can't do it
-        platform_mode=xwayland
-        desktop="${XDG_CURRENT_DESKTOP:-}"
-        desktop="${desktop,,}"
-        if [[ -n "${NIRI_SOCKET:-}" || "$desktop" == *niri* ]]; then
-            log 'Niri detected — ignoring CLAUDE_USE_XWAYLAND (no XWayland support)'
-            platform_mode=wayland
+        if [[ -n "${DISPLAY:-}" ]]; then
+            platform_mode=xwayland
+        else
+            log 'CLAUDE_USE_XWAYLAND=1 ignored: DISPLAY is unset, so there is no XWayland server (on Niri, start xwayland-satellite)'
         fi
     fi
+}
+
+platform_mode=x11
+_resolve_platform_mode
+if [[ "$platform_mode" != x11 ]] && (( electron_major > 0 && electron_major < 40 )); then
+    warn_msg="Electron $electron_major has a broken GlobalShortcutsPortal (electron/electron#49806, fixed in 40+/41+). Global hotkeys will only work when Claude Desktop has focus. Update your Electron package; Arch: sudo pacman -Syu electron. Escape hatch if you can't update: CLAUDE_USE_XWAYLAND=1."
+    log "$warn_msg"
+    echo >&2 "claude-desktop: $warn_msg"
 fi
 
 # ---------------------------------------------------------------------------
