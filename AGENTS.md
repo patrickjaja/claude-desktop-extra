@@ -23,7 +23,7 @@ The official `.deb` (apt repo `https://downloads.claude.ai/claude-desktop/apt`) 
 | Debian 12+ | `.deb` | 2.36 | amd64, arm64 |
 | Fedora 40+ | `.rpm` | 2.39 | x86_64, aarch64 |
 | RHEL 9+ | `.rpm` | 2.34 | x86_64, aarch64 |
-| NixOS | Nix flake | 2.40 (current) | x86_64, aarch64 |
+| NixOS | Nix flake | 2.40 (current) | x86_64 |
 | NVIDIA Jetson (JetPack 6) | `.deb` | 2.35 | aarch64 |
 | Any (glibc) | `.AppImage` | varies | x86_64, aarch64 |
 
@@ -334,7 +334,7 @@ git push
 
 ```
 patches/           # Nim patch sources (.nim) + Makefile, compiled to native binaries (ls patches/*/*.nim)
-patches/linux/     #   Linux compatibility - always on, not user-configurable (31)
+patches/linux/     #   Linux compatibility - always on, not user-configurable (33)
 patches/community/ #   Opt-in features, each with a switch in Settings -> Extra -> Community Features (10)
 patches/core/      #   Always-on infrastructure the rest builds on: the Extra settings pages, the theme
                    #   engine, the GrowthBook override mechanism, multi-profile plumbing (7)
@@ -343,7 +343,7 @@ scripts/           # Build, validation, and launcher scripts (ls scripts/)
 scripts/tests/     # Feature test harnesses, grouped like patches/ (run: scripts/run-feature-tests.sh)
 scripts/tests/community/ #   Behavior tests for the opt-in community features (9)
 scripts/tests/core/      #   Behavior tests for the core infrastructure features (7)
-scripts/tests/linux/     #   Behavior tests for the Linux compatibility patches (5)
+scripts/tests/linux/     #   Behavior tests for the Linux compatibility patches and the launcher (13)
 scripts/tests/lib/       #   Shared harness plumbing (theme-engine-harness.mjs), not tests themselves
 docs/              # Per-feature deep-dives (themes, profiles, quick-entry, cowork, feature-flags,
                    #   computer-use, third-party-inference, environment-variables) + screenshots.
@@ -367,7 +367,7 @@ Multiple Desktop instances can run side by side via named profiles. The launcher
 | Claude Code config | `CLAUDE_CONFIG_DIR` env exported by launcher | Honored by `@anthropic-ai/claude-code` CLI |
 | Quick Entry socket | `process.env.CLAUDE_PROFILE` read in JS | `patches/core/fix_quick_entry_cli_toggle.nim` |
 | systemd scope | `${profile_suffix}` in launcher | `claude-desktop-launcher.sh` |
-| WM_CLASS / Wayland app_id | per-profile Electron binary (hardlink → reflink → copy fallback) | `~/.local/lib/claude-desktop/<APP_ID>-<name>` — must be a real file, not a symlink, because Electron derives its app identity from `/proc/self/exe` (the kernel resolves symlinks before reading) |
+| Per-profile Electron binary | hardlink -> reflink -> copy fallback, refreshed from `CLAUDE_ELECTRON` when set (Nix) | `~/.local/lib/claude-desktop/<APP_ID>-<name>`. It does NOT give the window its own identity: WM_CLASS / Wayland app_id is `com.anthropic.Claude` for every profile (Chromium takes it from the shared bundle's `desktopName`); `fix_profile_window_title.nim` puts the profile name in the window title instead |
 | SSO callback routing | marker file written by JS hook on `shell.openExternal`; launcher reads marker to dispatch incoming `claude://` URL | `patches/core/fix_profile_url_routing.nim` (writer) + `claude-desktop-launcher.sh` URL-handler block (reader / re-exec) |
 
 **Rule when adding a new patch:** if it writes to a fixed user-level path, prefer `app.getPath("userData")` (auto-isolates) over `os.homedir()+"/.config/Claude"` (single-instance leak). If it opens a Unix socket or pipe that is owned by the Electron process itself, append `process.env.CLAUDE_PROFILE` to the path the same way `fix_quick_entry_cli_toggle.nim` does. If the socket is owned by a separate shared user-level daemon, do NOT suffix it — clients across all profiles need to connect to the same listener; profile isolation comes from per-profile state inherited via env. If the patch spawns a long-lived child process that holds state, propagate `process.env.CLAUDE_PROFILE` and `process.env.CLAUDE_CONFIG_DIR` (or accept that `child_process.spawn` inherits `process.env` by default — verify, don't assume).

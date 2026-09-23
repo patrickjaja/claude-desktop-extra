@@ -56,7 +56,7 @@ Panel tabs and Files quick open depend on DOM anchors in remote claude.ai code; 
 | Patch | What it does & why it exists |
 |-------|------------------------------|
 | [`enable_local_agent_mode.nim`](patches/linux/enable_local_agent_mode.nim) | Enables Claude Code and Local Agent Mode on the host; upstream reports them unavailable unless the platform is macOS or Windows |
-| [`fix_app_quit.nim`](patches/linux/fix_app_quit.nim) | Fixes the app hanging on exit - the second quit call upstream makes during cleanup is a no-op on Linux |
+| [`fix_app_quit.nim`](patches/linux/fix_app_quit.nim) | Makes the app exit as soon as its quit cleanup is done. The second quit call upstream makes after cleanup is a no-op on Linux, so without this the process lingers until upstream's own quit watchdog forces it out about 15 seconds later |
 | [`fix_browse_files_linux.nim`](patches/linux/fix_browse_files_linux.nim) | Lets the file dialog pick a directory on Linux; upstream offers that only on macOS, though Electron supports it everywhere |
 | [`fix_browser_tools_linux.nim`](patches/linux/fix_browser_tools_linux.nim) | Enables Chrome browser tools on Linux, and finds Chromium, Brave, Vivaldi and Opera as well as upstream's Chrome and Edge |
 | [`fix_builtin_mcp_browser_env.nim`](patches/linux/fix_builtin_mcp_browser_env.nim) | Gives built-in MCP servers the display and session variables they need to open a browser for OAuth; upstream's filtered environment has none of them ([#139](https://github.com/patrickjaja/claude-desktop-extra/issues/139)) |
@@ -64,7 +64,7 @@ Panel tabs and Files quick open depend on DOM anchors in remote claude.ai code; 
 | [`fix_computer_use_linux.nim`](patches/linux/fix_computer_use_linux.nim) | Enables [Computer Use](README.md#computer-use) and routes it to the bundled bridge that matches your session. Upstream gates it to macOS/Windows and ships no Linux backend at all |
 | [`fix_cowork_firmware_paths_linux.nim`](patches/linux/fix_cowork_firmware_paths_linux.nim) | Finds QEMU firmware and virtiofsd outside Debian's paths, so Cowork stops reporting "Download failed" on Fedora, RHEL, Arch and NixOS ([#177](https://github.com/patrickjaja/claude-desktop-extra/issues/177)) |
 | [`fix_cowork_font.nim`](patches/linux/fix_cowork_font.nim) | Applies your chat font to the Cowork tab, which fell back to a serif face because upstream sets the font only when the Chat view mounts |
-| [`fix_detected_projects_linux.nim`](patches/linux/fix_detected_projects_linux.nim) | Enables project detection on Linux and looks for VS Code, Cursor and Zed state where they actually keep it, instead of hardcoded macOS paths |
+| [`fix_detected_projects_linux.nim`](patches/linux/fix_detected_projects_linux.nim) | Enables project detection on Linux and looks for VS Code, Cursor and Zed state where they actually keep it, instead of hardcoded macOS paths. Finds `sqlite3` on PATH when it is not at `/usr/bin` (NixOS) |
 | [`fix_dock_bounce.nim`](patches/linux/fix_dock_bounce.nim) | Stops the app demanding attention in the taskbar on KDE and GNOME, which is what upstream's macOS dock bounce turns into. Scoped to the attention APIs only, so bringing the window to the front still works |
 | [`fix_epitaxy_autoscroll.nim`](patches/linux/fix_epitaxy_autoscroll.nim) | Keeps the Code and Cowork transcript following a running response; a few pixels of routine drift while streaming used to unpin it for good |
 | [`fix_host_tool_paths_linux.nim`](patches/linux/fix_host_tool_paths_linux.nim) | Finds `busctl`, `secret-tool` and `kwallet-query` on PATH when they are not at `/usr/bin`, as on NixOS. Without `busctl` the app decides there is no GlobalShortcuts portal and refuses every Wayland shortcut, Quick Entry included; without the other two, Chrome cookie import silently skips keyring-encrypted cookies. Hosts that have the `/usr/bin` file keep using it |
@@ -89,7 +89,7 @@ Panel tabs and Files quick open depend on DOM anchors in remote claude.ai code; 
 | [`fix_utility_process_kill.nim`](patches/linux/fix_utility_process_kill.nim) | Sends `SIGKILL` to a stuck helper process once the timeout passes; upstream re-sends `SIGTERM`, which a hung process ignores and the app never exits |
 | [`fix_window_bounds.nim`](patches/linux/fix_window_bounds.nim) | Re-fits the app's content when the window is resized, maximized or snapped, which otherwise left stale geometry behind on Linux |
 
-Two of these embed regression assertions alongside the work they inject: `enable_local_agent_mode.nim` (real-platform reporting to claude.ai, the native Linux Cowork bundle path) and `fix_startup_settings.nim` (native XDG autostart read/write).
+No patch here carries an assert-only step: each one changes the bundle. Where a fix depends on upstream behavior staying put, that behavior is part of the fix's own anchor - `fix_startup_settings.nim`, for example, only matches when upstream still reads and writes the XDG autostart entry at its own path, so a change there fails the build instead of silently skipping the fix.
 
 ## Adding your own feature
 

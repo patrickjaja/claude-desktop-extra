@@ -51,7 +51,7 @@ is silent; loosening needs @patrickjaja in the commit.
 | Nim format | Zero `nph` diffs on staged patches | `nph --check <staged .nim>` | pre-commit (`.githooks/pre-commit`) | project |
 | Nim compile | Every patch compiles | `nim check --hints:off` (pre-commit), `bash scripts/compile-nim-patches.sh` (CI) | pre-commit, CI | project |
 | Shell | Zero shellcheck errors | `shellcheck -S error scripts/*.sh packaging/*/*.sh .github/scripts/*.sh` | pre-commit (staged), CI (all) | external |
-| Feature behavior | All 21 harnesses PASS or SKIP (exit 3 only for a missing tool) | `bash scripts/run-feature-tests.sh` (full suite ~141 s, so one category at task end) | task end (touched category), CI (all) | suite |
+| Feature behavior | All 29 harnesses PASS or SKIP (exit 3 only for a missing tool) | `bash scripts/run-feature-tests.sh` (full suite ~141 s, so one category at task end) | task end (touched category), CI (all) | suite |
 | Desktop entries | Zero `desktop-file-validate` warnings | `Validate .desktop files` step | CI | external |
 | Docs catalog | `docs/claude-desktop-extra.jsonc` matches the shipped template | `bash scripts/check-jsonc-template-sync.sh` | CI | project |
 
@@ -68,9 +68,9 @@ is silent; loosening needs @patrickjaja in the commit.
 
 | Metric | Today (2.7032.0) | Direction | Why it is not a gate |
 |--------|------------------|-----------|---------------------|
-| Patch count | 48 | should fall over time | Falling is the goal, but a new real Linux gap is a valid reason to add one |
-| Patches passing P2 without an exception | 48 of 48 | must not fall | Not a gate yet: a new exception row is still possible (see below) |
-| Probe runtime | ~13 s (48 patches, each run twice) | watch | Moves to CI-only if it passes 60 s |
+| Patch count | 50 | should fall over time | Falling is the goal, but a new real Linux gap is a valid reason to add one |
+| Patches passing P2 without an exception | 50 of 50 | must not fall | Not a gate yet: a new exception row is still possible (see below) |
+| Probe runtime | ~11 s (50 patches, each run twice) | watch | Moves to CI-only if it passes 60 s |
 | Full harness suite runtime | ~141 s | watch | Over the task-end budget, hence category-scoped locally |
 
 ## Exceptions

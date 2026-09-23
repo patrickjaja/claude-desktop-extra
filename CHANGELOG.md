@@ -4,6 +4,76 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-09-23
 
+### Linux portability pass
+
+Upstream's Linux build assumes Debian/Ubuntu with systemd, GNOME and a standard
+`/usr`. This pass closes the places where that assumption silently cost a feature
+on the other distros and desktops we ship to.
+
+**New patches (48 -> 50 after one removal):**
+
+- `fix_host_tool_paths_linux`: the app runs `busctl`, `secret-tool` and
+  `kwallet-query` from `/usr/bin` only. Where they live elsewhere (NixOS), it now
+  finds them on PATH; hosts that have the `/usr/bin` file are unchanged. This
+  brings back Wayland global shortcuts and the Quick Entry hotkey on NixOS, and
+  keyring-encrypted cookies in Chrome import. `fix_detected_projects_linux` does
+  the same for `sqlite3`.
+- `fix_tray_less_desktops`: on a Wayland session with no tray host (GNOME
+  without AppIndicator, sway or niri without a tray bar), closing the window
+  quits instead of hiding it into a tray that does not exist, and a hidden
+  autostart launch shows the window.
+- `fix_keep_awake_linux`: "Keep computer awake" holds a logind idle inhibitor
+  on Sway, Hyprland, niri, i3 and other desktops without a GNOME or freedesktop
+  power service, where Chromium's blocker did nothing.
+- Removed `fix_cross_device_rename`: none of the renames it wrapped can cross
+  filesystems, and two of its rewrites were wrong.
+- Tightened `enable_local_agent_mode`, `fix_quick_entry_position`,
+  `fix_computer_use_linux`, `fix_startup_settings` and `fix_app_quit` (dead and
+  assert-only steps dropped, exact match counts) plus exact counts in a dozen
+  more. No behavior change. The orchestrator refuses an already-patched extract.
+
+**Computer Use:** a bridge is used only after it answers a quick `--version`
+run; one that cannot run on this system falls through to the next tier and the
+log names the cause (PipeWire or glibc too old, NixOS loader, wrong CPU). NixOS
+KDE now reaches the spectacle fallback. App listing follows `XDG_DATA_DIRS`
+(NixOS, snap, `/usr/local` apps), and tool detection no longer needs `which`.
+
+**Packaging:**
+
+- `.deb`: replaces Anthropic's own `claude-desktop` package cleanly (Conflicts +
+  Replaces); recommends `gnome-keyring | plasma-workspace` and `libsecret-tools`;
+  suggests `gjs` and `ydotool (>= 1.0)`.
+- `.rpm`: conflicts with `claude-desktop`; recommends `qemu-system-<arch>` or
+  `qemu-kvm`, so QEMU is pulled on RHEL too.
+- RHEL 9 Cowork: RHEL ships QEMU only as `/usr/libexec/qemu-kvm`. The `.rpm`
+  installs a `qemu-system-<arch>` shim for it, and the launcher puts the shim on
+  PATH when no other QEMU is found. The workspace VM boots on RHEL 9 x86_64.
+- The GNOME Shell search provider is registered in the `.deb`, `.rpm`, pacman
+  and Nix packages (needs `gjs`).
+- Nix: x86_64 only, as built; `python3`, `xdg-utils` and `sqlite` on the
+  wrapper's PATH; "Start at login" and profile entries run through the wrapper
+  and survive garbage collection.
+- Local builds fail unless every binary in the tree matches the package
+  architecture.
+
+**Launcher:** named profiles refresh from `CLAUDE_ELECTRON`, and
+`--create-profile` is refused in the AppImage (use `--profile=NAME`).
+`CLAUDE_USE_XWAYLAND=1` needs `DISPLAY` and now works on niri with
+xwayland-satellite. The KWallet probe falls back from `busctl` to `dbus-send` to
+`gdbus`. The AppImage no longer leaks its bundled libraries into child processes.
+A compositor started from a TTY gets `XDG_SESSION_TYPE=wayland`.
+`claude-desktop --diagnose` gains a Host capabilities section (each tool the app
+needs, found or missing, and what stops working without it), the portal probe
+exactly as the app runs it, a run check of all four Computer Use bridges, tray
+host, keep-awake and Bluetooth checks, and a closing Problems found list.
+`--diagnose` and `--help` have no side effects any more.
+
+**Docs:** per-compositor Quick Entry binds (Sway, river, niri, Hyprland,
+GNOME), the missing environment variables, Cowork notes per distro and board
+(Debian 12 has no usable `virtiofsd`, RHEL 9, Raspberry Pi 5 RAM, Jetson
+`/dev/kvm`), and corrected claims about Computer Use coverage, per-profile
+window identity, flag and feature counts, Nix on ARM and the 3P log directory.
+
 ### Build: every patch must still do something
 
 Upstream works on the same Linux gaps we patch. When it ships one natively, the
@@ -12,9 +82,9 @@ we carried a patch that changed nothing. `scripts/check-upstream-absorbed.py` no
 runs in every build, before the patches apply. It replays each patch against the
 pristine bundle and fails when a patch (or one of its sub-patches) finds its end
 state already present. That patch is then audited and removed. The probe also
-re-runs each patch on its own output to prove it is idempotent. The rules and
-three tracked exceptions are in the new `CONSTRAINTS.md`. On v2.7032.0 all 48
-patches are active.
+re-runs each patch on its own output to prove it is idempotent. The rules are in
+the new `CONSTRAINTS.md`. After the portability pass below, all 50 patches are
+active and idempotent with no exceptions left.
 
 ### Claude Desktop v2.7032.0
 
