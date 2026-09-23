@@ -51,9 +51,9 @@ See [plan.md](plan.md) and [SPEC.md](../SPEC.md). IDs refer to SPEC findings.
   - Verify for W4: agent D's simulations (fake Electron, scratch HOME, makeWrapper exec form, AppImage mount path change) as scripted regression checks; `shellcheck -S error`
 
 ### W5 cu-robustness
-- [ ] T5.1 C1: bridge runnable check (spawn a no-op subcommand, async, 3 s, cached per process) before a bridge is selected; on failure fall to the next tier and log the real cause (exit code / loader error), replace "reinstall" text with cause-specific hints (PipeWire floor, glibc floor, NixOS override)
+- [x] T5.1 C1: bridge runnable check (spawn a no-op subcommand, async, 3 s, cached per process) before a bridge is selected; on failure fall to the next tier and log the real cause (exit code / loader error), replace "reinstall" text with cause-specific hints (PipeWire floor, glibc floor, NixOS override)
   - Acceptance: a present-but-unloadable kwin bridge on KDE routes to the regular executor (spectacle tier); no sync block on the main process
-- [ ] T5.2 C2: app dirs from `XDG_DATA_HOME` + `XDG_DATA_DIRS` (+ flatpak exports); `_hasCmd` via a PATH walk, not `which`
+- [x] T5.2 C2: app dirs from `XDG_DATA_HOME` + `XDG_DATA_DIRS` (+ flatpak exports); `_hasCmd` via a PATH walk, not `which`
   - Verify: extend `scripts/tests/linux/` harness (unrunnable bridge fixture, XDG_DATA_DIRS fixture); `run-feature-tests.sh linux`; `make` (staticRead)
 
 ### W6 tray-less-desktops (X3)
