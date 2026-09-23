@@ -146,6 +146,14 @@ for (const a of ["x86_64", "aarch64"]) {
 }
 check("spec creates the shim dir", specSrc.includes("mkdir -p %{buildroot}/usr/lib/claude-desktop/qemu-shim"), true);
 
+// CI builds the rpm on Fedora, so a %{?rhel} branch never fires; the
+// Recommends must name both distros' qemu packages in one rich dependency.
+check("spec has no build-host-dependent %if 0%{?rhel} qemu branch", /%if 0%\{\?rhel\}\nRecommends:\s+qemu-kvm/.test(specSrc), false);
+for (const [a, fedora] of [["x86_64", "qemu-system-x86"], ["aarch64", "qemu-system-aarch64"]]) {
+  const re = new RegExp(`%ifarch ${a}\\nRecommends:\\s+\\(${fedora} or qemu-kvm\\)\\n`);
+  check(`spec Recommends (${fedora} or qemu-kvm) under %ifarch ${a}`, re.test(specSrc), true);
+}
+
 rmSync(scratch, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) {

@@ -61,16 +61,14 @@ Requires:       xdg-desktop-portal
 #
 # QEMU package name differs between Fedora and RHEL: Fedora splits per-arch
 # (qemu-system-x86 / qemu-system-aarch64); RHEL ships the emulator in qemu-kvm
-# (the Fedora names don't exist there). Firmware names are identical on both.
-%if 0%{?rhel}
-Recommends:     qemu-kvm
-%else
+# (the Fedora names don't exist there). One rpm is built (on Fedora) for both,
+# so a rich dependency names both; dnf takes the first one that exists.
+# Firmware names are identical on both.
 %ifarch x86_64
-Recommends:     qemu-system-x86
+Recommends:     (qemu-system-x86 or qemu-kvm)
 %endif
 %ifarch aarch64
-Recommends:     qemu-system-aarch64
-%endif
+Recommends:     (qemu-system-aarch64 or qemu-kvm)
 %endif
 %ifarch x86_64
 Recommends:     edk2-ovmf
