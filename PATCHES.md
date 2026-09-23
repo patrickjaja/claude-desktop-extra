@@ -51,7 +51,7 @@ Panel tabs and Files quick open depend on DOM anchors in remote claude.ai code; 
 
 ## Linux compatibility
 
-**32 patches**, always on and nothing to configure. Upstream ships the same JS bundle to every platform; these open `darwin`/`win32`-only gates for Linux, or fix behavior that only misfires in a Linux desktop environment. Each one is either a feature you would otherwise not have at all, or a bug you would otherwise hit.
+**33 patches**, always on and nothing to configure. Upstream ships the same JS bundle to every platform; these open `darwin`/`win32`-only gates for Linux, or fix behavior that only misfires in a Linux desktop environment. Each one is either a feature you would otherwise not have at all, or a bug you would otherwise hit.
 
 | Patch | What it does & why it exists |
 |-------|------------------------------|
@@ -84,6 +84,7 @@ Panel tabs and Files quick open depend on DOM anchors in remote claude.ai code; 
 | [`fix_sensitive_dirs_linux.nim`](patches/linux/fix_sensitive_dirs_linux.nim) | Adds the Linux keyring, certificate and autostart directories to the protected-path list that keeps sandbox mounts away from credential stores; upstream lists no Linux-specific entries |
 | [`fix_startup_settings.nim`](patches/linux/fix_startup_settings.nim) | Hides the main window when session restore relaunches the app, but only for people who asked for a hidden start; keeps "Start at login" entries separate per profile; and points the autostart entry at the launcher so a login launch gets the same Wayland, PATH and profile setup as a manual one |
 | [`fix_tray_icon_theme.nim`](patches/linux/fix_tray_icon_theme.nim) | Always uses the light tray glyph on Linux; upstream's heuristic left the icon invisible for anyone on a light desktop theme |
+| [`fix_tray_less_desktops.nim`](patches/linux/fix_tray_less_desktops.nim) | Keeps the app reachable on desktops with no tray host. On a Wayland session where nothing owns `org.kde.StatusNotifierWatcher` (GNOME without the AppIndicator extension, sway or niri without a tray bar), closing the window quits instead of hiding it into a tray that does not exist, and an autostart launch shows the window. With a tray host, or on X11, upstream behavior is unchanged |
 | [`fix_updater_state_linux.nim`](patches/linux/fix_updater_state_linux.nim) | Stops a crash in the update UI: auto-update is off on Linux, so the fields the frontend reads unchecked were never set |
 | [`fix_utility_process_kill.nim`](patches/linux/fix_utility_process_kill.nim) | Sends `SIGKILL` to a stuck helper process once the timeout passes; upstream re-sends `SIGTERM`, which a hung process ignores and the app never exits |
 | [`fix_window_bounds.nim`](patches/linux/fix_window_bounds.nim) | Re-fits the app's content when the window is resized, maximized or snapped, which otherwise left stale geometry behind on Linux |
