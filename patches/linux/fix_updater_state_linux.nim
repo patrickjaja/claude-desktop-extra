@@ -37,10 +37,10 @@ proc apply*(input: string): string =
       inc count
       s[m.group(0)] & """,version:"",versionNumber:""}""",
   )
-  if count >= 1:
-    echo "  [OK] Updater idle state: added version/versionNumber (" & $count & " match)"
+  if count == 1:
+    echo "  [OK] Updater idle state: added version/versionNumber (1 match)"
   else:
-    echo "  [FAIL] Updater idle state: pattern not found"
+    echo "  [FAIL] Updater idle state: " & $count & " matches, expected 1"
     quit(1)
 
 when isMainModule:

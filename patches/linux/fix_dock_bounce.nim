@@ -116,12 +116,12 @@ proc apply*(input: string): string =
         inc ruaCount
         s[m.group(0)] & "if(process.platform===\"linux\")return!1;" & s[m.group(1)],
     )
-    if ruaCount > 0:
-      echo &"  [OK] requestUserAttention Linux guard: {ruaCount} match(es)"
+    if ruaCount == 1:
+      echo &"  [OK] requestUserAttention Linux guard: {ruaCount} match"
       applied.add(&"rua-guard({ruaCount})")
       patchesApplied += 1
     else:
-      echo "  [FAIL] requestUserAttention pattern not matched"
+      echo &"  [FAIL] requestUserAttention pattern: {ruaCount} matches, expected 1"
 
   if patchesApplied < EXPECTED_PATCHES:
     raise newException(

@@ -17,7 +17,9 @@
 # that change every upstream release, and since v1.28929.0 the SPA is split so
 # the mountPath data object and its platform-ternary consumer live in two
 # DIFFERENT chunks. Each sub-patch therefore finds its own target file by
-# content signature and patches every file that matches.
+# content signature. Counts are taken across ALL SPA files: each sub-patch has
+# exactly one site (upstream shape to apply, or our end state = already
+# applied); any other total is a FAIL.
 
 import std/[os, strutils]
 import regex
@@ -41,27 +43,11 @@ iterator spaFiles(ionDistDir: string): string =
     if dir.kind == pcFile and dir.path.endsWith(".js"):
       yield dir.path
 
-proc tryApplyA(content: var string, fileName: string): bool =
-  ## Sub-patch A: add the linux key to the mountPath object.
-  if content.contains(newMountPath):
-    echo "  [OK] org-plugins linux path: already applied (" & fileName & ")"
-    return true
-  if content.contains(oldMountPath):
-    content = content.replace(oldMountPath, newMountPath)
-    echo "  [OK] org-plugins linux path: 1 match (" & fileName & ")"
-    return true
-  false
-
-proc tryApplyB(content: var string, fileName: string): bool =
+proc applyTernary(content: string): string =
   ## Sub-patch B: extend the Win32/mac mount-path ternary with a Linux case.
-  for m in content.findAll(alreadyPatchedPatB):
-    echo "  [OK] mount path platform ternary: already applied (" & fileName & ")"
-    return true
-  var countB = 0
-  content = content.replace(
+  content.replace(
     ternaryPatB,
     proc(m: RegexMatch2, s: string): string =
-      inc countB
       let condVar = s[m.group(0)]
       let enumVar = s[m.group(1)]
       let winObj = s[m.group(2)]
@@ -69,10 +55,6 @@ proc tryApplyB(content: var string, fileName: string): bool =
       condVar & "===" & enumVar & ".Win32?" & winObj & ".win:" & condVar & "===" &
         enumVar & ".Linux?" & winObj & ".linux:" & macObj & ".mac",
   )
-  if countB >= 1:
-    echo "  [OK] mount path platform ternary: " & $countB & " match (" & fileName & ")"
-    return true
-  false
 
 when isMainModule:
   if paramCount() != 1:
@@ -85,35 +67,57 @@ when isMainModule:
     echo "  [FAIL] Directory not found: " & ionDistDir
     quit(1)
 
-  var patchesApplied = 0
-  var doneA = false
-  var doneB = false
+  # Pass 1: count every site across all SPA files.
+  var oldA, newA, oldB, newB = 0
+  for filePath in spaFiles(ionDistDir):
+    let content = readFile(filePath)
+    oldA += content.count(oldMountPath)
+    newA += content.count(newMountPath)
+    oldB += content.findAll(ternaryPatB).len
+    newB += content.findAll(alreadyPatchedPatB).len
 
+  var patchesApplied = 0
+  var applyA, applyB = false
+  if oldA == 1 and newA == 0:
+    applyA = true
+  elif oldA == 0 and newA == 1:
+    echo "  [OK] org-plugins linux path: already applied"
+    patchesApplied += 1
+  else:
+    echo "  [FAIL] org-plugins linux path: " & $oldA & " upstream and " & $newA &
+      " patched sites across the SPA, expected exactly one of them once"
+  if oldB == 1 and newB == 0:
+    applyB = true
+  elif oldB == 0 and newB == 1:
+    echo "  [OK] mount path platform ternary: already applied"
+    patchesApplied += 1
+  else:
+    echo "  [FAIL] mount path platform ternary: " & $oldB & " upstream and " & $newB &
+      " patched sites across the SPA, expected exactly one of them once"
+
+  if patchesApplied + ord(applyA) + ord(applyB) != EXPECTED_PATCHES:
+    echo "  [INFO] This likely means the upstream changed the 3P config UI structure"
+    quit(1)
+
+  # Pass 2: apply to the one file that holds each site.
   for filePath in spaFiles(ionDistDir):
     var content = readFile(filePath)
     let original = content
     let fileName = extractFilename(filePath)
-
-    if not doneA and tryApplyA(content, fileName):
+    if applyA and content.contains(oldMountPath):
+      content = content.replace(oldMountPath, newMountPath)
+      echo "  [OK] org-plugins linux path: 1 match (" & fileName & ")"
       patchesApplied += 1
-      doneA = true
-
-    if not doneB and tryApplyB(content, fileName):
+    if applyB and content.findAll(ternaryPatB).len == 1:
+      content = applyTernary(content)
+      echo "  [OK] mount path platform ternary: 1 match (" & fileName & ")"
       patchesApplied += 1
-      doneB = true
-
     if content != original:
       writeFile(filePath, content)
 
-  if not doneA:
-    echo "  [FAIL] org-plugins linux path: pattern not found in any SPA file"
-  if not doneB:
-    echo "  [FAIL] mount path platform ternary: pattern not found in any SPA file"
-
-  if patchesApplied < EXPECTED_PATCHES:
+  if patchesApplied != EXPECTED_PATCHES:
     echo "  [FAIL] Only " & $patchesApplied & "/" & $EXPECTED_PATCHES &
       " patches applied"
-    echo "  [INFO] This likely means the upstream changed the 3P config UI structure"
     quit(1)
 
   echo "  [PASS] All " & $EXPECTED_PATCHES & " patches applied"

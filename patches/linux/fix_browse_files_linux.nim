@@ -45,10 +45,10 @@ proc apply*(input: string): string =
       inc count
       s[m.group(0)] & "||process.platform===\"linux\"" & s[m.group(1)],
   )
-  if count == 0:
-    echo "  [FAIL] browseFiles openDirectory: 0 matches"
+  if count != 1:
+    echo "  [FAIL] browseFiles openDirectory: " & $count & " matches, expected 1"
     quit(1)
-  echo "  [OK] browseFiles openDirectory: " & $count & " match(es)"
+  echo "  [OK] browseFiles openDirectory: 1 match"
 
 when isMainModule:
   if paramCount() != 1:

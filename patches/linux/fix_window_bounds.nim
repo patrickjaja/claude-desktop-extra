@@ -79,7 +79,10 @@ proc apply*(input: string): string =
       )
 
   # 2. Quick Entry blur before hide
-  let qeBlurCheck = re"[\w$]+\.blur\(\),[\w$]+\.hide\(\)"
+  # Positive end state: the exact shape Patch 2 produces - the guard function
+  # whose single `||` arm blurs and then hides the same window.
+  let qeBlurCheck =
+    re"function [\w$]+\(\)\{[\w$]+\(\)\|\|\(([\w$]+)\.blur\(\),\1\.hide\(\)\)\}"
   let alreadyBlurred = result.find(qeBlurCheck).isSome
 
   if alreadyBlurred:
@@ -99,11 +102,11 @@ proc apply*(input: string): string =
         let hideCall = m.captures[3]
         funcDecl & guardCall & "||(" & winVar & ".blur()," & winVar & hideCall & ")}",
     )
-    if countQe > 0:
-      echo &"  [OK] Quick Entry blur before hide: {countQe} match(es)"
+    if countQe == 1:
+      echo &"  [OK] Quick Entry blur before hide: {countQe} match"
       applied.add(&"qe-blur({countQe})")
     else:
-      echo "  [FAIL] Quick Entry hide pattern not matched"
+      echo &"  [FAIL] Quick Entry hide pattern: {countQe} matches, expected 1"
       raise newException(
         ValueError, "fix_window_bounds: Quick Entry hide pattern not matched"
       )

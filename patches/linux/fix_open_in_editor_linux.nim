@@ -65,8 +65,14 @@ proc apply*(input: string): string =
   # Every call site: `<var>.app.getApplicationInfoForProtocol(<arg>)`.
   # We capture <var> (minified Electron binding) and <arg> and wrap them so the
   # original (non-Linux) call is preserved on the false branch.
-  if PATCHED_MARKER in input:
+  let markerCount = input.count(PATCHED_MARKER)
+  if markerCount == 4:
     echo "  [OK] getApplicationInfoForProtocol Linux shim: already patched (skipped)"
+  elif markerCount != 0:
+    echo &"  [FAIL] getApplicationInfoForProtocol shim present at {markerCount} sites, expected 4"
+    raise newException(
+      ValueError, "fix_open_in_editor_linux: partially shimmed input, re-audit"
+    )
   else:
     let pattern1 =
       re2"""([\w$]+(?:\.[\w$]+)*)\.app\.getApplicationInfoForProtocol\(([^()]+)\)"""
@@ -93,11 +99,11 @@ proc apply*(input: string): string =
     # `.protocol` sites. That is an upstream dedup, NOT native Linux support:
     # both surviving sites still gate on Electron's macOS/Windows-only
     # getApplicationInfoForProtocol, so the shim stays load-bearing.
-    if count1 < 4:
-      echo &"  [FAIL] getApplicationInfoForProtocol shim: {count1} match(es), expected >= 4"
+    if count1 != 4:
+      echo &"  [FAIL] getApplicationInfoForProtocol shim: {count1} match(es), expected 4"
       raise newException(
         ValueError,
-        "fix_open_in_editor_linux: too few getApplicationInfoForProtocol sites",
+        "fix_open_in_editor_linux: getApplicationInfoForProtocol site count changed, re-audit",
       )
     echo &"  [OK] getApplicationInfoForProtocol shim (xdg-mime): {count1} call site(s) wrapped"
 
@@ -114,8 +120,7 @@ proc apply*(input: string): string =
   # Linux patches could also produce) before accepting "already patched".
   let guardedPat =
     re2"""&&process\.platform!=="linux"&&\([\w$]+=await [\w$]+(?:\.[\w$]+)*\.app\.getFileIcon\([\w$]+\.path,\{size:"normal"\}\)\)"""
-  var gm: RegexMatch2
-  if result.find(guardedPat, gm):
+  if result.findAll(guardedPat).len == 1:
     echo "  [OK] getFileIcon Linux guard: already present (skipped)"
   else:
     let pattern2 =
@@ -135,8 +140,8 @@ proc apply*(input: string): string =
         "(!" & a1 & "||" & a1 & ".isEmpty())&&process.platform!==\"linux\"&&(" & a1 &
           "=await " & v & ".app.getFileIcon(" & n & ".path,{size:\"normal\"}))",
     )
-    if count2 < 1:
-      echo "  [FAIL] getFileIcon Linux guard: 0 matches and guarded form not found"
+    if count2 != 1:
+      echo &"  [FAIL] getFileIcon Linux guard: {count2} matches (expected 1) and guarded form not found"
       raise newException(
         ValueError, "fix_open_in_editor_linux: getFileIcon fallback pattern not found"
       )

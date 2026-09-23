@@ -64,10 +64,21 @@ proc apply*(input: string): string =
   # minifier-dependent (v1.26832.0 emits `USER` as a backtick template literal).
   # KDE_SESSION_VERSION is checked separately so an older widened list without it
   # does NOT count as patched, or KDE stays broken.
-  if "\"DISPLAY\",\"WAYLAND_DISPLAY\",\"XAUTHORITY\"" in input and
-      "\"KDE_SESSION_VERSION\"" in input:
-    echo "  [OK] built-in MCP browser env: already patched"
+  # The marker is the full widened tail right after upstream's USER entry, so
+  # an older, shorter list does not count, and neither does the same var name
+  # appearing anywhere else in the bundle. Two sites are wanted (the allowlist
+  # is emitted twice); anything else is a FAIL, not "already patched".
+  let doneCount =
+    input.count("\"USER\"" & EXTRA_VARS & "]") + input.count(
+      "`USER`" & EXTRA_VARS & "]"
+    )
+  if doneCount == 2:
+    echo "  [OK] built-in MCP browser env: already patched (2 sites)"
     return input
+  if doneCount != 0:
+    echo "  [FAIL] built-in MCP browser env: widened list at " & $doneCount &
+      " sites, expected 2"
+    quit(1)
 
   # Match the Linux branch of the env allowlist array. The env-var names are
   # NOT minified, so this literal is stable across versions -- only the quoting
@@ -86,10 +97,10 @@ proc apply*(input: string): string =
     ,
   )
 
-  if count == 0:
+  if count != 2:
     if "\"HOME\",\"LOGNAME\"" in input or "`HOME`,`LOGNAME`" in input:
-      echo "  [INFO] Found env allowlist but pattern didn't match (structure changed?)"
-    echo "  [FAIL] built-in MCP browser env: 0 matches (may need pattern update)"
+      echo "  [INFO] Found env allowlist but pattern didn't match twice (structure changed?)"
+    echo "  [FAIL] built-in MCP browser env: " & $count & " matches, expected 2"
     quit(1)
 
   echo "  [OK] built-in MCP browser env: widened allowlist (" & $count & " match(es))"
@@ -103,5 +114,6 @@ when isMainModule:
   echo "  Target: " & filePath
   let input = readFile(filePath)
   let output = apply(input)
-  writeFile(filePath, output)
+  if output != input:
+    writeFile(filePath, output)
   echo "  [PASS] Built-in MCP browser env patched successfully"

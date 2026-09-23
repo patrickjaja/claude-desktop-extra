@@ -64,11 +64,12 @@ proc apply*(input: string): string =
       inc defCount
       s[m.group(0)] & param & ",__cdbSig" & s[m.group(2)] & obj & ".kill(__cdbSig)?",
   )
-  if defCount > 0:
-    echo "  [OK] killOrDeferToSpawn signal parameter: " & $defCount & " match(es)"
+  if defCount == 1:
+    echo "  [OK] killOrDeferToSpawn signal parameter: 1 match"
     inc patchesApplied
   else:
-    echo "  [FAIL] killOrDeferToSpawn definition pattern: 0 matches"
+    echo "  [FAIL] killOrDeferToSpawn definition pattern: " & $defCount &
+      " matches, expected 1"
 
   # --- Sub-patch 2: SIGKILL at the timeout-fallback call site ---
   let callPattern =
@@ -80,13 +81,14 @@ proc apply*(input: string): string =
       inc callCount
       s[m.group(0)] & s[m.group(1)] & ""","SIGKILL")""" & s[m.group(2)],
   )
-  if callCount > 0:
-    echo "  [OK] fallback call site SIGKILL: " & $callCount & " match(es)"
+  if callCount == 1:
+    echo "  [OK] fallback call site SIGKILL: 1 match"
     inc patchesApplied
   else:
     if "Killing utiltiy proccess again" in input:
       echo "  [INFO] Found 'Killing utiltiy proccess again' string in file"
-    echo "  [FAIL] UtilityProcess fallback kill pattern: 0 matches"
+    echo "  [FAIL] UtilityProcess fallback kill pattern: " & $callCount &
+      " matches, expected 1"
 
   if patchesApplied < ExpectedPatches:
     echo "  [FAIL] Only " & $patchesApplied & "/" & $ExpectedPatches &
@@ -102,5 +104,6 @@ when isMainModule:
   echo "  Target: " & filePath
   let input = readFile(filePath)
   let output = apply(input)
-  writeFile(filePath, output)
+  if output != input:
+    writeFile(filePath, output)
   echo "  [PASS] UtilityProcess kill patched successfully"

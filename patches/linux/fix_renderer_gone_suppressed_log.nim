@@ -20,7 +20,8 @@ import regex
 const AppliedMarker = "Main webview render process gone (suppressed)"
 
 proc apply*(input: string): string =
-  if AppliedMarker in input:
+  if input.count(AppliedMarker) == 2:
+    # Our log line sits in front of both early returns of the one handler.
     echo "  [OK] suppressed renderer-gone log: already applied"
     return input
 
@@ -60,9 +61,9 @@ proc apply*(input: string): string =
   # The trailing `.info(<q>Main webview render process gone: %o` both pins this
   # site (22 render-process-gone mentions exist; only this one logs that
   # message) and captures the logger identifier (dotted namespace tolerated).
-  # Count policy: require >= 1 and echo the actual count -- the insertion
-  # is correct for N copies of the registration, while 0 matches means
-  # upstream changed the code and the patch must fail loudly.
+  # Count policy: exactly 1 (one main-webview registration in v2.7032.0). A
+  # second copy means upstream duplicated the handler and the site needs a
+  # re-audit; 0 means upstream changed the code. Both fail loudly.
   let pattern =
     re2"""(\.on\(["`]render-process-gone["`],\(?async\(([\w$]+),([\w$]+)\)=>\{)if\(!([\w$]+)\(([\w$]+)\)\)return;(let [\w$]+=[\w$]+(?:\.[\w$]+)*\([^()]*\)(?:,[\w$]+=[\w$]+(?:\.[\w$]+)*\([^()]*\))*;)if\(([^{}]{1,100}[^{}]{0,100}[^{}]{0,100})\)return;(([\w$]+(?:\.[\w$]+)*)\.info\(["`]Main webview render process gone: %o)"""
   var count = 0
@@ -90,12 +91,12 @@ proc apply*(input: string): string =
       s[m.group(0)] & "if(!" & pred & "(" & predArg & ")){" & logCall & ";return}" &
         letStmt & "if(" & cond & "){" & logCall & ";return}" & tail,
   )
-  if count == 0:
+  if count != 1:
     if "Main webview render process gone" in input:
-      echo "  [INFO] Found 'Main webview render process gone' in file but pattern didn't match"
-    echo "  [FAIL] suppressed renderer-gone pattern: 0 matches (may need pattern update)"
+      echo "  [INFO] Found 'Main webview render process gone' in file but pattern didn't match exactly once"
+    echo "  [FAIL] suppressed renderer-gone pattern: " & $count & " matches, expected 1"
     quit(1)
-  echo "  [OK] suppressed renderer-gone log: " & $count & " match(es)"
+  echo "  [OK] suppressed renderer-gone log: 1 match"
 
 when isMainModule:
   if paramCount() != 1:
@@ -106,5 +107,6 @@ when isMainModule:
   echo "  Target: " & filePath
   let input = readFile(filePath)
   let output = apply(input)
-  writeFile(filePath, output)
+  if output != input:
+    writeFile(filePath, output)
   echo "  [PASS] Suppressed renderer-gone log patched successfully"

@@ -70,10 +70,10 @@ proc apply*(input: string): string =
       # upstream's expression is parenthesised so it stays the else branch.
       m.captures[0] & " " & INJECTED & "(" & m.captures[1] & ")}",
   )
-  if count == 0:
-    echo "  [FAIL] tray icon theme logic: 0 matches"
+  if count != 1:
+    echo "  [FAIL] tray icon theme logic: " & $count & " matches, expected 1"
     quit(1)
-  echo "  [OK] tray icon theme logic: " & $count & " match(es)"
+  echo "  [OK] tray icon theme logic: 1 match"
 
 when isMainModule:
   if paramCount() != 1:
@@ -91,4 +91,4 @@ when isMainModule:
     writeFile(filePath, output)
     echo "  [PASS] Tray icon theme patched successfully"
   else:
-    echo "  [WARN] No changes made"
+    echo "  [PASS] Tray icon theme already patched"

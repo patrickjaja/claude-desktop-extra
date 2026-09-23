@@ -19,9 +19,15 @@ import std/[os]
 import regex
 
 proc apply*(input: string): string =
-  # Check if already patched (use flexible pattern for any variable name)
-  let alreadyPatched = re2"""[\w$]+\.argv=\[\]"""
-  if input.contains(alreadyPatched):
+  # Idempotency: OUR insertion sits immediately before the expose call and
+  # names the same object it exposes (positive end state, AGENTS.md Rule 6).
+  let donePattern =
+    re2"""([\w$]+)\.argv=\[\];[\w$]+\.contextBridge\.exposeInMainWorld\(["`]process["`],([\w$]+)\)"""
+  var doneCount = 0
+  for dm in input.findAll(donePattern):
+    if input[dm.group(0)] == input[dm.group(1)]:
+      inc doneCount
+  if doneCount == 1:
     echo "  [OK] process.argv: already patched (skipped)"
     return input
 
@@ -30,8 +36,9 @@ proc apply*(input: string): string =
   # (`process`), so the quote character is matched as a class.
   let exposePattern =
     re2"""([\w$]+\.contextBridge\.exposeInMainWorld\(["`]process["`],)([\w$]+)(\))"""
-  var m: RegexMatch2
-  if input.find(exposePattern, m):
+  let sites = input.findAll(exposePattern)
+  if sites.len == 1:
+    let m = sites[0]
     let varName = input[m.group(1)]
     let insert = varName & ".argv=[];"
     let pos = m.boundaries.a
@@ -39,7 +46,8 @@ proc apply*(input: string): string =
     echo "  [OK] process.argv: added " & varName & ".argv=[] (before exposeInMainWorld)"
     return result
 
-  echo "  [FAIL] process.argv: could not find insertion point"
+  echo "  [FAIL] process.argv: " & $sites.len &
+    " exposeInMainWorld(\"process\") sites, expected 1"
   quit(1)
 
 when isMainModule:
