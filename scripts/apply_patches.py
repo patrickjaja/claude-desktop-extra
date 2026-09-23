@@ -35,6 +35,19 @@ PATCH_SUBDIRS = ("linux", "core", "community")
 # remove a patch.
 EXPECTED_PATCH_COUNT = 51
 
+# Byte strings that only ever appear in a bundle one of our builds already
+# patched: every injected identifier starts with `__cdb`, and
+# `__nav_spoof_applied` is the marker of the navigator spoof removed for issue
+# #173. Patches must run on a pristine upstream extract; on a stale one the
+# idempotency branches would report success for code an old build injected.
+# Both apply_patches.py and check-upstream-absorbed.py refuse such input.
+STALE_INPUT_MARKERS = (b"__cdb", b"__nav_spoof_applied")
+
+
+def stale_input_marker(blob: bytes) -> bytes | None:
+    """The first STALE_INPUT_MARKERS entry found in blob, or None."""
+    return next((m for m in STALE_INPUT_MARKERS if m in blob), None)
+
 
 def discover_patch_files(patches_dir: Path):
     """Every file under the category subdirs, sorted by BASENAME.
@@ -295,6 +308,21 @@ def main():
             )
         else:
             print(f"  [WARN] Unknown @patch-type '{ptype}' for {patch_file.name}")
+
+    # Refuse a pre-patched extract before touching anything.
+    for target_path in nim_jobs_by_target:
+        parts = chunk_parts(target_path) or [target_path]
+        for part in parts:
+            marker = stale_input_marker(part.read_bytes())
+            if marker:
+                print(
+                    f"[ERROR] {part.relative_to(app_dir)} already contains "
+                    f"{marker.decode()!r}: it was patched by an earlier build. "
+                    "Patches need a pristine upstream extract (asar extract "
+                    "the official .deb again).",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
     failed = False
 

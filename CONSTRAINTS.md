@@ -81,6 +81,5 @@ still exists also fails, so the row gets deleted.
 
 | ID | Rule | Path | Reason | Owner | Expires |
 |----|------|------|--------|-------|---------|
-| E1 | `P2-idempotent` | `patches/linux/enable_local_agent_mode.nim` | Second run fails on "darwin-gated functions: 0 matches" - no positive end-state branch for that sub-patch. Absorption would surface as a red build, not a verdict | @patrickjaja | 2026-12-22 |
 | E2 | `P2-idempotent` | `patches/linux/fix_app_quit.nim` | Second run fails on "app.quit pattern: 0 matches" - same gap | @patrickjaja | 2026-12-22 |
 | E3 | `P2-idempotent` | `patches/linux/fix_computer_use_linux.nim` | Second run fails on "createDarwinExecutor pattern: 0 matches" - same gap | @patrickjaja | 2026-12-22 |

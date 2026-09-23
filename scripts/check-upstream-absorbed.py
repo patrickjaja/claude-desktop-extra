@@ -108,7 +108,7 @@ def main():
     if not build.is_dir():
         print(f"[ERROR] no .vite/build under {app_dir}", file=sys.stderr)
         sys.exit(2)
-    if any(b"__cdb" in f.read_bytes() for f in build.glob("index*.js")):
+    if any(ap.stale_input_marker(f.read_bytes()) for f in build.glob("index*.js")):
         print(
             f"[ERROR] {app_dir} already contains our injections; the probe "
             + "needs a PRISTINE extract (asar extract the official .deb again).",
