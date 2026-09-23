@@ -5,13 +5,13 @@ See [plan.md](plan.md) and [SPEC.md](../SPEC.md). IDs refer to SPEC findings.
 ## Wave 1 (parallel)
 
 ### W1 host-tool-paths
-- [ ] T1.1 New `patches/linux/fix_host_tool_paths_linux.nim`: rewrite `"/usr/bin/busctl"`, `"/usr/bin/secret-tool"`, `"/usr/bin/kwallet-query"` (exactly 1 each in the index.js concat) to `(require("fs").existsSync(P)?P:"<name>")`; positive idempotency; exact counts
+- [x] T1.1 New `patches/linux/fix_host_tool_paths_linux.nim`: rewrite `"/usr/bin/busctl"`, `"/usr/bin/secret-tool"`, `"/usr/bin/kwallet-query"` (exactly 1 each in the index.js concat) to `(require("fs").existsSync(P)?P:"<name>")`; positive idempotency; exact counts
   - Acceptance: probe says ACTIVE and P2-idempotent; Debian path unchanged when the file exists
   - Verify: `make`; probe; `node --check` on the patched chunk; new harness
   - Files: new .nim, `scripts/apply_patches.py` (48 -> 49), `PATCHES.md` row
-- [ ] T1.2 `fix_detected_projects_linux.nim`: same rewrite for `/usr/bin/sqlite3` (H3), count == 1, pin the patch's other `>=1` counts (T6)
+- [x] T1.2 `fix_detected_projects_linux.nim`: same rewrite for `/usr/bin/sqlite3` (H3), count == 1, pin the patch's other `>=1` counts (T6)
   - Verify: probe; harness
-- [ ] T1.3 Harness `scripts/tests/linux/test-host-tool-paths.mjs`: extract the patched function, run with a fake FS/PATH both ways; bump `EXPECTED_TEST_HARNESSES`
+- [x] T1.3 Harness `scripts/tests/linux/test-host-tool-paths.mjs`: extract the patched function, run with a fake FS/PATH both ways; bump `EXPECTED_TEST_HARNESSES`
   - Verify: `bash scripts/run-feature-tests.sh linux`
 
 ### W2 patch-hygiene (+ X6)
