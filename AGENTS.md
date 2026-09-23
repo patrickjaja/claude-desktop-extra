@@ -1,5 +1,7 @@
 # AGENTS.md - Project Guidelines
 
+**Read [CONSTRAINTS.md](CONSTRAINTS.md) before writing code. Do not weaken it to make a change pass.** Its core rule: every patch changes the pristine upstream bundle, applies completely, or fails the build loudly.
+
 ## Project Overview
 
 This project repackages Anthropic's **official Claude Desktop Linux `.deb`** for the distros Anthropic does not ship (Arch via our own pacman repo primary, plus Fedora/RHEL via RPM, NixOS, AppImage, and our own Debian/Ubuntu `.deb`). It applies JavaScript patches to the official build's `app.asar` to add Linux-only value-adds (Computer Use, custom themes, multi-profile, Quick Entry) and Linux fixes.
@@ -83,7 +85,7 @@ These files embed assumptions about upstream internals and **must be challenged 
 
 ## Update Workflow
 
-**Upstream bumps are handled automatically by default.** Since we repackage the official Linux `.deb` (Anthropic maintains 1p Linux support), most releases need zero manual work: `version-check.yml` (2-hourly) detects a new version, opens a tracking issue, and dispatches `build-and-release.yml` in release mode. The patch strictness rules make that run the arbiter — every sub-patch must apply or the build fails loud. Green run → packages published (including the signed pacman repo db as release assets), README versions + Nix hash + `.upstream-version` committed, tracking issue auto-closed. Red run → a comment lands on the tracking issue; **that comment is the signal for manual work**.
+**Upstream bumps are handled automatically by default.** Since we repackage the official Linux `.deb` (Anthropic maintains 1p Linux support), most releases need zero manual work: `version-check.yml` (2-hourly) detects a new version, opens a tracking issue, and dispatches `build-and-release.yml` in release mode. The patch strictness rules make that run the arbiter — every sub-patch must apply or the build fails loud. Green run → packages published (including the signed pacman repo db as release assets), README versions + Nix hash + `.upstream-version` committed, tracking issue auto-closed. Red run → a comment lands on the tracking issue; **that comment is the signal for manual work**. Before any patch applies, `scripts/check-upstream-absorbed.py` replays every patch against the pristine bundle and fails the run when one changes nothing (ABSORBED/PARTIAL): upstream already ships that end state, so audit it and `git rm` it (CONSTRAINTS.md P1). A patch that no longer finds its target is re-fitted, not removed.
 
 Caveat: a green build proves the patches *applied*, not that runtime behavior is correct — a wildcard regex can in principle match a wrong site after a re-minify, and remote claude.ai code can change behavior without any desktop release (issue #173 was exactly that). The safety net is the strict counts + positive end-state assertions + smoke test; spot-check a real install after notable bumps.
 

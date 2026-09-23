@@ -4,6 +4,18 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-09-23
 
+### Build: every patch must still do something
+
+Upstream works on the same Linux gaps we patch. When it ships one natively, the
+patch's "already patched" branch reports success, so the build stayed green while
+we carried a patch that changed nothing. `scripts/check-upstream-absorbed.py` now
+runs in every build, before the patches apply. It replays each patch against the
+pristine bundle and fails when a patch (or one of its sub-patches) finds its end
+state already present. That patch is then audited and removed. The probe also
+re-runs each patch on its own output to prove it is idempotent. The rules and
+three tracked exceptions are in the new `CONSTRAINTS.md`. On v2.7032.0 all 48
+patches are active.
+
 ### Claude Desktop v2.7032.0
 
 The auto-release stopped on one sub-patch. It was an assert, not a real breakage.

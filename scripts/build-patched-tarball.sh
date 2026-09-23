@@ -325,6 +325,17 @@ log_info "desktopName is upstream com.anthropic.Claude.desktop (no pin)"
 log_info "Compiling Nim patches..."
 "$SCRIPT_DIR/compile-nim-patches.sh" "$PATCHES_DIR"
 
+# Challenge every patch against the still-pristine bundle BEFORE applying
+# (CONSTRAINTS.md P1/P2): a patch whose end state upstream already ships
+# changes nothing, and its "already patched" branch would keep the build
+# green while we carry a dead patch. Audit it, then git rm it.
+log_info "Probing for patches upstream already absorbed..."
+if ! python3 "$SCRIPT_DIR/check-upstream-absorbed.py" --patches "$PATCHES_DIR" \
+    "$APP_DIR/app.asar.contents" "$TREE_DIR/resources/ion-dist"; then
+    log_error "Absorption probe failed - see CONSTRAINTS.md P1 (audit, then remove the patch)"
+    exit 1
+fi
+
 # Apply all patches via orchestrator
 log_info "Applying patches..."
 if ! python3 "$SCRIPT_DIR/apply_patches.py" "$PATCHES_DIR" "$APP_DIR"; then
