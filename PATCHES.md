@@ -51,7 +51,7 @@ Panel tabs and Files quick open depend on DOM anchors in remote claude.ai code; 
 
 ## Linux compatibility
 
-**34 patches**, always on and nothing to configure. Upstream ships the same JS bundle to every platform; these open `darwin`/`win32`-only gates for Linux, or fix behavior that only misfires in a Linux desktop environment. Each one is either a feature you would otherwise not have at all, or a bug you would otherwise hit.
+**33 patches**, always on and nothing to configure. Upstream ships the same JS bundle to every platform; these open `darwin`/`win32`-only gates for Linux, or fix behavior that only misfires in a Linux desktop environment. Each one is either a feature you would otherwise not have at all, or a bug you would otherwise hit.
 
 | Patch | What it does & why it exists |
 |-------|------------------------------|
@@ -64,7 +64,6 @@ Panel tabs and Files quick open depend on DOM anchors in remote claude.ai code; 
 | [`fix_computer_use_linux.nim`](patches/linux/fix_computer_use_linux.nim) | Enables [Computer Use](README.md#computer-use) and routes it to the bundled bridge that matches your session. Upstream gates it to macOS/Windows and ships no Linux backend at all |
 | [`fix_cowork_firmware_paths_linux.nim`](patches/linux/fix_cowork_firmware_paths_linux.nim) | Finds QEMU firmware and virtiofsd outside Debian's paths, so Cowork stops reporting "Download failed" on Fedora, RHEL, Arch and NixOS ([#177](https://github.com/patrickjaja/claude-desktop-extra/issues/177)) |
 | [`fix_cowork_font.nim`](patches/linux/fix_cowork_font.nim) | Applies your chat font to the Cowork tab, which fell back to a serif face because upstream sets the font only when the Chat view mounts |
-| [`fix_cross_device_rename.nim`](patches/linux/fix_cross_device_rename.nim) | Lets downloads move from `/tmp` into your config directory when the two sit on different filesystems, where a plain rename fails |
 | [`fix_detected_projects_linux.nim`](patches/linux/fix_detected_projects_linux.nim) | Enables project detection on Linux and looks for VS Code, Cursor and Zed state where they actually keep it, instead of hardcoded macOS paths |
 | [`fix_dock_bounce.nim`](patches/linux/fix_dock_bounce.nim) | Stops the app demanding attention in the taskbar on KDE and GNOME, which is what upstream's macOS dock bounce turns into. Scoped to the attention APIs only, so bringing the window to the front still works |
 | [`fix_epitaxy_autoscroll.nim`](patches/linux/fix_epitaxy_autoscroll.nim) | Keeps the Code and Cowork transcript following a running response; a few pixels of routine drift while streaming used to unpin it for good |

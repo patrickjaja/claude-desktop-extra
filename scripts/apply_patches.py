@@ -33,7 +33,7 @@ PATCH_SUBDIRS = ("linux", "core", "community")
 # forgotten `git mv` changes what gets discovered, the build must fail rather
 # than quietly ship a release with a patch missing. Bump this when you add or
 # remove a patch.
-EXPECTED_PATCH_COUNT = 51
+EXPECTED_PATCH_COUNT = 50
 
 # Byte strings that only ever appear in a bundle one of our builds already
 # patched: every injected identifier starts with `__cdb`, and
