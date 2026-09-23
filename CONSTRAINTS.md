@@ -69,7 +69,7 @@ is silent; loosening needs @patrickjaja in the commit.
 | Metric | Today (2.7032.0) | Direction | Why it is not a gate |
 |--------|------------------|-----------|---------------------|
 | Patch count | 48 | should fall over time | Falling is the goal, but a new real Linux gap is a valid reason to add one |
-| Patches passing P2 without an exception | 45 of 48 | must not fall | The 3 below are tracked exceptions |
+| Patches passing P2 without an exception | 48 of 48 | must not fall | Not a gate yet: a new exception row is still possible (see below) |
 | Probe runtime | ~13 s (48 patches, each run twice) | watch | Moves to CI-only if it passes 60 s |
 | Full harness suite runtime | ~141 s | watch | Over the task-end budget, hence category-scoped locally |
 
@@ -81,4 +81,3 @@ still exists also fails, so the row gets deleted.
 
 | ID | Rule | Path | Reason | Owner | Expires |
 |----|------|------|--------|-------|---------|
-| E2 | `P2-idempotent` | `patches/linux/fix_app_quit.nim` | Second run fails on "app.quit pattern: 0 matches" - same gap | @patrickjaja | 2026-12-22 |

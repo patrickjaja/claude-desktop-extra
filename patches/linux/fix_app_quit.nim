@@ -11,6 +11,13 @@
 # Since all cleanup handlers have already run (mcp-shutdown, quick-entry-cleanup,
 # prototype-cleanup), we can safely force exit. Using setImmediate ensures
 # the exit happens in the next event loop tick.
+#
+# Upstream (v2.7032.0) arms its own "Quit watchdog" on the same success path:
+# an unref'd 15 s timer (5 s unpackaged) that forces app.exit(0) if the event
+# loop is still alive. So without this patch a stuck quit still ends, just up
+# to ~15 s later (and reports desktop_quit_watchdog_fired). Re-check on each
+# bump whether the second app.quit() still stalls on Linux at all; if it no
+# longer does, this patch only shortens an already-bounded wait.
 
 import std/[os, strutils]
 import regex
@@ -22,23 +29,30 @@ proc apply*(input: string): string =
   # The XX&&YY.app.quit() doesn't work after preventDefault() on Linux
   # Replace with setImmediate + app.exit(0) for reliable exit
   let pattern = re2"(clearTimeout\([\w$]+\)\})([\w$]+)&&([\w$]+)(\.app\.quit\(\))"
-  var count = 0
+  # Our end state (positive idempotency marker, AGENTS.md Rule 6).
+  let patternDone =
+    re2"clearTimeout\([\w$]+\)\}if\([\w$]+\)\{setImmediate\(\(\)=>[\w$]+\.app\.exit\(0\)\)\}"
+  let count = input.findAll(pattern).len
+  let done = input.findAll(patternDone).len
+  if count == 0 and done == 1:
+    echo "  [OK] app.quit -> app.exit: already applied (idempotent)"
+    return input
+  if count != 1 or done != 0:
+    if ".app.quit()" in input:
+      echo "  [INFO] Found '.app.quit()' in file but pattern didn't match exactly once"
+    echo "  [FAIL] app.quit pattern: " & $count & " upstream and " & $done &
+      " patched sites, expected exactly 1 upstream site"
+    quit(1)
   result = input.replace(
     pattern,
     proc(m: RegexMatch2, s: string): string =
-      inc count
       let grp0 = s[m.group(0)] # clearTimeout(n)}
       let flagVar = s[m.group(1)] # XX
       let electronVar = s[m.group(2)] # YY
       # group(3) is .app.quit() -- we discard it
       grp0 & "if(" & flagVar & "){setImmediate(()=>" & electronVar & ".app.exit(0))}",
   )
-  if count == 0:
-    if ".app.quit()" in input:
-      echo "  [INFO] Found '.app.quit()' in file but pattern didn't match"
-    echo "  [FAIL] app.quit pattern: 0 matches (may need pattern update)"
-    quit(1)
-  echo "  [OK] app.quit -> app.exit: " & $count & " match(es)"
+  echo "  [OK] app.quit -> app.exit: 1 match"
 
 when isMainModule:
   if paramCount() != 1:
@@ -49,5 +63,6 @@ when isMainModule:
   echo "  Target: " & filePath
   let input = readFile(filePath)
   let output = apply(input)
-  writeFile(filePath, output)
+  if output != input:
+    writeFile(filePath, output)
   echo "  [PASS] App quit patched successfully"
