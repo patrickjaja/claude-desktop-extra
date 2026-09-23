@@ -94,6 +94,33 @@ for _d in /usr/local/bin /usr/bin /bin /usr/local/sbin /usr/sbin /sbin; do
 done
 export PATH="$_claude_path"
 
+# RHEL 9 / Rocky / Alma ship QEMU only as /usr/libexec/qemu-kvm, so upstream's
+# PATH walk for qemu-system-<arch> fails and Cowork reports "requires QEMU" with
+# qemu-kvm installed. The rpm ships qemu-shim/qemu-system-<arch> symlinks to it
+# (the helper's command line boots unchanged on RHEL qemu-kvm). Append that dir
+# only when no executable qemu-system-<arch> is on PATH (same X_OK walk as the
+# app), qemu-kvm exists and the shim is installed; a real QEMU always wins.
+_cowork_qemu_shim_path() {
+    local path=$1 arch=$2 qemu_kvm=$3 shim_dir=$4 bin _d
+    case "$arch" in
+        x86_64) bin=qemu-system-x86_64 ;;
+        aarch64 | arm64) bin=qemu-system-aarch64 ;;
+        *) echo "$path"; return 0 ;;
+    esac
+    local IFS=:
+    for _d in $path; do
+        [[ -n "$_d" && -x "$_d/$bin" && ! -d "$_d/$bin" ]] && { echo "$path"; return 0; }
+    done
+    if [[ -x "$qemu_kvm" && -x "$shim_dir/$bin" ]]; then
+        echo "${path:+${path}:}${shim_dir}"
+    else
+        echo "$path"
+    fi
+}
+# _claude_path too: the systemd scope exec passes it via --setenv=PATH.
+_claude_path="$(_cowork_qemu_shim_path "$PATH" "$(uname -m)" /usr/libexec/qemu-kvm /usr/lib/claude-desktop/qemu-shim)"
+PATH="$_claude_path"
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------

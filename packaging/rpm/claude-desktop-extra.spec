@@ -136,6 +136,21 @@ rm -rf %{buildroot}
 mkdir -p %{buildroot}/usr/lib/claude-desktop
 cp -a tarball/claude-desktop/* %{buildroot}/usr/lib/claude-desktop/
 
+# RHEL 9 / Rocky / Alma: qemu-kvm installs QEMU only as /usr/libexec/qemu-kvm,
+# but the Cowork probe and cowork-linux-helper look up qemu-system-<arch> on
+# PATH. The launcher appends this dir to PATH only when no qemu-system-<arch> is
+# on PATH and /usr/libexec/qemu-kvm exists, so Fedora's real qemu-system-* always
+# wins. Dangling (harmless) where qemu-kvm is not installed. The helper's qemu
+# command line (q35, vhost-vsock, vhost-user-fs, memfd backend) boots unchanged
+# on RHEL 9 qemu-kvm 10.1 (verified x86_64 on rockylinux:9, 2026-09-23).
+mkdir -p %{buildroot}/usr/lib/claude-desktop/qemu-shim
+%ifarch x86_64
+ln -s /usr/libexec/qemu-kvm %{buildroot}/usr/lib/claude-desktop/qemu-shim/qemu-system-x86_64
+%endif
+%ifarch aarch64
+ln -s /usr/libexec/qemu-kvm %{buildroot}/usr/lib/claude-desktop/qemu-shim/qemu-system-aarch64
+%endif
+
 # Install launcher (full launcher from tarball with Wayland/X11 detection,
 # GPU fallback, SingletonLock cleanup, and logging)
 mkdir -p %{buildroot}/usr/bin
