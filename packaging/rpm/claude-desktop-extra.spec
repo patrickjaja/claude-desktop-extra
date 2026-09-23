@@ -22,6 +22,10 @@ Summary:        Claude Desktop for Linux with extra features (Computer Use, them
 # Provides keeps anything that referenced the old name resolvable.
 Obsoletes:      claude-desktop-bin <= 1.24012.9
 Provides:       claude-desktop-bin = %{version}-%{release}
+# Anthropic's own claude-desktop package (its .deb today; its postinst hints at
+# an RPM) installs the same /usr/lib/claude-desktop tree. Refuse to co-install;
+# switch with `dnf swap claude-desktop claude-desktop-extra`.
+Conflicts:      claude-desktop
 
 License:        Proprietary
 URL:            https://claude.ai
@@ -100,6 +104,9 @@ Suggests:       nodejs
 # deps have no "A | B" alternation like dpkg, and Recommends would force
 # gnome-keyring onto KDE installs.
 Suggests:       gnome-keyring
+# GNOME Shell search provider (installed below) runs under gjs. GNOME Shell
+# already depends on it; Suggests keeps it off KDE and headless installs.
+Suggests:       gjs
 
 %description
 Anthropic's official Claude Desktop for Linux, repackaged for distros the
@@ -179,6 +186,27 @@ if [ -d tarball/icons/hicolor ]; then
     cp -a tarball/icons/hicolor %{buildroot}/usr/share/icons/
 fi
 
+# GNOME Shell search provider. Upstream's postinst copies these two files out of
+# resources/gnome-search-provider/ at configure time; we ship the same bytes as
+# package files so rpm owns them. The .service Exec runs /usr/bin/gjs on
+# searchProvider.js under /usr/lib/claude-desktop, which is our prefix too.
+SP_SRC=%{buildroot}/usr/lib/claude-desktop/resources/gnome-search-provider
+for f in com.anthropic.Claude.search-provider.ini com.anthropic.Claude.SearchProvider.service searchProvider.js; do
+    if [ ! -f "$SP_SRC/$f" ]; then
+        echo "ERROR: resources/gnome-search-provider/$f missing - upstream layout changed; re-audit" >&2
+        exit 1
+    fi
+done
+if ! grep -qx 'Exec=/usr/bin/gjs -m /usr/lib/claude-desktop/resources/gnome-search-provider/searchProvider.js' \
+        "$SP_SRC/com.anthropic.Claude.SearchProvider.service"; then
+    echo "ERROR: search provider .service Exec line changed upstream - re-audit" >&2
+    exit 1
+fi
+install -pDm644 "$SP_SRC/com.anthropic.Claude.search-provider.ini" \
+    %{buildroot}/usr/share/gnome-shell/search-providers/com.anthropic.Claude.search-provider.ini
+install -pDm644 "$SP_SRC/com.anthropic.Claude.SearchProvider.service" \
+    %{buildroot}/usr/share/dbus-1/services/com.anthropic.Claude.SearchProvider.service
+
 %post
 # Ensure chrome-sandbox has SUID root (required by Chromium's setuid sandbox)
 if [ -f /usr/lib/claude-desktop/chrome-sandbox ]; then
@@ -241,6 +269,22 @@ if command -v gtk-update-icon-cache &>/dev/null; then
     gtk-update-icon-cache /usr/share/icons/hicolor || true
 fi
 
+%posttrans
+# When a transaction swaps out Anthropic's claude-desktop package, its postun
+# scriptlet runs after our post scriptlet and can delete the search provider
+# paths we own. rpm runs posttrans last, so restore the shipped bytes from
+# resources/.
+SP_SRC=/usr/lib/claude-desktop/resources/gnome-search-provider
+for pair in \
+    "com.anthropic.Claude.search-provider.ini:/usr/share/gnome-shell/search-providers" \
+    "com.anthropic.Claude.SearchProvider.service:/usr/share/dbus-1/services"; do
+    f="${pair%%%%:*}"; d="${pair#*:}"
+    if [ ! -e "$d/$f" ] && [ -f "$SP_SRC/$f" ]; then
+        mkdir -p "$d" && cp -p "$SP_SRC/$f" "$d/$f" && chmod 0644 "$d/$f" || :
+    fi
+done
+:
+
 %files
 # Upstream license notice, installed in %%install from the tarball root.
 %license /usr/share/licenses/%{name}/copyright
@@ -248,3 +292,5 @@ fi
 /usr/bin/claude-desktop
 /usr/share/applications/com.anthropic.Claude.desktop
 /usr/share/icons/hicolor/*/apps/claude-desktop.png
+/usr/share/gnome-shell/search-providers/com.anthropic.Claude.search-provider.ini
+/usr/share/dbus-1/services/com.anthropic.Claude.SearchProvider.service

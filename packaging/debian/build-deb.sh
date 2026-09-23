@@ -180,8 +180,8 @@ if ! grep -qx 'Exec=/usr/bin/gjs -m /usr/lib/claude-desktop/resources/gnome-sear
     log_error "GNOME search provider .service Exec line changed upstream - re-audit before shipping it"
     exit 1
 fi
-install -Dm644 "$SP_SRC/com.anthropic.Claude.search-provider.ini" "$DEB_ROOT/$SP_INI"
-install -Dm644 "$SP_SRC/com.anthropic.Claude.SearchProvider.service" "$DEB_ROOT/$SP_SERVICE"
+install -pDm644 "$SP_SRC/com.anthropic.Claude.search-provider.ini" "$DEB_ROOT/$SP_INI"
+install -pDm644 "$SP_SRC/com.anthropic.Claude.SearchProvider.service" "$DEB_ROOT/$SP_SERVICE"
 
 # Debian policy: ship a copyright file under usr/share/doc/<pkg>/. The tarball
 # carries the upstream notice at its root (extracted from the official .deb by
@@ -264,7 +264,7 @@ case "$1" in
         f="${pair%%:*}"; d="${pair#*:}"
         if [ ! -e "$d/$f" ] && [ -f "$SP_SRC/$f" ]; then
             mkdir -p "$d"
-            cp "$SP_SRC/$f" "$d/$f"
+            cp -p "$SP_SRC/$f" "$d/$f"
             chmod 0644 "$d/$f"
         fi
     done
