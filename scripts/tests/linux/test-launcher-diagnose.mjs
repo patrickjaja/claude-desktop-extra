@@ -28,7 +28,7 @@
 // Exit codes follow the repo convention: 0 = PASS, 3 = SKIP, other = FAIL.
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync, chmodSync,
-         existsSync, readdirSync } from "node:fs";
+         existsSync, readdirSync, lstatSync, readlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -258,6 +258,84 @@ safe("D5", () => {
   // No session bus in this environment: the app's probe cannot answer, and on
   // a Wayland session that disables every global shortcut.
   check("portal probe failure is a problem on Wayland", /^- GlobalShortcuts portal probe fails/m.test(problems), true);
+});
+
+// ---------------------------------------------------------------- D6
+console.log("D6: --diagnose and --help change nothing on disk");
+// Both are read-only reports. They used to run the per-profile binary refresh
+// (up to a ~200 MB copy into ~/.local/lib) and the AppImage desktop
+// integration before dispatching. The launcher's own log under
+// $XDG_CACHE_HOME/claude-desktop is the one thing allowed to change.
+function snapshot(dir, skip) {
+  const out = {};
+  const walk = (d) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, e.name);
+      if (p === skip) continue;
+      const st = lstatSync(p);
+      out[p] = e.isSymbolicLink() ? `l:${readlinkSync(p)}` : `${st.size}:${st.mtimeMs}`;
+      if (e.isDirectory()) walk(p);
+    }
+  };
+  walk(dir);
+  return out;
+}
+safe("D6 profile refresh", () => {
+  const root = join(scratch, "d6");
+  const home = join(root, "home");
+  const treeA = fakeTree(join(root, "treeA"), {});
+  const treeB = fakeTree(join(root, "treeB"), {});
+  const libDir = join(home, ".local", "lib", "claude-desktop");
+  mkdirSync(libDir, { recursive: true });
+  // A profile made from tree A; the launcher now points at tree B, so a
+  // launch would refresh it ("mirrors a different install").
+  const setup = spawnSync(BASH, ["-c", [
+    "set -euo pipefail", "APP_ID=claude", "log() { :; }",
+    fn("_materialise_profile_binary"), fn("_mirror_profile_siblings"),
+    `_materialise_profile_binary "${treeA}" "${libDir}/claude-work"`,
+    `_mirror_profile_siblings "${dirname(treeA)}" "${libDir}" claude`,
+  ].join("\n")], { env: { PATH: "/usr/bin:/bin", HOME: home }, encoding: "utf8" });
+  check("profile fixture created", setup.status, 0);
+  const cache = join(home, ".cache");
+  const before = snapshot(home, cache);
+  for (const sub of ["--help", "--diagnose"]) {
+    const r = spawnSync(BASH, [launcherPath, "--profile=work", sub], {
+      env: { PATH: "/usr/bin:/bin", HOME: home, CLAUDE_ELECTRON: treeB,
+             XDG_RUNTIME_DIR: join(root, "run"), DISPLAY: ":99" },
+      encoding: "utf8", timeout: 90000,
+    });
+    check(`${sub} exit status`, r.status, 0);
+    check(`${sub} leaves HOME untouched`, JSON.stringify(snapshot(home, cache)), JSON.stringify(before));
+    check(`${sub} does not refresh the profile`, /Refreshing/.test(r.stderr || ""), false);
+  }
+  // A real launch still heals the profile (the fake Electron just exits 0).
+  const launch = spawnSync(BASH, [launcherPath, "--profile=work"], {
+    env: { PATH: "/usr/bin:/bin", HOME: home, CLAUDE_ELECTRON: treeB,
+           XDG_RUNTIME_DIR: join(root, "run"), DISPLAY: ":99", CLAUDE_KEEP_TTY: "1" },
+    encoding: "utf8", timeout: 90000,
+  });
+  check("a launch exits with the fake Electron's status", launch.status, 0);
+  check("a launch still refreshes the stale profile",
+    readlinkSync(join(libDir, "resources")), join(dirname(treeB), "resources"));
+});
+safe("D6 ordering", () => {
+  // The AppImage integration is skipped whenever a system .desktop exists,
+  // so a behavioral test would pass on a machine that has the package
+  // installed. Pin the order instead: both side effects sit after the
+  // subcommand case (so --help and friends exit first) and are skipped when
+  // --diagnose was requested (it is deferred past them).
+  const at = (s) => launcherSrc.indexOf(s);
+  const caseEnd = at("        _diagnose_requested=1\n        ;;\nesac\n");
+  check("subcommand case end found", caseEnd > 0, true);
+  const guard = (call) => {
+    const i = at(`\n    ${call}\n`);
+    const cond = launcherSrc.lastIndexOf("\nif [[", i);
+    return i > caseEnd && launcherSrc.slice(cond, i).includes('-z "${_diagnose_requested:-}"');
+  };
+  check("profile refresh: after the case, skipped for --diagnose",
+    guard("_refresh_profile_binary_if_stale || true"), true);
+  check("AppImage integration: after the case, skipped for --diagnose",
+    guard("_appimage_integrate quiet || true"), true);
 });
 
 rmSync(scratch, { recursive: true, force: true });

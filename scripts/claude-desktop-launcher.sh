@@ -1918,55 +1918,6 @@ _diagnose() {
     fi
 }
 
-# ---------------------------------------------------------------------------
-# Per-profile binary maintenance (runs once per launch, named profiles only)
-# ---------------------------------------------------------------------------
-
-# Auto-heal stale per-profile installs after package upgrades or NixOS rebuilds.
-# Also refresh ELECTRON_BIN if path discovery had to fall back to the canonical
-# (e.g. dangling per-profile from a moved Nix store path) — we want the next
-# launch step to use the freshly materialised per-profile binary so WM_CLASS /
-# Wayland app_id reflect the profile.
-# The AppImage never uses a per-profile binary (see _refresh_profile_binary_if_stale).
-if [[ -n "$profile_suffix" && -z "${CLAUDE_APPIMAGE_PATH:-}" ]]; then
-    _refresh_profile_binary_if_stale || true
-    _profile_bin="$HOME/.local/lib/claude-desktop/${APP_ID}${profile_suffix}"
-    if [[ -x "$_profile_bin" ]]; then
-        ELECTRON_BIN="$_profile_bin"
-    elif [[ "$ELECTRON_BIN" == "$_profile_bin" ]]; then
-        # The per-profile binary was chosen during resolution but is not usable
-        # now. Launching it would exec a path that is not there, so fall back to
-        # the canonical binary: the profile keeps its isolated state and only the
-        # per-profile WM identity is lost for this launch.
-        ELECTRON_BIN=''
-        for candidate in "/usr/lib/claude-desktop/${APP_ID}" "/usr/lib/claude-desktop-bin/${APP_ID}"; do
-            [[ -x "$candidate" ]] && { ELECTRON_BIN="$candidate"; break; }
-        done
-        if [[ -n "$ELECTRON_BIN" ]]; then
-            echo >&2 "claude-desktop: per-profile binary unavailable, using $ELECTRON_BIN for this launch"
-            log "per-profile binary unavailable; falling back to $ELECTRON_BIN"
-        fi
-    fi
-
-    # Silent-degradation hint: --profile=NAME isolates state but the
-    # WM_CLASS / Wayland app_id stays as the default unless --create-profile
-    # has materialised a per-profile binary. Most users will want both.
-    # Suppress with CLAUDE_PROFILE_QUIET=1.
-    if [[ ! -e "$_profile_bin" && -z "${CLAUDE_PROFILE_QUIET:-}" ]]; then
-        echo >&2 "claude-desktop: profile '$CLAUDE_PROFILE' has isolated state but no per-profile WM identity."
-        echo >&2 "  Windows will share the default profile's taskbar entry. To fix:"
-        echo >&2 "    claude-desktop --create-profile=$CLAUDE_PROFILE"
-        echo >&2 "  (suppress this message with CLAUDE_PROFILE_QUIET=1)"
-    fi
-fi
-
-# ---------------------------------------------------------------------------
-# AppImage auto-integration (protocol handler + menu entry)
-# ---------------------------------------------------------------------------
-if [[ -n "${CLAUDE_APPIMAGE_PATH:-}" ]]; then
-    _appimage_integrate quiet || true
-fi
-
 case "${1:-}" in
     --help|-h)
         cat <<'HELP'
@@ -2193,6 +2144,61 @@ sys.stdout.write(buf.decode("utf-8","replace"))' "$_SOCK" 2>/dev/null)" || _repl
         _diagnose_requested=1
         ;;
 esac
+
+# The two blocks below write to disk (a per-profile binary refresh can copy
+# ~200 MB into ~/.local/lib; the AppImage integration writes a .desktop file
+# and an icon). They sit AFTER the subcommand case so --help and the other
+# early-exit subcommands never run them, and they skip --diagnose, which is
+# deferred past this point but is a read-only report as well.
+
+# ---------------------------------------------------------------------------
+# Per-profile binary maintenance (runs once per launch, named profiles only)
+# ---------------------------------------------------------------------------
+
+# Auto-heal stale per-profile installs after package upgrades or NixOS rebuilds.
+# Also refresh ELECTRON_BIN if path discovery had to fall back to the canonical
+# (e.g. dangling per-profile from a moved Nix store path) — we want the next
+# launch step to use the freshly materialised per-profile binary so WM_CLASS /
+# Wayland app_id reflect the profile.
+# The AppImage never uses a per-profile binary (see _refresh_profile_binary_if_stale).
+if [[ -z "${_diagnose_requested:-}" && -n "$profile_suffix" && -z "${CLAUDE_APPIMAGE_PATH:-}" ]]; then
+    _refresh_profile_binary_if_stale || true
+    _profile_bin="$HOME/.local/lib/claude-desktop/${APP_ID}${profile_suffix}"
+    if [[ -x "$_profile_bin" ]]; then
+        ELECTRON_BIN="$_profile_bin"
+    elif [[ "$ELECTRON_BIN" == "$_profile_bin" ]]; then
+        # The per-profile binary was chosen during resolution but is not usable
+        # now. Launching it would exec a path that is not there, so fall back to
+        # the canonical binary: the profile keeps its isolated state and only the
+        # per-profile WM identity is lost for this launch.
+        ELECTRON_BIN=''
+        for candidate in "/usr/lib/claude-desktop/${APP_ID}" "/usr/lib/claude-desktop-bin/${APP_ID}"; do
+            [[ -x "$candidate" ]] && { ELECTRON_BIN="$candidate"; break; }
+        done
+        if [[ -n "$ELECTRON_BIN" ]]; then
+            echo >&2 "claude-desktop: per-profile binary unavailable, using $ELECTRON_BIN for this launch"
+            log "per-profile binary unavailable; falling back to $ELECTRON_BIN"
+        fi
+    fi
+
+    # Silent-degradation hint: --profile=NAME isolates state but the
+    # WM_CLASS / Wayland app_id stays as the default unless --create-profile
+    # has materialised a per-profile binary. Most users will want both.
+    # Suppress with CLAUDE_PROFILE_QUIET=1.
+    if [[ ! -e "$_profile_bin" && -z "${CLAUDE_PROFILE_QUIET:-}" ]]; then
+        echo >&2 "claude-desktop: profile '$CLAUDE_PROFILE' has isolated state but no per-profile WM identity."
+        echo >&2 "  Windows will share the default profile's taskbar entry. To fix:"
+        echo >&2 "    claude-desktop --create-profile=$CLAUDE_PROFILE"
+        echo >&2 "  (suppress this message with CLAUDE_PROFILE_QUIET=1)"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# AppImage auto-integration (protocol handler + menu entry)
+# ---------------------------------------------------------------------------
+if [[ -z "${_diagnose_requested:-}" && -n "${CLAUDE_APPIMAGE_PATH:-}" ]]; then
+    _appimage_integrate quiet || true
+fi
 
 # ---------------------------------------------------------------------------
 # Electron version detection
