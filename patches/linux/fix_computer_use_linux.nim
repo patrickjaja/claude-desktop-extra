@@ -10,6 +10,12 @@
 # No codegen — the .js files are the single source of truth.
 #
 # All 35 sub-patches use std/nre (PCRE) because many require backreferences.
+#
+# Idempotency is a MARKER SET (endStateMarkers below): one positive end-state
+# pattern per sub-patch, each with its exact expected count. All present =
+# already patched (exit 0, no change); none present = apply; anything in
+# between = FAIL. After applying, every marker must hit its exact count, so the
+# markers double as the patch's post-condition.
 
 import std/[os, strformat, strutils, options]
 import std/nre
@@ -148,6 +154,195 @@ proc buildKwinLinuxExecutorInjection(): string =
     "(function(){\n" & js.strip(leading = false, trailing = true) &
     "\n\nglobalThis.__linuxExecutor = createLinuxExecutor({ hostBundleId: \"com.anthropic.claude\" });\n})();\n"
 
+# ─── end-state markers (idempotency + post-condition) ──────────────────────
+
+type EndStateMarker = object
+  name: string
+  pat: Regex
+  expected: int
+
+proc countMatches(content: string, pat: Regex): int =
+  for _ in content.findIter(pat):
+    inc result
+
+proc cuGateSetName(content: string): string =
+  ## The platform Set the Computer Use enable gate tests. Read from the gate
+  ## itself (`return!SET.has(process.platform)||HIPAA()?!1:X()&&
+  ## PREF("chicagoEnabled")}`), which keeps that shape with or without Patch 11's
+  ## prepended Linux branch. Upstream declares a second, identical
+  ## `new Set(["darwin","win32"])` right next to it for watch-record, so the
+  ## declaration order is never trusted. "" when the gate is not found exactly
+  ## once.
+  let gatePat =
+    re"""return!(?:[\w$]+\.)*([\w$]+)\.has\(process\.platform\)\|\|[\w$]+\(\)\?!1:[\w$]+\(\)&&[\w$]+(?:\.[\w$]+)*\(["`]chicagoEnabled["`]\)\}"""
+  var names: seq[string] = @[]
+  for m in content.findIter(gatePat):
+    names.add m.captures[0]
+  if names.len == 1:
+    return names[0]
+  return ""
+
+proc cuGateSetDecl(setName: string, linux: bool): Regex =
+  ## The declaration `SET=new Set(["darwin","win32"])`, or with our "linux".
+  let tail =
+    if linux:
+      """=new Set\(\[(["`])darwin\1,\1win32\1,\1linux\1\]\)"""
+    else:
+      """=new Set\(\[(["`])darwin\1,\1win32\1\]\)"""
+  re("(?<![\\w$.])" & escapeRe(setName) & tail)
+
+proc endStateMarkers(setName: string): seq[EndStateMarker] =
+  ## One positive end-state pattern per sub-patch, with its exact count.
+  proc lit(name, s: string, expected = 1): EndStateMarker =
+    EndStateMarker(name: name, pat: re(escapeRe(s)), expected: expected)
+
+  proc rx(name, s: string, expected = 1): EndStateMarker =
+    EndStateMarker(name: name, pat: re(s), expected: expected)
+
+  @[
+    rx(
+      "1 executors at app ready",
+      """app\.on\(["`]ready["`],\(?async\(\)=>\{if\(process\.platform==="linux"\)\{""",
+    ),
+    EndStateMarker(
+      name: "2 CU gate Set", pat: cuGateSetDecl(setName, true), expected: 1
+    ),
+    rx(
+      "4 createDarwinExecutor",
+      """\{if\(process\.platform==="linux"&&globalThis\.__linuxExecutor\)return globalThis\.__linuxExecutor;if\(process\.platform!==["`]darwin["`]\)throw""",
+    ),
+    rx(
+      "4d platform executor factory",
+      """if\(process\.platform===["`]darwin["`]\)return [\w$]+(?:\.[\w$]+)*\([\w$]+\);if\(process\.platform==="linux"&&globalThis\.__linuxExecutor\)return globalThis\.__linuxExecutor;throw (?:new )?Error\(["`]computer-use executor not implemented""",
+    ),
+    lit(
+      "4b cu lock acquire",
+      ",process.platform===\"linux\"&&globalThis.__linuxExecutor?.__setLockHeld?.(!0).catch?.(",
+    ),
+    lit(
+      "4b.2 cu lock release",
+      ",process.platform===\"linux\"&&globalThis.__linuxExecutor?.__setLockHeld?.(!1).catch?.(",
+      2,
+    ),
+    lit(
+      "5 ensureOsPermissions",
+      "ensureOsPermissions:process.platform===\"linux\"?async()=>({granted:!0}):",
+    ),
+    rx(
+      "5b screenshot intro note (decl)",
+      """,linuxVisibleLastScreenshot=process\.platform==="linux"&&[\w$]+===void 0&&[\w$]+==="screenshot"\?void 0:""",
+    ),
+    lit("5b screenshot intro note (use)", "lastScreenshot:linuxVisibleLastScreenshot,"),
+    rx(
+      "6 handleToolCall dispatch",
+      """handleToolCall:async\([\w$]+,[\w$]+,[\w$]+,[\w$]+\)=>\{if\(process\.platform==="linux"&&!globalThis\.__cuKwinMode\)\{""",
+    ),
+    rx(
+      "7b teach controller init",
+      """\)\{if\(process\.platform==="linux"&&globalThis\.__linuxExecutor\?\.__initTeachController\)\{globalThis\.__linuxExecutor\.__initTeachController\([\w$]+,[\w$]+\);return;\}""",
+    ),
+    rx(
+      "7c side-panel init",
+      """\)\{if\(process\.platform==="linux"&&globalThis\.__linuxExecutor\?\.__initDockController\)\{globalThis\.__linuxExecutor\.__initDockController\([\w$]+\);return;\}""",
+    ),
+    rx(
+      "8 teach overlay mouse",
+      """\(process\.platform==="linux"\?\([\w$]+\.setIgnoreMouseEvents=function\(\)\{\},globalThis\.__isVM&&[\w$]+\.setOpacity\(\.15\)\):""",
+    ),
+    rx(
+      "9a show handler",
+      """function [\w$]+\([\w$]+,[\w$]+\)\{\(process\.platform!=="linux"&&[\w$]+\.setIgnoreMouseEvents\(!0,\{forward:!0\}\)\)""",
+    ),
+    rx(
+      "9b working handler",
+      """\(process\.platform!=="linux"&&[\w$]+\.setIgnoreMouseEvents\(!0,\{forward:!0\}\)\),[\w$]+(?:\.[\w$]+)*\.getDispatcher\(""",
+    ),
+    rx(
+      "8a glow overlay",
+      """\{if\(process\.platform==="linux"&&globalThis\.__cuKwinMode\)return;[\w$]+(?:\.[\w$]+)*\.on\(["`]cuLockChanged["`],""",
+    ),
+    lit("10 overlay transparency", "transparent:!globalThis.__isVM"),
+    rx(
+      "10b overlay display",
+      """\{if\(process\.platform==="linux"\)([\w$]+)=null;return \1===null\?""",
+    ),
+    rx(
+      "11 isEnabled gate",
+      """function [\w$]+\(\)\{if\(process\.platform==="linux"\)return(?: ?!0| globalThis\.__cdbCuHipaa=[\w$]+,![\w$]+\(\));return ?!?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)(?:\|\|[\w$]+\(\))?\?(?:!1:)?[\w$]+\(\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)(?::!1)?\}""",
+    ),
+    rx(
+      "12 isRegisterable gate",
+      """function [\w$]+\(\)\{if\(process\.platform==="linux"\)return (?:[\w$]+\(\)|!0);return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?(?:![\w$]+\(\)&&)?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)""",
+    ),
+    lit(
+      "13a allowlist gate",
+      "=process.platform===\"linux\"?\"\":\"The frontmost application must be in the session allowlist",
+    ),
+    lit(
+      "13b request_access prefix",
+      "(process.platform===\"linux\"?(globalThis.__cuKwinMode?`This computer is running Linux with KDE Plasma. The file manager is \"Dolphin\". `",
+    ),
+    rx(
+      "13b.kwin-alias",
+      """[\w$]+=globalThis\.__cuKwinMode\?[\w$]+\.map\(v=>v==="org\.kde\.plasmashell"\?"plasmashell":v\):[\w$]+,""",
+    ),
+    rx(
+      "13b.kwin-alias-teach",
+      """\(globalThis\.__cuKwinMode\?[\w$]+\.map\(v=>v==="org\.kde\.plasmashell"\?"plasmashell":v\):[\w$]+\)""",
+    ),
+    lit(
+      "13b.kwin-shell-hint",
+      "(globalThis.__cuKwinMode?`The desktop shell is frontmost. Desktop icons, panels, launchers, and widgets belong to Plasma Shell.",
+    ),
+    rx(
+      "13b.kwin-shell-grant",
+      """\):globalThis\.__cuKwinMode&&[\w$]+==="linux"\?[\w$]+\.find\(""",
+    ),
+    rx(
+      "13b.kwin-shell-detect",
+      """\|\|globalThis\.__cuKwinMode&&\(([\w$]+)==="plasmashell"\|\|\1==="org\.kde\.plasmashell"\)\)return!0;""",
+    ),
+    lit(
+      "13c request_access apps",
+      "`Application names as shown in window titles, or WM_CLASS values ",
+    ),
+    lit(
+      "13d open_application app",
+      "`Application name or WM_CLASS (e.g. \"firefox\", \"nautilus\").`",
+    ),
+    lit(
+      "13e open_application allowlist",
+      "\"On Linux, all applications are directly accessible.\"",
+    ),
+    lit(
+      "13f screenshot description",
+      "\"Take a screenshot of the primary display. All open windows are visible.\"",
+    ),
+    lit(
+      "13g screenshot suffix",
+      "(process.platform===\"linux\"?\" The returned image is what subsequent click coordinates are relative to.\"",
+    ),
+    lit(
+      "14a same filesystem",
+      "${process.platform===\"linux\"?(globalThis.__cuKwinMode?\"**Same filesystem.**",
+      2,
+    ),
+    lit(
+      "14b app names",
+      "\"the file manager, image viewer, terminal emulator, system settings\"",
+    ),
+    lit(
+      "14c file manager name",
+      "process.platform===\"linux\"?(globalThis.__cuKwinMode?\"Dolphin\":\"Files\"):\"Finder\"",
+      2,
+    ),
+    lit(
+      "14d env prompt",
+      "${globalThis.__cuKwinMode?' This computer is running Linux with KDE Plasma. The desktop shell is plasmashell.",
+      2,
+    ),
+  ]
+
 # ─── main patch ─────────────────────────────────────────────────────────────
 
 proc apply*(input: string): string =
@@ -155,7 +350,36 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 36
+  const EXPECTED_PATCHES = 35
+
+  let gateSet = cuGateSetName(content)
+  if gateSet == "":
+    raise newException(
+      ValueError,
+      "  [FAIL] CU enable gate (`return!SET.has(process.platform)||...chicagoEnabled`) not found exactly once - re-audit",
+    )
+  let markers = endStateMarkers(gateSet)
+  var present: seq[string] = @[]
+  var absent: seq[string] = @[]
+  for mk in markers:
+    let n = countMatches(content, mk.pat)
+    if n == mk.expected:
+      present.add mk.name
+    elif n == 0:
+      absent.add mk.name
+    else:
+      raise newException(
+        ValueError,
+        &"  [FAIL] end-state marker '{mk.name}': {n} matches, expected 0 or {mk.expected} - re-audit",
+      )
+  if absent.len == 0:
+    echo &"  [OK] all {markers.len} end-state markers already present (idempotent, no change)"
+    return content
+  if present.len > 0:
+    raise newException(
+      ValueError,
+      &"  [FAIL] half-patched input: {present.len}/{markers.len} end states present, missing: {absent.join(\", \")} - use a fresh extract and re-audit",
+    )
 
   # ── Patch 1: inject executors + mode preamble at app.on("ready") ───────
   block:
@@ -184,25 +408,29 @@ proc apply*(input: string): string =
       echo "  [FAIL] app.on(\"ready\") pattern: 0 matches"
       raise newException(ValueError, "  [FAIL] app.on(\"ready\") pattern: 0 matches")
 
-  # ── Patch 2: add "linux" to the platform Set ───────────────────────────
+  # ── Patch 2: add "linux" to the CU gate's platform Set ─────────────────
   block:
-    # Quote-agnostic: v1.26832.0 emits new Set([`darwin`,`win32`]). Re-emit the
-    # quote character upstream actually used so the output stays homogeneous.
-    let pat = re"""new Set\((\[(["`])darwin\2,(["`])win32\3)\]\)"""
-    let n = replaceFirst(
+    # Anchored on the Set the CU enable gate actually tests (cuGateSetName),
+    # NOT on declaration order: upstream declares an identical
+    # `new Set(["darwin","win32"])` for watch-record right after it.
+    # Quote-agnostic: re-emit the quote character upstream actually used.
+    let pat = cuGateSetDecl(gateSet, false)
+    let n = countMatches(content, pat)
+    if n != 1:
+      raise newException(
+        ValueError, &"  [FAIL] CU gate Set {gateSet}: {n} declarations, expected 1"
+      )
+    discard replaceFirst(
       content,
       pat,
       proc(m: RegexMatch): string =
-        let quote = m.captures[1]
-        "new Set(" & m.captures[0] & "," & quote & "linux" & quote & "])",
+        let quote = m.captures[0]
+        gateSet & "=new Set([" & quote & "darwin" & quote & "," & quote & "win32" & quote &
+          "," & quote & "linux" & quote & "])",
     )
-    if n >= 1:
-      echo &"  [OK] ese Set: added linux ({n} match)"
-      inc changes, n
-      inc patchesApplied
-    else:
-      echo "  [FAIL] ese Set pattern: 0 matches"
-      raise newException(ValueError, "  [FAIL] ese Set pattern: 0 matches")
+    echo &"  [OK] CU gate Set {gateSet}: added linux (1 match)"
+    inc changes
+    inc patchesApplied
 
   # ── Patch 4: createDarwinExecutor Linux fallback ───────────────────────
   block:
@@ -236,60 +464,44 @@ proc apply*(input: string): string =
   # branch, so on Linux it fell straight to the throw (issue #159). Inject the
   # linux branch immediately before the throw, after the darwin branch.
   block:
-    # Idempotency (Rule 6): assert the linux branch is present AT THIS factory
-    # (immediately before the "executor not implemented" throw) — NOT merely that
-    # the branch string exists somewhere, since Patch 4 injects an identical
-    # string into createDarwinExecutor.
     # v1.26832.0: the win32/darwin arms became namespace-object method calls
     # (`s.r(),s.t(t)` / `o.t(t)`), platform literals are backticks, and the throw
     # dropped `new`. Allow dotted callees and either quote style.
-    #
-    # The guard describes the branch order this patch actually produces: the
-    # linux branch goes BETWEEN the darwin arm and the throw. (Before v1.26832.0
-    # it claimed the opposite order and so never matched its own output — a dead
-    # branch that only ever produced a spurious [FAIL] on a second run, never a
-    # false [OK].) Pinning it to the darwin-arm + throw pair is what keeps it
-    # from being satisfied by Patch 4's identical injection in
-    # createDarwinExecutor, which is preceded by a function header instead.
-    let alreadyPat =
-      re"""if\(process\.platform===["`]darwin["`]\)return [\w$]+(?:\.[\w$]+)*\([\w$]+\);if\(process\.platform==="linux"&&globalThis\.__linuxExecutor\)return globalThis\.__linuxExecutor;throw (?:new )?Error\(["`]computer-use executor not implemented"""
-    if content.contains(alreadyPat):
-      echo "  [OK] platform executor factory: linux branch already present at throw-site"
+    # (Its end-state marker is pinned to the darwin-arm + throw pair, so Patch
+    # 4's identical injection in createDarwinExecutor cannot satisfy it.)
+    # Anchor on the darwin-return immediately before the throw (unique: exactly
+    # one `darwin)return X(Y);throw "...executor not implemented"` site). Insert
+    # the linux branch between the darwin branch and the throw. Param/fn vars
+    # are minified — keep them as captured wildcards.
+    # NB: the throw interpolates `${process.platform}` — the placeholder body
+    # contains a `.`, so it is `[\w$.]+` (NOT `[\w$]+`, which stops at the dot
+    # and never reaches the closing `}` — a silent 0-match trap).
+    let pat =
+      re"""(if\(process\.platform===["`]darwin["`]\)return [\w$]+(?:\.[\w$]+)*\([\w$]+\);)(throw (?:new )?Error\(`computer-use executor not implemented for \$\{[\w$.]+\}`\))"""
+    let n = replaceFirst(
+      content,
+      pat,
+      proc(m: RegexMatch): string =
+        m.captures[0] &
+          "if(process.platform===\"linux\"&&globalThis.__linuxExecutor)return globalThis.__linuxExecutor;" &
+          m.captures[1],
+    )
+    if n == 1:
+      echo &"  [OK] platform executor factory: Linux branch before throw ({n} match)"
+      inc changes, n
       inc patchesApplied
-    else:
-      # Anchor on the darwin-return immediately before the throw (unique: exactly
-      # one `darwin)return X(Y);throw "...executor not implemented"` site). Insert
-      # the linux branch between the darwin branch and the throw. Param/fn vars
-      # are minified — keep them as captured wildcards.
-      # NB: the throw interpolates `${process.platform}` — the placeholder body
-      # contains a `.`, so it is `[\w$.]+` (NOT `[\w$]+`, which stops at the dot
-      # and never reaches the closing `}` — a silent 0-match trap).
-      let pat =
-        re"""(if\(process\.platform===["`]darwin["`]\)return [\w$]+(?:\.[\w$]+)*\([\w$]+\);)(throw (?:new )?Error\(`computer-use executor not implemented for \$\{[\w$.]+\}`\))"""
-      let n = replaceFirst(
-        content,
-        pat,
-        proc(m: RegexMatch): string =
-          m.captures[0] &
-            "if(process.platform===\"linux\"&&globalThis.__linuxExecutor)return globalThis.__linuxExecutor;" &
-            m.captures[1],
+    elif n > 1:
+      echo &"  [FAIL] platform executor factory: {n} matches (expected 1) — anchor too broad"
+      raise newException(
+        ValueError,
+        &"  [FAIL] platform executor factory: {n} matches (expected 1) — anchor too broad",
       )
-      if n == 1:
-        echo &"  [OK] platform executor factory: Linux branch before throw ({n} match)"
-        inc changes, n
-        inc patchesApplied
-      elif n > 1:
-        echo &"  [FAIL] platform executor factory: {n} matches (expected 1) — anchor too broad"
-        raise newException(
-          ValueError,
-          &"  [FAIL] platform executor factory: {n} matches (expected 1) — anchor too broad",
-        )
-      else:
-        echo "  [FAIL] platform executor factory: 0 matches (issue #159 throw-site anchor) — re-audit"
-        raise newException(
-          ValueError,
-          "  [FAIL] platform executor factory: 0 matches (issue #159 throw-site anchor) — re-audit",
-        )
+    else:
+      echo "  [FAIL] platform executor factory: 0 matches (issue #159 throw-site anchor) — re-audit"
+      raise newException(
+        ValueError,
+        "  [FAIL] platform executor factory: 0 matches (issue #159 throw-site anchor) — re-audit",
+      )
 
   # ── Patch 4b (kwin-wayland): cu lock acquire → __setLockHeld(true) ──────
   # v1.20186.1 refactored the lock class: `this.holder` became
@@ -338,12 +550,12 @@ proc apply*(input: string): string =
           "process.platform===\"linux\"&&globalThis.__linuxExecutor?.__setLockHeld?.(!1).catch?.(e=>(globalThis.__cdbDiag||console.warn)(\"[linux-executor] failed to stop bridge session on lock release\",e))," &
           m.captures[2],
     )
-    if n >= 1:
-      echo &"  [OK] cu lock release: stop bridge session on Linux ({n} match)"
+    if n == 2:
+      echo &"  [OK] cu lock release: stop bridge session on Linux ({n} matches)"
       inc changes, n
       inc patchesApplied
     else:
-      echo "  [FAIL] cu lock release pattern: 0 matches"
+      echo &"  [FAIL] cu lock release pattern: {n} matches, expected 2 (releaseExclusive + release)"
 
   # ── Patch 5: ensureOsPermissions → skip TCC on Linux ───────────────────
   block:
@@ -364,84 +576,79 @@ proc apply*(input: string): string =
 
   # ── Patch 5b (kwin-wayland): screenshot intro note workaround ──────────
   block:
-    if content.contains("linuxVisibleLastScreenshot=") and
-        content.contains("lastScreenshot:linuxVisibleLastScreenshot,"):
-      echo "  [OK] screenshot intro note workaround: already present"
-      inc patchesApplied
+    # v1.18286.0 added an abort timeout between the AbortController and the
+    # options object: `,I=setTimeout(()=>u.abort(),PXi)` - matched optionally
+    # and non-capturing so the AbortController capture index (5) stays stable.
+    # The \6 backref pins the setTimeout's abort target to the AbortController
+    # var captured just before it (hardening from PR #179 by @boommasterxd).
+    #
+    # v1.20186.1 rewrote the wrapper prologue that immediately precedes the
+    # screenshot-dims decl (added an onTakeoverRequest/approveTakeover takeover
+    # flow ending in `||X.call(Y)}}}const <dims>=...` instead of the old
+    # `;X()}}const <dims>=...`). The old prologue anchor `;[\w$]+\(\)\}\}const`
+    # no longer matches. The screenshot-dims decl itself is unique, so anchor
+    # the async header, then lazily skip (up to 8000 chars) straight to that
+    # decl — do not try to pin the exact prologue shape.
+    #
+    # v1.26832.0 rewrote the decl itself: the `X||(a=b.getLastScreenshotDims)==
+    # null?void 0:a.call(b)` babel-style optional call collapsed into a plain
+    # ternary over a native optional call — `let <dims>=<skip>?void 0:<ctx>.
+    # getLastScreenshotDims?.()`. `const` also became `let`.
+    #
+    # The header anchor is now pinned to `return async(...)` (the dispatcher
+    # factory's returned tool handler). Without `return ` the lazy skip also
+    # matches two nested `async(e,t)=>{` permission callbacks that sit ~7k
+    # chars upstream of the decl, which would capture THEIR `e` as the tool
+    # name — a silent mis-binding, not a build failure.
+    #
+    # v1.30096.1 introduced the grant-tier rework, which hoists three more
+    # declarations out of the options object and in between the setTimeout and
+    # the object literal (`,b=[...ctx.getAllowedApps()],x=ctx.getGrantFlags(),
+    # S=ctx.getUserDeniedBundleIds(),C={...,grants:g(b,S),...}`). Allow any
+    # number of such comma-free simple declarations before the options object
+    # rather than pinning their shape.
+    # v1.32352.1: the minifier parenthesises arrow arguments -
+    # `setTimeout((()=>v.abort()),or)` - so the wrapping parens around the
+    # abort arrow are optional.
+    let seedPat =
+      re"""return async\(([\w$]+),[\w$]+\)=>\{[\s\S]{0,8000}?(?:const|let|var) ([\w$]+)=([\w$]+)\?void 0:[\w$]+(?:\.[\w$]+)*\.getLastScreenshotDims\?\.\(\),([\w$]+)=new AbortController(?:,[\w$]+=setTimeout\(\(?\(\)=>\4\.abort\(\)\)?,[\w$]+\))?(?:,[\w$]+=[^{},]{1,200})*,([\w$]+)=\{"""
+    let maybeSeed = content.find(seedPat)
+    if maybeSeed.isNone:
+      echo "  [FAIL] screenshot intro note: wrapper seed anchor not found"
     else:
-      # v1.18286.0 added an abort timeout between the AbortController and the
-      # options object: `,I=setTimeout(()=>u.abort(),PXi)` - matched optionally
-      # and non-capturing so the AbortController capture index (5) stays stable.
-      # The \6 backref pins the setTimeout's abort target to the AbortController
-      # var captured just before it (hardening from PR #179 by @boommasterxd).
-      #
-      # v1.20186.1 rewrote the wrapper prologue that immediately precedes the
-      # screenshot-dims decl (added an onTakeoverRequest/approveTakeover takeover
-      # flow ending in `||X.call(Y)}}}const <dims>=...` instead of the old
-      # `;X()}}const <dims>=...`). The old prologue anchor `;[\w$]+\(\)\}\}const`
-      # no longer matches. The screenshot-dims decl itself is unique, so anchor
-      # the async header, then lazily skip (up to 8000 chars) straight to that
-      # decl — do not try to pin the exact prologue shape.
-      #
-      # v1.26832.0 rewrote the decl itself: the `X||(a=b.getLastScreenshotDims)==
-      # null?void 0:a.call(b)` babel-style optional call collapsed into a plain
-      # ternary over a native optional call — `let <dims>=<skip>?void 0:<ctx>.
-      # getLastScreenshotDims?.()`. `const` also became `let`.
-      #
-      # The header anchor is now pinned to `return async(...)` (the dispatcher
-      # factory's returned tool handler). Without `return ` the lazy skip also
-      # matches two nested `async(e,t)=>{` permission callbacks that sit ~7k
-      # chars upstream of the decl, which would capture THEIR `e` as the tool
-      # name — a silent mis-binding, not a build failure.
-      #
-      # v1.30096.1 introduced the grant-tier rework, which hoists three more
-      # declarations out of the options object and in between the setTimeout and
-      # the object literal (`,b=[...ctx.getAllowedApps()],x=ctx.getGrantFlags(),
-      # S=ctx.getUserDeniedBundleIds(),C={...,grants:g(b,S),...}`). Allow any
-      # number of such comma-free simple declarations before the options object
-      # rather than pinning their shape.
-      # v1.32352.1: the minifier parenthesises arrow arguments -
-      # `setTimeout((()=>v.abort()),or)` - so the wrapping parens around the
-      # abort arrow are optional.
-      let seedPat =
-        re"""return async\(([\w$]+),[\w$]+\)=>\{[\s\S]{0,8000}?(?:const|let|var) ([\w$]+)=([\w$]+)\?void 0:[\w$]+(?:\.[\w$]+)*\.getLastScreenshotDims\?\.\(\),([\w$]+)=new AbortController(?:,[\w$]+=setTimeout\(\(?\(\)=>\4\.abort\(\)\)?,[\w$]+\))?(?:,[\w$]+=[^{},]{1,200})*,([\w$]+)=\{"""
-      let maybeSeed = content.find(seedPat)
-      if maybeSeed.isNone:
-        echo "  [FAIL] screenshot intro note: wrapper seed anchor not found"
-      else:
-        let seed = maybeSeed.get()
-        let toolName = seed.captures[0]
-        let dimsVar = seed.captures[1]
-        let lastVar = seed.captures[2]
-        let injection =
-          ",linuxVisibleLastScreenshot=process.platform===\"linux\"&&" & lastVar &
-          "===void 0&&" & toolName & "===\"screenshot\"?void 0:" & lastVar & "??(" &
-          dimsVar & "?{..." & dimsVar & ",base64:\"\"}:void 0)"
-        # Split at the comma immediately before the AbortController var so the
-        # injection joins the same declaration list. That var is group 4 of the
-        # v1.26832.0 seed pattern → nre captures/captureBounds index 3.
-        let abortBounds = seed.captureBounds[3]
-        let splitPoint = abortBounds.a - 1
-        content = content[0 ..< splitPoint] & injection & content[splitPoint ..^ 1]
-        inc changes
+      let seed = maybeSeed.get()
+      let toolName = seed.captures[0]
+      let dimsVar = seed.captures[1]
+      let lastVar = seed.captures[2]
+      let injection =
+        ",linuxVisibleLastScreenshot=process.platform===\"linux\"&&" & lastVar &
+        "===void 0&&" & toolName & "===\"screenshot\"?void 0:" & lastVar & "??(" &
+        dimsVar & "?{..." & dimsVar & ",base64:\"\"}:void 0)"
+      # Split at the comma immediately before the AbortController var so the
+      # injection joins the same declaration list. That var is group 4 of the
+      # v1.26832.0 seed pattern → nre captures/captureBounds index 3.
+      let abortBounds = seed.captureBounds[3]
+      let splitPoint = abortBounds.a - 1
+      content = content[0 ..< splitPoint] & injection & content[splitPoint ..^ 1]
+      inc changes
 
-        let lastScreenshotPat = re(
-          "lastScreenshot:" & escapeRe(lastVar) & r"\?\?\(" & escapeRe(dimsVar) &
-            r"\?\{\.\.\." & escapeRe(dimsVar) &
-            r",base64:(?:\x22\x22|\x60\x60)\}:void 0\),"
-        )
-        let lsCount = replaceFirst(
-          content,
-          lastScreenshotPat,
-          proc(m: RegexMatch): string =
-            "lastScreenshot:linuxVisibleLastScreenshot,",
-        )
-        if lsCount < 1:
-          echo "  [FAIL] screenshot intro note: lastScreenshot anchor not found"
-        else:
-          inc changes
-          inc patchesApplied
-          echo "  [OK] screenshot intro note: first wrapper screenshot restored"
+      let lastScreenshotPat = re(
+        "lastScreenshot:" & escapeRe(lastVar) & r"\?\?\(" & escapeRe(dimsVar) &
+          r"\?\{\.\.\." & escapeRe(dimsVar) &
+          r",base64:(?:\x22\x22|\x60\x60)\}:void 0\),"
+      )
+      let lsCount = replaceFirst(
+        content,
+        lastScreenshotPat,
+        proc(m: RegexMatch): string =
+          "lastScreenshot:linuxVisibleLastScreenshot,",
+      )
+      if lsCount < 1:
+        echo "  [FAIL] screenshot intro note: lastScreenshot anchor not found"
+      else:
+        inc changes
+        inc patchesApplied
+        echo "  [OK] screenshot intro note: first wrapper screenshot restored"
 
   # ── Patch 6: handleToolCall hybrid dispatch (two-step match) ───────────
   block:
@@ -513,95 +720,64 @@ proc apply*(input: string): string =
     inc changes
     inc patchesApplied
 
-  # ── Patch 7: teach overlay CU gate verify (no content change) ──────────
   var overlayVarOpt: Option[string]
-  block:
-    let stubPat = re"""listInstalledApps:\(\)=>\[\]\}\)"""
-    let maybeStub = content.find(stubPat)
-    if maybeStub.isNone:
-      echo "  [FAIL] teach overlay: TCC stub pattern not found"
-    else:
-      let stub = maybeStub.get()
-      let beforeStart = max(0, stub.matchBounds.a - 500)
-      let beforeStub = content[beforeStart ..< stub.matchBounds.a]
-      let afterStart = stub.matchBounds.b + 1
-      let afterStub = content[afterStart ..< min(afterStart + 50, content.len)]
-      let gatePat = re""",[\w$]+\(\)&&\("""
-      if afterStub.contains(".has(process.platform)") or afterStub.find(gatePat).isSome:
-        echo "  [OK] teach overlay controller: CU gate found after TCC stub (handled by Set fix)"
-        inc patchesApplied
-      elif beforeStub.find(
-        re"[\w$]+(?:\.[\w$]+)*\(\)\?[\w$]+\([\w$]+\):[\w$]+(?:\.[\w$]+)*\.for\([\w$]+\)\.setImplementation\(\{"
-      ).isSome:
-        echo "  [OK] teach overlay controller: CU gate found before TCC stub via ternary (handled by Set fix)"
-        inc patchesApplied
-      else:
-        echo "  [FAIL] teach overlay: CU gate not found near TCC stub — may need manual check"
 
   # ── Patch 7b (kwin-wayland): teach overlay bridge-backed init ──────────
   block:
-    if content.contains("globalThis.__linuxExecutor?.__initTeachController"):
-      echo "  [OK] teach overlay controller: bridge-backed init already present"
-      inc patchesApplied
+    let markerIdx = findStringMarker(content, "[cu-teach] controller initialized")
+    if markerIdx == -1:
+      echo "  [FAIL] teach overlay controller marker: not found"
     else:
-      let markerIdx = findStringMarker(content, "[cu-teach] controller initialized")
-      if markerIdx == -1:
-        echo "  [FAIL] teach overlay controller marker: not found"
+      let fnInfoOpt = findFunctionBeforeMarker(content, markerIdx)
+      if fnInfoOpt.isNone:
+        echo "  [FAIL] teach overlay controller init header: not found"
       else:
-        let fnInfoOpt = findFunctionBeforeMarker(content, markerIdx)
-        if fnInfoOpt.isNone:
-          echo "  [FAIL] teach overlay controller init header: not found"
+        let fnInfo = fnInfoOpt.get
+        let headerPat = re"""^function [\w$]+\(([\w$]+),([\w$]+)\)\{$"""
+        let headerMatch = fnInfo.header.find(headerPat)
+        let bodyOK =
+          fnInfo.body.contains(re"""\.on\(["`]teachModeChanged["`]""") and
+          fnInfo.body.contains(re"""\.on\(["`]teachStepRequested["`]""")
+        if headerMatch.isNone or not bodyOK:
+          echo "  [FAIL] teach overlay controller init function shape: unexpected"
         else:
-          let fnInfo = fnInfoOpt.get
-          let headerPat = re"""^function [\w$]+\(([\w$]+),([\w$]+)\)\{$"""
-          let headerMatch = fnInfo.header.find(headerPat)
-          let bodyOK =
-            fnInfo.body.contains(re"""\.on\(["`]teachModeChanged["`]""") and
-            fnInfo.body.contains(re"""\.on\(["`]teachStepRequested["`]""")
-          if headerMatch.isNone or not bodyOK:
-            echo "  [FAIL] teach overlay controller init function shape: unexpected"
-          else:
-            let manager = headerMatch.get().captures[0]
-            let mainWindow = headerMatch.get().captures[1]
-            let injected =
-              &"if(process.platform===\"linux\"&&globalThis.__linuxExecutor?.__initTeachController){{globalThis.__linuxExecutor.__initTeachController({manager},{mainWindow});return;}}"
-            content =
-              content[0 .. fnInfo.headerEnd] & injected &
-              content[fnInfo.headerEnd + 1 ..^ 1]
-            echo "  [OK] teach overlay controller: Linux bridge-backed init"
-            inc changes
-            inc patchesApplied
+          let manager = headerMatch.get().captures[0]
+          let mainWindow = headerMatch.get().captures[1]
+          let injected =
+            &"if(process.platform===\"linux\"&&globalThis.__linuxExecutor?.__initTeachController){{globalThis.__linuxExecutor.__initTeachController({manager},{mainWindow});return;}}"
+          content =
+            content[0 .. fnInfo.headerEnd] & injected &
+            content[fnInfo.headerEnd + 1 ..^ 1]
+          echo "  [OK] teach overlay controller: Linux bridge-backed init"
+          inc changes
+          inc patchesApplied
 
   # ── Patch 7c (kwin-wayland): side-panel bridge-backed init ─────────────
   block:
-    if content.contains("globalThis.__linuxExecutor?.__initDockController"):
-      echo "  [OK] cu side-panel: bridge-backed init already present"
-      inc patchesApplied
+    let markerIdx = findStringMarker(content, "[cu-side-panel] initialized")
+    if markerIdx == -1:
+      echo "  [FAIL] cu side-panel controller marker: not found"
     else:
-      let markerIdx = findStringMarker(content, "[cu-side-panel] initialized")
-      if markerIdx == -1:
-        echo "  [FAIL] cu side-panel controller marker: not found"
+      let fnInfoOpt = findFunctionBeforeMarker(content, markerIdx)
+      if fnInfoOpt.isNone:
+        echo "  [FAIL] cu side-panel controller init header: not found"
       else:
-        let fnInfoOpt = findFunctionBeforeMarker(content, markerIdx)
-        if fnInfoOpt.isNone:
-          echo "  [FAIL] cu side-panel controller init header: not found"
+        let fnInfo = fnInfoOpt.get
+        let headerPat = re"""^function [\w$]+\(([\w$]+)\)\{$"""
+        let headerMatch = fnInfo.header.find(headerPat)
+        let bodyOK = fnInfo.body.contains(re"""\.on\(["`]cuLockChanged["`]""")
+        if headerMatch.isNone or not bodyOK:
+          echo "  [FAIL] cu side-panel controller init function shape: unexpected"
         else:
-          let fnInfo = fnInfoOpt.get
-          let headerPat = re"""^function [\w$]+\(([\w$]+)\)\{$"""
-          let headerMatch = fnInfo.header.find(headerPat)
-          let bodyOK = fnInfo.body.contains(re"""\.on\(["`]cuLockChanged["`]""")
-          if headerMatch.isNone or not bodyOK:
-            echo "  [FAIL] cu side-panel controller init function shape: unexpected"
-          else:
-            let mainWindow = headerMatch.get().captures[0]
-            let injected =
-              &"if(process.platform===\"linux\"&&globalThis.__linuxExecutor?.__initDockController){{globalThis.__linuxExecutor.__initDockController({mainWindow});return;}}"
-            content =
-              content[0 .. fnInfo.headerEnd] & injected &
-              content[fnInfo.headerEnd + 1 ..^ 1]
-            echo "  [OK] cu side-panel: Linux bridge-backed init"
-            inc changes
-            inc patchesApplied
+          let mainWindow = headerMatch.get().captures[0]
+          let injected =
+            &"if(process.platform===\"linux\"&&globalThis.__linuxExecutor?.__initDockController){{globalThis.__linuxExecutor.__initDockController({mainWindow});return;}}"
+          content =
+            content[0 .. fnInfo.headerEnd] & injected &
+            content[fnInfo.headerEnd + 1 ..^ 1]
+          echo "  [OK] cu side-panel: Linux bridge-backed init"
+          inc changes
+          inc patchesApplied
 
   # ── Patch 8: teach overlay mouse — tooltip-bounds polling on Linux ─────
   var overlayVar: string
@@ -769,11 +945,6 @@ proc apply*(input: string): string =
     # is no legitimate user-set state to respect. Forcing true unconditionally
     # restores the working v1.17377 semantics.
     #
-    # Rule-6 regression guard: if the desired Linux branch is already present,
-    # assert it and count success (idempotent), keying off the PATCHED end-state
-    # (return!0 as the first statement of the gate function), not the absence of
-    # the old shape.
-    #
     # v1.26832.0 reverted the v1.18286 three-statement shape back to a single
     # ternary and moved the platform Set behind a module namespace:
     #   function g(){return o.t.has(process.platform)?h()&&a.n(`chicagoEnabled`):!1}
@@ -798,85 +969,78 @@ proc apply*(input: string): string =
     # before any tool call, so the global is always set when the handler runs.
     # The v26832 fallback has no HIPAA function to capture and leaves the global
     # unset; the handler then skips the check (typeof guard).
-    let alreadyWs =
-      re"""function [\w$]+\(\)\{if\(process\.platform==="linux"\)return(?: ?!0| globalThis\.__cdbCuHipaa=[\w$]+,![\w$]+\(\));return ?!?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)(?:\|\|[\w$]+\(\))?\?(?:!1:)?[\w$]+\(\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)(?::!1)?\}"""
-    if content.contains(alreadyWs):
-      echo "  [OK] isEnabled: linux branch already present (guard satisfied)"
-      inc patchesApplied
-    else:
-      let patV46388 =
-        re"""(function [\w$]+\(\)\{)return![\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)\|\|([\w$]+)\(\)\?!1:[\w$]+\(\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)\}"""
-      let patV26832 =
-        re"""(function [\w$]+\(\)\{)return [\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)\?[\w$]+\(\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\):!1\}"""
-      let patV18286 =
-        re"""(function [\w$]+\(\)\{)if\(!([\w$]+)\.has\(process\.platform\)\)return!1;const ([\w$]+)=([\w$]+)\(\);return \3!==void 0\?\3:([\w$]+)\(\)&&([\w$]+)\("chicagoEnabled"\)\}"""
-      # <=v1.17377 shapes, kept as fallbacks:
-      let patNew =
-        re"""(function [\w$]+\(\)\{)return [\w$]+\.has\(process\.platform\)&&[\w$]+\(\)\}"""
-      let patOld =
-        re"""(function [\w$]+\(\)\{)return [\w$]+\([\w$]+\)\?[\w$]+\.has\(process\.platform\)&&[\w$]+\(\):[\w$]+\(\)\}"""
-      var n = replaceFirst(
+    let patV46388 =
+      re"""(function [\w$]+\(\)\{)return![\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)\|\|([\w$]+)\(\)\?!1:[\w$]+\(\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)\}"""
+    let patV26832 =
+      re"""(function [\w$]+\(\)\{)return [\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)\?[\w$]+\(\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\):!1\}"""
+    let patV18286 =
+      re"""(function [\w$]+\(\)\{)if\(!([\w$]+)\.has\(process\.platform\)\)return!1;const ([\w$]+)=([\w$]+)\(\);return \3!==void 0\?\3:([\w$]+)\(\)&&([\w$]+)\("chicagoEnabled"\)\}"""
+    # <=v1.17377 shapes, kept as fallbacks:
+    let patNew =
+      re"""(function [\w$]+\(\)\{)return [\w$]+\.has\(process\.platform\)&&[\w$]+\(\)\}"""
+    let patOld =
+      re"""(function [\w$]+\(\)\{)return [\w$]+\([\w$]+\)\?[\w$]+\.has\(process\.platform\)&&[\w$]+\(\):[\w$]+\(\)\}"""
+    var n = replaceFirst(
+      content,
+      patV46388,
+      proc(m: RegexMatch): string =
+        let bounds = m.matchBounds
+        let whole = content[bounds.a .. bounds.b]
+        let headerLen = m.captures[0].len
+        let hipaaName = m.captures[1]
+        m.captures[0] & "if(process.platform===\"linux\")return globalThis.__cdbCuHipaa=" &
+          hipaaName & ",!" & hipaaName & "();" & whole[headerLen ..^ 1],
+    )
+    if n == 0:
+      n = replaceFirst(
         content,
-        patV46388,
+        patV26832,
         proc(m: RegexMatch): string =
           let bounds = m.matchBounds
           let whole = content[bounds.a .. bounds.b]
           let headerLen = m.captures[0].len
-          let hipaaName = m.captures[1]
-          m.captures[0] &
-            "if(process.platform===\"linux\")return globalThis.__cdbCuHipaa=" & hipaaName &
-            ",!" & hipaaName & "();" & whole[headerLen ..^ 1],
+          m.captures[0] & "if(process.platform===\"linux\")return!0;" &
+            whole[headerLen ..^ 1],
       )
-      if n == 0:
-        n = replaceFirst(
-          content,
-          patV26832,
-          proc(m: RegexMatch): string =
-            let bounds = m.matchBounds
-            let whole = content[bounds.a .. bounds.b]
-            let headerLen = m.captures[0].len
-            m.captures[0] & "if(process.platform===\"linux\")return!0;" &
-              whole[headerLen ..^ 1],
-        )
-      if n == 0:
-        n = replaceFirst(
-          content,
-          patV18286,
-          proc(m: RegexMatch): string =
-            let bounds = m.matchBounds
-            let whole = content[bounds.a .. bounds.b]
-            let headerLen = m.captures[0].len
-            m.captures[0] & "if(process.platform===\"linux\")return!0;" &
-              whole[headerLen ..^ 1],
-        )
-      if n == 0:
-        n = replaceFirst(
-          content,
-          patNew,
-          proc(m: RegexMatch): string =
-            let bounds = m.matchBounds
-            let whole = content[bounds.a .. bounds.b]
-            let headerLen = m.captures[0].len
-            m.captures[0] & "if(process.platform===\"linux\")return!0;" &
-              whole[headerLen ..^ 1],
-        )
-      if n == 0:
-        n = replaceFirst(
-          content,
-          patOld,
-          proc(m: RegexMatch): string =
-            let bounds = m.matchBounds
-            let whole = content[bounds.a .. bounds.b]
-            let headerLen = m.captures[0].len
-            m.captures[0] & "if(process.platform===\"linux\")return!0;" &
-              whole[headerLen ..^ 1],
-        )
-      if n >= 1:
-        echo &"  [OK] isEnabled: force true on Linux ({n} match)"
-        inc changes, n
-        inc patchesApplied
-      else:
-        echo "  [FAIL] isEnabled pattern: 0 matches (computer-use may not work in cowork/CCD)"
+    if n == 0:
+      n = replaceFirst(
+        content,
+        patV18286,
+        proc(m: RegexMatch): string =
+          let bounds = m.matchBounds
+          let whole = content[bounds.a .. bounds.b]
+          let headerLen = m.captures[0].len
+          m.captures[0] & "if(process.platform===\"linux\")return!0;" &
+            whole[headerLen ..^ 1],
+      )
+    if n == 0:
+      n = replaceFirst(
+        content,
+        patNew,
+        proc(m: RegexMatch): string =
+          let bounds = m.matchBounds
+          let whole = content[bounds.a .. bounds.b]
+          let headerLen = m.captures[0].len
+          m.captures[0] & "if(process.platform===\"linux\")return!0;" &
+            whole[headerLen ..^ 1],
+      )
+    if n == 0:
+      n = replaceFirst(
+        content,
+        patOld,
+        proc(m: RegexMatch): string =
+          let bounds = m.matchBounds
+          let whole = content[bounds.a .. bounds.b]
+          let headerLen = m.captures[0].len
+          m.captures[0] & "if(process.platform===\"linux\")return!0;" &
+            whole[headerLen ..^ 1],
+      )
+    if n >= 1:
+      echo &"  [OK] isEnabled: force true on Linux ({n} match)"
+      inc changes, n
+      inc patchesApplied
+    else:
+      echo "  [FAIL] isEnabled pattern: 0 matches (computer-use may not work in cowork/CCD)"
 
   # ── Patch 12: flag-gated pref-ignoring gate (bue) → delegate to wS ──────
   block:
@@ -893,10 +1057,6 @@ proc apply*(input: string): string =
     # `chicagoEnabled:!1` default that expression is always !1, so it too is now
     # an unconditional `return!0` for the same reason (see Patch 11 comment).
     #
-    # Rule-6 regression guard: assert the desired end-state (a Linux branch at the
-    # top of this gate that either delegates to a wS-style fn or returns !0) is
-    # present, keying off the PATCHED shape, not the absence of the old one.
-    #
     # v1.26832.0 collapsed it to a single ternary too:
     #   function y(){return i.Zt(l)?o.t.has(process.platform)&&h():g()}
     # (`y` is exported as isComputerUseRegisterable, `l` is the GrowthBook flag
@@ -907,59 +1067,53 @@ proc apply*(input: string): string =
     #   function Nhn(){return wS(_hn)?!Uk()&&ZR.has(process.platform)&&nz():rz()}
     # The `!<hipaa>()&&` is optional in the pattern; the Linux branch still
     # delegates to the Patch-11 gate, which now honours the same HIPAA gate.
-    let alreadyBue =
-      re"""function [\w$]+\(\)\{if\(process\.platform==="linux"\)return (?:[\w$]+\(\)|!0);return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?(?:![\w$]+\(\)&&)?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)"""
-    if content.contains(alreadyBue):
-      echo "  [OK] rj/bue: linux branch already present (guard satisfied)"
-      inc patchesApplied
-    else:
-      let patV26832 =
-        re"""(function [\w$]+\(\)\{)return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?(?:![\w$]+\(\)&&)?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)&&[\w$]+\(\):([\w$]+)\(\)\}"""
-      let patBue =
-        re"""(function [\w$]+\(\)\{)if\(!([\w$]+)\(([\w$]+)\)\)return ([\w$]+)\(\);const ([\w$]+)=([\w$]+)\(\);return \5!==void 0\?\5:([\w$]+)\.has\(process\.platform\)&&([\w$]+)\(\)\}"""
-      # <=v1.17377 shape (standalone chicagoEnabled ternary), kept as fallback:
-      let patOldChicago =
-        re"""(function [\w$]+\(\)\{)return [\w$]+\.has\(process\.platform\)\?[\w$]+\(\)&&([\w$]+)\("chicagoEnabled"\):!1\}"""
-      var n = replaceFirst(
+    let patV26832 =
+      re"""(function [\w$]+\(\)\{)return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?(?:![\w$]+\(\)&&)?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)&&[\w$]+\(\):([\w$]+)\(\)\}"""
+    let patBue =
+      re"""(function [\w$]+\(\)\{)if\(!([\w$]+)\(([\w$]+)\)\)return ([\w$]+)\(\);const ([\w$]+)=([\w$]+)\(\);return \5!==void 0\?\5:([\w$]+)\.has\(process\.platform\)&&([\w$]+)\(\)\}"""
+    # <=v1.17377 shape (standalone chicagoEnabled ternary), kept as fallback:
+    let patOldChicago =
+      re"""(function [\w$]+\(\)\{)return [\w$]+\.has\(process\.platform\)\?[\w$]+\(\)&&([\w$]+)\("chicagoEnabled"\):!1\}"""
+    var n = replaceFirst(
+      content,
+      patV26832,
+      proc(m: RegexMatch): string =
+        let bounds = m.matchBounds
+        let whole = content[bounds.a .. bounds.b]
+        let headerLen = m.captures[0].len
+        let wsName = m.captures[2]
+        m.captures[0] & "if(process.platform===\"linux\")return " & wsName & "();" &
+          whole[headerLen ..^ 1],
+    )
+    if n == 0:
+      n = replaceFirst(
         content,
-        patV26832,
+        patBue,
         proc(m: RegexMatch): string =
           let bounds = m.matchBounds
           let whole = content[bounds.a .. bounds.b]
           let headerLen = m.captures[0].len
-          let wsName = m.captures[2]
+          let wsName = m.captures[3]
           m.captures[0] & "if(process.platform===\"linux\")return " & wsName & "();" &
             whole[headerLen ..^ 1],
       )
-      if n == 0:
-        n = replaceFirst(
-          content,
-          patBue,
-          proc(m: RegexMatch): string =
-            let bounds = m.matchBounds
-            let whole = content[bounds.a .. bounds.b]
-            let headerLen = m.captures[0].len
-            let wsName = m.captures[3]
-            m.captures[0] & "if(process.platform===\"linux\")return " & wsName & "();" &
-              whole[headerLen ..^ 1],
-        )
-      if n == 0:
-        n = replaceFirst(
-          content,
-          patOldChicago,
-          proc(m: RegexMatch): string =
-            let bounds = m.matchBounds
-            let whole = content[bounds.a .. bounds.b]
-            let headerLen = m.captures[0].len
-            m.captures[0] & "if(process.platform===\"linux\")return!0;" &
-              whole[headerLen ..^ 1],
-        )
-      if n >= 1:
-        echo &"  [OK] rj/bue: force true on Linux ({n} match)"
-        inc changes, n
-        inc patchesApplied
-      else:
-        echo "  [FAIL] rj pattern: 0 matches (computer-use tool calls may be blocked)"
+    if n == 0:
+      n = replaceFirst(
+        content,
+        patOldChicago,
+        proc(m: RegexMatch): string =
+          let bounds = m.matchBounds
+          let whole = content[bounds.a .. bounds.b]
+          let headerLen = m.captures[0].len
+          m.captures[0] & "if(process.platform===\"linux\")return!0;" &
+            whole[headerLen ..^ 1],
+      )
+    if n >= 1:
+      echo &"  [OK] rj/bue: force true on Linux ({n} match)"
+      inc changes, n
+      inc patchesApplied
+    else:
+      echo "  [FAIL] rj pattern: 0 matches (computer-use tool calls may be blocked)"
 
   # ─── Tool description patches ────────────────────────────────────────
   echo "  --- Tool description patches ---"
@@ -1302,7 +1456,7 @@ proc apply*(input: string): string =
     let sepOldFull2 =
       "**Separate filesystems.** Computer-use actions (clicks, typing, clipboard writes) happen on the user's real computer \\u2014 a different system from your sandbox. "
     let sepCount = countOccurrences(content, sepOldFull2)
-    if sepCount >= 2:
+    if sepCount == 2:
       let sepNewFull =
         "${process.platform===\"linux\"?(globalThis.__cuKwinMode" &
         "?\"**Same filesystem.** Computer-use actions and your CLI tools operate on the same Linux machine. " &
@@ -1337,15 +1491,21 @@ proc apply*(input: string): string =
   block:
     # v1.46388.2: double-quoted literals; backtick kept as fallback. The
     # replacement re-emits its own quotes, so both variants share it.
+    # Two sites, both reachable on Linux: the desktop-shell hint inside the
+    # request_access error template, and the hit-test path's "desktop (<fm>)"
+    # name when a click lands on the desktop behind a look-through window.
     let fmOld = ["\"File Explorer\":\"Finder\"", "`File Explorer`:`Finder`"]
     let fmNew =
       "\"File Explorer\":process.platform===\"linux\"?(globalThis.__cuKwinMode?\"Dolphin\":\"Files\"):\"Finder\""
-    if replaceLiteralFirstAny(content, fmOld, fmNew) == 1:
-      echo "  [OK] 14c file manager name: 3-way (kwin-wayland=Dolphin, regular=Files, other=Finder)"
-      inc changes
+    var fmCount = 0
+    for needle in fmOld:
+      fmCount += replaceLiteralAll(content, needle, fmNew)
+    if fmCount == 2:
+      echo "  [OK] 14c file manager name: 3-way (kwin-wayland=Dolphin, regular=Files, other=Finder), 2 sites"
+      inc changes, fmCount
       inc patchesApplied
     else:
-      echo "  [FAIL] 14c file manager name: pattern not found"
+      echo &"  [FAIL] 14c file manager name: {fmCount} sites, expected 2"
 
   # 14d (kwin-wayland): env prompt KDE augmentation
   block:
@@ -1362,13 +1522,12 @@ proc apply*(input: string): string =
       proc(m: RegexMatch): string =
         envNew,
     )
-    if envCount > 0:
-      let plural = if envCount != 1: "s" else: ""
-      echo &"  [OK] 14d CU env prompt: kwin-wayland-only KDE suffix ({envCount} occurrence{plural})"
+    if envCount == 2:
+      echo &"  [OK] 14d CU env prompt: kwin-wayland-only KDE suffix ({envCount} occurrences)"
       inc changes, envCount
       inc patchesApplied
     else:
-      echo "  [FAIL] 14d CU env prompt: environment sentence anchor not found"
+      echo &"  [FAIL] 14d CU env prompt: {envCount} environment sentence anchors, expected 2"
 
   if patchesApplied < EXPECTED_PATCHES:
     raise newException(
@@ -1376,8 +1535,17 @@ proc apply*(input: string): string =
       &"Only {patchesApplied}/{EXPECTED_PATCHES} patches applied — check [FAIL] messages above",
     )
 
+  # Post-condition: every end state is present exactly as often as expected.
+  for mk in markers:
+    let n = countMatches(content, mk.pat)
+    if n != mk.expected:
+      raise newException(
+        ValueError,
+        &"  [FAIL] post-condition: end-state marker '{mk.name}' has {n} matches after patching, expected {mk.expected}",
+      )
+
   if content != original:
-    echo &"  [PASS] {patchesApplied}/{EXPECTED_PATCHES} sub-patches applied ({changes} content changes)"
+    echo &"  [PASS] {patchesApplied}/{EXPECTED_PATCHES} sub-patches applied ({changes} content changes, {markers.len} end states verified)"
   else:
     raise newException(ValueError, "No changes made")
 
@@ -1392,4 +1560,5 @@ when isMainModule:
   echo &"  Target: {file}"
   let input = readFile(file)
   let output = apply(input)
-  writeFile(file, output)
+  if output != input:
+    writeFile(file, output)
