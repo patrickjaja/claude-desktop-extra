@@ -1295,11 +1295,170 @@ _pw_store_detect() {
     return 0
 }
 
+# ---------------------------------------------------------------------------
+# --diagnose helpers: probe the host the way the APP does
+# ---------------------------------------------------------------------------
+# Each helper prints one report line and, when the finding breaks a feature on
+# THIS session, appends a sentence to the caller's _diag_problems array (bash
+# dynamic scoping: _diagnose declares it local). Absolute paths are arguments
+# rather than literals so the harness can point them at fake tools.
+
+# Does the app treat this session as Wayland? Same test as upstream's own
+# (XDG_SESSION_TYPE when set and non-empty, else WAYLAND_DISPLAY), applied to
+# the value the launcher hands the app, i.e. after _normalize_session_type.
+_diag_app_is_wayland() {
+    if [[ -n "${XDG_SESSION_TYPE:-}" ]]; then
+        [[ "$XDG_SESSION_TYPE" == 'wayland' ]]
+    else
+        [[ -n "${WAYLAND_DISPLAY:-}" ]]
+    fi
+}
+
+# Resolve a host tool the way the patched app does: the literal upstream path
+# when that file exists (fs.existsSync, not an exec check), else the bare name
+# for PATH lookup. Echoes the command the app will exec.
+_diag_app_tool_cmd() {
+    local abs="$1" name="$2"
+    if [[ -e "$abs" ]]; then echo "$abs"; else echo "$name"; fi
+}
+
+# One host tool.
+#   $1 mode: fallback = upstream execs $3, our patch falls back to PATH
+#            abs      = only the literal $3 works (nothing falls back)
+#            path     = resolved through PATH
+#   $2 tool name, $3 absolute path (or ''), $4 1 = this session needs it,
+#   $5 what it is for, $6 consequence when it is missing
+_diag_cap() {
+    local mode="$1" name="$2" abs="$3" needed="$4" what="$5" miss="$6" p=''
+    case "$mode" in
+        fallback)
+            if [[ -e "$abs" ]]; then
+                echo "[ok]   $name = $abs (upstream path) - $what"; return 0
+            fi
+            p="$(command -v "$name" 2>/dev/null || true)"
+            if [[ -n "$p" ]]; then
+                echo "[ok]   $name = $p (not at $abs; works through our PATH fallback) - $what"; return 0
+            fi
+            ;;
+        abs)
+            if [[ -x "$abs" ]]; then
+                echo "[ok]   $name = $abs - $what"; return 0
+            fi
+            p="$(command -v "$name" 2>/dev/null || true)"
+            [[ -n "$p" ]] && miss="$miss (found $p, but only $abs is used)"
+            ;;
+        path)
+            p="$(command -v "$name" 2>/dev/null || true)"
+            if [[ -n "$p" ]]; then
+                echo "[ok]   $name = $p - $what"; return 0
+            fi
+            ;;
+    esac
+    if [[ "$needed" == 1 ]]; then
+        echo "[MISS] $name = MISSING - $miss"
+        _diag_problems+=("$name missing: $miss")
+    else
+        echo "[--]   $name = missing, not needed on this session - $what"
+    fi
+}
+
+# Does NAME have an owner on the bus? $1 = session|system. Echoes
+# present / absent / unknown. Same tools, order and parsing as
+# js/tray_host_probe.js: a tool that is missing or cannot answer falls through.
+_diag_bus_owner() {
+    local bus="$1" name="$2" out
+    local ubus='--user' dbus='--session'
+    [[ "$bus" == system ]] && { ubus='--system'; dbus='--system'; }
+    if command -v busctl &>/dev/null; then
+        out="$(timeout 3 busctl "$ubus" --no-pager --timeout=2 call org.freedesktop.DBus \
+            /org/freedesktop/DBus org.freedesktop.DBus NameHasOwner s "$name" 2>/dev/null || true)"
+        [[ "$out" =~ ^b\ +true ]] && { echo present; return 0; }
+        [[ "$out" =~ ^b\ +false ]] && { echo absent; return 0; }
+    fi
+    if command -v dbus-send &>/dev/null; then
+        out="$(timeout 3 dbus-send "$dbus" --print-reply --reply-timeout=2000 \
+            --dest=org.freedesktop.DBus /org/freedesktop/DBus \
+            org.freedesktop.DBus.NameHasOwner "string:$name" 2>/dev/null || true)"
+        [[ "$out" =~ boolean\ +true ]] && { echo present; return 0; }
+        [[ "$out" =~ boolean\ +false ]] && { echo absent; return 0; }
+    fi
+    if command -v gdbus &>/dev/null; then
+        out="$(timeout 3 gdbus call "$dbus" --timeout 2 --dest org.freedesktop.DBus \
+            --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.NameHasOwner "$name" 2>/dev/null || true)"
+        [[ "$out" =~ ^\(true ]] && { echo present; return 0; }
+        [[ "$out" =~ ^\(false ]] && { echo absent; return 0; }
+    fi
+    echo unknown
+}
+
+# The app's GlobalShortcuts portal probe, argument for argument: upstream
+# (2.7032.0, the function behind "[globalShortcut] GlobalShortcuts portal
+# availability") runs `busctl --user --timeout=2 get-property
+# org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop
+# org.freedesktop.portal.GlobalShortcuts version` with a 3 s exec timeout and
+# calls the portal available when stdout matches /\bu\s+\d+/.
+# $1 = the busctl command the app resolves. Echoes "yes <version>" or
+# "no (<reason>)".
+_diag_portal_probe_app() {
+    local out rc=0
+    out="$(timeout 3 "$1" --user --timeout=2 get-property org.freedesktop.portal.Desktop \
+        /org/freedesktop/portal/desktop org.freedesktop.portal.GlobalShortcuts version 2>&1)" || rc=$?
+    if [[ "$rc" == 0 && "$out" =~ (^|[^[:alnum:]_])u[[:space:]]+([0-9]+) ]]; then
+        echo "yes ${BASH_REMATCH[2]}"
+    elif [[ "$rc" == 124 ]]; then
+        echo "no (no answer within 3 s)"
+    elif [[ "$rc" == 126 || "$rc" == 127 ]]; then
+        echo "no (cannot exec $1)"
+    else
+        echo "no ($(printf '%s\n' "$out" | head -1))"
+    fi
+}
+
+# Runs-at-all check for one Computer Use bridge, the one js/cu_mode_preamble.js
+# makes before selecting it: `--version` must exit 0 within 3 s. Echoes
+# "ok <version line>" or "FAIL <cause>[ - <hint>]" with the preamble's hints.
+# The causes are read from the exec error text: timeout's execvp retries an
+# ENOEXEC file through /bin/sh, which reports "cannot execute binary file".
+_diag_bridge_runs() {
+    local bin="$1" env_var="$2" out rc=0 hint='' cause first
+    out="$(timeout -s KILL 3 "$bin" --version 2>&1 </dev/null)" || rc=$?
+    if [[ "$rc" == 0 ]]; then
+        echo "ok $(printf '%s\n' "$out" | head -1)"; return 0
+    fi
+    first="$(printf '%s\n' "$out" | sed '/^[[:space:]]*$/d' | head -1)"
+    if [[ "$rc" == 137 || "$rc" == 124 ]]; then
+        cause="no answer to --version within 3 s"; hint="the bridge hangs at startup"
+    elif [[ "$rc" == 126 || "$rc" == 127 ]] && [[ "$out" == *'Exec format error'* || "$out" == *'cannot execute binary file'* ]]; then
+        cause="exec format error"; hint="the binary was built for another CPU architecture than this $(uname -m) system"
+    elif [[ "$rc" == 126 || "$rc" == 127 ]] && [[ "$out" == *'Permission denied'* ]]; then
+        cause="permission denied"; hint="the file system is mounted noexec, or the file is not executable"
+    elif [[ "$rc" == 126 || "$rc" == 127 ]] && [[ "$out" == *'required file not found'* || "$out" == *'No such file or directory'* || "$out" == *'bad interpreter'* ]]; then
+        cause="exec failed with ENOENT although the file exists"
+        hint="its ELF interpreter (dynamic loader) is missing - a binary built for another distro. On NixOS set $env_var to a Nix-built bridge, or enable programs.nix-ld"
+    else
+        cause="exit $rc${first:+: $first}"
+        if [[ "$out" =~ pw_stream_get_nsec|libpipewire ]]; then
+            hint="needs PipeWire >= 1.0.5 (Ubuntu 24.04+, Fedora 40+, Debian 13+); this system's PipeWire is older or missing"
+        elif [[ "$out" =~ GLIBC_([0-9]+\.[0-9]+) ]]; then
+            hint="needs glibc >= ${BASH_REMATCH[1]}; this system's glibc is older (the gnome/kwin bridges need Ubuntu 24.04+, Fedora 40+, Debian 13+)"
+        elif [[ "$out" =~ error\ while\ loading\ shared\ libraries:\ ([^:[:space:]]+) ]]; then
+            hint="missing shared library ${BASH_REMATCH[1]} - install the distro package that provides it"
+        elif [[ "$out" =~ symbol\ lookup\ error|undefined\ symbol ]]; then
+            hint="a system library is older than the one the bridge was built against"
+        fi
+    fi
+    echo "FAIL $cause${hint:+ - $hint}"
+}
+
 _diagnose() {
+    local -a _diag_problems=()
     echo '=== claude-desktop --diagnose ==='
     echo
     echo '--- Session ---'
-    echo "XDG_SESSION_TYPE = ${XDG_SESSION_TYPE:-(unset)}"
+    # _normalize_session_type has already run: this is the value the app gets.
+    # The raw one is what the session exported, before the launcher fixed it.
+    echo "XDG_SESSION_TYPE = ${XDG_SESSION_TYPE:-(unset)} (as passed to the app; raw from the session: ${_cdb_raw_session_type:-(unset)})"
     echo "XDG_CURRENT_DESKTOP = ${XDG_CURRENT_DESKTOP:-(unset)}"
     # XDG_SESSION_DESKTOP is DM-dependent (SDDM/GDM may set plasma / an absolute
     # path / nothing) and is NOT what our CU DE-detection keys off — we use
@@ -1429,15 +1588,35 @@ _diagnose() {
     fi
     echo
     echo '--- xdg-desktop-portal GlobalShortcuts ---'
+    # The app's own probe decides whether Wayland global shortcuts (Quick
+    # Entry) are even attempted: when it says no, every registration returns
+    # registration-failed before Electron is asked. Run it exactly the way the
+    # app does, with the busctl the app resolves, then cross-check with gdbus.
+    local _app_busctl _app_portal _gd_portal='' _gd_ver=''
+    _app_busctl="$(_diag_app_tool_cmd /usr/bin/busctl busctl)"
+    _app_portal="$(_diag_portal_probe_app "$_app_busctl")"
+    if _diag_app_is_wayland; then
+        echo "App probe (runs on this session) = $_app_portal [via $_app_busctl]"
+    else
+        echo "App probe = $_app_portal [via $_app_busctl] - not used: the app skips it when XDG_SESSION_TYPE is not wayland (X11 key grabs instead)"
+    fi
     if command -v gdbus &>/dev/null; then
-        local portal_ver
-        portal_ver=$(gdbus call --session --dest org.freedesktop.portal.Desktop \
+        _gd_portal=$(timeout 5 gdbus call --session --dest org.freedesktop.portal.Desktop \
             --object-path /org/freedesktop/portal/desktop \
             --method org.freedesktop.DBus.Properties.Get \
-            org.freedesktop.portal.GlobalShortcuts version 2>&1 || echo '(failed)')
-        echo "Portal version = $portal_ver"
+            org.freedesktop.portal.GlobalShortcuts version 2>&1 || true)
+        echo "gdbus cross-check = $(printf '%s\n' "${_gd_portal:-(no output)}" | head -1)"
+        [[ "$_gd_portal" =~ uint32\ ([0-9]+) ]] && _gd_ver="${BASH_REMATCH[1]}"
+        if [[ -n "$_gd_ver" && "$_app_portal" != yes* ]]; then
+            echo "  DISAGREE: gdbus reaches the portal (version $_gd_ver) but the app's busctl probe does not - the app will treat the portal as missing"
+        elif [[ -z "$_gd_ver" && "$_app_portal" == yes* ]]; then
+            echo "  DISAGREE: the app's busctl probe answers but gdbus does not - the app's verdict is the one that counts"
+        fi
     else
-        echo '(gdbus not installed — cannot probe portal)'
+        echo 'gdbus cross-check = (gdbus not installed)'
+    fi
+    if _diag_app_is_wayland && [[ "$_app_portal" != yes* ]]; then
+        _diag_problems+=("GlobalShortcuts portal probe fails the way the app runs it ($_app_portal): Wayland global shortcuts and the Quick Entry hotkey are disabled; bind claude-desktop --toggle in your compositor instead")
     fi
     if command -v gsettings &>/dev/null; then
         echo
@@ -1481,6 +1660,39 @@ _diagnose() {
         if [[ -x "$_cu_res/$_cu_b" ]]; then _cu_sum+=" $_cu_b"; else _cu_sum+=" $_cu_b(MISSING)"; fi
     done
     echo "bundled bridges =$_cu_sum"
+    # Runs-at-all: the same `--version` check js/cu_mode_preamble.js makes
+    # before it selects a bridge, resolved the same way (the *_BRIDGE_BIN
+    # override when executable, else resources/). A bridge the app would not
+    # consult on this session is still checked, but only reported.
+    local _cu_desk _cu_wl='' _cu_bin _cu_env _cu_use _cu_run
+    _cu_desk="$(printf %s "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')"
+    [[ "${XDG_SESSION_TYPE:-}" == 'wayland' || -n "${WAYLAND_DISPLAY:-}" ]] && _cu_wl=1
+    for _cu_b in x11-bridge wlroots-bridge gnome-portal-bridge kwin-portal-bridge; do
+        case "$_cu_b" in
+            x11-bridge)          _cu_env=X11_BRIDGE_BIN
+                                 _cu_use=''; [[ -n "$_cu_wl" || -n "${DISPLAY:-}" || "${XDG_SESSION_TYPE:-}" == x11 ]] && _cu_use=1 ;;
+            wlroots-bridge)      _cu_env=WLROOTS_BRIDGE_BIN
+                                 _cu_use=''; [[ -n "$_cu_wl" && ( -n "${SWAYSOCK:-}" || -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" || -n "${NIRI_SOCKET:-}" ) ]] && _cu_use=1 ;;
+            gnome-portal-bridge) _cu_env=GNOME_PORTAL_BRIDGE_BIN
+                                 _cu_use=''; [[ -n "$_cu_wl" && "$_cu_desk" == *gnome* ]] && _cu_use=1 ;;
+            kwin-portal-bridge)  _cu_env=KWIN_PORTAL_BRIDGE_BIN
+                                 _cu_use=''; [[ -n "$_cu_wl" && "$_cu_desk" == *kde* ]] && _cu_use=1 ;;
+        esac
+        _cu_bin="${!_cu_env:-}"
+        [[ -n "$_cu_bin" && -x "$_cu_bin" ]] || _cu_bin="$_cu_res/$_cu_b"
+        if [[ ! -x "$_cu_bin" ]]; then
+            echo "$_cu_b runs = MISSING ($_cu_bin)"
+            [[ -n "$_cu_use" ]] && _diag_problems+=("$_cu_b missing at $_cu_bin: Computer Use cannot use it on this session - reinstall the package")
+            continue
+        fi
+        _cu_run="$(_diag_bridge_runs "$_cu_bin" "$_cu_env")"
+        if [[ "$_cu_run" == ok* ]]; then
+            echo "$_cu_b runs = ${_cu_run}${_cu_use:+ (used on this session)}"
+        else
+            echo "$_cu_b runs = CANNOT RUN - ${_cu_run#FAIL }${_cu_use:+ (used on this session)}"
+            [[ -n "$_cu_use" ]] && _diag_problems+=("$_cu_b at $_cu_bin cannot run: ${_cu_run#FAIL }")
+        fi
+    done
     if [[ "$(printf %s "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')" == *kde* ]] \
         && [[ "${XDG_SESSION_TYPE:-}" == 'wayland' || -n "${WAYLAND_DISPLAY:-}" ]]; then
         local _kv _kmaj _kmin
@@ -1601,7 +1813,89 @@ _diagnose() {
         echo "=> capability probe SHOULD pass (Cowork supported)"
     else
         echo "=> capability probe WOULD FAIL - fix the NOT-FOUND/MISSING item(s) above"
+        _diag_problems+=("Cowork VM unavailable: the capability probe would fail (see the Cowork section: qemu, firmware, virtiofsd, /dev/kvm, /dev/vhost-vsock)")
     fi
+    echo
+    echo '--- Host capabilities (what the app execs, resolved the way it does) ---'
+    # One line per host tool: found at the upstream path, found on PATH only
+    # (works through our fallback patch), or MISSING with what breaks. A tool
+    # this session does not need is listed but not counted as a problem.
+    local _hc_wl='' _hc_desk _hc_ss='' _hc_kw='' _hc_py=1 _hc_owner _hc_n
+    _diag_app_is_wayland && _hc_wl=1
+    _hc_desk="$(printf %s "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')"
+    _secret_service_available && _hc_ss=1
+    [[ "$_hc_desk" == *kde* ]] && _kwallet_available && _hc_kw=1
+    command -v python3 &>/dev/null || _hc_py=0
+    _diag_cap fallback busctl /usr/bin/busctl "$([[ -n $_hc_wl || $_hc_desk == *kde* ]] && echo 1 || echo 0)" \
+        'GlobalShortcuts portal probe (Wayland hotkeys / Quick Entry) and KDE kwalletd pre-flight' \
+        'the app reads "no GlobalShortcuts portal": Wayland global shortcuts and the Quick Entry hotkey are disabled'
+    if [[ ! -e /usr/bin/busctl && "$_hc_desk" == *kde* ]]; then
+        echo '       note: the pre-launch KWallet "no wallet" check (index.pre.js) only runs /usr/bin/busctl and is skipped here'
+    fi
+    _diag_cap fallback secret-tool /usr/bin/secret-tool "${_hc_ss:-0}" \
+        'Chrome cookie import from the GNOME keyring / libsecret' \
+        'Chrome cookie import skips keyring-encrypted cookies (install libsecret-tools / libsecret)'
+    _diag_cap fallback kwallet-query /usr/bin/kwallet-query "${_hc_kw:-0}" \
+        'Chrome cookie import from KWallet' \
+        'Chrome cookie import skips KWallet-encrypted cookies (install kwallet / kwalletmanager)'
+    _diag_cap fallback sqlite3 /usr/bin/sqlite3 1 \
+        'Recent Projects (reads the editors'"'"' state databases)' \
+        'Recent Projects stays empty (install sqlite3 / sqlite)'
+    _diag_cap path xdg-open '' 1 \
+        'opening links and "Open in" targets' \
+        'links and "Open in ..." do nothing (install xdg-utils)'
+    _diag_cap abs gjs /usr/bin/gjs "$([[ $_hc_desk == *gnome* ]] && echo 1 || echo 0)" \
+        'GNOME Shell search provider (Activities search)' \
+        'the GNOME search provider cannot start; Claude results never appear in Activities search (install gjs)'
+    _diag_cap path python3 '' 1 \
+        'launcher: --install-gnome-hotkey, --1p/--3p, --toggle fallback client' \
+        '--install-gnome-hotkey and --1p/--3p fail (install python3)'
+    _diag_cap path socat '' "$(( _hc_py == 0 ))" \
+        'launcher: fast socket client for --toggle / --reload-theme (python3 also works)' \
+        'with no python3 either, --toggle / --reload-theme cannot reach a running app over its socket (install socat or python3)'
+    # Keep awake: only needed when no desktop service owns the inhibit call
+    # Chromium makes (fix_keep_awake_linux / js/keep_awake_inhibit.js).
+    local _hc_native=''
+    for _hc_n in org.gnome.SessionManager org.freedesktop.PowerManagement; do
+        [[ "$(_diag_bus_owner session "$_hc_n")" == present ]] && { _hc_native="$_hc_n"; break; }
+    done
+    if [[ -n "$_hc_native" ]]; then
+        echo "[--]   systemd-inhibit = not needed: $_hc_native handles \"Keep computer awake\""
+    else
+        _diag_cap path systemd-inhibit '' 1 \
+            'logind idle inhibitor for "Keep computer awake" (no org.gnome.SessionManager / org.freedesktop.PowerManagement on this bus)' \
+            '"Keep computer awake" does nothing on this session (needs systemd-logind)'
+    fi
+    # Tray host (js/tray_host_probe.js asks the same question).
+    _hc_owner="$(_diag_bus_owner session org.kde.StatusNotifierWatcher)"
+    case "$_hc_owner" in
+        present) echo '[ok]   tray host = org.kde.StatusNotifierWatcher on the session bus - close-to-tray and hidden autostart work' ;;
+        absent)
+            if [[ -n "$_hc_wl" ]]; then
+                echo '[MISS] tray host = no org.kde.StatusNotifierWatcher - on Wayland closing the window quits and an autostart launch shows the window (install AppIndicator support or a tray-capable bar)'
+                _diag_problems+=('no tray host (org.kde.StatusNotifierWatcher) on this Wayland session: closing the window quits the app and autostart shows the window instead of starting hidden')
+            else
+                echo '[--]   tray host = no org.kde.StatusNotifierWatcher; on X11 Electron falls back to an XEmbed tray icon (works with an XEmbed tray such as xfce4-panel, tint2, i3bar)'
+            fi
+            ;;
+        *) echo '[??]   tray host = unknown (no bus tool could answer); the app keeps upstream tray behavior' ;;
+    esac
+    # Bluetooth: Chromium's Web Bluetooth talks to BlueZ (org.bluez, system bus).
+    _hc_owner="$(_diag_bus_owner system org.bluez)"
+    if [[ "$_hc_owner" == present ]]; then
+        echo '[ok]   bluetoothd = org.bluez on the system bus - Hardware Buddy BLE scan'
+    else
+        local _hc_bt=''
+        for _hc_n in /usr/lib/bluetooth/bluetoothd /usr/libexec/bluetooth/bluetoothd /usr/sbin/bluetoothd; do
+            [[ -x "$_hc_n" ]] && { _hc_bt="$_hc_n"; break; }
+        done
+        if [[ -n "$_hc_bt" ]]; then
+            echo "[--]   bluetoothd = installed ($_hc_bt) but org.bluez is $_hc_owner on the system bus - only needed for a Hardware Buddy (systemctl enable --now bluetooth)"
+        else
+            echo '[--]   bluetoothd = missing - only needed for a Hardware Buddy (BLE scan finds nothing without BlueZ)'
+        fi
+    fi
+    echo "[..]   qemu / firmware / virtiofsd = see the Cowork section above"
     echo
     echo '--- Recent launcher log (last 10 lines) ---'
     local logf="${XDG_CACHE_HOME:-$HOME/.cache}/claude-desktop/launcher.log"
@@ -1613,6 +1907,14 @@ _diagnose() {
         cat "$logf.old" "$logf" 2>/dev/null | tail -10 || true
     else
         echo '(no launcher.log yet)'
+    fi
+    echo
+    echo '--- Problems found ---'
+    if (( ${#_diag_problems[@]} == 0 )); then
+        echo 'none'
+    else
+        local _p
+        for _p in "${_diag_problems[@]}"; do echo "- $_p"; done
     fi
 }
 
@@ -1976,6 +2278,7 @@ _normalize_session_type() {
     export XDG_SESSION_TYPE=wayland
 }
 
+_cdb_raw_session_type="${XDG_SESSION_TYPE:-}"  # for --diagnose
 _normalize_session_type
 platform_mode=x11
 _resolve_platform_mode
