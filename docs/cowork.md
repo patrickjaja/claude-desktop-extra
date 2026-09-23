@@ -10,7 +10,8 @@ Cowork (and Dispatch) run on the **official native Cowork VM backend** bundled i
 
 ```bash
 # Arch:          sudo pacman -S --needed qemu-system-x86 edk2-ovmf virtiofsd   # aarch64: qemu-system-aarch64 edk2-aarch64
-# Fedora:        sudo dnf install qemu-system-x86 edk2-ovmf virtiofsd          # RHEL: qemu-kvm instead of qemu-system-x86 · aarch64: qemu-system-aarch64 edk2-aarch64
+# Fedora:        sudo dnf install qemu-system-x86 edk2-ovmf virtiofsd          # aarch64: qemu-system-aarch64 edk2-aarch64
+# RHEL 9 / Rocky / Alma: sudo dnf install qemu-kvm edk2-ovmf virtiofsd
 # Debian/Ubuntu: sudo apt install qemu-system-x86 ovmf virtiofsd               # arm64: qemu-system-arm qemu-efi-aarch64 · Ubuntu 22.04: no virtiofsd pkg needed (bundled copy is used)
 ```
 
@@ -25,6 +26,14 @@ The Claude Code CLI that Cowork/Dispatch drive is managed by the app itself - no
 > A **system virtiofsd is required on everything except Ubuntu 22.x** - the app's capability probe only falls back to the bundled `virtiofsd` on jammy (`/etc/os-release` gate). Without it Cowork reports "Cowork requires QEMU …" even when qemu and firmware are present (issue #177). If your distro installs virtiofsd outside the probed paths (`/usr/libexec`, `/usr/lib`, `/usr/lib/qemu`, `/usr/bin`), point the app at it with `CLAUDE_VIRTIOFSD_PATH=/path/to/virtiofsd`; a custom firmware location can likewise be set with `CLAUDE_OVMF_CODE_PATH=/path/to/OVMF_CODE.fd` (its `*_VARS.fd` sibling must sit next to it). The Nix flake wires all three automatically (see the Nix install section).
 
 > **Arch Linux ARM / EndeavourOS ARM / Manjaro ARM (native aarch64 host, e.g. Raspberry Pi 5):** `edk2-aarch64` is `arch=any` on archlinux.org but Arch Linux ARM's repos don't carry it, so `pacman -S edk2-aarch64` fails with `target not found` even after `-Syu` ([ALARM forum #16140](https://archlinuxarm.org/forum/viewtopic.php?t=16140)). Since the package is architecture-independent, grab it from the x86_64 Arch mirrors and install locally: `curl -L https://archlinux.org/packages/extra/any/edk2-aarch64/download -o edk2-aarch64.pkg.tar.zst && sudo pacman -U ./edk2-aarch64.pkg.tar.zst`.
+
+## Distro and hardware notes
+
+- **Debian 12 (bookworm): Cowork is not available.** Debian 12 has no package for the Rust `virtiofsd` the Cowork helper drives (neither in bookworm nor in bookworm-backports). Its `qemu-system-common` ships the older C `virtiofsd` at `/usr/lib/qemu/virtiofsd`, which does not accept the options the helper passes (`--shared-dir`), so the workspace VM cannot share your files. Debian 13 ships `virtiofsd`; the rest of the app works on Debian 12 unchanged.
+- **Ubuntu 22.04 and Jetson (JetPack 6, Ubuntu 22.04 based):** no `virtiofsd` package is needed - on Ubuntu 22.x the app uses the copy bundled in the package.
+- **RHEL 9 / Rocky / Alma:** `sudo dnf install qemu-kvm edk2-ovmf virtiofsd`. RHEL ships QEMU only as `/usr/libexec/qemu-kvm`, not as `qemu-system-<arch>` on `PATH` where the app looks for it, so the `.rpm` installs a `qemu-system-<arch>` shim pointing at it and the launcher adds the shim to `PATH` only when no `qemu-system-<arch>` is found and `/usr/libexec/qemu-kvm` exists. The `.rpm` recommends `qemu-system-<arch>` or `qemu-kvm`, so `dnf` pulls QEMU on RHEL too. Your user needs read/write access to `/dev/kvm` and `/dev/vhost-vsock`. The workspace VM is verified to boot on RHEL 9 x86_64; the aarch64 shim ships but is untested.
+- **Raspberry Pi 5:** the workspace VM gets 4 GB of RAM by default, so Cowork needs the 8 GB (or larger) Pi 5; on a 4 GB board the VM does not fit next to the desktop and the app.
+- **NVIDIA Jetson / DGX Spark:** Cowork needs `/dev/kvm`, and whether a board exposes it depends on its kernel build. Check with `ls -l /dev/kvm` and `claude-desktop --diagnose` before relying on Cowork there.
 
 ## Troubleshooting
 

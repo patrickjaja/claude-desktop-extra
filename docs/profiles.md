@@ -23,7 +23,7 @@ claude-desktop --delete-profile=work    # removes entry points; user data preser
 
 The **default profile** (no `--profile=`, no named shortcut) is byte-identical to a single-instance install - same `~/.config/Claude`, same `~/.claude`, same sockets, same WM identity. You can run it alongside any number of named profiles.
 
-A **named profile** (`--create-profile=NAME`, names match `[a-zA-Z0-9_-]+`, `default` reserved) installs three things in your home dir (no root needed): a per-profile Electron binary at `~/.local/lib/claude-desktop/claude-NAME`, a launcher symlink at `~/.local/bin/claude-desktop-NAME`, and an application-menu entry `Claude (NAME)`. User data is created lazily on first launch.
+A **named profile** (`--create-profile=NAME`, names match `[a-zA-Z0-9_-]+`, `default` reserved) installs three things in your home dir (no root needed): a per-profile Electron binary at `~/.local/lib/claude-desktop/claude-NAME`, a launcher symlink at `~/.local/bin/claude-desktop-NAME` (a small exec script on Nix, so it runs through the package wrapper), and an application-menu entry `Claude (NAME)`. User data is created lazily on first launch.
 
 Three equivalent ways to select a profile at launch: `claude-desktop --profile=NAME`, `CLAUDE_PROFILE=NAME claude-desktop`, or the `claude-desktop-NAME` shortcut (infers the name from its basename). All export `CLAUDE_PROFILE`, which propagates through Electron and any spawned `claude` CLI.
 
@@ -57,7 +57,7 @@ Sequential SSO into any number of profiles is reliable. Two edge cases misroute 
 
 ### Notes
 
-- **Disk cost.** A named profile needs a real, independently-named binary (not a symlink) so Electron can derive a distinct WM_CLASS / Wayland `app_id` from `/proc/self/exe`. The launcher tries hardlink → reflink (btrfs/xfs CoW) → plain copy in order, so only cross-filesystem installs on a non-CoW disk actually pay the ~200 MB; sibling files (`libffmpeg.so`, `.pak`, `locales/`, …) are always shared symlinks. Package upgrades that leave the copy stale are re-materialised automatically on the next launch.
-- **`--profile=NAME` without `--create-profile`** isolates state but not WM identity (window joins the default taskbar entry; suppress the hint with `CLAUDE_PROFILE_QUIET=1`).
+- **Disk cost.** A named profile gets its own copy of the Electron binary (a real file, not a symlink). The launcher tries hardlink → reflink (btrfs/xfs CoW) → plain copy in order, so only cross-filesystem installs on a non-CoW disk actually pay the ~200 MB; sibling files (`libffmpeg.so`, `.pak`, `locales/`, …) are always shared symlinks. Package upgrades that leave the copy stale are re-materialised automatically on the next launch (on Nix, from the tree `CLAUDE_ELECTRON` points at).
+- **Window identity is shared.** Every profile's window reports `com.anthropic.Claude` as its WM_CLASS / Wayland `app_id` (the app sets it from its own `desktopName`), so all profiles group as one app in the taskbar and Alt-Tab, whether or not the profile was created with `--create-profile`. Tell them apart by the window title, which carries the profile name (`Claude (work)`). `--profile=NAME` without `--create-profile` isolates state the same way but adds no menu entry or shortcut; the launcher prints a hint about it (silence with `CLAUDE_PROFILE_QUIET=1`).
+- **AppImage:** `--create-profile` is not available (the AppImage's files move on every launch); run the AppImage with `--profile=NAME` instead.
 - **[Quick Entry](quick-entry.md) hotkey is not per-profile** - `--install-gnome-hotkey` targets the default profile; for a named one, bind `claude-desktop --profile=NAME --toggle` by hand.
-- **NixOS** may not resolve Wayland portal identity (no `systemd-run --scope`); use `--install-gnome-hotkey`.

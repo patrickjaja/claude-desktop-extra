@@ -28,7 +28,7 @@ Everything else - Chat, Cowork, Claude Code, Browser Tools, 3P/enterprise infere
 
 ## Installation
 
-Pick your distro below. [Computer Use](#computer-use) works out of the box everywhere - all backends are bundled, nothing to install. The only optional dependency to care about is **Cowork** (agent workspace VM), listed per distro - it needs QEMU/KVM on the host, see [Cowork setup](docs/cowork.md).
+Pick your distro below. [Computer Use](#computer-use) brings its own backends, so the common desktop sessions need nothing extra (the few exceptions are listed there). The one optional dependency to care about is **Cowork** (agent workspace VM), listed per distro - it needs QEMU/KVM on the host, see [Cowork setup](docs/cowork.md).
 
 <a name="arch-linux--manjaro-pacman-repository"></a>
 <details>
@@ -50,7 +50,7 @@ Updates arrive via `sudo pacman -Syu` (AUR helpers wrap pacman, so `yay -Syu` pi
 yay -S claude-desktop-extra
 ```
 
-**Optional deps.** **Cowork** (agent workspace VM) is **not auto-installed** (pacman skips `optdepends`) - install QEMU/KVM once, see [Cowork setup](docs/cowork.md). Also optional: `nodejs` (system MCP servers), `sqlite` (project detection), `claude-code`.
+**Optional deps.** **Cowork** (agent workspace VM) is **not auto-installed** (pacman skips `optdepends`) - install QEMU/KVM once, see [Cowork setup](docs/cowork.md). Also optional: `nodejs` (system MCP servers), `sqlite` (project detection), `gjs` (GNOME Shell search provider), `claude-code`.
 
 <details>
 <summary>Advanced: manual <code>pacman.conf</code> setup (without the install script)</summary>
@@ -109,7 +109,7 @@ curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install.sh | sudo 
 # Install
 sudo apt install claude-desktop-extra
 ```
-Updates are automatic via `sudo apt update && sudo apt upgrade`.
+Updates are automatic via `sudo apt update && sudo apt upgrade`. Installing it replaces Anthropic's own `claude-desktop` package if you had it (the two install the same files).
 
 **Optional deps.** **Cowork** (agent workspace VM) packages are auto-installed by `apt` (`Recommends`, mirroring Anthropic's official `.deb`); only the one-time `kvm` group step remains - see [Cowork setup](docs/cowork.md).
 
@@ -180,7 +180,7 @@ nix profile install github:patrickjaja/claude-desktop-extra
 
 </details>
 
-> **Note:** Update by running `nix flake update` to pull the latest version. `nix run` always fetches the latest.
+> **Note:** Update by running `nix flake update` to pull the latest version. `nix run` always fetches the latest. The Nix package is built for x86_64 only. "Start at login" and [profile](#multiple-profiles) shortcuts run through the package wrapper, so they keep working after a garbage collection.
 
 > **Optional deps on Nix: wired automatically.** The flake pulls the Cowork tools (`qemu`, `virtiofsd`, OVMF firmware) from nixpkgs and bakes them into the app's closure - nothing to install. Use `.override { … }` to swap or drop a tool (e.g. `qemu = null;` shrinks the closure if you don't need Cowork). Two host-level steps remain, in NixOS form:
 >
@@ -197,7 +197,7 @@ nix profile install github:patrickjaja/claude-desktop-extra
 <details>
 <summary><b>AppImage (Any Distro)</b></summary>
 
-Works on standard and **immutable/atomic distros** - Bazzite, Fedora Silverblue/Kinoite, SteamOS, Universal Blue, NixOS (without the Nix package), and any other glibc-based Linux.
+Works on standard and **immutable/atomic distros** - Bazzite, Fedora Silverblue/Kinoite, SteamOS, Universal Blue, and any other glibc-based Linux with an FHS layout. On NixOS use the [Nix package](#nixos--nix) instead.
 
 The `claude://` protocol handler (needed for OAuth sign-in) is **automatically registered** on first launch. If you move or rename the AppImage, the registration updates on the next launch.
 
@@ -234,7 +234,7 @@ cd claude-desktop-extra
 <details>
 <summary><b>ARM64 / aarch64 (Raspberry Pi 5, NVIDIA DGX Spark, Jetson, etc.)</b></summary>
 
-ARM64 `.deb`, `.rpm`, AppImage, and Nix packages are available for **Raspberry Pi 5**, **NVIDIA DGX Spark** (Ubuntu 24.04 arm64), and **Jetson** (JetPack/Ubuntu 22.04 arm64). The APT and DNF repos serve both x86_64 and arm64 - your package manager picks the correct architecture automatically. Install exactly as above.
+ARM64 `.deb`, `.rpm`, pacman and AppImage packages are available for **Raspberry Pi 5**, **NVIDIA DGX Spark** (Ubuntu 24.04 arm64), and **Jetson** (JetPack/Ubuntu 22.04 arm64). The APT and DNF repos serve both x86_64 and arm64 - your package manager picks the correct architecture automatically. Install exactly as above. The Nix package is x86_64 only. For Cowork on ARM boards (RAM, `/dev/kvm`), see [Cowork setup](docs/cowork.md#distro-and-hardware-notes).
 
 </details>
 
@@ -288,9 +288,9 @@ This package adds its own section to Claude's Settings dialog: **Extra** - the h
 Four panels today:
 
 - **Extra → Themes** - all **97 bundled palettes** with live color dots; one click applies instantly in every open window. Make Claude Desktop blend into your Linux desktop: palettes matching stock DE looks (ADW/Adwaita, Breeze) sit next to the classics (Catppuccin, Nord, Gruvbox, Rose Pine, Everforest) and a [Gaming collection](docs/themes.md).
-- **Extra → Community Features** - the **5 optional features** this project currently adds, each as a switch ([9 patches](PATCHES.md#community-features): Files quick open, panel tabs, diff view modes, the theme-picker hotkey, a calmer Cowork glow), with a filter box over them.
+- **Extra → Community Features** - the **7 switches** this project currently adds ([10 patches](PATCHES.md#community-features): Files quick open, panel tabs, diff view modes, the theme-picker hotkey, a calmer Cowork glow, and the two titlebar modes), with a filter box over them.
   - **Files quick open** - <kbd>Ctrl</kbd>+<kbd>P</kbd> on the Code tab opens a VS Code-style quick-open box over the Files panel. Type part of a name - spaces split the query into pieces that must all match, in any order, so `user service` finds `user-service.spec.ts` - pick with the arrow keys or the mouse, and <kbd>Enter</kbd> opens it as a file tab in the panel; `:42` jumps to a line, an empty query lists what you opened recently. The same fix reaches the Files panel's own filter and the composer's `@` file picker. Opt-in: Settings → Extra → Community Features - the hotkey applies live, the spaces fix reaches the file index on its next start (after a restart).
-- **Extra → Anthropic Features** - all **134 upstream [feature flags](#feature-flag-overrides-advanced)** this build reads, each as a switch - no config-file editing needed.
+- **Extra → Anthropic Features** - all **387 upstream [feature flags](#feature-flag-overrides-advanced)** this build reads, each as a switch - no config-file editing needed.
 - **Extra → Deployment** - a **1P / 3P switch** plus the whole [third-party inference](#third-party--enterprise-inference) configuration as toggles and fields. Turning 3P on used to be a one-way door without a root shell; here it is a button, and every value is written to your own profile directory.
 
 Every panel ends in the config file behind it, as a link: click the path to open the file, or the **folder** button to show it in your file manager.
@@ -301,7 +301,7 @@ Expect this section to grow - Extra is where the project is heading.
 
 **Our exclusive feature - not part of the official Linux build.** Claude Desktop's built-in Computer Use MCP server exposes 27 tools for desktop automation (screenshot, click, type, scroll, drag, clipboard, and more), plus **learn tools** that generate interactive overlay tutorials for any app. Upstream gates it to macOS/Windows and ships no Linux backend; the patch ([`fix_computer_use_linux.nim`](patches/linux/fix_computer_use_linux.nim)) removes the platform gates and injects a Linux executor that auto-detects your session and routes to a bundled first-party bridge: [`x11-bridge`](https://github.com/patrickjaja/x11-bridge) on X11 / XWayland, [`wlroots-bridge`](https://github.com/patrickjaja/wlroots-bridge) on Sway / Hyprland / Niri (native virtual-pointer/keyboard + screencopy + foreign-toplevel protocols), [`gnome-portal-bridge`](https://github.com/patrickjaja/gnome-bridge) on GNOME Wayland (XDG RemoteDesktop + ScreenCast portal, one consent dialog per session, persisted on GNOME 46+; needs PipeWire >= 1.0.5, i.e. Ubuntu 24.04+ / Fedora 40+ / Debian 13+), and [`kwin-portal-bridge`](https://github.com/patrickjaja/kwin-portal-bridge) on KDE Plasma 6.6+. No third-party input/screenshot tools needed; only exotic Wayland compositors fall back to `ydotool`.
 
-**Nothing to install** - the bridges ship inside the package. See **[docs/computer-use.md](docs/computer-use.md)** for how it works, the notes (primary-monitor, app discovery, teach overlay), and links to the [tool reference](baseline/CLAUDE_BUILT_IN_MCP.md#17-computer-use); [Computer Use dependencies](docs/computer-use-dependencies.md) has the per-session matrix and the exotic-compositor `ydotool` fallback.
+**Nothing to install on the common sessions** - the bridges ship inside the package and cover X11, XWayland, Sway / Hyprland / Niri, GNOME Wayland on Ubuntu 24.04+ / Fedora 40+ / Debian 13+, and KDE Plasma 6.6+. Before using a bridge the app checks that it actually runs on your system, and falls back to the next tier when it does not. Older GNOME (Ubuntu 22.04, Debian 12, RHEL 9: use an X11 session), NixOS GNOME/KDE and exotic compositors need a fallback. See **[docs/computer-use.md](docs/computer-use.md)** for how it works, the notes (primary-monitor, app discovery, teach overlay), and links to the [tool reference](baseline/CLAUDE_BUILT_IN_MCP.md#17-computer-use); [Computer Use dependencies](docs/computer-use-dependencies.md) has the per-session matrix and the exotic-compositor `ydotool` fallback.
 
 **KDE Plasma needs 6.6+** for the native KWin route (earlier Plasma lacks the KWin capture-hiding API) - below that, Computer Use falls back to `ydotool`/`spectacle`; updating Plasma restores the full experience. `claude-desktop --diagnose` prints your KWin version and which route is active.
 
@@ -333,9 +333,9 @@ The default profile stays byte-identical to a single-instance install, and you c
 
 ## Quick Entry
 
-A global-hotkey popup (default <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>) that opens a compact Claude prompt on the monitor where your cursor is. It works out of the box on **KDE Plasma**, **Hyprland** and **Sway** via `xdg-desktop-portal` GlobalShortcuts; on **GNOME** the portal silently fails to register, so run `claude-desktop --install-gnome-hotkey` once after install.
+A global-hotkey popup (default <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>) that opens a compact Claude prompt on the monitor where your cursor is. On **KDE Plasma** the default hotkey works as installed. **Hyprland** needs a bind in `hyprland.conf`, **Sway, river and niri** have no GlobalShortcuts portal, so you bind `claude-desktop --toggle` in the compositor config, and on **GNOME** you run `claude-desktop --install-gnome-hotkey` once (required before GNOME 48).
 
-Bind it to any key yourself with `claude-desktop --toggle`, which opens the popup in milliseconds and starts the app if it isn't running. Per-desktop setup and hotkey troubleshooting: **[docs/quick-entry.md](docs/quick-entry.md)**.
+`claude-desktop --toggle` opens the popup in milliseconds and starts the app if it isn't running, so it works bound to any key on any desktop. Copy-paste snippets per compositor and hotkey troubleshooting: **[docs/quick-entry.md](docs/quick-entry.md)**.
 
 ## Third-Party / Enterprise Inference
 
@@ -353,7 +353,7 @@ The official Linux build ships one cross-platform JS bundle that gates plenty of
 
 - **[`patches/community/`](PATCHES.md#community-features)** (10 patches) - optional features you switch on yourself in Settings → **Extra** → **Community Features**. Off unless you ask for them (the theme picker is the exception, on by default).
 - **[`patches/core/`](PATCHES.md#core-infrastructure)** (7 patches) - always-on infrastructure the rest builds on: the Extra settings pages themselves, the theme engine, the flag-override mechanism, and the multi-profile plumbing.
-- **[`patches/linux/`](PATCHES.md#linux-compatibility)** (31 patches) - upstream features still gated to macOS/Windows in the shared bundle, or that break in a Linux environment. Always on, nothing to configure.
+- **[`patches/linux/`](PATCHES.md#linux-compatibility)** (33 patches) - upstream features still gated to macOS/Windows in the shared bundle, or that break in a Linux environment. Always on, nothing to configure.
 
 We keep the set as small as possible: every patch is re-audited against a fresh bundle on each upstream release, a pattern that no longer matches fails the build rather than silently doing nothing, and a patch is removed outright once Anthropic ships that behavior natively.
 
@@ -382,7 +382,7 @@ Flags this project adds on top of the official build (run `claude-desktop --help
 | `--native-titlebar` | Use the native window frame instead of the integrated titlebar. Overrides the **Native titlebar** switch in Settings → **Extra** → **Community Features** for this launch |
 | `--no-window-controls` | Drop the min/max/close buttons, which removes the thin frame Chromium paints around frameless windows on xfwm4, i3 and Awesome; window edges still resize, and you close or minimize through your WM. Overrides the **Hide window controls** switch in Settings → **Extra** → **Community Features** for this launch |
 | `--no-systemd-scope` | Skip the `systemd --user --scope` wrapper for this launch (same as `CLAUDE_DISABLE_SYSTEMD_SCOPE=1`) |
-| `--diagnose` | Print session type, portal status, and hotkey state for issue reports |
+| `--diagnose` | Print session type, portal status, hotkey state, and which host tools the app needs are missing (with what stops working), for issue reports |
 | `--integrate` / `--unintegrate` | Register / remove the `claude://` handler and menu entry (AppImage only; happens automatically on launch) |
 
 ## Environment Variables
@@ -395,25 +395,25 @@ Flags this project adds on top of the official build (run `claude-desktop --help
 | `CLAUDE_PROFILE` | name | Select a [profile](#multiple-profiles) by name (also `claude-desktop-NAME` / `--profile=NAME`) |
 | `CLAUDE_NATIVE_TITLEBAR` | `1` | Restore the native window frame instead of the integrated titlebar (same as `--native-titlebar`) |
 | `CLAUDE_NO_WINDOW_CONTROLS` | `1` | Frameless window with no window-control buttons, which removes the thin frame Chromium paints on xfwm4/i3/Awesome (same as `--no-window-controls`) |
-| `CLAUDE_USE_XWAYLAND` | `1` | Force XWayland instead of native Wayland. Also fixes "app exits after seconds" GPU crashes ([#180](https://github.com/patrickjaja/claude-desktop-extra/issues/180), see [wayland.md](wayland.md)) |
+| `CLAUDE_USE_XWAYLAND` | `1` | Force XWayland instead of native Wayland (needs `DISPLAY`, i.e. a running XWayland). Also fixes "app exits after seconds" GPU crashes ([#180](https://github.com/patrickjaja/claude-desktop-extra/issues/180), see [wayland.md](wayland.md)) |
 | `CLAUDE_PASSWORD_STORE` | backend, `auto` | Force the Chromium keyring backend (`gnome-libsecret`, `kwallet6`, `basic`, ...). Default: on desktops Chromium gives no keyring backend (Hyprland, sway, XFCE, ...), a running Secret Service is used automatically so sign-in persists ([#191](https://github.com/patrickjaja/claude-desktop-extra/issues/191)). `auto` disables that detection |
 | `CLAUDE_KEEP_TTY` | `1` | Keep the controlling terminal instead of calling `setsid` when launched as a background job on one. Only affects `startx`/`xinit` sessions, where a panel or menu launch would otherwise let the app's `bash -l -i -c` environment probe `SIGTTIN` the whole desktop process group ([#213](https://github.com/patrickjaja/claude-desktop-extra/pull/213)) |
 
 Set permanently in `~/.bashrc` / `~/.zshrc`, or pass per-launch: `CLAUDE_DISABLE_GPU=1 claude-desktop`
 
-**Full list** (profile/config dirs, Vulkan, menu bar, DevTools, systemd-scope, Electron overrides, …) → **[docs/environment-variables.md](docs/environment-variables.md)**.
+**Full list** (profile/config dirs, GPU backend, sandbox, Vulkan, DevTools, systemd-scope, Computer Use bridges, Electron overrides, …) → **[docs/environment-variables.md](docs/environment-variables.md)**.
 
 ## Feature Flag Overrides (advanced)
 
 Claude Desktop gates many features behind server-side GrowthBook flags with no built-in local override. This package adds one: a `growthbookOverrides` block in **`~/.config/Claude/claude-desktop-extra.jsonc`** (per-profile, auto-created on first launch with a commented template listing every flag the app reads).
 
-**Or flip them in the app:** Settings → **Extra** → **Anthropic Features** renders the same catalog - all 134 flags - as switches, pre-set to what your account actually gets.
+**Or flip them in the app:** Settings → **Extra** → **Anthropic Features** renders the same catalog - all 387 flags - as switches, pre-set to what your account actually gets.
 
 The file format, how overrides win over the server rollout, the full flag catalog, and the caveats: **[docs/feature-flags.md](docs/feature-flags.md)**.
 
 ## Debugging
 
-Runtime logs are in `~/.config/Claude/logs/` (`main.log`, `claude.ai-web.log`, `mcp.log`). With a 3P `managed-settings.json` present, logs are under `~/.config/Claude-3p/`; named profiles use `~/.config/Claude-<profile>/`.
+Runtime logs are in `~/.config/Claude/logs/` (`main.log`, `claude.ai-web.log`, `mcp.log`). While 3P mode is active (an `inferenceProvider` configured through the Deployment panel, `--3p`, or `/etc/claude-desktop/managed-settings.json`), logs and state are under `~/.config/Claude-3p/` instead; named profiles use `~/.config/Claude-<profile>/` (3P: `~/.config/Claude-<profile>-3p/`).
 
 ```bash
 # Tail logs in real-time
@@ -433,17 +433,18 @@ rm -rf ~/.config/Claude/local-agent-mode-sessions/
 
 Computer Use patches emit `[claude-cu] diagnostics:` lines showing the detected session, available/missing tools, and screenshot cascade. They land in `~/.config/Claude/logs/claude-patches.log` (and on stderr when launched from a terminal) - share that log file when reporting Computer Use issues. The official build discards plain `console.log` output, so the old "run from a terminal and copy the output" advice only shows Chromium noise.
 
-`claude-desktop --diagnose` additionally prints a **Computer Use** section: the installed package version, bundled-bridge presence, and on KDE Wayland the KWin 6.6-gate verdict plus a portal-free `windows` self-test through the kwin-portal-bridge (no consent dialog; window titles are never printed). Attach that output together with `claude-patches.log` - the pair makes most Computer Use reports diagnosable without follow-up questions.
+`claude-desktop --diagnose` additionally prints a **Host capabilities** section (each host tool the app execs, whether it is found the way the app looks for it, and what stops working without it), a closing **Problems found** list, and a **Computer Use** section: the installed package version, a run check of every bundled bridge, and on KDE Wayland the KWin 6.6-gate verdict plus a portal-free `windows` self-test through the kwin-portal-bridge (no consent dialog; window titles are never printed). Attach that output together with `claude-patches.log` - the pair makes most Computer Use reports diagnosable without follow-up questions.
 
 ## Known Limitations
 
 - **App identity on Wayland.** `xdg-desktop-portal` resolves unsandboxed apps via the systemd user scope. We launch under `app-com.anthropic.Claude-*.scope` and install the `.desktop` as `com.anthropic.Claude.desktop` - the same reverse-DNS identity the official build uses, and the value Chromium derives the window `app_id` / `WM_CLASS` from - so scope, `app_id`, `StartupWMClass`, and `.desktop` basename all agree. KDE global shortcuts and persistent portal authorizations (screen share / Computer Use consent) attach to that id and survive across sessions.
   - Pinned taskbar/dock shortcuts from an earlier release (`claude-desktop.desktop` or older names) orphan on upgrade - **re-pin once**.
-  - Custom X11/Wayland WM rules matching `claude-desktop` (or older `claude` / `com.anthropic.claude-desktop`) need updating to `com.anthropic.Claude`. The window `app_id` is shared across named profiles.
+  - Custom X11/Wayland WM rules matching `claude-desktop` (or older `claude` / `com.anthropic.claude-desktop`) need updating to `com.anthropic.Claude`. The window `app_id` is the same for every profile; the window title carries the profile name.
   - KDE screen-share / Computer Use consent granted before the rename is keyed to the old id - re-grant once; it persists from then on.
   - GNOME shell-extension blacklists (Rounded Window Corners, Unite, Blur My Shell) referencing `com.anthropic.claude-quick-entry` should become `claude-quick-entry`.
-  - **NixOS** doesn't use `systemd-run --scope`; portal identity may not resolve on GNOME Wayland - use `--install-gnome-hotkey`.
   - **Sandboxes/containers** without a reachable user-systemd (bwrap, distrobox, restricted Flatpaks) auto-skip the scope wrap; force it with `--no-systemd-scope` / `CLAUDE_DISABLE_SYSTEMD_SCOPE=1` if the socket exists but is unreachable ([#89](https://github.com/patrickjaja/claude-desktop-extra/issues/89)).
+- **Desktops without a tray host.** On a Wayland session where nothing provides a tray (`org.kde.StatusNotifierWatcher`: GNOME without the AppIndicator extension, sway or niri without a tray bar), closing the window quits the app instead of hiding it, and "Start at login" opens the window. The tray is detected once at startup.
+- **Keep computer awake on tiling compositors.** Where no GNOME or freedesktop power-management service runs (Sway, Hyprland, niri, i3, ...), the setting holds a logind idle inhibitor. logind's IdleAction and hypridle honor it; plain `swayidle` timeouts do not.
 - **Computer Use targets the primary monitor** - screenshots/clicks can be retargeted with `switch_display`; the teach overlay stays on the primary display. See [Computer Use](#computer-use).
 - **CoworkSpaces are local-only** on every platform (no account-sync) - a set created on macOS/Windows won't transfer to Linux. Upstream behavior.
 

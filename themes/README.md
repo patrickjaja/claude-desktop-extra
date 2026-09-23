@@ -60,7 +60,7 @@ you'll find an **Extra** group in the nav with two entries:
   sections as the picker (your themes, Gaming, built-in, community). Clicking one applies
   it live - colors and spinner both - and saves `activeTheme` the same way the picker
   does, into `claude-desktop-extra.jsonc` with your comments intact.
-- **Features** - the 134 catalogued GrowthBook feature flags as switches, so you can
+- **Features** - the 387 catalogued GrowthBook feature flags as switches, so you can
   browse and flip them without hand-editing a config file. See
   [Feature Flag Overrides](../docs/feature-flags.md) for what the
   flags are.
