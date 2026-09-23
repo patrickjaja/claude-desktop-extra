@@ -161,6 +161,28 @@ if [ -d "$WORK_DIR/tarball/icons/hicolor" ]; then
     cp -a "$WORK_DIR/tarball/icons/hicolor" "$DEB_ROOT/usr/share/icons/"
 fi
 
+# GNOME Shell search provider. Upstream's postinst copies these two files out of
+# resources/gnome-search-provider/ at configure time; we ship the same bytes as
+# package files instead, so dpkg owns them and removes them with the package.
+# The .service Exec runs /usr/bin/gjs on resources/gnome-search-provider/
+# searchProvider.js under /usr/lib/claude-desktop, which is our prefix too.
+SP_SRC="$DEB_ROOT/usr/lib/claude-desktop/resources/gnome-search-provider"
+SP_INI="usr/share/gnome-shell/search-providers/com.anthropic.Claude.search-provider.ini"
+SP_SERVICE="usr/share/dbus-1/services/com.anthropic.Claude.SearchProvider.service"
+for f in com.anthropic.Claude.search-provider.ini com.anthropic.Claude.SearchProvider.service searchProvider.js; do
+    if [ ! -f "$SP_SRC/$f" ]; then
+        log_error "GNOME search provider file missing from the tree: resources/gnome-search-provider/$f - upstream layout changed; re-audit"
+        exit 1
+    fi
+done
+if ! grep -qx 'Exec=/usr/bin/gjs -m /usr/lib/claude-desktop/resources/gnome-search-provider/searchProvider.js' \
+        "$SP_SRC/com.anthropic.Claude.SearchProvider.service"; then
+    log_error "GNOME search provider .service Exec line changed upstream - re-audit before shipping it"
+    exit 1
+fi
+install -Dm644 "$SP_SRC/com.anthropic.Claude.search-provider.ini" "$DEB_ROOT/$SP_INI"
+install -Dm644 "$SP_SRC/com.anthropic.Claude.SearchProvider.service" "$DEB_ROOT/$SP_SERVICE"
+
 # Debian policy: ship a copyright file under usr/share/doc/<pkg>/. The tarball
 # carries the upstream notice at its root (extracted from the official .deb by
 # build-patched-tarball.sh). Warn-only: pre-2026-07 release tarballs lack it.
@@ -176,6 +198,18 @@ INSTALLED_SIZE=$(du -sk "$DEB_ROOT" | cut -f1)
 
 # Create control file.
 # Depends mirror the official Claude Desktop .deb's runtime needs (Electron 44 as of v1.49585.0; its NEEDED set is unchanged since Electron 42).
+# - Conflicts + Replaces claude-desktop: Anthropic's own package installs the
+#   same /usr/lib/claude-desktop tree; without these dpkg aborts with "trying to
+#   overwrite". With them, installing ours removes theirs (and vice versa needs
+#   an explicit removal of ours first).
+# - gnome-keyring | plasma-workspace: upstream's own keyring alternative (KDE
+#   has kwallet via plasma-workspace; the kwalletd5/6 package names do not exist
+#   on any supported Debian/Ubuntu).
+# - libsecret-tools: secret-tool, which Chrome cookie import execs to read the
+#   keyring-encrypted (v11) cookies; Arch/Fedora ship it inside libsecret.
+# - gjs: runs the GNOME Shell search provider (preinstalled with GNOME Shell).
+# - ydotool (>= 1.0): our executor speaks the 1.x CLI; Debian/Ubuntu ship 0.1.8,
+#   which does not understand it, so the unversioned name would pull a broken one.
 log_info "Creating control file..."
 cat > "$DEB_ROOT/DEBIAN/control" << EOF
 Package: claude-desktop-extra
@@ -185,9 +219,10 @@ Priority: optional
 Architecture: ${DEB_ARCH}
 Installed-Size: ${INSTALLED_SIZE}
 Depends: libgtk-3-0, libnotify4, libnss3, xdg-utils, libatspi2.0-0, libdrm2, libgbm1, libxcb-dri3-0, libsecret-1-0, kde-cli-tools | kde-runtime | trash-cli | libglib2.0-bin | gvfs, libc6 (>= 2.34), libxtst6, libuuid1, xdg-desktop-portal, xdg-desktop-portal-gtk | xdg-desktop-portal-gnome | xdg-desktop-portal-kde
-Recommends: libasound2t64 | libasound2 | pulseaudio, libayatana-appindicator3-1 | libappindicator3-1, ca-certificates, gnome-keyring | kwalletd6 | kwalletd5, sqlite3, ${COWORK_RECOMMENDS}
-Suggests: imagemagick, socat, ydotool, kde-spectacle, nodejs, bluez
-Replaces: claude-desktop-bin (<< ${DEB_VERSION})
+Recommends: libasound2t64 | libasound2 | pulseaudio, libayatana-appindicator3-1 | libappindicator3-1, ca-certificates, gnome-keyring | plasma-workspace, libsecret-tools, sqlite3, ${COWORK_RECOMMENDS}
+Suggests: imagemagick, socat, ydotool (>= 1.0), kde-spectacle, nodejs, bluez, gjs
+Conflicts: claude-desktop
+Replaces: claude-desktop, claude-desktop-bin (<< ${DEB_VERSION})
 Breaks: claude-desktop-bin (<< ${DEB_VERSION})
 Maintainer: Claude Desktop Linux Community <claude-desktop-linux@users.noreply.github.com>
 Homepage: https://claude.ai
@@ -218,6 +253,22 @@ fi
 
 case "$1" in
   configure)
+    # GNOME search provider files are package files, but when `dpkg -i` replaces
+    # Anthropic's claude-desktop package, its postrm runs AFTER our unpack and
+    # deletes the same two paths. Our postinst runs after that postrm, so put
+    # the shipped bytes back from resources/ (identical content).
+    SP_SRC=/usr/lib/claude-desktop/resources/gnome-search-provider
+    for pair in \
+        "com.anthropic.Claude.search-provider.ini:/usr/share/gnome-shell/search-providers" \
+        "com.anthropic.Claude.SearchProvider.service:/usr/share/dbus-1/services"; do
+        f="${pair%%:*}"; d="${pair#*:}"
+        if [ ! -e "$d/$f" ] && [ -f "$SP_SRC/$f" ]; then
+            mkdir -p "$d"
+            cp "$SP_SRC/$f" "$d/$f"
+            chmod 0644 "$d/$f"
+        fi
+    done
+
     # AppArmor userns profile (gated on AppArmor 4.0; unparseable/unnecessary on 3.x).
     if [ -f /etc/apparmor.d/abi/4.0 ]; then
         rm -f "$PROFILE"
