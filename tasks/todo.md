@@ -72,8 +72,8 @@ See [plan.md](plan.md) and [SPEC.md](../SPEC.md). IDs refer to SPEC findings.
 - [ ] T8.2 If it boots: rpm ships the shim dir, launcher appends it to PATH only when no `qemu-system-*` is on PATH and `/usr/libexec/qemu-kvm` exists. Else: docs-only, with the reason
 
 ### W9 diagnose-host-caps
-- [ ] T9.1 `--diagnose` "Host capabilities": feature -> tool -> found/MISSING -> consequence for busctl (with the app's exact portal probe), secret-tool, kwallet-query, sqlite3, xdg-open, gjs, python3, socat, systemd-inhibit, bluetoothd, qemu/firmware (reuse the Cowork section); runs-at-all check for all 4 bridges; "Problems found" summary
-- [ ] T9.2 Move profile refresh + AppImage integration below read-only subcommands (`--diagnose`, `--help`)
+- [x] T9.1 `--diagnose` "Host capabilities": feature -> tool -> found/MISSING -> consequence for busctl (with the app's exact portal probe), secret-tool, kwallet-query, sqlite3, xdg-open, gjs, python3, socat, systemd-inhibit, bluetoothd, qemu/firmware (reuse the Cowork section); runs-at-all check for all 4 bridges; "Problems found" summary
+- [x] T9.2 Move profile refresh + AppImage integration below read-only subcommands (`--diagnose`, `--help`)
   - Verify: run on this host; in the Fedora VM with `/usr/bin/busctl` moved aside
 
 ## Wave 3
@@ -88,4 +88,4 @@ See [plan.md](plan.md) and [SPEC.md](../SPEC.md). IDs refer to SPEC findings.
 - [x] V1 `CLAUDE_GPU_BACKEND=angle-gl` on 2.7032.0 (no libEGL/libGLESv2 shipped) - W4 (ANGLE is linked into the binary; knob should still work, not launch-tested)
 - [ ] V2 X11 Quick Entry hotkey with GlobalShortcutsPortal forced - needs your XFCE session (manual, 1 min)
 - [x] V3 xdg-desktop-portal named-profile scope parse - W4 (parses to com.anthropic.Claude-<name>; no fix)
-- [ ] V4 Portal probe 2 s timeout on autostart - W9
+- [x] V4 Portal probe 2 s timeout on autostart - W9 (reasoned: failure memoized per process; launcher warm-up on Wayland+--startup recommended as follow-up, not implemented)
