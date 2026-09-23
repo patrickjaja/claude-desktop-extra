@@ -68,8 +68,9 @@ See [plan.md](plan.md) and [SPEC.md](../SPEC.md). IDs refer to SPEC findings.
 ## Wave 2
 
 ### W8 rhel-cowork-qemu (X1)
-- [ ] T8.1 rockylinux:9 + `--device /dev/kvm`: install qemu-kvm, run upstream's `cowork-linux-helper` VM boot with a `qemu-system-x86_64 -> /usr/libexec/qemu-kvm` shim; record whether it boots
-- [ ] T8.2 If it boots: rpm ships the shim dir, launcher appends it to PATH only when no `qemu-system-*` is on PATH and `/usr/libexec/qemu-kvm` exists. Else: docs-only, with the reason
+- [x] T8.1 rockylinux:9 + `--device /dev/kvm`: install qemu-kvm, run upstream's `cowork-linux-helper` VM boot with a `qemu-system-x86_64 -> /usr/libexec/qemu-kvm` shim; record whether it boots
+- [x] T8.2 If it boots: rpm ships the shim dir, launcher appends it to PATH only when no `qemu-system-*` is on PATH and `/usr/libexec/qemu-kvm` exists. Else: docs-only, with the reason
+- [x] T8.3 rpm Recommends `(qemu-system-<arch> or qemu-kvm)`: the rpm is built on Fedora, so the `%if 0%{?rhel}` branch never fired
 
 ### W9 diagnose-host-caps
 - [x] T9.1 `--diagnose` "Host capabilities": feature -> tool -> found/MISSING -> consequence for busctl (with the app's exact portal probe), secret-tool, kwallet-query, sqlite3, xdg-open, gjs, python3, socat, systemd-inhibit, bluetoothd, qemu/firmware (reuse the Cowork section); runs-at-all check for all 4 bridges; "Problems found" summary
