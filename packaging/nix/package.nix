@@ -22,6 +22,16 @@
 # executor uses it instead of the bundled (glibc-mismatched) binary.
 , gnome-portal-bridge ? null
 , glib ? null              # gsettings (flat mouse acceleration)
+# Host tools the app and launcher exec by name. Suffixed onto PATH, so a
+# user's own copy wins: python3 (--install-gnome-hotkey, --1p/--3p),
+# xdg-utils (xdg-open for links and the CU executor), sqlite (sqlite3 for
+# Recent Projects detection).
+, python3
+, xdg-utils
+, sqlite
+# GNOME Shell search provider: its D-Bus service runs searchProvider.js under
+# gjs. Set to null to skip installing the provider.
+, gjs ? null
 # Claude Code CLI — required for Cowork, Dispatch, and Code integration
 , claude-code ? null    # auto-resolved by callPackage if in nixpkgs
 # Cowork agent workspace VM (also requires /dev/kvm + kvm group membership).
@@ -247,6 +257,7 @@ stdenvNoCC.mkDerivation {
       ${lib.optionalString (glib != null) "--prefix PATH : ${glib}/bin"} \
       ${lib.optionalString (nodejs != null) "--prefix PATH : ${nodejs}/bin"} \
       ${lib.optionalString (qemu != null) "--prefix PATH : ${qemu}/bin"} \
+      --suffix PATH : ${lib.makeBinPath [ python3 xdg-utils sqlite ]} \
       ${lib.optionalString (virtiofsd != null) "--set-default CLAUDE_VIRTIOFSD_PATH ${virtiofsd}/bin/virtiofsd"} \
       ${lib.optionalString (OVMF != null) "--set-default CLAUDE_OVMF_CODE_PATH ${OVMF.fd}/FV/${if stdenvNoCC.hostPlatform.isAarch64 then "AAVMF_CODE.fd" else "OVMF_CODE.fd"}"} \
       ${lib.optionalString (claude-code != null && extraSessionPaths == []) "--prefix PATH : ${claude-code}/bin"} \
@@ -260,6 +271,19 @@ stdenvNoCC.mkDerivation {
       mkdir -p $out/share/icons
       cp -a icons/hicolor $out/share/icons/
     fi
+
+    # GNOME Shell search provider: upstream's .ini verbatim, and its D-Bus
+    # .service with the FHS gjs and /usr/lib paths swapped for store paths.
+    # --replace-fail stops the build if upstream changes the Exec line.
+    ${lib.optionalString (gjs != null) ''
+      sp=$out/lib/claude-desktop/resources/gnome-search-provider
+      install -Dm644 $sp/com.anthropic.Claude.search-provider.ini \
+        $out/share/gnome-shell/search-providers/com.anthropic.Claude.search-provider.ini
+      install -Dm644 $sp/com.anthropic.Claude.SearchProvider.service \
+        $out/share/dbus-1/services/com.anthropic.Claude.SearchProvider.service
+      substituteInPlace $out/share/dbus-1/services/com.anthropic.Claude.SearchProvider.service \
+        --replace-fail "Exec=/usr/bin/gjs -m /usr/lib/claude-desktop/" "Exec=${gjs}/bin/gjs -m $out/lib/claude-desktop/"
+    ''}
 
     # Upstream license notice (tarball root, from the official .deb's
     # usr/share/doc). Guarded: pre-2026-07 release tarballs lack it, and the
@@ -275,7 +299,9 @@ stdenvNoCC.mkDerivation {
     description = "Claude AI Desktop Application for Linux";
     homepage = "https://claude.ai";
     license = licenses.unfree;
-    platforms = [ "x86_64-linux" "aarch64-linux" ];
+    # src is always the x86_64 tarball (x86 bridges, x86 pty.node), so only
+    # x86_64 is built for real.
+    platforms = [ "x86_64-linux" ];
     maintainers = [ ];
     mainProgram = "claude-desktop";
   };
