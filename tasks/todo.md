@@ -27,18 +27,18 @@ See [plan.md](plan.md) and [SPEC.md](../SPEC.md). IDs refer to SPEC findings.
   - Verify for all of W2: `make`; probe shows 0 exceptions for E1-E3 and all ACTIVE; `run-feature-tests.sh linux` + `core`; `node --check`
 
 ### W3 packaging-deps
-- [ ] T3.1 deb: `Conflicts: claude-desktop`, `Replaces: claude-desktop` (P1); Recommends `gnome-keyring | plasma-workspace`, `libsecret-tools` (P3, H2); Suggests `gjs`; review ydotool Suggests text (Debian ships 0.1.8)
+- [x] T3.1 deb: `Conflicts: claude-desktop`, `Replaces: claude-desktop` (P1); Recommends `gnome-keyring | plasma-workspace`, `libsecret-tools` (P3, H2); Suggests `gjs`; review ydotool Suggests text (Debian ships 0.1.8)
   - Verify: docker ubuntu:24.04 install official deb then ours, and ours then official; `apt-get install --simulate` on 22.04/24.04/debian:12/13
   - Files: `packaging/debian/build-deb.sh`
-- [ ] T3.2 rpm: `Conflicts: claude-desktop`; gjs weak dep
+- [x] T3.2 rpm: `Conflicts: claude-desktop`; gjs weak dep
   - Files: `packaging/rpm/claude-desktop-extra.spec`
-- [ ] T3.3 GNOME search provider (P2): install `.ini` to `/usr/share/gnome-shell/search-providers/` and `.service` to `/usr/share/dbus-1/services/` in deb, rpm, pacman payloads; optdepend gjs; Arch optdepend desktop-file-utils
+- [x] T3.3 GNOME search provider (P2): install `.ini` to `/usr/share/gnome-shell/search-providers/` and `.service` to `/usr/share/dbus-1/services/` in deb, rpm, pacman payloads; optdepend gjs; Arch optdepend desktop-file-utils
   - Verify: `dpkg -c`, `rpm -qlp`, `tar -tf` on built packages
   - Files: build-deb.sh, spec, PKGBUILD (find it), pacman helper
-- [ ] T3.4 Nix (N2, N3): `meta.platforms = [ "x86_64-linux" ]`; add `python3`, `xdg-utils`, `sqlite` to wrapper PATH; search-provider files with store paths substituted
+- [x] T3.4 Nix (N2, N3): `meta.platforms = [ "x86_64-linux" ]`; add `python3`, `xdg-utils`, `sqlite` to wrapper PATH; search-provider files with store paths substituted
   - Verify: `nix build` in the nixos/nix container
   - Files: `packaging/nix/package.nix`
-- [ ] T3.5 A1: `build-patched-tarball.sh` derives rust targets from `DEB_ARCH`, skips host builds on arch mismatch, and fails unless every ELF in `TREE_DIR` matches `DEB_ARCH`
+- [x] T3.5 A1: `build-patched-tarball.sh` derives rust targets from `DEB_ARCH`, skips host builds on arch mismatch, and fails unless every ELF in `TREE_DIR` matches `DEB_ARCH`
   - Verify: run the guard function against the amd64 tree (pass) and a tree with one foreign ELF (fail)
 
 ### W4 launcher-fixes
