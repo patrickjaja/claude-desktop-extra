@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// "Keep computer awake" must hold a real sleep inhibitor on Linux desktops
+// "Keep computer awake" must hold a logind idle inhibitor on Linux desktops
 // where Chromium's powerSaveBlocker is a silent no-op, and must never leak it.
 //
 // WHY THIS EXISTS
@@ -8,7 +8,7 @@
 // org.gnome.SessionManager.Inhibit, then org.freedesktop.PowerManagement.Inhibit,
 // and does nothing when neither name has an owner (Sway, Hyprland, niri, i3, ...).
 // js/keep_awake_inhibit.js (injected by patches/linux/fix_keep_awake_linux.nim)
-// holds `systemd-inhibit --what=sleep --mode=block cat` in that case.
+// holds `systemd-inhibit --what=idle --mode=block cat` in that case.
 //
 // This harness runs the real helper source in child node processes, with fake
 // `systemd-inhibit` and `busctl` on a sandboxed PATH, and asserts:
@@ -194,7 +194,7 @@ function gone(pid) {
 }
 
 const ALL = [inhibitDir, busctlDir, toolsDir].join(":");
-const EXPECTED_ARGS = "--what=sleep --who=Claude --why=Keep computer awake is on --mode=block cat";
+const EXPECTED_ARGS = "--what=idle --who=Claude --why=Keep computer awake is on --mode=block cat";
 
 console.log("helper behavior (fake systemd-inhibit + busctl):");
 {

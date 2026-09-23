@@ -16,7 +16,9 @@
 # Three sub-patches:
 #   A. inject js/keep_awake_inhibit.js (globalThis.__cdbKeepAwake) after the
 #      stub's "use strict". When neither service has an owner, it holds a
-#      `systemd-inhibit --what=sleep --mode=block` lock while keep-awake is on.
+#      `systemd-inhibit --what=idle --mode=block` lock while keep-awake is on
+#      (idle, matching upstream's idle-sleep-only promise; honored by logind
+#      IdleAction and hypridle, not by plain swayidle timeouts).
 #   B. wrap the start call: UV=globalThis.__cdbKeepAwake.start(<start call>)
 #      (pass-through; upstream's blocker id is returned unchanged)
 #   C. wrap the stop call: (globalThis.__cdbKeepAwake.stop(),<stop call>)

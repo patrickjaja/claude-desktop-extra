@@ -1,5 +1,5 @@
 /* __cdb_keep_awake_inhibit_v1__
-   logind sleep inhibitor for upstream's "Keep computer awake".
+   logind idle inhibitor for upstream's "Keep computer awake".
 
    Injected by patches/linux/fix_keep_awake_linux.nim, which wraps upstream's
    single keep-awake blocker start and stop calls: start() receives and returns
@@ -14,9 +14,16 @@
    usually own neither, so the machine still idle-suspends with keep-awake on.
 
    What: when neither name has an owner, hold
-       systemd-inhibit --what=sleep --who=Claude --why=... --mode=block cat
+       systemd-inhibit --what=idle --who=Claude --why=... --mode=block cat
    for as long as upstream's blocker is active. Where a native service exists,
    nothing is added, so upstream's behavior there is unchanged.
+
+   Idle, not sleep: upstream only promises to prevent IDLE sleep (manual
+   suspend keeps working on GNOME/KDE), and claims are taken during every
+   running Code turn by default (ccKeepAwakeWhileWorking), so a sleep lock
+   would block the user's own Suspend far too often. The idle lock is honored
+   by logind's IdleAction and by hypridle (ignore_systemd_inhibit=false, the
+   default); plain swayidle timeouts do not consult logind inhibitors.
 
    Leak-proofing: the inhibitor's command is `cat` reading a pipe from this
    process. Any exit of the app - stop(), quit, crash, SIGKILL - closes the
@@ -115,7 +122,7 @@
     try {
       c = require("child_process").spawn(
         bin,
-        ["--what=sleep", "--who=Claude",
+        ["--what=idle", "--who=Claude",
           "--why=Keep computer awake is on", "--mode=block", "cat"],
         { stdio: ["pipe", "ignore", "ignore"], detached: false }
       );
