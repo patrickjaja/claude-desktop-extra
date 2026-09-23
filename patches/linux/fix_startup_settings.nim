@@ -32,18 +32,20 @@
 # and the whole bundle has ZERO /run/user and ZERO gnome-session references. A
 # GNOME session-restore relaunch (no --startup) therefore still shows the window.
 #
-# So per AGENTS.md Rule 6:
-#   - P1 (read) + P2 (write): convert to REGRESSION GUARDS that positively assert
-#     the native XDG autostart read/write end-state is present (FAIL loud if a
-#     future bump removes it — that would silently break the Settings toggle and
-#     re-introduce the always-visible-window bug).
-#   - P3 (session-restore detection): ACTIVE patch — widen the single
-#     argv.includes("--startup") gate with js/startup_session_restore_gate.js,
-#     which suppresses ONLY when an enabled XDG autostart entry exists AND the
-#     graphical session started under 60s ago. Requiring the autostart entry is
-#     what keeps an ordinary launch visible (issue #233).
-#   - P4 (autostart Exec): ACTIVE patch — build the entry from CLAUDE_LAUNCHER so
-#     a login launch goes through our launcher rather than the bundled Electron.
+# So per AGENTS.md Rule 4 we only patch layer 3 and the Exec target; the native
+# read/write paths are PRECONDITIONS of those two sub-patches, not sub-patches
+# of their own (they were assert-only guards until 2026-09-23):
+#   - P3 (session-restore detection): widen the single argv.includes("--startup")
+#     gate with js/startup_session_restore_gate.js, which suppresses ONLY when an
+#     enabled XDG autostart entry exists AND the graphical session started under
+#     60s ago. Requiring the autostart entry is what keeps an ordinary launch
+#     visible (issue #233). Precondition: upstream's autostart path is still
+#     (XDG_CONFIG_HOME||~/.config)/autostart/<basename(execPath)>.desktop, the
+#     exact file the gate reads.
+#   - P4 (autostart Exec): build the entry from CLAUDE_LAUNCHER so a login launch
+#     goes through our launcher rather than the bundled Electron. Its anchor is
+#     the .desktop builder itself (Exec=... --startup followed by
+#     X-GNOME-Autostart-enabled=true), which is the native write path.
 
 import std/[os, strutils]
 import regex
@@ -58,54 +60,8 @@ const GATE_MARKER = "__cdb_startup_gate_v2__"
 
 proc apply*(input: string): string =
   var patchesApplied = 0
-  const expectedPatches = 4
-
-  # ── P1 (guard): native XDG autostart READ ────────────────────────────────
-  # isStartupOnLoginEnabled now delegates to a read helper, and the autostart dir
-  # resolver + filename builder are the positive proof that Linux reads the real
-  # XDG autostart .desktop (not Electron's broken getLoginItemSettings()).
-  var m1: RegexMatch2
-  let readDelegates =
-    input.find(re2"""isStartupOnLoginEnabled\(\)\{return [\w$]+\(\)\}""", m1)
-  # v1.26832.0: node builtins are reached through namespace aliases
-  # (I.default.join / dt.default.homedir) and string literals became
-  # backticks, so allow member chains and either quoting.
-  let autostartDir = input.find(
-    re2"""XDG_CONFIG_HOME\|\|[\w$]+(?:\.[\w$]+)*\.join\([\w$]+(?:\.[\w$]+)*\.homedir\(\),["`]\.config["`]\);return [\w$]+(?:\.[\w$]+)*\.join\([\w$]+,["`]autostart["`]\)""",
-    m1,
-  )
-  let autostartFile = input.find(
-    re2"""return`\$\{[\w$]+(?:\.[\w$]+)*\.basename\(process\.execPath\)\}\.desktop`""",
-    m1,
-  )
-  if readDelegates and autostartDir and autostartFile:
-    echo "  [OK] isStartupOnLoginEnabled reads XDG autostart natively " &
-      "((XDG_CONFIG_HOME||~/.config)/autostart, basename(execPath).desktop) — guard satisfied"
-    patchesApplied += 1
-  else:
-    echo "  [FAIL] Native XDG autostart READ path missing (delegate=" & $readDelegates &
-      " dir=" & $autostartDir & " file=" & $autostartFile & ")"
-    echo "         Upstream may have regressed startup-on-login; re-audit fix_startup_settings P1."
-
-  # ── P2 (guard): native XDG autostart WRITE (with --startup) ───────────────
-  # The .desktop builder must still emit BOTH the `--startup` flag (so autostart
-  # launches hide the window) and X-GNOME-Autostart-enabled. The write helper's
-  # error log is the second positive anchor.
-  var m2: RegexMatch2
-  let desktopBuilder = input.find(
-    re2"""\[Desktop Entry\]["`],["`]Type=Application["`],["`]Name=\$\{[\w$]+\.app\.getName\(\)\}["`],["`]Exec=\$\{.*?\} --startup["`],["`]X-GNOME-Autostart-enabled=true["`]""",
-    m2,
-  )
-  let writeErrLog = "Failed to update XDG autostart entry" in input
-  if desktopBuilder and writeErrLog:
-    echo "  [OK] setStartupOnLoginEnabled writes XDG autostart natively " &
-      "(Exec=… --startup, X-GNOME-Autostart-enabled=true) — guard satisfied"
-    patchesApplied += 1
-  else:
-    echo "  [FAIL] Native XDG autostart WRITE path missing (builder=" & $desktopBuilder &
-      " errlog=" & $writeErrLog & ")"
-    echo "         If the --startup flag or X-GNOME-Autostart-enabled disappeared, the"
-    echo "         autostart window-hide / toggle would break; re-audit fix_startup_settings P2."
+  const expectedPatches = 2
+  result = input
 
   # ── P3 (active patch): session-restore detection ─────────────────────────
   # Upstream's only gate is `<proc>.argv.includes("--startup")`, and
@@ -116,21 +72,44 @@ proc apply*(input: string): string =
   # graphical session started under 60s ago. Requiring the autostart entry is
   # what keeps an ordinary launch visible: without it, clicking the launcher
   # icon shortly after login produced a hidden window (issue #233).
-  # Idempotency: positively assert OUR injected marker is present.
-  if GATE_MARKER in input:
-    echo "  [INFO] session-restore detection: already patched (" & GATE_MARKER & ")"
+  #
+  # Precondition: the gate reads the autostart entry at upstream's own path, so
+  # upstream must still build that path. v1.26832.0: node builtins are reached
+  # through namespace aliases (I.default.join / dt.default.homedir) and string
+  # literals became backticks, so allow member chains and either quoting.
+  let autostartDir = input.findAll(
+    re2"""XDG_CONFIG_HOME\|\|[\w$]+(?:\.[\w$]+)*\.join\([\w$]+(?:\.[\w$]+)*\.homedir\(\),["`]\.config["`]\);return [\w$]+(?:\.[\w$]+)*\.join\([\w$]+,["`]autostart["`]\)"""
+  ).len
+  let autostartFile = input.findAll(
+    re2"""return`\$\{[\w$]+(?:\.[\w$]+)*\.basename\(process\.execPath\)\}\.desktop`"""
+  ).len
+  if autostartDir != 1 or autostartFile != 1:
+    echo "  [FAIL] session-restore precondition: upstream's XDG autostart path " &
+      "((XDG_CONFIG_HOME||~/.config)/autostart, basename(execPath).desktop) not found " &
+      "exactly once (dir=" & $autostartDir & " file=" & $autostartFile &
+      ") - the gate would read the wrong file; re-audit P3"
+    quit(1)
+
+  let gateCount = input.count(GATE_MARKER)
+  if gateCount == 1:
+    echo "  [OK] session-restore detection: already patched (" & GATE_MARKER & ")"
     patchesApplied += 1
+  elif gateCount > 1:
+    echo "  [FAIL] session-restore detection: " & GATE_MARKER & " present " & $gateCount &
+      " times, expected 1"
+    quit(1)
   elif "_b.mtimeMs" in input:
     # The superseded v1 predicate suppressed on the socket mtime alone. Never
     # treat it as "already patched" - that would silently ship the #233 bug.
     echo "  [FAIL] input carries the superseded v1 session-restore predicate"
     echo "         (_b.mtimeMs). Re-extract a clean bundle."
+    quit(1)
   else:
     # v1.26832.0: `--startup` is a template literal and process is reached via a
     # namespace alias (L.default.argv), so accept either quoting and member chains.
     let pattern3 = re2"""([\w$]+(?:\.[\w$]+)*)\.argv\.includes\(["`]--startup["`]\)"""
     var count3 = 0
-    result = input.replace(
+    result = result.replace(
       pattern3,
       proc(m: RegexMatch2, s: string): string =
         inc count3
@@ -147,13 +126,10 @@ proc apply*(input: string): string =
     if count3 == 1:
       echo "  [OK] session-restore detection: augmented argv --startup gate (1 match)"
       patchesApplied += 1
-    elif count3 == 0:
-      echo "  [FAIL] session-restore: argv.includes(\"--startup\") gate not found"
     else:
       echo "  [FAIL] session-restore: expected 1 argv --startup site, found " & $count3 &
         " - re-audit (the window-show gate may have changed shape)"
-  if result.len == 0:
-    result = input
+      quit(1)
 
   # ── P4 (active patch): autostart entry must point at OUR launcher ─────────
   # Upstream builds the XDG autostart entry as
@@ -173,32 +149,40 @@ proc apply*(input: string): string =
   # path), so Exec points back at it, and --profile=<name> is re-added from
   # CLAUDE_PROFILE. Falls back to upstream's process.execPath when the env var is
   # absent (someone ran the Electron binary directly).
-  # Idempotency: positively assert OUR injected CLAUDE_LAUNCHER read is present.
-  if "CLAUDE_LAUNCHER" in result:
-    echo "  [INFO] autostart Exec already points at the launcher (idempotent)"
+  #
+  # The anchor is the whole Exec entry of the .desktop builder, followed by
+  # X-GNOME-Autostart-enabled=true: the --startup flag (autostart launches hide
+  # the window) and the enable key must both still be what upstream writes.
+  let execTail = """ --startup`,["`]X-GNOME-Autostart-enabled=true["`]"""
+  let pattern4 = re2("""(Exec=\$\{)([\w$]+)(\(process\.execPath\)\}""" & execTail & ")")
+  let pattern4Done = re2(
+    """Exec=\$\{[\w$]+\(process\.env\.CLAUDE_LAUNCHER\|\|process\.execPath\)\}\$\{process\.env\.CLAUDE_PROFILE\?""" &
+      """[^`]{0,100}\}""" & execTail
+  )
+  let done4 = result.findAll(pattern4Done).len
+  let count4 = result.findAll(pattern4).len
+  if done4 == 1 and count4 == 0:
+    echo "  [OK] autostart Exec already points at the launcher (idempotent)"
     patchesApplied += 1
-  else:
-    let pattern4 = re2"""(Exec=\$\{)([\w$]+)(\(process\.execPath\)\} --startup)"""
-    var count4 = 0
+  elif done4 == 0 and count4 == 1:
     result = result.replace(
       pattern4,
       proc(m: RegexMatch2, s: string): string =
-        inc count4
         let shellQuote = s[m.group(1)]
+        let rest = s[m.group(2)]
         s[m.group(0)] & shellQuote & "(process.env.CLAUDE_LAUNCHER||process.execPath)}" &
           "${process.env.CLAUDE_PROFILE?\" --profile=\"+" &
           "process.env.CLAUDE_PROFILE.replace(/[^A-Za-z0-9._-]/g,\"\"):\"\"}" &
-          " --startup",
+          rest["(process.execPath)}".len .. ^1],
     )
-    if count4 == 1:
-      echo "  [OK] autostart Exec now points at the launcher (1 match)"
-      patchesApplied += 1
-    elif count4 == 0:
-      echo "  [FAIL] autostart .desktop Exec builder not found (re-audit P4)"
-    else:
-      echo "  [FAIL] expected 1 autostart Exec site, found " & $count4
+    echo "  [OK] autostart Exec now points at the launcher (1 match)"
+    patchesApplied += 1
+  else:
+    echo "  [FAIL] autostart .desktop builder: " & $count4 & " upstream and " & $done4 &
+      " patched Exec entries, expected exactly one of them once (re-audit P4)"
+    quit(1)
 
-  if patchesApplied < expectedPatches:
+  if patchesApplied != expectedPatches:
     echo "  [FAIL] Only " & $patchesApplied & "/" & $expectedPatches & " patches applied"
     quit(1)
 
@@ -216,6 +200,4 @@ when isMainModule:
   let output = apply(input)
   if output != input:
     writeFile(filePath, output)
-    echo "  [PASS] Startup settings: native XDG autostart confirmed + session-restore detection injected"
-  else:
-    echo "  [PASS] Startup settings: native XDG autostart confirmed (session-restore already patched)"
+  echo "  [PASS] Startup settings: 2/2 patches applied"
