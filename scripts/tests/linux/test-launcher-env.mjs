@@ -287,6 +287,28 @@ safe("L4", () => {
   check("timed-out probes are not repeated per tool", Date.now() - t0 < 12000, true);
 });
 
+// ---------------------------------------------------------------- L5
+console.log("L5: AppRun does not leak the bundled library dir to children");
+safe("L5", () => {
+  const m = appimageBuilder.match(/cat > "\$APPDIR\/AppRun" << 'EOF'\n([\s\S]*?)\nEOF\n/);
+  if (!m) throw new Error("AppRun heredoc not found in build-appimage.sh");
+  const appdir = join(scratch, "l5", "AppDir");
+  writeExe(join(appdir, "AppRun"), m[1] + "\n");
+  writeExe(join(appdir, "usr/bin/claude-desktop"),
+    '#!/bin/sh\necho "LD=${LD_LIBRARY_PATH-unset} E=$CLAUDE_ELECTRON"\n');
+  const r = spawnSync(join(appdir, "AppRun"), [], {
+    env: { PATH: "/usr/bin:/bin", APPIMAGE: "/x/Claude.AppImage" }, encoding: "utf8",
+  });
+  check("LD_LIBRARY_PATH stays unset", (r.stdout || "").includes("LD=unset"), true);
+  check("CLAUDE_ELECTRON still points into the AppDir",
+    (r.stdout || "").includes(`E=${appdir}/usr/lib/claude-desktop/claude`), true);
+  const r2 = spawnSync(join(appdir, "AppRun"), [], {
+    env: { PATH: "/usr/bin:/bin", LD_LIBRARY_PATH: "/opt/x" }, encoding: "utf8",
+  });
+  check("a user's LD_LIBRARY_PATH passes through untouched",
+    (r2.stdout || "").includes("LD=/opt/x "), true);
+});
+
 rmSync(scratch, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) {

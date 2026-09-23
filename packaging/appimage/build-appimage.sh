@@ -129,11 +129,12 @@ cat > "$APPDIR/AppRun" << 'EOF'
 SELF=$(readlink -f "$0")
 HERE=${SELF%/*}
 export PATH="${HERE}/usr/bin:${PATH}"
-# The :+ guard matters: LD_LIBRARY_PATH is unset on virtually every desktop,
-# so an unconditional ":${LD_LIBRARY_PATH}" left a trailing empty element,
-# which the dynamic loader reads as the current directory - every AppImage
-# launch then searched $PWD for shared objects.
-export LD_LIBRARY_PATH="${HERE}/usr/lib/claude-desktop${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+# No LD_LIBRARY_PATH: the Electron binary carries RPATH=$ORIGIN, which finds
+# its one bundled DT_NEEDED library (libffmpeg.so) and covers the libraries
+# Chromium dlopens from its own directory (libvulkan.so.1, SwiftShader). The
+# official .deb runs it the same way, from a bare symlink. Exporting the dir
+# leaked the bundled libvulkan.so.1 / libffmpeg.so into every shell, MCP
+# server, qemu and Claude Code process the app starts.
 
 # Tell the launcher where the bundled Electron lives. Electron auto-loads the
 # exe-adjacent resources/app.asar (OnlyLoadAppFromAsar fuse), so the launcher no
