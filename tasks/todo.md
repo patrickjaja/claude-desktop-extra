@@ -57,8 +57,8 @@ See [plan.md](plan.md) and [SPEC.md](../SPEC.md). IDs refer to SPEC findings.
   - Verify: extend `scripts/tests/linux/` harness (unrunnable bridge fixture, XDG_DATA_DIRS fixture); `run-feature-tests.sh linux`; `make` (staticRead)
 
 ### W6 tray-less-desktops (X3)
-- [ ] T6.1 Verify: on the Ubuntu VM (GNOME, AppIndicator disabled) close the window -> is the process left running with no way back but relaunch? Check whether upstream already probes for a tray host anywhere
-- [ ] T6.2 If confirmed: patch so the close-to-tray and `--startup` hidden paths require a StatusNotifierWatcher on the session bus (async check at startup, cached; with a watcher, upstream behavior unchanged). Harness for both branches. Report before adding a new patch file vs folding into an existing linux patch
+- [x] T6.1 Verify: on the Ubuntu VM (GNOME, AppIndicator disabled) close the window -> is the process left running with no way back but relaunch? Check whether upstream already probes for a tray host anywhere
+- [x] T6.2 If confirmed: patch so the close-to-tray and `--startup` hidden paths require a StatusNotifierWatcher on the session bus (async check at startup, cached; with a watcher, upstream behavior unchanged). Harness for both branches. Report before adding a new patch file vs folding into an existing linux patch
 
 ### W7 keep-awake-linux (X4)
 - [ ] T7.1 Verify: with keep-awake on, what does `powerSaveBlocker.start("prevent-app-suspension")` produce on this host and the VMs (`systemd-inhibit --list`, `busctl --user` ScreenSaver/PowerManagement inhibitors)?
