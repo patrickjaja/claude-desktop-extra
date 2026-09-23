@@ -1202,24 +1202,36 @@ _kwallet_available() {
     # a real method call, bounded by a short D-Bus timeout - the app's own
     # kwalletd pre-flight warns that this call can otherwise block behind the
     # wallet-creation wizard when kwalletd runs but has no wallet yet.
-    local _v _svc _obj
+    #
+    # Each tool falls through to the next, like _secret_service_available: an
+    # installed busctl that cannot reach the bus (no systemd user bus) says
+    # "no" about every name, and that must not end the probe. A probe that ran
+    # into its 5 s timeout DID reach kwalletd (it hung, see above), so the other
+    # tools would only hang the same way: that version is settled as "no".
+    local _v _svc _obj _t0 _probed=0
     for _v in 6 5; do
         _svc="org.kde.kwalletd${_v}"
         _obj="/modules/kwalletd${_v}"
         if command -v busctl &>/dev/null; then
+            _probed=1; _t0=$SECONDS
             busctl --user --no-pager --timeout=5 call \
                 "$_svc" "$_obj" org.kde.KWallet wallets &>/dev/null && return 0
-        elif command -v dbus-send &>/dev/null; then
+            (( SECONDS - _t0 < 4 )) || continue
+        fi
+        if command -v dbus-send &>/dev/null; then
+            _probed=1; _t0=$SECONDS
             dbus-send --session --print-reply --reply-timeout=5000 \
                 --dest="$_svc" "$_obj" org.kde.KWallet.wallets &>/dev/null && return 0
-        elif command -v gdbus &>/dev/null; then
+            (( SECONDS - _t0 < 4 )) || continue
+        fi
+        if command -v gdbus &>/dev/null; then
+            _probed=1
             gdbus call --session --timeout 5 --dest "$_svc" \
                 --object-path "$_obj" --method org.kde.KWallet.wallets &>/dev/null && return 0
-        else
-            # No way to probe - keep Chromium's KDE default untouched.
-            return 0
         fi
     done
+    # No way to probe - keep Chromium's KDE default untouched.
+    (( _probed )) || return 0
     return 1
 }
 

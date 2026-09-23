@@ -260,6 +260,33 @@ safe("L3", () => {
     mode({ WAYLAND_DISPLAY: "wayland-1", CLAUDE_USE_XWAYLAND: "1" }), "wayland");
 });
 
+// ---------------------------------------------------------------- L4
+console.log("L4: kwallet probe falls through a failing busctl");
+safe("L4", () => {
+  const f = ["_kwallet_available"];
+  const bin = join(scratch, "l4");
+  const probe = (tools) => {
+    const dir = join(bin, Object.entries(tools).map(([k, v]) => `${k}${v}`).join("_") || "none");
+    mkdirSync(dir, { recursive: true });
+    for (const [tool, code] of Object.entries(tools)) {
+      // "hang" stands in for kwalletd blocking until the 5 s D-Bus timeout.
+      writeExe(join(dir, tool), code === "hang"
+        ? "#!/bin/sh\n/bin/sleep 4\nexit 1\n" : `#!/bin/sh\nexit ${code}\n`);
+    }
+    return runFns(f, "_kwallet_available && echo yes || echo no",
+      { PATH: dir }).out;
+  };
+  check("failing busctl, working dbus-send", probe({ busctl: 1, "dbus-send": 0 }), "yes");
+  check("failing busctl + dbus-send, working gdbus",
+    probe({ busctl: 1, "dbus-send": 1, gdbus: 0 }), "yes");
+  check("every tool says no", probe({ busctl: 1, "dbus-send": 1, gdbus: 1 }), "no");
+  check("no probe tool at all keeps the KDE default", probe({}), "yes");
+  const t0 = Date.now();
+  check("a timed-out busctl settles that version without retrying",
+    probe({ busctl: "hang", "dbus-send": 0 }), "no");
+  check("timed-out probes are not repeated per tool", Date.now() - t0 < 12000, true);
+});
+
 rmSync(scratch, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) {
