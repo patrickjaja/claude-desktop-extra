@@ -51,7 +51,7 @@ Panel tabs and Files quick open depend on DOM anchors in remote claude.ai code; 
 
 ## Linux compatibility
 
-**33 patches**, always on and nothing to configure. Upstream ships the same JS bundle to every platform; these open `darwin`/`win32`-only gates for Linux, or fix behavior that only misfires in a Linux desktop environment. Each one is either a feature you would otherwise not have at all, or a bug you would otherwise hit.
+**34 patches**, always on and nothing to configure. Upstream ships the same JS bundle to every platform; these open `darwin`/`win32`-only gates for Linux, or fix behavior that only misfires in a Linux desktop environment. Each one is either a feature you would otherwise not have at all, or a bug you would otherwise hit.
 
 | Patch | What it does & why it exists |
 |-------|------------------------------|
@@ -70,6 +70,7 @@ Panel tabs and Files quick open depend on DOM anchors in remote claude.ai code; 
 | [`fix_epitaxy_autoscroll.nim`](patches/linux/fix_epitaxy_autoscroll.nim) | Keeps the Code and Cowork transcript following a running response; a few pixels of routine drift while streaming used to unpin it for good |
 | [`fix_host_tool_paths_linux.nim`](patches/linux/fix_host_tool_paths_linux.nim) | Finds `busctl`, `secret-tool` and `kwallet-query` on PATH when they are not at `/usr/bin`, as on NixOS. Without `busctl` the app decides there is no GlobalShortcuts portal and refuses every Wayland shortcut, Quick Entry included; without the other two, Chrome cookie import silently skips keyring-encrypted cookies. Hosts that have the `/usr/bin` file keep using it |
 | [`fix_ion_dist_linux.nim`](patches/linux/fix_ion_dist_linux.nim) | Adds the Linux org-plugins path to the third-party configuration app, which knew only macOS and Windows locations |
+| [`fix_keep_awake_linux.nim`](patches/linux/fix_keep_awake_linux.nim) | Makes "Keep computer awake" hold a logind sleep inhibitor (`systemd-inhibit`) on desktops without a GNOME or freedesktop power-management service (Sway, Hyprland, niri, i3, ...), where Chromium's blocker silently does nothing |
 | [`fix_marketplace_linux.nim`](patches/linux/fix_marketplace_linux.nim) | Makes plugin operations work on Linux, and lists your home-scoped CLI plugins as Personal Plugins |
 | [`fix_native_frame.nim`](patches/linux/fix_native_frame.nim) | Gives Linux the integrated titlebar upstream builds only for Windows. Two opt-outs: `--native-titlebar` for the system frame, or `--no-window-controls` for a frameless window without buttons, which is what removes the thin frame Chromium paints on xfwm4/i3/Awesome |
 | [`fix_office365_mcp_open_url.nim`](patches/linux/fix_office365_mcp_open_url.nim) | Has the bundled Microsoft 365 server ask the app to open its sign-in page; on KDE the direct attempt silently did nothing until the login timed out ([#139](https://github.com/patrickjaja/claude-desktop-extra/issues/139)) |

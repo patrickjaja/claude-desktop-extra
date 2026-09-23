@@ -51,6 +51,8 @@ linux/fix_cowork_font: ../js/fix_cowork_font.js
 
 linux/fix_epitaxy_autoscroll: ../js/fix_epitaxy_autoscroll.js
 
+linux/fix_keep_awake_linux: ../js/keep_awake_inhibit.js
+
 linux/fix_second_instance_diag: ../js/second_instance_diag.js
 
 linux/fix_startup_settings: ../js/startup_session_restore_gate.js
