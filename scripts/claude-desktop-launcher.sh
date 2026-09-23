@@ -669,13 +669,20 @@ _mirror_profile_siblings() {
     done
 }
 
-# Resolve the canonical (system-installed) Electron binary, ignoring any
-# per-profile copy. Mirrors the path-discovery candidate list. Returns the
+# Resolve the canonical Electron binary, ignoring any per-profile copy.
+# CLAUDE_ELECTRON comes first: it is how Nix and the AppImage name their tree,
+# and a system path would make a mixed install silently re-copy the profile
+# from the OTHER package. Then the path-discovery candidate list. Returns the
 # first executable hit on stdout, or empty if none found.
 # (The claude-desktop-bin path is legacy: Arch installs before the
 # claude-desktop-extra rename.)
 _canonical_electron_bin() {
     local c
+    if [[ -n "${CLAUDE_ELECTRON:-}" && -x "$CLAUDE_ELECTRON" \
+        && "$CLAUDE_ELECTRON" != "$HOME/.local/lib/claude-desktop/"* ]]; then
+        echo "$CLAUDE_ELECTRON"
+        return 0
+    fi
     for c in \
         "/usr/lib/claude-desktop/${APP_ID}" \
         "/usr/lib/claude-desktop-bin/${APP_ID}" \
@@ -695,13 +702,18 @@ _canonical_electron_bin() {
 #     at the old version → version mismatch with app.asar at runtime).
 #   - Per-profile binary present but no longer executable (e.g. NixOS rebuild
 #     replaced the store path; symlinks pointing into /nix/store dangle).
-#   - Any sibling symlink target missing (same Nix scenario, or AppImage
-#     mount-point churn).
+#   - Any sibling symlink target missing (same Nix scenario after GC).
+#   - The per-profile dir mirrors a different install than the canonical one
+#     (a NixOS rebuild before GC: store files all carry mtime 1, so the -nt
+#     check never fires while the old store path still exists).
+# The AppImage is skipped entirely: its tree lives on a FUSE mount whose path
+# changes every launch, so a per-profile mirror of it breaks on the next run.
 # When a refresh runs, it leaves a one-line note on stderr so the user can
 # correlate post-upgrade hiccups. Failures fall through to whatever the
 # next launch attempt sees; no fatal exit.
 _refresh_profile_binary_if_stale() {
     [[ -z "$profile_suffix" ]] && return 0
+    [[ -n "${CLAUDE_APPIMAGE_PATH:-}" ]] && return 0
     local profile_bin="$HOME/.local/lib/claude-desktop/${APP_ID}${profile_suffix}"
     [[ -e "$profile_bin" ]] || return 0  # not yet --create-profile'd
     local canonical
@@ -712,6 +724,9 @@ _refresh_profile_binary_if_stale() {
         need_refresh=1; reason="per-profile binary not executable (Nix store moved?)"
     elif [[ "$canonical" -nt "$profile_bin" ]]; then
         need_refresh=1; reason="canonical Electron is newer (package upgrade?)"
+    elif [[ "$(readlink "$(dirname "$profile_bin")/resources" 2>/dev/null || true)" \
+            != "$(dirname "$canonical")/resources" ]]; then
+        need_refresh=1; reason="per-profile files mirror a different install than $(dirname "$canonical")"
     else
         # Walk siblings; if any symlink dangles, full refresh.
         local entry bn target
@@ -920,6 +935,16 @@ _create_profile() {
     if ! [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
         echo >&2 "claude-desktop: invalid profile name '$name' (allowed: [a-zA-Z0-9_-])"
         return 2
+    fi
+
+    # The AppImage's Electron tree is a FUSE mount at a new path every run, so a
+    # per-profile copy of it would break from the second launch. --profile=NAME
+    # still isolates the profile's state without one.
+    if [[ -n "${CLAUDE_APPIMAGE_PATH:-}" ]]; then
+        echo >&2 "claude-desktop: --create-profile is not available in the AppImage (its files move on every launch)."
+        echo >&2 "  Run the AppImage with --profile=$name instead: the profile gets its own login, logs and settings,"
+        echo >&2 "  and shares the default profile's taskbar entry."
+        return 1
     fi
 
     # launcher_path is what the entry points run: a path, or on a wrapped
@@ -1588,7 +1613,8 @@ _diagnose() {
 # (e.g. dangling per-profile from a moved Nix store path) — we want the next
 # launch step to use the freshly materialised per-profile binary so WM_CLASS /
 # Wayland app_id reflect the profile.
-if [[ -n "$profile_suffix" ]]; then
+# The AppImage never uses a per-profile binary (see _refresh_profile_binary_if_stale).
+if [[ -n "$profile_suffix" && -z "${CLAUDE_APPIMAGE_PATH:-}" ]]; then
     _refresh_profile_binary_if_stale || true
     _profile_bin="$HOME/.local/lib/claude-desktop/${APP_ID}${profile_suffix}"
     if [[ -x "$_profile_bin" ]]; then

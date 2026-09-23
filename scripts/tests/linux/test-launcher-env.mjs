@@ -30,7 +30,7 @@
 // Exit codes follow the repo convention: 0 = PASS, 3 = SKIP, other = FAIL.
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync, chmodSync,
-         existsSync, readlinkSync, lstatSync, symlinkSync } from "node:fs";
+         existsSync, readlinkSync, lstatSync, symlinkSync, utimesSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -179,6 +179,68 @@ safe("N1 create-profile via wrapper", () => {
     entryText.includes(unwrapped), false);
   check("profile entry point starts the wrapper with the profile",
     /exec .*claude-desktop['"]? --profile=work /.test(entryText), true);
+});
+
+// ---------------------------------------------------------------- L1
+console.log("L1: per-profile refresh follows CLAUDE_ELECTRON");
+safe("L1 canonical", () => {
+  const root = join(scratch, "l1");
+  const home = join(root, "home");
+  const treeA = fakeTree(join(root, "treeA"));
+  const f = ["_canonical_electron_bin"];
+  check("CLAUDE_ELECTRON is the canonical binary",
+    runFns(f, "_canonical_electron_bin", { ...baseEnv, HOME: home, CLAUDE_ELECTRON: treeA }).out,
+    treeA);
+  const profCopy = join(home, ".local/lib/claude-desktop/claude-work");
+  writeExe(profCopy, "#!/bin/sh\n");
+  const r = runFns(f, "_canonical_electron_bin || true",
+    { ...baseEnv, HOME: home, CLAUDE_ELECTRON: profCopy });
+  check("a per-profile copy is never canonical", r.out === profCopy, false);
+});
+
+safe("L1 refresh from a moved install", () => {
+  const root = join(scratch, "l1r");
+  const home = join(root, "home");
+  const treeA = fakeTree(join(root, "treeA"));
+  const treeB = fakeTree(join(root, "treeB"));
+  // Nix store files carry mtime 1, so "canonical is newer" can never fire.
+  utimesSync(treeB, 1, 1);
+  const libDir = join(home, ".local/lib/claude-desktop");
+  mkdirSync(libDir, { recursive: true });
+  const f = ["_materialise_profile_binary", "_mirror_profile_siblings",
+             "_canonical_electron_bin", "_refresh_profile_binary_if_stale"];
+  // Profile created from tree A (e.g. the previous Nix store path, still present).
+  const setup = `_materialise_profile_binary "${treeA}" "${libDir}/claude-work" && ` +
+    `_mirror_profile_siblings "${dirname(treeA)}" "${libDir}" claude`;
+  runFns(f, setup, { ...baseEnv, HOME: home });
+  const r = runFns(f,
+    `profile_suffix=-work CLAUDE_PROFILE=work; _refresh_profile_binary_if_stale || true`,
+    { ...baseEnv, HOME: home, CLAUDE_ELECTRON: treeB });
+  check("resources now mirrors CLAUDE_ELECTRON's tree",
+    readlinkSync(join(libDir, "resources")), join(dirname(treeB), "resources"));
+  // Nix store files have mtime 1, so -nt never fires; the mirror mismatch must.
+  check("refresh names the mirror mismatch", /mirror a different install/.test(r.err), true);
+  const again = runFns(f,
+    `profile_suffix=-work CLAUDE_PROFILE=work; _refresh_profile_binary_if_stale || true`,
+    { ...baseEnv, HOME: home, CLAUDE_ELECTRON: treeB });
+  check("second launch does not refresh again", /Refreshing/.test(again.err), false);
+});
+
+safe("L1 AppImage create-profile", () => {
+  const root = join(scratch, "l1a");
+  const home = join(root, "home");
+  mkdirSync(home, { recursive: true });
+  const mount = fakeTree(join(root, "mount_abc", "usr/lib/claude-desktop"));
+  const r = spawnSync(BASH, [launcherPath, "--create-profile=work"], {
+    env: { PATH: "/usr/bin:/bin", HOME: home, CLAUDE_ELECTRON: mount,
+           CLAUDE_APPIMAGE_PATH: join(root, "Claude.AppImage"),
+           XDG_RUNTIME_DIR: join(root, "run") },
+    encoding: "utf8",
+  });
+  check("AppImage --create-profile refuses", r.status !== 0, true);
+  check("refusal names the AppImage", /AppImage/.test(r.stderr), true);
+  check("no per-profile binary was copied",
+    existsSync(join(home, ".local/lib/claude-desktop/claude-work")), false);
 });
 
 rmSync(scratch, { recursive: true, force: true });
