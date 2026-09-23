@@ -38,6 +38,12 @@ function _checkYdotool(){if(_ydotoolOk!==null)return _ydotoolOk;if(!_hasCmd("ydo
 // ── x11-bridge: first-party X11/XWayland backend (replaces xdotool/scrot/import/wmctrl) ──
 // The binary is resolved in cu_mode_preamble.js into globalThis.__cuX11BridgeBin.
 function _x11BridgeBin(){return process.env.X11_BRIDGE_BIN||globalThis.__cuX11BridgeBin}
+// Why a bridge is unavailable. cu_mode_preamble.js records a bridge that is
+// present but cannot run (foreign ELF loader, glibc/PipeWire older than the
+// bridge floor, wrong arch, hang) in __cuBridgeFail with the real cause and a
+// hint. Only a bridge that is genuinely missing gets the reinstall advice.
+function _bridgeWhy(name,envVar){var f=globalThis.__cuBridgeFail&&globalThis.__cuBridgeFail[name];if(f)return name+" at "+f.path+" cannot run ("+f.cause+")"+(f.hint?" - "+f.hint:"");return name+" is missing from the package - set "+envVar+" or reinstall the package"}
+function _bridgeState(name,bin){if(bin)return"present ("+bin+")";var f=globalThis.__cuBridgeFail&&globalThis.__cuBridgeFail[name];return f?"cannot run ("+f.cause+")":"absent"}
 // Bridges must emit exactly one JSON value on stdout; anything else (crash
 // spew, truncated write, stray warning) lands here. Fail with the bridge name
 // and a stdout preview instead of a bare SyntaxError so the tool result says
@@ -50,7 +56,7 @@ function _parseBridgeJson(label,out){
 }
 function _x11Bridge(args){
   var bin=_x11BridgeBin();
-  if(!bin)throw new Error("x11-bridge not available (globalThis.__cuX11BridgeBin unset — set X11_BRIDGE_BIN or reinstall the package - the bundled bridge is missing)");
+  if(!bin)throw new Error(_bridgeWhy("x11-bridge","X11_BRIDGE_BIN"));
   var res=_cp.execFileSync(bin,args,{encoding:"utf-8",timeout:15000,maxBuffer:16*1024*1024});
   var out=res.trim();
   return out?_parseBridgeJson("x11-bridge",out):null;
@@ -59,7 +65,7 @@ function _x11Bridge(args){
 // #232) - a hung bridge there must never block the Electron main process.
 function _x11BridgeAsync(args,timeoutMs){
   var bin=_x11BridgeBin();
-  if(!bin)return Promise.reject(new Error("x11-bridge not available (globalThis.__cuX11BridgeBin unset — set X11_BRIDGE_BIN or reinstall the package - the bundled bridge is missing)"));
+  if(!bin)return Promise.reject(new Error(_bridgeWhy("x11-bridge","X11_BRIDGE_BIN")));
   return _execFileAsync("x11-bridge",bin,args,timeoutMs||15000);
 }
 // Bridge-side monitor list (RandR names + root-window geometry). Used to map a
@@ -388,8 +394,8 @@ async function _captureRegion(x,y,w,h,sf){
   // logical region — undo the scaleFactor multiply applied above.
   // Hard-fail (no fallback to deleted tools) if a covered Wayland session has no
   // resolved bridge binary — this only happens if bundling broke.
-  if(_isWlrootsCovered()&&!_wlrootsBridgeBin())throw new Error("wlroots-bridge missing on a wlroots-Wayland session — set WLROOTS_BRIDGE_BIN or reinstall (the bundled bridge is required; ydotool/grim fallbacks were removed).");
-  if(_isGnomeCovered()&&!_gnomeBridgeBin())throw new Error("gnome-portal-bridge missing on a GNOME-Wayland session — set GNOME_PORTAL_BRIDGE_BIN or reinstall (the bundled bridge is required; ydotool/portal-screenshot fallbacks were removed).");
+  if(_isWlrootsCovered()&&!_wlrootsBridgeBin())throw new Error(_bridgeWhy("wlroots-bridge","WLROOTS_BRIDGE_BIN")+" (it is the only backend on a wlroots-Wayland session; ydotool/grim fallbacks were removed).");
+  if(_isGnomeCovered()&&!_gnomeBridgeBin())throw new Error(_bridgeWhy("gnome-portal-bridge","GNOME_PORTAL_BRIDGE_BIN")+" (it is the only backend on a GNOME-Wayland session; ydotool/portal-screenshot fallbacks were removed).");
   var _wlb=_wayland?_wlBridge():null;
   if(_wlb){
     try{
@@ -433,11 +439,14 @@ async function _captureRegion(x,y,w,h,sf){
     }else if(!_wayland){
       // X11 session with no bridge: hard fail (no third-party fallback, per design).
       // The Electron desktopCapturer tier below is the only remaining last resort.
-      globalThis.__cdbDiag("[claude-cu] x11-bridge missing on X11 session — set X11_BRIDGE_BIN or reinstall the package - the bundled bridge is missing");
+      globalThis.__cdbDiag("[claude-cu] no x11-bridge on an X11 session: "+_bridgeWhy("x11-bridge","X11_BRIDGE_BIN"));
     }
   }
   try{var _sources=await _electron.desktopCapturer.getSources({types:["screen"],thumbnailSize:{width:w+x,height:h+y}});if(_sources&&_sources.length>0){var _img=_sources[0].thumbnail;if(_img&&!_img.isEmpty()){var _cropped=_img.crop({x:x,y:y,width:w,height:h});_fs.writeFileSync(tmp,_cropped.toPNG());globalThis.__cdbDiag("[claude-cu] screenshot: captured via desktopCapturer (Electron fallback)");return _nativePng(_readClean(tmp))}}}catch(dce){globalThis.__cdbDiag("[claude-cu] desktopCapturer fallback failed: "+dce.message)}
-  throw new Error("Screenshot failed — on X11 reinstall the package (bundled x11-bridge missing; or set X11_BRIDGE_BIN); on wlroots/GNOME Wayland reinstall the bundled bridge; or set COWORK_SCREENSHOT_CMD.")
+  // Name the cause when it is a bridge that is missing or cannot run; when the
+  // bridge is there, the per-tier failures are already in claude-patches.log.
+  var _noX11=!_x11BridgeBin()&&(!_wayland||(globalThis.__cuBridgeFail&&globalThis.__cuBridgeFail["x11-bridge"]));
+  throw new Error("Screenshot failed - "+(_noX11?_bridgeWhy("x11-bridge","X11_BRIDGE_BIN"):"every capture tier failed (details in claude-patches.log)")+"; or set COWORK_SCREENSHOT_CMD.")
 }
 if(_wayland){globalThis.__cdbDiag("[claude-cu] Wayland session detected"+(_isWlrootsCovered()?" (wlroots — wlroots-bridge backend)":_isGnomeCovered()?" (GNOME — gnome-portal-bridge backend)":" (exotic — ydotool/x11-bridge fallback)"))}
 (function(){
@@ -465,14 +474,14 @@ if(_wayland){globalThis.__cdbDiag("[claude-cu] Wayland session detected"+(_isWlr
   try{var _diagMons=_getMonitors();globalThis.__cdbDiag("[claude-cu] diagnostics: displays=["+_diagMons.map(function(m){return m.label+"("+m.width+"x"+m.height+"+"+m.originX+"+"+m.originY+" sf="+m.scaleFactor+(m.isPrimary?" primary":"")+")"}).join(", ")+"]")}catch(me){}
   globalThis.__cdbDiag("[claude-cu] diagnostics: available=["+avail.join(", ")+"]");
   if(missing.length)globalThis.__cdbDiag("[claude-cu] diagnostics: missing=["+missing.join(", ")+"] (install for the residual fallback paths)");
-  globalThis.__cdbDiag("[claude-cu] diagnostics: x11-bridge="+(_x11ok?"present ("+_x11BridgeBin()+")":"absent"));
-  globalThis.__cdbDiag("[claude-cu] diagnostics: wlroots-bridge="+(_wlrok?"present ("+_wlrootsBridgeBin()+")":"absent"));
-  globalThis.__cdbDiag("[claude-cu] diagnostics: gnome-portal-bridge="+(_gnok?"present ("+_gnomeBridgeBin()+")":"absent"));
+  globalThis.__cdbDiag("[claude-cu] diagnostics: x11-bridge="+_bridgeState("x11-bridge",_x11BridgeBin()));
+  globalThis.__cdbDiag("[claude-cu] diagnostics: wlroots-bridge="+_bridgeState("wlroots-bridge",_wlrootsBridgeBin()));
+  globalThis.__cdbDiag("[claude-cu] diagnostics: gnome-portal-bridge="+_bridgeState("gnome-portal-bridge",_gnomeBridgeBin()));
   // input-backend
-  if(_wlrCovered){globalThis.__cdbDiag("[claude-cu] diagnostics: input-backend="+(_wlrok?"wlroots-bridge":"none (wlroots-bridge missing — reinstall)"))}
-  else if(_gnomeCovered){globalThis.__cdbDiag("[claude-cu] diagnostics: input-backend="+(_gnok?"gnome-portal-bridge":"none (gnome-portal-bridge missing — reinstall)"))}
+  if(_wlrCovered){globalThis.__cdbDiag("[claude-cu] diagnostics: input-backend="+(_wlrok?"wlroots-bridge":"none ("+_bridgeWhy("wlroots-bridge","WLROOTS_BRIDGE_BIN")+")"))}
+  else if(_gnomeCovered){globalThis.__cdbDiag("[claude-cu] diagnostics: input-backend="+(_gnok?"gnome-portal-bridge":"none ("+_bridgeWhy("gnome-portal-bridge","GNOME_PORTAL_BRIDGE_BIN")+")"))}
   else if(_wayland){var ydOk=_checkYdotool();globalThis.__cdbDiag("[claude-cu] diagnostics: input-backend="+(ydOk?"ydotool":(_x11ok?"x11-bridge (XWayland fallback)":"none (install ydotool or x11-bridge)")))}
-  else{globalThis.__cdbDiag("[claude-cu] diagnostics: input-backend="+(_x11ok?"x11-bridge":"none (bundled x11-bridge missing - reinstall)"))}
+  else{globalThis.__cdbDiag("[claude-cu] diagnostics: input-backend="+(_x11ok?"x11-bridge":"none ("+_bridgeWhy("x11-bridge","X11_BRIDGE_BIN")+")"))}
   // screenshot-cascade
   var order=[];
   if(process.env.COWORK_SCREENSHOT_CMD)order.push("COWORK_SCREENSHOT_CMD");
