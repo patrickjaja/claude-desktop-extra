@@ -2189,7 +2189,7 @@ esac
 
 # Auto-heal stale per-profile installs after package upgrades or NixOS rebuilds.
 # Also refresh ELECTRON_BIN if path discovery had to fall back to the canonical
-# (e.g. dangling per-profile from a moved Nix store path) — we want the next
+# (e.g. dangling per-profile from a moved Nix store path) - we want the next
 # launch step to use the freshly materialised per-profile binary so WM_CLASS /
 # Wayland app_id reflect the profile.
 # The AppImage never uses a per-profile binary (see _refresh_profile_binary_if_stale).

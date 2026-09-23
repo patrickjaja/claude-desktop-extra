@@ -41,7 +41,7 @@ optdepends=('nodejs: System Node.js for MCP extensions that require specific ver
             'socat: Faster Quick Entry toggle via socket (~2ms vs ~25ms python3 — not required)'
             'bluez: Hardware Buddy (Nibblet BLE pet) — the daemon Web Bluetooth talks to; without it the in-app device scan finds nothing'
             'gnome-keyring: credential storage backend for libsecret (KDE users: kwallet works too — upstream Recommends gnome-keyring | kwalletd)'
-            'xdg-desktop-portal-gtk: portal backend for DEs without their own (GNOME/KDE ship xdg-desktop-portal-gnome/-kde) — file dialogs, screen sharing'
+            'xdg-desktop-portal-gtk: portal backend for DEs without their own (GNOME/KDE ship xdg-desktop-portal-gnome/-kde) - file dialogs, screen sharing'
             'gjs: GNOME Shell search provider (Claude sessions in the Activities search; GNOME Shell already pulls it in)'
             'desktop-file-utils: refreshes the desktop entry cache (update-desktop-database) on install')
 optdepends_x86_64=('qemu-system-x86: Cowork agent workspace VM (needs /dev/kvm + user in kvm group)'

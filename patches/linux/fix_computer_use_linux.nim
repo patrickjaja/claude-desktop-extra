@@ -472,10 +472,10 @@ proc apply*(input: string): string =
     # Anchor on the darwin-return immediately before the throw (unique: exactly
     # one `darwin)return X(Y);throw "...executor not implemented"` site). Insert
     # the linux branch between the darwin branch and the throw. Param/fn vars
-    # are minified — keep them as captured wildcards.
-    # NB: the throw interpolates `${process.platform}` — the placeholder body
+    # are minified - keep them as captured wildcards.
+    # NB: the throw interpolates `${process.platform}` - the placeholder body
     # contains a `.`, so it is `[\w$.]+` (NOT `[\w$]+`, which stops at the dot
-    # and never reaches the closing `}` — a silent 0-match trap).
+    # and never reaches the closing `}` - a silent 0-match trap).
     let pat =
       re"""(if\(process\.platform===["`]darwin["`]\)return [\w$]+(?:\.[\w$]+)*\([\w$]+\);)(throw (?:new )?Error\(`computer-use executor not implemented for \$\{[\w$.]+\}`\))"""
     let n = replaceFirst(
@@ -491,16 +491,16 @@ proc apply*(input: string): string =
       inc changes, n
       inc patchesApplied
     elif n > 1:
-      echo &"  [FAIL] platform executor factory: {n} matches (expected 1) — anchor too broad"
+      echo &"  [FAIL] platform executor factory: {n} matches (expected 1) - anchor too broad"
       raise newException(
         ValueError,
-        &"  [FAIL] platform executor factory: {n} matches (expected 1) — anchor too broad",
+        &"  [FAIL] platform executor factory: {n} matches (expected 1) - anchor too broad",
       )
     else:
-      echo "  [FAIL] platform executor factory: 0 matches (issue #159 throw-site anchor) — re-audit"
+      echo "  [FAIL] platform executor factory: 0 matches (issue #159 throw-site anchor) - re-audit"
       raise newException(
         ValueError,
-        "  [FAIL] platform executor factory: 0 matches (issue #159 throw-site anchor) — re-audit",
+        "  [FAIL] platform executor factory: 0 matches (issue #159 throw-site anchor) - re-audit",
       )
 
   # ── Patch 4b (kwin-wayland): cu lock acquire → __setLockHeld(true) ──────
@@ -588,18 +588,18 @@ proc apply*(input: string): string =
     # `;X()}}const <dims>=...`). The old prologue anchor `;[\w$]+\(\)\}\}const`
     # no longer matches. The screenshot-dims decl itself is unique, so anchor
     # the async header, then lazily skip (up to 8000 chars) straight to that
-    # decl — do not try to pin the exact prologue shape.
+    # decl - do not try to pin the exact prologue shape.
     #
     # v1.26832.0 rewrote the decl itself: the `X||(a=b.getLastScreenshotDims)==
     # null?void 0:a.call(b)` babel-style optional call collapsed into a plain
-    # ternary over a native optional call — `let <dims>=<skip>?void 0:<ctx>.
+    # ternary over a native optional call - `let <dims>=<skip>?void 0:<ctx>.
     # getLastScreenshotDims?.()`. `const` also became `let`.
     #
     # The header anchor is now pinned to `return async(...)` (the dispatcher
     # factory's returned tool handler). Without `return ` the lazy skip also
     # matches two nested `async(e,t)=>{` permission callbacks that sit ~7k
     # chars upstream of the decl, which would capture THEIR `e` as the tool
-    # name — a silent mis-binding, not a build failure.
+    # name - a silent mis-binding, not a build failure.
     #
     # v1.30096.1 introduced the grant-tier rework, which hoists three more
     # declarations out of the options object and in between the setTimeout and
