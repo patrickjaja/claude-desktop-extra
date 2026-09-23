@@ -63,6 +63,7 @@ See [plan.md](plan.md) and [SPEC.md](../SPEC.md). IDs refer to SPEC findings.
 ### W7 keep-awake-linux (X4)
 - [x] T7.1 Verify: with keep-awake on, what does `powerSaveBlocker.start("prevent-app-suspension")` produce on this host and the VMs (`systemd-inhibit --list`, `busctl --user` ScreenSaver/PowerManagement inhibitors)?
 - [x] T7.2 If it is a no-op on some DEs: at upstream's start/stop sites, also spawn/kill `systemd-inhibit --what=sleep --who=Claude --why=... sleep infinity` (only if `systemd-inhibit` exists; kill on stop and on quit). Harness for start/stop/quit
+- [x] T7.3 Use an idle inhibitor (`--what=idle`) instead of sleep: upstream only promises idle-sleep prevention and `ccKeepAwakeWhileWorking` defaults on (user decision 2026-09-23)
 
 ## Wave 2
 
