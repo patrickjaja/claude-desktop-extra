@@ -235,6 +235,7 @@ stdenvNoCC.mkDerivation {
     makeWrapper $out/lib/claude-desktop/launcher.sh $out/bin/claude-desktop \
       --suffix LD_LIBRARY_PATH : ${lib.makeLibraryPath [ libsecret ]} \
       --set CLAUDE_ELECTRON "$out/lib/claude-desktop/claude" \
+      --set CLAUDE_LAUNCHER "claude-desktop" \
       --set ELECTRON_OZONE_PLATFORM_HINT "auto" \
       --set ELECTRON_FORCE_IS_PACKAGED "true" \
       --set ELECTRON_USE_SYSTEM_TITLE_BAR "1" \

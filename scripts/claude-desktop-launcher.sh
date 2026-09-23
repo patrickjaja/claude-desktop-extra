@@ -553,6 +553,44 @@ print(repr(arr))
     return 0
 }
 
+# Echo the command that starts THIS launcher again, for entries that outlive the
+# current process: the "Start at login" autostart entry (CLAUDE_LAUNCHER, read
+# by patches/linux/fix_startup_settings.nim P4) and the named-profile entry
+# points written by --create-profile. $1 is the launcher's $0.
+#
+#   1. AppImage: the .AppImage file itself (the FUSE mount path changes every run).
+#   2. A CLAUDE_LAUNCHER set by a package wrapper, kept as given. On Nix the
+#      launcher runs behind a makeWrapper script, and `readlink -f "$0"` lands on
+#      the UNWRAPPED store copy: an entry pointing there starts without the
+#      wrapper's environment (no CLAUDE_ELECTRON, so "Electron binary not
+#      found") and dangles after garbage collection. The wrapper sets the bare
+#      name, which resolves through PATH to whatever the current generation is.
+#   3. Our own resolved path.
+# Returns 1 when none of them is runnable.
+_resolve_launcher_self() {
+    local self="$1" resolved
+    if [[ -n "${CLAUDE_APPIMAGE_PATH:-}" ]]; then
+        echo "$CLAUDE_APPIMAGE_PATH"
+        return 0
+    fi
+    if [[ -n "${CLAUDE_LAUNCHER:-}" ]]; then
+        local runnable=0
+        if [[ "$CLAUDE_LAUNCHER" == */* ]]; then
+            [[ -x "$CLAUDE_LAUNCHER" ]] && runnable=1
+        else
+            type -P "$CLAUDE_LAUNCHER" &>/dev/null && runnable=1
+        fi
+        if (( runnable )); then
+            echo "$CLAUDE_LAUNCHER"
+            return 0
+        fi
+        log "CLAUDE_LAUNCHER=$CLAUDE_LAUNCHER is not runnable; using the launcher's own path"
+    fi
+    resolved="$(readlink -f "$self" 2>/dev/null || echo "$self")"
+    [[ -x "$resolved" ]] || return 1
+    echo "$resolved"
+}
+
 _profile_paths() {
     # Outputs the four files associated with a profile to stdout, one per line.
     # Order: electron-symlink, launcher-symlink, desktop-file, config-dir.
@@ -884,11 +922,17 @@ _create_profile() {
         return 2
     fi
 
-    local launcher_path
-    launcher_path="$(readlink -f "$0" 2>/dev/null || echo "$0")"
-    if [[ ! -x "$launcher_path" ]]; then
+    # launcher_path is what the entry points run: a path, or on a wrapped
+    # install (Nix) the wrapper's bare command name. See _resolve_launcher_self.
+    local launcher_path launcher_target
+    if ! launcher_path="$(_resolve_launcher_self "$0")"; then
         echo >&2 "claude-desktop: cannot resolve launcher path ($0)"
         return 1
+    fi
+    if [[ "$launcher_path" == */* ]]; then
+        launcher_target="$launcher_path"
+    else
+        launcher_target="$(type -P "$launcher_path")"
     fi
     if [[ "$ELECTRON_BIN" == "electron" || ! -x "$ELECTRON_BIN" ]]; then
         echo >&2 "claude-desktop: cannot resolve bundled Electron binary; --create-profile requires an installed package"
@@ -933,7 +977,17 @@ _create_profile() {
         "$(dirname "$electron_bin_path")" \
         "$(basename "$ELECTRON_BIN")"
 
-    ln -s "$launcher_path" "$launcher_link"
+    # The per-profile command. A symlink named claude-desktop-<name> selects the
+    # profile through the launcher's own basename, which only works when the
+    # launcher sees that name. A package wrapper (Nix makeWrapper) execs the
+    # launcher by its store path and hides it, so wrapped installs get a
+    # two-line script that passes --profile explicitly instead.
+    if [[ -n "${CLAUDE_LAUNCHER:-}" && "$launcher_path" == "$CLAUDE_LAUNCHER" ]]; then
+        printf '#!/bin/sh\nexec %q --profile=%q "$@"\n' "$launcher_target" "$name" > "$launcher_link"
+        chmod +x "$launcher_link"
+    else
+        ln -s "$launcher_target" "$launcher_link"
+    fi
 
     # Try to find the default-profile system .desktop to inherit Icon=, etc.
     # The installed default file is "com.anthropic.Claude.desktop" (upstream's
@@ -2300,16 +2354,12 @@ fi
 # that persists Computer Use grants), and for a named profile no --user-data-dir.
 # patches/linux/fix_startup_settings.nim (P4) reads this, and re-adds
 # --profile=<name> from CLAUDE_PROFILE.
-if [[ -n "${CLAUDE_APPIMAGE_PATH:-}" ]]; then
-    # AppImage: the mount point is ephemeral, the .AppImage file is not.
-    export CLAUDE_LAUNCHER="$CLAUDE_APPIMAGE_PATH"
+# _resolve_launcher_self keeps a wrapper-set CLAUDE_LAUNCHER (Nix) and prefers
+# the .AppImage file over its ephemeral mount point.
+if _cdb_launcher_self="$(_resolve_launcher_self "$0")"; then
+    export CLAUDE_LAUNCHER="$_cdb_launcher_self"
 else
-    _cdb_launcher_self="$(readlink -f "$0" 2>/dev/null || echo "$0")"
-    if [[ -x "$_cdb_launcher_self" ]]; then
-        export CLAUDE_LAUNCHER="$_cdb_launcher_self"
-    else
-        log "cannot resolve own path ($0); autostart entry will fall back to the Electron binary"
-    fi
+    log "cannot resolve own path ($0); autostart entry will fall back to the Electron binary"
 fi
 
 # ---------------------------------------------------------------------------

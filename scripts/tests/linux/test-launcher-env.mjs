@@ -1,0 +1,189 @@
+#!/usr/bin/env node
+// Launcher environment handling: the cases a packaged install hits that a
+// developer box running /usr/bin/claude-desktop never does.
+//
+// WHY THIS EXISTS
+// ---------------
+// scripts/claude-desktop-launcher.sh is the same file on every package, but
+// each package reaches it differently:
+//
+//   - Nix runs it through a makeWrapper script, so `readlink -f "$0"` resolves
+//     to the UNWRAPPED launcher in the store. An autostart entry or a named
+//     profile pointing there starts without the wrapper's environment and exits
+//     "Electron binary not found", and points into a path garbage collection
+//     removes.
+//   - The AppImage runs it from a FUSE mount whose path changes every launch,
+//     with CLAUDE_ELECTRON pointing into that mount.
+//   - Compositors differ in whether an XWayland server exists at all; $DISPLAY
+//     is the only honest signal, not the compositor's name.
+//   - A session started from a TTY can carry XDG_SESSION_TYPE=tty while
+//     WAYLAND_DISPLAY is set.
+//   - busctl can be installed yet unable to answer (no systemd user bus), which
+//     must not end the kwallet probe.
+//
+// None of these show up on a green build. This harness extracts the real
+// functions from the launcher (and the real AppRun from build-appimage.sh) and
+// runs them against simulated environments, and drives the real launcher's
+// --create-profile through a makeWrapper-style wrapper. It never starts
+// Electron.
+//
+// Exit codes follow the repo convention: 0 = PASS, 3 = SKIP, other = FAIL.
+
+import { readFileSync, writeFileSync, mkdirSync, rmSync, chmodSync,
+         existsSync, readlinkSync, lstatSync, symlinkSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const repo = join(here, "..", "..", "..");
+const launcherPath = join(repo, "scripts", "claude-desktop-launcher.sh");
+const launcherSrc = readFileSync(launcherPath, "utf8");
+const appimageBuilder = readFileSync(
+  join(repo, "packaging", "appimage", "build-appimage.sh"), "utf8");
+
+// Resolved once: several cases run with a PATH that holds only fake tools.
+const BASH = (spawnSync("sh", ["-c", "command -v bash"], { encoding: "utf8" }).stdout || "").trim();
+if (!BASH) {
+  console.log("SKIP: bash not found");
+  process.exit(3);
+}
+
+let pass = 0;
+const failures = [];
+function check(label, actual, expected) {
+  if (actual === expected) {
+    console.log(`  PASS ${label} -> ${JSON.stringify(actual)}`);
+    pass++;
+  } else {
+    console.log(`  FAIL ${label} -> got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`);
+    failures.push(label);
+  }
+}
+
+// Pull one top-level function definition out of the launcher, verbatim.
+function fn(name) {
+  const re = new RegExp(`^${name.replace(/[$]/g, "\\$")}\\(\\) \\{\\n[\\s\\S]*?\\n\\}\\n`, "m");
+  const m = launcherSrc.match(re);
+  if (!m) throw new Error(`launcher function ${name}() not found`);
+  return m[0];
+}
+
+const scratch = join(tmpdir(), `cdb-launcher-env-${process.pid}`);
+rmSync(scratch, { recursive: true, force: true });
+mkdirSync(scratch, { recursive: true });
+
+function writeExe(path, body) {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, body);
+  chmodSync(path, 0o755);
+}
+
+// Run a bash snippet with the named launcher functions defined, a log() stub
+// that writes to stderr, and exactly the given environment.
+function runFns(fnNames, script, env) {
+  const prelude = [
+    "set -euo pipefail",
+    "APP_ID=claude",
+    'log() { echo "LOG: $1" >&2; }',
+    ...fnNames.map(fn),
+  ].join("\n");
+  const r = spawnSync(BASH, ["-c", `${prelude}\n${script}`], {
+    env, encoding: "utf8",
+  });
+  return { out: (r.stdout || "").trim(), err: r.stderr || "", status: r.status };
+}
+
+function safe(label, f) {
+  try { f(); } catch (e) {
+    console.log(`  FAIL ${label} -> threw: ${e.message}`);
+    failures.push(label);
+  }
+}
+
+// A fake install tree: an executable Electron stand-in plus resources/app.asar.
+function fakeTree(dir) {
+  writeExe(join(dir, "claude"), "#!/bin/sh\nexit 0\n");
+  mkdirSync(join(dir, "resources"), { recursive: true });
+  writeFileSync(join(dir, "resources", "app.asar"), "asar");
+  writeFileSync(join(dir, "libffmpeg.so"), "so");
+  return join(dir, "claude");
+}
+
+const baseEnv = { PATH: "/usr/bin:/bin" };
+
+// ---------------------------------------------------------------- N1
+console.log("N1: launcher self-reference survives a makeWrapper wrapper");
+safe("N1 resolve", () => {
+  const bin = join(scratch, "n1", "bin");
+  writeExe(join(bin, "claude-desktop"), "#!/bin/sh\nexit 0\n");
+  const real = join(scratch, "n1", "real-launcher.sh");
+  writeExe(real, "#!/bin/sh\n");
+  const link = join(scratch, "n1", "link");
+  symlinkSync(real, link);
+  const f = ["_resolve_launcher_self"];
+  check("pre-set bare CLAUDE_LAUNCHER is kept",
+    runFns(f, `_resolve_launcher_self "${link}"`,
+      { PATH: `${bin}:/usr/bin:/bin`, CLAUDE_LAUNCHER: "claude-desktop" }).out,
+    "claude-desktop");
+  check("unset CLAUDE_LAUNCHER resolves $0",
+    runFns(f, `_resolve_launcher_self "${link}"`, baseEnv).out, real);
+  check("unrunnable CLAUDE_LAUNCHER falls back to $0",
+    runFns(f, `_resolve_launcher_self "${link}"`,
+      { ...baseEnv, CLAUDE_LAUNCHER: "/nonexistent/claude-desktop" }).out, real);
+  check("AppImage path wins over an inherited CLAUDE_LAUNCHER",
+    runFns(f, `_resolve_launcher_self "${link}"`,
+      { ...baseEnv, CLAUDE_LAUNCHER: "claude-desktop",
+        CLAUDE_APPIMAGE_PATH: "/home/u/Claude.AppImage" }).out,
+    "/home/u/Claude.AppImage");
+});
+
+safe("N1 create-profile via wrapper", () => {
+  // makeWrapper exec form: the wrapper sets env and execs the store copy of
+  // the launcher by absolute path, so the launcher's $0 is that store path.
+  const root = join(scratch, "n1w");
+  const home = join(root, "home");
+  mkdirSync(home, { recursive: true });
+  const store = join(root, "store");
+  const electron = fakeTree(join(store, "lib", "claude-desktop"));
+  const unwrapped = join(store, "lib", "claude-desktop", "launcher.sh");
+  writeExe(unwrapped, launcherSrc);
+  const wrapper = join(store, "bin", "claude-desktop");
+  writeExe(wrapper, [
+    "#! /bin/bash -e",
+    `export CLAUDE_ELECTRON='${electron}'`,
+    "export CLAUDE_LAUNCHER='claude-desktop'",
+    `exec "${unwrapped}" "$@"`,
+    "",
+  ].join("\n"));
+  const r = spawnSync(wrapper, ["--create-profile=work"], {
+    env: { PATH: `${join(store, "bin")}:/usr/bin:/bin`, HOME: home,
+           XDG_RUNTIME_DIR: join(root, "run") },
+    encoding: "utf8",
+  });
+  check("create-profile exit status", r.status, 0);
+  if (r.status !== 0) console.log(r.stdout + r.stderr);
+  const desktop = join(home, ".local/share/applications/com.anthropic.Claude-work.desktop");
+  const execLine = existsSync(desktop)
+    ? readFileSync(desktop, "utf8").split("\n").find((l) => l.startsWith("Exec=")) : null;
+  check("profile .desktop Exec uses the wrapper name", execLine,
+    "Exec=claude-desktop --profile=work %u");
+  const entry = join(home, ".local/bin/claude-desktop-work");
+  let entryText = "";
+  if (existsSync(entry)) {
+    entryText = lstatSync(entry).isSymbolicLink()
+      ? `symlink:${readlinkSync(entry)}` : readFileSync(entry, "utf8");
+  }
+  check("profile entry point does not bypass the wrapper",
+    entryText.includes(unwrapped), false);
+  check("profile entry point starts the wrapper with the profile",
+    /exec .*claude-desktop['"]? --profile=work /.test(entryText), true);
+});
+
+rmSync(scratch, { recursive: true, force: true });
+console.log(`\n${pass} passed, ${failures.length} failed`);
+if (failures.length) {
+  for (const f of failures) console.log(`  failed: ${f}`);
+  process.exit(1);
+}
