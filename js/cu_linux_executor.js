@@ -31,7 +31,27 @@ function _isGnomeCovered(){return _isGnomeWayland()}
 try{var _virt=_cp.execFileSync("systemd-detect-virt",[],{encoding:"utf-8",timeout:3000,stdio:["ignore","pipe","ignore"]}).trim();globalThis.__isVM=_virt!=="none"&&_virt!==""}catch(e){globalThis.__isVM=!1}
 if(globalThis.__isVM)globalThis.__cdbDiag("[claude-cu] VM detected ("+_virt+") — teach overlay uses dark backdrop fallback");
 var _cmdCache={};
-function _hasCmd(bin){if(_cmdCache[bin]!==void 0)return _cmdCache[bin];try{_cp.execFileSync("which",[bin],{encoding:"utf-8",timeout:3000});_cmdCache[bin]=true}catch(e){_cmdCache[bin]=false}return _cmdCache[bin]}
+// PATH walk with an X_OK check - the lookup execvp itself does. `which` is not
+// installed on every system (minimal images), where every tool read as missing,
+// and it cost one blocking spawn per tool on the main process. Empty and
+// relative PATH entries are skipped: they would resolve against our cwd.
+function _hasCmd(bin){if(_cmdCache[bin]!==void 0)return _cmdCache[bin];var found=false,X=(_fs.constants&&_fs.constants.X_OK)||1,dirs=(process.env.PATH||"").split(":");for(var i=0;i<dirs.length&&!found;i++){if(dirs[i].charAt(0)!=="/")continue;var c=_path.join(dirs[i],bin);try{_fs.accessSync(c,X);found=!_fs.statSync(c).isDirectory()}catch(e){}}_cmdCache[bin]=found;return found}
+// Application dirs per the XDG base-dir spec: $XDG_DATA_HOME (default
+// ~/.local/share) first, then each $XDG_DATA_DIRS entry (default
+// /usr/local/share:/usr/share - this is what carries NixOS profiles, snap and
+// /usr/local), then the flatpak exports (normally already in XDG_DATA_DIRS via
+// flatpak's profile.d, but not for a session that skipped it). Relative
+// entries are invalid per the spec and ignored; duplicates collapse. Order is
+// precedence: the first file with a given desktop-file ID wins, so a user
+// override beats the system entry.
+function _xdgAppDirs(){
+  var home=_os.homedir(),out=[],seen={};
+  function add(d){if(!d||d.charAt(0)!=="/")return;var a=_path.join(_path.resolve(d),"applications");if(!seen[a]){seen[a]=1;out.push(a)}}
+  var dh=process.env.XDG_DATA_HOME;add(dh&&dh.charAt(0)==="/"?dh:_path.join(home,".local/share"));
+  (process.env.XDG_DATA_DIRS||"/usr/local/share:/usr/share").split(":").forEach(add);
+  add(_path.join(home,".local/share/flatpak/exports/share"));add("/var/lib/flatpak/exports/share");
+  return out;
+}
 function _desktopId(){return(process.env.XDG_CURRENT_DESKTOP||"").toLowerCase()}
 var _ydotoolOk=null;
 function _checkYdotool(){if(_ydotoolOk!==null)return _ydotoolOk;if(!_hasCmd("ydotool")){_ydotoolOk=false;return false}try{_cp.execFileSync("pgrep",["-x","ydotoold"],{timeout:2000,stdio:"pipe"});_ydotoolOk=true}catch(e){var sock=(process.env.YDOTOOL_SOCKET||"")||((process.env.XDG_RUNTIME_DIR||"/tmp")+"/.ydotool_socket");try{_fs.accessSync(sock);_ydotoolOk=true}catch(se){globalThis.__cdbDiag("[claude-cu] ydotool found but ydotoold not running — falling back to x11-bridge (XWayland)");_ydotoolOk=false}}return _ydotoolOk}
@@ -627,12 +647,13 @@ globalThis.__linuxExecutor={
     var seen={};
     function _add(bid,dname,p){var k=bid+"|"+dname.toLowerCase();if(!seen[k]){seen[k]=1;apps.push({bundleId:bid,displayName:dname,path:p})}}
     try{
-      var dirs=["/usr/share/applications",_path.join(_os.homedir(),".local/share/applications"),"/var/lib/flatpak/exports/share/applications",_path.join(_os.homedir(),".local/share/flatpak/exports/share/applications")];
+      var dirs=_xdgAppDirs(),seenIds={};
       for(var d=0;d<dirs.length;d++){
         try{
           var files=_fs.readdirSync(dirs[d]);
           for(var i=0;i<files.length;i++){
-            if(files[i].indexOf(".desktop")===-1)continue;
+            if(files[i].indexOf(".desktop")===-1||seenIds[files[i]])continue;
+            seenIds[files[i]]=1;
             try{
               var fp=_path.join(dirs[d],files[i]);
               var content=_fs.readFileSync(fp,"utf-8");
@@ -732,16 +753,17 @@ globalThis.__linuxExecutor={
   },
   async getAppIcon(appPath){return null},
   async openApp(name){
-    var _appDirs=["/usr/share/applications",_path.join(_os.homedir(),".local/share/applications"),"/var/lib/flatpak/exports/share/applications",_path.join(_os.homedir(),".local/share/flatpak/exports/share/applications")];
+    var _appDirs=_xdgAppDirs();
     // Parse all .desktop entries into {name, dfn, exec} once so we can both
     // resolve the launch command and, on failure, suggest close matches.
     function _allEntries(){
-      var out=[];
+      var out=[],seenIds={};
       for(var d=0;d<_appDirs.length;d++){
         try{
           var files=_fs.readdirSync(_appDirs[d]);
           for(var i=0;i<files.length;i++){
-            if(files[i].indexOf(".desktop")===-1)continue;
+            if(files[i].indexOf(".desktop")===-1||seenIds[files[i]])continue;
+            seenIds[files[i]]=1;
             try{
               var content=_fs.readFileSync(_path.join(_appDirs[d],files[i]),"utf-8");
               var nameMatch=content.match(/^Name=(.+)$/m);
