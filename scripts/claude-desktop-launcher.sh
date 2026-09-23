@@ -5,8 +5,8 @@
 # Works across all packaging formats (Arch, RPM, DEB, AppImage, Nix).
 #
 # Environment variables:
-#   CLAUDE_USE_XWAYLAND=1    - Force XWayland instead of native Wayland (escape hatch
-#                              for users on Electron <40 that can't update; see below)
+#   CLAUDE_USE_XWAYLAND=1    - Force XWayland instead of native Wayland (escape hatch;
+#                              needs DISPLAY, i.e. a running XWayland; see below)
 #   CLAUDE_GPU_BACKEND=angle-gl - Render via ANGLE's GL backend instead of the
 #                              native Wayland/GBM path (keeps GPU acceleration;
 #                              fixes GPU-process crashes on some drivers, e.g.
@@ -15,7 +15,11 @@
 #   CLAUDE_DISABLE_GPU=full  - Disable GPU entirely (more aggressive fallback)
 #   CLAUDE_PASSWORD_STORE    - Force --password-store=<value>; 'auto' disables
 #                              the launcher's Secret Service detection (issue #191)
-#   CLAUDE_ELECTRON          - Override path to Electron binary
+#   CLAUDE_ELECTRON          - Override path to Electron binary (set by the Nix
+#                              wrapper and the AppImage; profiles refresh from it)
+#   CLAUDE_LAUNCHER          - Command autostart/profile entries run; a value set
+#                              by a package wrapper (Nix) is kept
+#   CLAUDE_DISABLE_SANDBOX=1 - Launch with --no-sandbox (the AppImage always does)
 #   CLAUDE_APP_ASAR          - Deprecated, ignored (Electron auto-loads the
 #                              exe-adjacent resources/app.asar)
 #   CLAUDE_DISABLE_SYSTEMD_SCOPE=1
@@ -2196,8 +2200,8 @@ if [[ -z "${_diagnose_requested:-}" && -n "$profile_suffix" && -z "${CLAUDE_APPI
     elif [[ "$ELECTRON_BIN" == "$_profile_bin" ]]; then
         # The per-profile binary was chosen during resolution but is not usable
         # now. Launching it would exec a path that is not there, so fall back to
-        # the canonical binary: the profile keeps its isolated state and only the
-        # per-profile WM identity is lost for this launch.
+        # the canonical binary: the profile keeps its isolated state (window
+        # identity is com.anthropic.Claude either way).
         ELECTRON_BIN=''
         for candidate in "/usr/lib/claude-desktop/${APP_ID}" "/usr/lib/claude-desktop-bin/${APP_ID}"; do
             [[ -x "$candidate" ]] && { ELECTRON_BIN="$candidate"; break; }
@@ -2208,9 +2212,10 @@ if [[ -z "${_diagnose_requested:-}" && -n "$profile_suffix" && -z "${CLAUDE_APPI
         fi
     fi
 
-    # Silent-degradation hint: --profile=NAME isolates state but the
-    # WM_CLASS / Wayland app_id stays as the default unless --create-profile
-    # has materialised a per-profile binary. Most users will want both.
+    # Hint for --profile=NAME without --create-profile: state is isolated, but
+    # there is no per-profile binary, menu entry or claude-desktop-NAME
+    # shortcut. (The window's WM_CLASS / Wayland app_id is com.anthropic.Claude
+    # for every profile regardless - it comes from the bundle's desktopName.)
     # Suppress with CLAUDE_PROFILE_QUIET=1.
     if [[ ! -e "$_profile_bin" && -z "${CLAUDE_PROFILE_QUIET:-}" ]]; then
         echo >&2 "claude-desktop: profile '$CLAUDE_PROFILE' has isolated state but no per-profile WM identity."
@@ -2514,8 +2519,8 @@ ELECTRON_ARGS+=('--enable-blink-features=WebBluetooth')
 # decision is made here once rather than per session type. Every package we ship
 # gives Electron a working sandbox: the .deb, .rpm and pacman packages install
 # chrome-sandbox 4755 root (CI's smoke test fails the build otherwise) and the
-# Nix package uses the nixpkgs electron derivation, which carries its own
-# wrapper. The AppImage is the exception - its payload is a FUSE mount, which
+# Nix package runs the nixpkgs electron binary, whose sandbox uses unprivileged
+# user namespaces instead of a SUID helper. The AppImage is the exception - its payload is a FUSE mount, which
 # cannot carry a SUID bit - so it, and only it, needs the sandbox turned off.
 #
 # This used to be added for EVERY Wayland and XWayland launch, which silently

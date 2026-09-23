@@ -584,7 +584,8 @@ fi
 # Bundle gnome-portal-bridge into resources/ (= process.resourcesPath) for GNOME
 # Wayland Computer Use. First-party replacement for ydotool + the portal-python/
 # gnome-screenshot/gdbus screenshot cascade. Glibc-dynamic (links libpipewire),
-# floor 2.35 (ubuntu:jammy) — NOT usable as-is on NixOS (mirrors kwin-portal-bridge).
+# floor 2.39 (ubuntu:noble; needs PipeWire >= 1.0.5 at runtime) - NOT usable as-is
+# on NixOS (mirrors kwin-portal-bridge).
 GNOME_PORTAL_BRIDGE_REL="target/release/gnome-portal-bridge"
 GNOME_PORTAL_BRIDGE_SRC_DIR="$PROJECT_DIR/../computer-use/gnome-portal-bridge"
 if [ -n "${GNOME_PORTAL_BRIDGE_BIN:-}" ] && [ -f "${GNOME_PORTAL_BRIDGE_BIN:-}" ]; then

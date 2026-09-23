@@ -15,7 +15,9 @@
 # gnome-portal-bridge for GNOME Wayland) have a glibc mismatch on NixOS; pass a
 # natively built gnome-portal-bridge below to enable GNOME Wayland CU.
 , ydotool ? null        # input on exotic Wayland compositors ONLY (non-wlroots/GNOME/KDE; requires ydotoold daemon)
-# Computer Use — KDE Plasma Wayland (bundled bridge has glibc mismatch on NixOS)
+# Computer Use - KDE Plasma Wayland: the bundled kwin-portal-bridge cannot load on
+# NixOS (foreign glibc loader); the app's bridge run check notices and falls back
+# to the spectacle tier.
 , spectacle ? null      # screenshot fallback (KDE Plasma on NixOS)
 # Computer Use — GNOME Wayland: natively built gnome-portal-bridge
 # (github.com/patrickjaja/gnome-bridge); sets GNOME_PORTAL_BRIDGE_BIN so the
