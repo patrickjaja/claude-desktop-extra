@@ -322,6 +322,12 @@ safe("S4", () => {
   check("no WAYLAND_DISPLAY leaves tty", st({ XDG_SESSION_TYPE: "tty" }), "tty");
 });
 
+// Every profile's window reports com.anthropic.Claude (the bundle's
+// desktopName), so no user-facing text may promise a per-profile identity.
+console.log("P1: profile texts do not promise a per-profile window identity");
+check("--help does not claim a per-profile WMClass", /per-profile WMClass/.test(launcherSrc), false);
+check("runtime hint does not claim a per-profile WM identity", /per-profile WM identity/.test(launcherSrc), false);
+
 rmSync(scratch, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) {

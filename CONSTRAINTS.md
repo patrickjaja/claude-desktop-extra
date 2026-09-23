@@ -60,7 +60,7 @@ is silent; loosening needs @patrickjaja in the commit.
 | Stage | Commands | Budget |
 |-------|----------|--------|
 | Edit / commit | `.githooks/pre-commit` (nph, nim check, shellcheck on staged files) | seconds |
-| Task end (any change under `patches/` or `js/`) | `cd patches && make -j"$(nproc)"`, then `python3 scripts/check-upstream-absorbed.py tmp/app.asar.contents tmp/extract/usr/lib/claude-desktop/resources/ion-dist` (~13 s, against a fresh extract, see AGENTS.md), then `bash scripts/run-feature-tests.sh <community\|core\|linux>` for the category you touched | under 90 s |
+| Task end (any change under `patches/` or `js/`) | `cd patches && make -j"$(nproc)"`, then `python3 scripts/check-upstream-absorbed.py tmp/app.asar.contents tmp/extract/usr/lib/claude-desktop/resources/ion-dist` (~11 s, against a fresh extract, see AGENTS.md), then `bash scripts/run-feature-tests.sh <community\|core\|linux>` for the category you touched | under 90 s |
 | Build (local + CI) | `scripts/build-patched-tarball.sh` runs the probe, the orchestrator, and `node --check` | part of the build |
 | CI | everything above (full harness suite) plus sibling-noop, jsonc sync, desktop-file-validate, smoke test | unlimited |
 

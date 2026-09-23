@@ -1978,8 +1978,9 @@ Options:
                             a 'claude-desktop-NAME' symlink. Omit for default.
   --create-profile=NAME     Create profile NAME: installs user-local symlinks
                             (~/.local/bin/claude-desktop-NAME, ~/.local/lib/...)
-                            and a .desktop file with a per-profile WMClass so
-                            the window manager treats it as a separate app.
+                            and a menu entry "Claude (NAME)". All profiles
+                            share one taskbar/Alt-Tab identity; the window
+                            title carries the profile name.
                             User data is not created until first launch.
   --delete-profile=NAME     Remove the entry points for profile NAME. User data
                             (~/.config/Claude-NAME, ~/.claude-NAME) is preserved.
@@ -2218,8 +2219,8 @@ if [[ -z "${_diagnose_requested:-}" && -n "$profile_suffix" && -z "${CLAUDE_APPI
     # for every profile regardless - it comes from the bundle's desktopName.)
     # Suppress with CLAUDE_PROFILE_QUIET=1.
     if [[ ! -e "$_profile_bin" && -z "${CLAUDE_PROFILE_QUIET:-}" ]]; then
-        echo >&2 "claude-desktop: profile '$CLAUDE_PROFILE' has isolated state but no per-profile WM identity."
-        echo >&2 "  Windows will share the default profile's taskbar entry. To fix:"
+        echo >&2 "claude-desktop: profile '$CLAUDE_PROFILE' has isolated state but no menu entry or claude-desktop-$CLAUDE_PROFILE shortcut."
+        echo >&2 "  To add them:"
         echo >&2 "    claude-desktop --create-profile=$CLAUDE_PROFILE"
         echo >&2 "  (suppress this message with CLAUDE_PROFILE_QUIET=1)"
     fi
