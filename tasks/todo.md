@@ -42,12 +42,12 @@ See [plan.md](plan.md) and [SPEC.md](../SPEC.md). IDs refer to SPEC findings.
   - Verify: run the guard function against the amd64 tree (pass) and a tree with one foreign ELF (fail)
 
 ### W4 launcher-fixes
-- [ ] T4.1 N1: respect a pre-set `CLAUDE_LAUNCHER`; profile `.desktop`/symlink Exec uses it too; Nix wrapper sets it to the bare `claude-desktop` name (coordinate the one line in package.nix with W3)
-- [ ] T4.2 L1: `_canonical_electron_bin` prefers `CLAUDE_ELECTRON`; `--create-profile` on AppImage refuses with a clear message
-- [ ] T4.3 L3: XWayland gate on `-n "$DISPLAY"` instead of the Niri name
-- [ ] T4.4 L4: `_kwallet_available` falls through busctl -> dbus-send -> gdbus
-- [ ] T4.5 L5: drop `LD_LIBRARY_PATH` export from AppRun (`packaging/appimage/build-appimage.sh`), after confirming `$ORIGIN` RPATH covers every bundled .so the binary needs
-- [ ] T4.6 S4: when `WAYLAND_DISPLAY` is set and `XDG_SESSION_TYPE` is neither wayland nor x11, export `XDG_SESSION_TYPE=wayland`
+- [x] T4.1 N1: respect a pre-set `CLAUDE_LAUNCHER`; profile `.desktop`/symlink Exec uses it too; Nix wrapper sets it to the bare `claude-desktop` name (coordinate the one line in package.nix with W3)
+- [x] T4.2 L1: `_canonical_electron_bin` prefers `CLAUDE_ELECTRON`; `--create-profile` on AppImage refuses with a clear message
+- [x] T4.3 L3: XWayland gate on `-n "$DISPLAY"` instead of the Niri name
+- [x] T4.4 L4: `_kwallet_available` falls through busctl -> dbus-send -> gdbus
+- [x] T4.5 L5: drop `LD_LIBRARY_PATH` export from AppRun (`packaging/appimage/build-appimage.sh`), after confirming `$ORIGIN` RPATH covers every bundled .so the binary needs
+- [x] T4.6 S4: when `WAYLAND_DISPLAY` is set and `XDG_SESSION_TYPE` is neither wayland nor x11, export `XDG_SESSION_TYPE=wayland`
   - Verify for W4: agent D's simulations (fake Electron, scratch HOME, makeWrapper exec form, AppImage mount path change) as scripted regression checks; `shellcheck -S error`
 
 ### W5 cu-robustness
@@ -84,7 +84,7 @@ See [plan.md](plan.md) and [SPEC.md](../SPEC.md). IDs refer to SPEC findings.
 - [ ] T10.4 Final gate: `make`, probe, orchestrator, all harness categories, shellcheck, sibling-noop, jsonc sync, `./scripts/build-local.sh` (no install)
 
 ## Verify-first items (run inside the waves, not blocking)
-- [ ] V1 `CLAUDE_GPU_BACKEND=angle-gl` on 2.7032.0 (no libEGL/libGLESv2 shipped) - W4
+- [x] V1 `CLAUDE_GPU_BACKEND=angle-gl` on 2.7032.0 (no libEGL/libGLESv2 shipped) - W4 (ANGLE is linked into the binary; knob should still work, not launch-tested)
 - [ ] V2 X11 Quick Entry hotkey with GlobalShortcutsPortal forced - needs your XFCE session (manual, 1 min)
-- [ ] V3 xdg-desktop-portal named-profile scope parse - W4
+- [x] V3 xdg-desktop-portal named-profile scope parse - W4 (parses to com.anthropic.Claude-<name>; no fix)
 - [ ] V4 Portal probe 2 s timeout on autostart - W9
