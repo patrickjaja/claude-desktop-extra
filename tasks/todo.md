@@ -83,7 +83,7 @@ See [plan.md](plan.md) and [SPEC.md](../SPEC.md). IDs refer to SPEC findings.
 - [x] T10.1 README + docs corrections from SPEC D1; per-compositor Quick Entry snippets (Sway/river/niri `--toggle` bind, Hyprland `global` bind, GNOME < 48 `--install-gnome-hotkey`); env vars page; Cowork per-distro/arch notes (Debian 12, RHEL, Pi RAM, Jetson KVM)
 - [x] T10.2 `.claude/skills/linux/SKILL.md` refresh; stale comments (tarball script, package.nix, launcher ~2071)
 - [x] T10.3 PATCHES.md rows, CHANGELOG 2026-09-23 section (merge into today's entry)
-- [ ] T10.4 Final gate: `make`, probe, orchestrator, all harness categories, shellcheck, sibling-noop, jsonc sync, `./scripts/build-local.sh` (no install)
+- [x] T10.4 Final gate: `make`, probe, orchestrator, all harness categories, shellcheck, sibling-noop, jsonc sync, `./scripts/build-local.sh` (no install)
 
 ## Verify-first items (run inside the waves, not blocking)
 - [x] V1 `CLAUDE_GPU_BACKEND=angle-gl` on 2.7032.0 (no libEGL/libGLESv2 shipped) - W4 (ANGLE is linked into the binary; knob should still work, not launch-tested)
