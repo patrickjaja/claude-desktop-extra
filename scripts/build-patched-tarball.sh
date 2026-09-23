@@ -58,6 +58,80 @@ log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
+# Map a Debian arch to the ELF e_machine every binary in its tree must carry
+# (EM_X86_64 = 62, EM_AARCH64 = 183) and the rust target arch prefix.
+deb_arch_elf_machine() {
+    case "$1" in
+        amd64) echo 62 ;;
+        arm64) echo 183 ;;
+        *) return 1 ;;
+    esac
+}
+deb_arch_rust_arch() {
+    case "$1" in
+        amd64) echo x86_64 ;;
+        arm64) echo aarch64 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Fail unless every ELF file under $1 is built for Debian arch $2. A local
+# build fed an arm64 .deb used to ship host-built x86_64 bridges on a green
+# build; this makes that (and any other foreign binary) a hard error. One
+# python3 pass reads the ELF headers (python3 is already a hard dependency).
+check_tree_elf_arch() {
+    local dir="$1" arch="$2" machine
+    if ! machine="$(deb_arch_elf_machine "$arch")"; then
+        log_error "ELF arch guard: unsupported Debian arch '$arch' (supported: amd64, arm64)"
+        return 1
+    fi
+    python3 - "$dir" "$machine" "$arch" <<'PY'
+import os, struct, sys
+
+root, want, arch = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+names = {3: "i386", 40: "arm", 62: "x86-64", 183: "aarch64"}
+elf, bad = 0, []
+for dirpath, _dirs, files in os.walk(root):
+    for name in files:
+        path = os.path.join(dirpath, name)
+        if os.path.islink(path) or not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "rb") as f:
+                head = f.read(20)
+        except OSError as e:
+            print(f"ELF arch guard: cannot read {path}: {e}", file=sys.stderr)
+            sys.exit(1)
+        if len(head) < 20 or head[:4] != b"\x7fELF":
+            continue
+        elf += 1
+        endian = "<" if head[5] == 1 else ">"
+        machine = struct.unpack(endian + "H", head[18:20])[0]
+        if machine != want:
+            bad.append((os.path.relpath(path, root), names.get(machine, f"e_machine={machine}")))
+if elf == 0:
+    print(f"ELF arch guard: no ELF files under {root} - wrong directory?", file=sys.stderr)
+    sys.exit(1)
+if bad:
+    print(f"ELF arch guard: {len(bad)} of {elf} ELF file(s) do not match {arch} ({names[want]}):", file=sys.stderr)
+    for rel, got in bad:
+        print(f"  {rel}: {got}", file=sys.stderr)
+    sys.exit(1)
+print(f"ELF arch guard: all {elf} ELF file(s) are {names[want]} ({arch})")
+PY
+}
+
+# Standalone mode for tests and ad-hoc checks:
+#   build-patched-tarball.sh --check-elf-arch <dir> <amd64|arm64>
+if [ "${1:-}" = "--check-elf-arch" ]; then
+    if [ $# -ne 3 ] || [ ! -d "$2" ]; then
+        echo "Usage: $0 --check-elf-arch <dir> <amd64|arm64>" >&2
+        exit 2
+    fi
+    check_tree_elf_arch "$2" "$3"
+    exit $?
+fi
+
 # Parse arguments
 DEB_SOURCE="${1:-}"
 OUTPUT_DIR="${2:-}"
@@ -251,6 +325,20 @@ DEB_ARCH="$(awk -F': ' '/^Architecture:/{print $2; exit}' "$CONTROL_DIR/control"
 [ -n "$VERSION" ] || { log_error "Could not read Version from .deb control"; exit 1; }
 log_info "Detected version: $VERSION (arch: $DEB_ARCH)"
 
+# Every native binary we add must match the .deb's arch. The musl bridges are
+# built for "<arch>-unknown-linux-musl"; the glibc bridges (kwin, gnome) are
+# plain host builds, so they are only built when the host IS the target arch.
+# CI passes the *_BRIDGE_BIN vars for both arches and never reaches the source
+# builds; the ELF arch guard below checks the result either way.
+if ! RUST_ARCH="$(deb_arch_rust_arch "$DEB_ARCH")"; then
+    log_error "Unsupported .deb architecture '$DEB_ARCH' (supported: amd64, arm64)"
+    exit 1
+fi
+RUST_MUSL_TARGET="${RUST_ARCH}-unknown-linux-musl"
+HOST_ARCH="$(uname -m)"
+HOST_BUILD_OK=0
+[ "$HOST_ARCH" = "$RUST_ARCH" ] && HOST_BUILD_OK=1
+
 # data.tar.* → the filesystem tree (usr/lib/claude-desktop/, usr/share/...).
 # tar auto-detects xz/zst/gz.
 DATA_DIR="$WORK_DIR/data"
@@ -433,6 +521,8 @@ if [ -n "${KWIN_PORTAL_BRIDGE_BIN:-}" ] && [ -f "${KWIN_PORTAL_BRIDGE_BIN:-}" ];
     log_info "Bundling kwin-portal-bridge from $KWIN_PORTAL_BRIDGE_BIN"
     cp "$KWIN_PORTAL_BRIDGE_BIN" "$TREE_DIR/resources/kwin-portal-bridge"
     chmod +x "$TREE_DIR/resources/kwin-portal-bridge"
+elif [ "$HOST_BUILD_OK" != 1 ] && [ -d "$PROJECT_DIR/../computer-use/kwin-portal-bridge" ]; then
+    log_warn "kwin-portal-bridge: host is $HOST_ARCH but the .deb is $DEB_ARCH - not building from source (pass KWIN_PORTAL_BRIDGE_BIN built for $RUST_ARCH)"
 elif command -v cargo &>/dev/null && [ -d "$PROJECT_DIR/../computer-use/kwin-portal-bridge" ]; then
     log_info "Building kwin-portal-bridge from source..."
     if (cd "$PROJECT_DIR/../computer-use/kwin-portal-bridge" && cargo build --release 2>&1 | tail -3); then
@@ -449,15 +539,15 @@ fi
 # Bundle x11-bridge into resources/ (= process.resourcesPath) for X11 / XWayland
 # Computer Use. First-party replacement for xdotool/scrot/import/wmctrl on X11.
 # We bundle the static MUSL build so it runs across distros regardless of glibc.
-X11_BRIDGE_MUSL_REL="target/x86_64-unknown-linux-musl/release/x11-bridge"
+X11_BRIDGE_MUSL_REL="target/$RUST_MUSL_TARGET/release/x11-bridge"
 X11_BRIDGE_SRC_DIR="$PROJECT_DIR/../computer-use/x11-bridge"
 if [ -n "${X11_BRIDGE_BIN:-}" ] && [ -f "${X11_BRIDGE_BIN:-}" ]; then
     log_info "Bundling x11-bridge from $X11_BRIDGE_BIN"
     cp "$X11_BRIDGE_BIN" "$TREE_DIR/resources/x11-bridge"
     chmod +x "$TREE_DIR/resources/x11-bridge"
 elif command -v cargo &>/dev/null && [ -d "$X11_BRIDGE_SRC_DIR" ]; then
-    log_info "Building x11-bridge (static musl) from source ($X11_BRIDGE_SRC_DIR)..."
-    if (cd "$X11_BRIDGE_SRC_DIR" && cargo build --release --target x86_64-unknown-linux-musl 2>&1 | tail -3); then
+    log_info "Building x11-bridge (static musl, $RUST_MUSL_TARGET) from source ($X11_BRIDGE_SRC_DIR)..."
+    if (cd "$X11_BRIDGE_SRC_DIR" && cargo build --release --target "$RUST_MUSL_TARGET" 2>&1 | tail -3); then
         cp "$X11_BRIDGE_SRC_DIR/$X11_BRIDGE_MUSL_REL" "$TREE_DIR/resources/x11-bridge"
         chmod +x "$TREE_DIR/resources/x11-bridge"
         log_info "x11-bridge built and bundled"
@@ -472,15 +562,15 @@ fi
 # Wayland (Sway/Hyprland/Niri) Computer Use. First-party replacement for
 # ydotool/grim/hyprctl/swaymsg+jq/niri on wlroots sessions. Static MUSL build
 # so it runs across distros regardless of glibc (incl. NixOS).
-WLROOTS_BRIDGE_MUSL_REL="target/x86_64-unknown-linux-musl/release/wlroots-bridge"
+WLROOTS_BRIDGE_MUSL_REL="target/$RUST_MUSL_TARGET/release/wlroots-bridge"
 WLROOTS_BRIDGE_SRC_DIR="$PROJECT_DIR/../computer-use/wlroots-bridge"
 if [ -n "${WLROOTS_BRIDGE_BIN:-}" ] && [ -f "${WLROOTS_BRIDGE_BIN:-}" ]; then
     log_info "Bundling wlroots-bridge from $WLROOTS_BRIDGE_BIN"
     cp "$WLROOTS_BRIDGE_BIN" "$TREE_DIR/resources/wlroots-bridge"
     chmod +x "$TREE_DIR/resources/wlroots-bridge"
 elif command -v cargo &>/dev/null && [ -d "$WLROOTS_BRIDGE_SRC_DIR" ]; then
-    log_info "Building wlroots-bridge (static musl) from source ($WLROOTS_BRIDGE_SRC_DIR)..."
-    if (cd "$WLROOTS_BRIDGE_SRC_DIR" && cargo build --release --target x86_64-unknown-linux-musl 2>&1 | tail -3); then
+    log_info "Building wlroots-bridge (static musl, $RUST_MUSL_TARGET) from source ($WLROOTS_BRIDGE_SRC_DIR)..."
+    if (cd "$WLROOTS_BRIDGE_SRC_DIR" && cargo build --release --target "$RUST_MUSL_TARGET" 2>&1 | tail -3); then
         cp "$WLROOTS_BRIDGE_SRC_DIR/$WLROOTS_BRIDGE_MUSL_REL" "$TREE_DIR/resources/wlroots-bridge"
         chmod +x "$TREE_DIR/resources/wlroots-bridge"
         log_info "wlroots-bridge built and bundled"
@@ -501,6 +591,8 @@ if [ -n "${GNOME_PORTAL_BRIDGE_BIN:-}" ] && [ -f "${GNOME_PORTAL_BRIDGE_BIN:-}" 
     log_info "Bundling gnome-portal-bridge from $GNOME_PORTAL_BRIDGE_BIN"
     cp "$GNOME_PORTAL_BRIDGE_BIN" "$TREE_DIR/resources/gnome-portal-bridge"
     chmod +x "$TREE_DIR/resources/gnome-portal-bridge"
+elif [ "$HOST_BUILD_OK" != 1 ] && [ -d "$GNOME_PORTAL_BRIDGE_SRC_DIR" ]; then
+    log_warn "gnome-portal-bridge: host is $HOST_ARCH but the .deb is $DEB_ARCH - not building from source (pass GNOME_PORTAL_BRIDGE_BIN built for $RUST_ARCH)"
 elif command -v cargo &>/dev/null && [ -d "$GNOME_PORTAL_BRIDGE_SRC_DIR" ]; then
     log_info "Building gnome-portal-bridge from source ($GNOME_PORTAL_BRIDGE_SRC_DIR)..."
     if (cd "$GNOME_PORTAL_BRIDGE_SRC_DIR" && cargo build --release 2>&1 | tail -3); then
@@ -512,6 +604,15 @@ elif command -v cargo &>/dev/null && [ -d "$GNOME_PORTAL_BRIDGE_SRC_DIR" ]; then
     fi
 else
     log_warn "gnome-portal-bridge not available — skipping (GNOME Wayland Computer Use will require manual install)"
+fi
+
+# Every ELF in the shipped tree (upstream's and the bridges we just added) must
+# match the .deb's arch. Hard failure: a foreign binary is dead weight at best
+# and a confusing runtime error at worst.
+log_info "Checking ELF architecture of the tree ($DEB_ARCH)..."
+if ! check_tree_elf_arch "$TREE_DIR" "$DEB_ARCH"; then
+    log_error "ELF architecture mismatch in the tree - refusing to build a $DEB_ARCH tarball"
+    exit 1
 fi
 
 # Validate launcher with shellcheck (catches shebang issues, syntax errors, common bugs)
