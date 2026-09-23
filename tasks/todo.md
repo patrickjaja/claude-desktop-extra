@@ -61,8 +61,8 @@ See [plan.md](plan.md) and [SPEC.md](../SPEC.md). IDs refer to SPEC findings.
 - [x] T6.2 If confirmed: patch so the close-to-tray and `--startup` hidden paths require a StatusNotifierWatcher on the session bus (async check at startup, cached; with a watcher, upstream behavior unchanged). Harness for both branches. Report before adding a new patch file vs folding into an existing linux patch
 
 ### W7 keep-awake-linux (X4)
-- [ ] T7.1 Verify: with keep-awake on, what does `powerSaveBlocker.start("prevent-app-suspension")` produce on this host and the VMs (`systemd-inhibit --list`, `busctl --user` ScreenSaver/PowerManagement inhibitors)?
-- [ ] T7.2 If it is a no-op on some DEs: at upstream's start/stop sites, also spawn/kill `systemd-inhibit --what=sleep --who=Claude --why=... sleep infinity` (only if `systemd-inhibit` exists; kill on stop and on quit). Harness for start/stop/quit
+- [x] T7.1 Verify: with keep-awake on, what does `powerSaveBlocker.start("prevent-app-suspension")` produce on this host and the VMs (`systemd-inhibit --list`, `busctl --user` ScreenSaver/PowerManagement inhibitors)?
+- [x] T7.2 If it is a no-op on some DEs: at upstream's start/stop sites, also spawn/kill `systemd-inhibit --what=sleep --who=Claude --why=... sleep infinity` (only if `systemd-inhibit` exists; kill on stop and on quit). Harness for start/stop/quit
 
 ## Wave 2
 
