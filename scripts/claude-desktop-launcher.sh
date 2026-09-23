@@ -1962,6 +1962,21 @@ _resolve_platform_mode() {
     fi
 }
 
+# A compositor started from a TTY (sway, Hyprland, niri run by hand or from a
+# login shell) often leaves XDG_SESSION_TYPE=tty, or unset, while
+# WAYLAND_DISPLAY is live. The app and its Computer Use backends read
+# XDG_SESSION_TYPE to pick a Wayland or X11 path, so align it with the socket
+# that is actually there. An explicit x11 is left alone.
+_normalize_session_type() {
+    [[ -n "${WAYLAND_DISPLAY:-}" ]] || return 0
+    case "${XDG_SESSION_TYPE:-}" in
+        wayland|x11) return 0 ;;
+    esac
+    log "XDG_SESSION_TYPE='${XDG_SESSION_TYPE:-}' with WAYLAND_DISPLAY set: exporting XDG_SESSION_TYPE=wayland"
+    export XDG_SESSION_TYPE=wayland
+}
+
+_normalize_session_type
 platform_mode=x11
 _resolve_platform_mode
 if [[ "$platform_mode" != x11 ]] && (( electron_major > 0 && electron_major < 40 )); then

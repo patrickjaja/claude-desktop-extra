@@ -309,6 +309,19 @@ safe("L5", () => {
     (r2.stdout || "").includes("LD=/opt/x "), true);
 });
 
+// ---------------------------------------------------------------- S4
+console.log("S4: XDG_SESSION_TYPE follows WAYLAND_DISPLAY");
+safe("S4", () => {
+  const f = ["_normalize_session_type"];
+  const st = (env) => runFns(f, '_normalize_session_type; echo "${XDG_SESSION_TYPE-unset}"',
+    { ...baseEnv, ...env }).out;
+  check("tty + WAYLAND_DISPLAY -> wayland",
+    st({ WAYLAND_DISPLAY: "wayland-1", XDG_SESSION_TYPE: "tty" }), "wayland");
+  check("unset + WAYLAND_DISPLAY -> wayland", st({ WAYLAND_DISPLAY: "wayland-1" }), "wayland");
+  check("x11 is left alone", st({ WAYLAND_DISPLAY: "wayland-1", XDG_SESSION_TYPE: "x11" }), "x11");
+  check("no WAYLAND_DISPLAY leaves tty", st({ XDG_SESSION_TYPE: "tty" }), "tty");
+});
+
 rmSync(scratch, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) {
