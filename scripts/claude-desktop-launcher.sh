@@ -1451,6 +1451,31 @@ _diag_portal_probe_app() {
 # "ok <version line>" or "FAIL <cause>[ - <hint>]" with the preamble's hints.
 # The causes are read from the exec error text: timeout's execvp retries an
 # ENOEXEC file through /bin/sh, which reports "cannot execute binary file".
+# rpm on a Debian/Ubuntu host keeps its database in ~/.rpmdb and creates it on
+# the first query, so --diagnose would write to HOME. Query only when rpm's own
+# database directory already exists (asking for the path creates nothing).
+_diag_has_rpmdb() {
+    local db
+    db="$(rpm --eval '%{_dbpath}' 2>/dev/null)" || return 1
+    [[ -n "$db" && -d "$db" ]]
+}
+
+# True when $1 is an ELF file built for another CPU than this one. The exec
+# error text is not usable for this: execvp retries ENOEXEC through /bin/sh,
+# and dash (Debian/Ubuntu) prints a different message than bash.
+_diag_elf_foreign() {
+    local bin="$1" magic machine want
+    magic="$(head -c4 "$bin" 2>/dev/null | od -An -tx1 | tr -d ' \n')"
+    [[ "$magic" == 7f454c46 ]] || return 1
+    machine="$(od -An -tu2 -j18 -N2 "$bin" 2>/dev/null | tr -d ' \n')"
+    case "$(uname -m)" in
+        x86_64) want=62 ;;
+        aarch64) want=183 ;;
+        *) return 1 ;;
+    esac
+    [[ -n "$machine" && "$machine" != "$want" ]]
+}
+
 _diag_bridge_runs() {
     local bin="$1" env_var="$2" out rc=0 hint='' cause first
     out="$(timeout -s KILL 3 "$bin" --version 2>&1 </dev/null)" || rc=$?
@@ -1460,7 +1485,7 @@ _diag_bridge_runs() {
     first="$(printf '%s\n' "$out" | sed '/^[[:space:]]*$/d' | head -1)"
     if [[ "$rc" == 137 || "$rc" == 124 ]]; then
         cause="no answer to --version within 3 s"; hint="the bridge hangs at startup"
-    elif [[ "$rc" == 126 || "$rc" == 127 ]] && [[ "$out" == *'Exec format error'* || "$out" == *'cannot execute binary file'* ]]; then
+    elif _diag_elf_foreign "$bin" || { [[ "$rc" == 126 || "$rc" == 127 ]] && [[ "$out" == *'Exec format error'* || "$out" == *'cannot execute binary file'* ]]; }; then
         cause="exec format error"; hint="the binary was built for another CPU architecture than this $(uname -m) system"
     elif [[ "$rc" == 126 || "$rc" == 127 ]] && [[ "$out" == *'Permission denied'* ]]; then
         cause="permission denied"; hint="the file system is mounted noexec, or the file is not executable"
@@ -1682,8 +1707,8 @@ _diagnose() {
         || pacman -Q claude-desktop-bin 2>/dev/null \
         || dpkg-query -W -f='claude-desktop-extra ${Version}\n' claude-desktop-extra 2>/dev/null \
         || dpkg-query -W -f='claude-desktop-bin ${Version}\n' claude-desktop-bin 2>/dev/null \
-        || rpm -q claude-desktop-extra 2>/dev/null \
-        || rpm -q claude-desktop-bin 2>/dev/null \
+        || { _diag_has_rpmdb && rpm -q claude-desktop-extra 2>/dev/null; } \
+        || { _diag_has_rpmdb && rpm -q claude-desktop-bin 2>/dev/null; } \
         || echo '(no system package: AppImage/Nix/manual)')"
     echo "package = $_cu_pkg"
     _cu_res="$(dirname "$ELECTRON_BIN")/resources"

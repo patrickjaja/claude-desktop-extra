@@ -920,7 +920,7 @@ jobs:
 
           mkdir -p /tmp/build-input /tmp/build-output
           cp "$DEB" /tmp/build-input/claude.deb
-          cp -r scripts patches js packaging /tmp/build-input/
+          cp -r scripts patches js packaging CONSTRAINTS.md /tmp/build-input/
 
           # Pass the bridge binaries if available: kwin-portal-bridge for KDE
           # Wayland Computer Use, x11-bridge for X11 / XWayland Computer Use.
@@ -1070,7 +1070,7 @@ jobs:
 
           mkdir -p /tmp/build-input-arm /tmp/build-output-arm
           cp "$DEB" /tmp/build-input-arm/claude.deb
-          cp -r scripts patches js packaging /tmp/build-input-arm/
+          cp -r scripts patches js packaging CONSTRAINTS.md /tmp/build-input-arm/
 
           # Bundle the prebuilt arm64 bridges: kwin-portal-bridge (KDE Wayland)
           # and x11-bridge (X11 / XWayland).

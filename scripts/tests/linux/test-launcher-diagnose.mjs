@@ -85,7 +85,7 @@ function writeExe(path, body) {
 // so a case controls exactly which host tools exist.
 const coreBin = join(scratch, "core");
 mkdirSync(coreBin, { recursive: true });
-for (const t of ["timeout", "head", "sed", "uname", "tr", "cat", "sleep", "printf"]) {
+for (const t of ["timeout", "head", "sed", "uname", "tr", "od", "cat", "sleep", "printf"]) {
   const p = (spawnSync("sh", ["-c", `command -v ${t}`], { encoding: "utf8" }).stdout || "").trim();
   if (p.startsWith("/")) writeExe(join(coreBin, t), `#!/bin/sh\nexec ${p} "$@"\n`);
 }
@@ -176,7 +176,7 @@ console.log("D3: bridges must run, with the preamble's causes and hints");
 safe("D3", () => {
   const root = join(scratch, "d3");
   const env = { PATH: coreBin };
-  const runs = (bin) => runFns(["_diag_bridge_runs"], `_diag_bridge_runs ${bin} X11_BRIDGE_BIN`, env).out;
+  const runs = (bin) => runFns(["_diag_elf_foreign", "_diag_bridge_runs"], `_diag_bridge_runs ${bin} X11_BRIDGE_BIN`, env).out;
   writeExe(join(root, "ok"), "#!/bin/sh\necho 'x11-bridge 0.1.0'\n");
   check("working bridge", runs(join(root, "ok")), "ok x11-bridge 0.1.0");
   writeExe(join(root, "glibc"), "#!/bin/sh\necho \"./b: /lib/libc.so.6: version \\`GLIBC_2.39' not found\" >&2\nexit 1\n");
@@ -317,6 +317,13 @@ safe("D6 profile refresh", () => {
   check("a launch exits with the fake Electron's status", launch.status, 0);
   check("a launch still refreshes the stale profile",
     readlinkSync(join(libDir, "resources")), join(dirname(treeB), "resources"));
+});
+safe("D6 rpm", () => {
+  // Debian/Ubuntu hosts with the rpm tool but no rpm database get ~/.rpmdb on
+  // the first query; every rpm -q in --diagnose must be gated on a real db.
+  const q = launcherSrc.match(/^.*rpm -q .*$/gm) || [];
+  check("--diagnose queries rpm", q.length > 0, true);
+  check("every rpm -q is gated on _diag_has_rpmdb", q.every((l) => l.includes("_diag_has_rpmdb &&")), true);
 });
 safe("D6 ordering", () => {
   // The AppImage integration is skipped whenever a system .desktop exists,
