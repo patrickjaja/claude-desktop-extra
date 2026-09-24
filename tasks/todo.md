@@ -87,6 +87,6 @@ See [plan.md](plan.md) and [SPEC.md](../SPEC.md). IDs refer to SPEC findings.
 
 ## Verify-first items (run inside the waves, not blocking)
 - [x] V1 `CLAUDE_GPU_BACKEND=angle-gl` on 2.7032.0 (no libEGL/libGLESv2 shipped) - W4 (ANGLE is linked into the binary; knob should still work, not launch-tested)
-- [ ] V2 X11 Quick Entry hotkey with GlobalShortcutsPortal forced - needs your XFCE session (manual, 1 min)
+- [x] V2 X11 Quick Entry hotkey with GlobalShortcutsPortal forced - needs your XFCE session (manual, 1 min) (confirmed by Patrick 2026-09-24: fires on X11)
 - [x] V3 xdg-desktop-portal named-profile scope parse - W4 (parses to com.anthropic.Claude-<name>; no fix)
 - [x] V4 Portal probe 2 s timeout on autostart - W9 (reasoned: failure memoized per process; launcher warm-up on Wayland+--startup recommended as follow-up, not implemented)
