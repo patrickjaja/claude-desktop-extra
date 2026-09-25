@@ -7,7 +7,7 @@ Anthropic works on Linux support in parallel with us. Any release can ship,
 natively, something one of our patches used to add. A strict patch does not
 fail when that happens: its "already patched" branch sees the end state and
 reports success, so the build stays green while we carry a patch that does
-nothing. CONSTRAINTS.md P1: every patch must change the bundle.
+nothing. AGENTS.md Rule 4: every patch must change the bundle.
 
 This probe replays the orchestrator's sequence (same basename order, same
 chunk concatenation) against a PRISTINE extract and classifies each patch:
@@ -21,12 +21,13 @@ chunk concatenation) against a PRISTINE extract and classifies each patch:
             re-fitted, never removed, and apply_patches.py fails the build on
             it with the real error. Reported for context only.
 
-It also re-runs every ACTIVE patch on its own output (CONSTRAINTS.md P2): the
+It also re-runs every ACTIVE patch on its own output (AGENTS.md Rule 6): the
 second run must exit 0 and change nothing. That is what makes ABSORBED
 detectable for that patch at all - a patch without a working "already" branch
 turns an upstreamed feature into a red build instead of a verdict here.
-Known violators are listed in the CONSTRAINTS.md Exceptions table (rule
-`P2-idempotent`); an expired row fails like a violation.
+Known violators are listed in IDEMPOTENCY_EXCEPTIONS below; an expired entry
+fails like a violation, and an entry for a patch that became idempotent fails
+too, so the list only ever shrinks back to empty.
 
 Exit codes: 0 = clean, 1 = ABSORBED/PARTIAL/P2 violation or expired exception,
 2 = could not run (bad args, missing binaries, extract already patched).
@@ -54,10 +55,10 @@ REPO = Path(__file__).resolve().parent.parent
 # A sub-patch that found its end state in the input. Tag words vary across the
 # patches ([OK]/[INFO]/[PASS]/[SKIP]), the word "already" does not.
 ALREADY = re.compile(r"^\s*\[(OK|INFO|PASS|SKIP)\].*\balready\b", re.I)
-# | ID | Rule | Path | Reason | Owner | Expires |
-EXC_ROW = re.compile(
-    r"^\|\s*(\w+)\s*\|\s*`?P2-idempotent`?\s*\|\s*`?([\w./-]+)`?\s*\|.*\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*$"
-)
+# Patches allowed to fail the idempotency re-run, until the date given.
+# {patch basename without .nim: (exception id, "YYYY-MM-DD" expiry)}
+# Adding an entry loosens the gate: it needs @patrickjaja in the commit.
+IDEMPOTENCY_EXCEPTIONS: dict[str, tuple[str, str]] = {}
 
 
 def sha(path: Path) -> bytes:
@@ -77,20 +78,6 @@ def run(bin_path: Path, target: Path):
     r = subprocess.run([str(bin_path), str(target)], capture_output=True, text=True)
     out = (r.stdout + r.stderr).splitlines()
     return r.returncode, [ln.strip() for ln in out if ALREADY.match(ln)]
-
-
-def idempotency_exceptions():
-    """{patch basename (no .nim): (id, expires)} from CONSTRAINTS.md."""
-    path = REPO / "CONSTRAINTS.md"
-    if not path.is_file():
-        print(f"[ERROR] {path} missing; it holds the P2 exceptions", file=sys.stderr)
-        sys.exit(2)
-    exc = {}
-    for line in path.read_text().splitlines():
-        m = EXC_ROW.match(line)
-        if m:
-            exc[Path(m.group(2)).stem] = (m.group(1), m.group(3))
-    return exc
 
 
 def main():
@@ -166,7 +153,7 @@ def main():
                     idem = rc2 == 0 and sha(again) == after
                 rows.append((rc, name, (after != before, already), idem))
 
-    exceptions = idempotency_exceptions()
+    exceptions = IDEMPOTENCY_EXCEPTIONS
     today = datetime.date.today().isoformat()
     report, blocking = [], 0
     for verdict, name, detail, idem in rows:
@@ -216,7 +203,7 @@ def main():
             "[absorbed-probe] FAIL: a patch that changes nothing is a removal "
             + "candidate. Audit it against the new bundle (did upstream ship the "
             + "SAME behavior on Linux, or only something that looks like it?), then "
-            + "git rm + bump EXPECTED_PATCH_COUNT. See CONSTRAINTS.md P1.",
+            + "git rm + bump EXPECTED_PATCH_COUNT. See AGENTS.md Rule 4.",
             file=sys.stderr,
         )
     sys.exit(1 if blocking else 0)

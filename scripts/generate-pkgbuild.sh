@@ -48,7 +48,7 @@ fi
 # Find the template
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-TEMPLATE_FILE="$PROJECT_DIR/PKGBUILD.template"
+TEMPLATE_FILE="$PROJECT_DIR/packaging/arch/PKGBUILD.template"
 
 if [ ! -f "$TEMPLATE_FILE" ]; then
     echo "Error: PKGBUILD.template not found at $TEMPLATE_FILE" >&2

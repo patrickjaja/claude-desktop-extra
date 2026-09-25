@@ -78,7 +78,7 @@ jobs:
           echo "count=${ISSUE_COUNT}" >> "$GITHUB_OUTPUT"
           echo "Open issues for v${UPSTREAM}: ${ISSUE_COUNT}"
 
-      - name: Render issue body from template
+      - name: Render issue body
         id: body
         if: |
           steps.upstream.outputs.version &&
@@ -89,23 +89,12 @@ jobs:
           TRACKED: ${{ steps.tracked.outputs.version }}
           REPO: ${{ github.repository }}
         run: |
-          TEMPLATE=".github/issue-templates/new-version-body.md"
-
-          # Substitute simple placeholders
-          BODY=$(cat "$TEMPLATE")
-          BODY="${BODY//\{\{UPSTREAM\}\}/${UPSTREAM}}"
-          BODY="${BODY//\{\{TRACKED\}\}/${TRACKED}}"
-          BODY="${BODY//\{\{REPO\}\}/${REPO}}"
-
-          # Inject CC_PROMPT (multi-line): split at marker, reassemble with file content
-          BEFORE=$(echo "$BODY" | sed '/{{CC_PROMPT}}/Q')
-          AFTER=$(echo "$BODY" | sed '1,/{{CC_PROMPT}}/d')
-          CC_CONTENT=$(cat UPDATE-PROMPT-CC-INPUT-MANUAL.md)
-
+          RUNS="https://github.com/${REPO}/actions/workflows/build-and-release.yml"
           {
-            echo "$BEFORE"
-            echo "$CC_CONTENT"
-            echo "$AFTER"
+            echo "Upstream \`${UPSTREAM}\` detected (tracked: \`${TRACKED}\`). An automatic [release run](${RUNS}) has been dispatched."
+            echo ""
+            echo "- **Success:** this issue closes automatically."
+            echo "- **Failure:** a comment below links the failed run. Fix it with \`/update ${UPSTREAM}\` in a Claude Code session in this repo."
           } > /tmp/issue-body.md
 
       - name: Create notification issue

@@ -180,7 +180,7 @@ jobs:
         run: |
           mkdir -p out
           cp "deb-input/claude-desktop_"*"_${arch}.deb" "${input}/claude.deb"
-          cp -r scripts patches js packaging PKGBUILD.template CONSTRAINTS.md "${input}/"
+          cp -r scripts patches js packaging "${input}/"
           chmod +x "${input}/"*"-bridge"
 
           bins="$(jq -r '.[].bin' <<<"${BRIDGES}")"

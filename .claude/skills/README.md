@@ -71,7 +71,7 @@ fresh-upstream ──▶ update ──▶ deploy        new-version pipeline
 **Why:** Manual-only and one command, with the force toggle made explicit.
 
 ### `/update` - handle a new upstream version
-**What:** The end-to-end workflow from [issue #145](https://github.com/patrickjaja/claude-desktop-extra/issues/145): build → fix failing patches → diff old/new JS for new platform gates → feature-flag + ion-dist + platform-gate audits → update baseline docs + CHANGELOG → bump `.upstream-version` → commit. Self-contained (overlaps the `update-prompt.md` docs by design).
+**What:** The end-to-end workflow from [issue #145](https://github.com/patrickjaja/claude-desktop-extra/issues/145): build → fix failing patches → diff old/new JS for new platform gates → feature-flag + ion-dist + platform-gate audits → update baseline docs + CHANGELOG → bump `.upstream-version` → commit. Self-contained: it is the only copy of the manual update procedure.
 **When:** A new Claude Desktop version is detected.
 **Why:** Turns the most error-prone recurring task into a guided, strict checklist (every sub-patch must pass or fail loudly).
 

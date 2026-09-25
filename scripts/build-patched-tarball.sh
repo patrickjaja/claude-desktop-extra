@@ -414,13 +414,13 @@ log_info "Compiling Nim patches..."
 "$SCRIPT_DIR/compile-nim-patches.sh" "$PATCHES_DIR"
 
 # Challenge every patch against the still-pristine bundle BEFORE applying
-# (CONSTRAINTS.md P1/P2): a patch whose end state upstream already ships
+# (AGENTS.md Rules 4/6): a patch whose end state upstream already ships
 # changes nothing, and its "already patched" branch would keep the build
 # green while we carry a dead patch. Audit it, then git rm it.
 log_info "Probing for patches upstream already absorbed..."
 if ! python3 "$SCRIPT_DIR/check-upstream-absorbed.py" --patches "$PATCHES_DIR" \
     "$APP_DIR/app.asar.contents" "$TREE_DIR/resources/ion-dist"; then
-    log_error "Absorption probe failed - see CONSTRAINTS.md P1 (audit, then remove the patch)"
+    log_error "Absorption probe failed - see AGENTS.md Rule 4 (audit, then remove the patch)"
     exit 1
 fi
 
@@ -627,10 +627,10 @@ else
     log_warn "shellcheck not installed — skipping launcher validation"
 fi
 
-# Validate .desktop entry from PKGBUILD.template (generated at install time, not shipped).
+# Validate .desktop entry from packaging/arch/PKGBUILD.template (generated at install time, not shipped).
 if command -v desktop-file-validate &>/dev/null; then
     DESKTOP_TMP="$WORK_DIR/claude-desktop.desktop"
-    sed -n '/^\[Desktop Entry\]/,/^EOF$/p' "$PROJECT_DIR/PKGBUILD.template" | head -n -1 > "$DESKTOP_TMP"
+    sed -n '/^\[Desktop Entry\]/,/^EOF$/p' "$PROJECT_DIR/packaging/arch/PKGBUILD.template" | head -n -1 > "$DESKTOP_TMP"
     DESKTOP_WARNINGS=$(desktop-file-validate "$DESKTOP_TMP" 2>&1 | grep -c "warning:" || true)
     if [ "$DESKTOP_WARNINGS" -gt 0 ]; then
         log_error ".desktop file has validation warnings:"

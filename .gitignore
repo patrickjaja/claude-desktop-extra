@@ -8,7 +8,6 @@ src/
 Claude-Setup-x64.exe
 *.exe
 *.vhdx
-claude-desktop-linux-flake/
 
 # Temp files
 *.log
@@ -54,14 +53,9 @@ __pycache__/
 # Nix build output
 result
 
-# Debug notes
-/latest.md
-/validate_and_fix_claude-setup-x64.md
-UPDATE-PROMPT-CC-INPUT-MANUAL.md
 .vite
 node_modules
 resources
--
 .codex
 disabled
 
@@ -70,3 +64,6 @@ claude-theme-extract-*.json
 
 # x11-bridge moved to its own repo (github.com/patrickjaja/x11-bridge);
 # it now lives as a sibling checkout at ../computer-use/x11-bridge, not in-tree.
+
+# Maintainer agent working files (spec, plan, constraints)
+/.agent/

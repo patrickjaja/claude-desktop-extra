@@ -337,10 +337,10 @@ jobs:
           sudo apt-get install -y desktop-file-utils
           echo "=== Validating .desktop entries ==="
           FAILED=false
-          # Extract .desktop from PKGBUILD.template
-          sed -n '/^\[Desktop Entry\]/,/^EOF$/p' PKGBUILD.template | head -n -1 > /tmp/claude.desktop
+          # Extract .desktop from packaging/arch/PKGBUILD.template
+          sed -n '/^\[Desktop Entry\]/,/^EOF$/p' packaging/arch/PKGBUILD.template | head -n -1 > /tmp/claude.desktop
           if desktop-file-validate /tmp/claude.desktop 2>&1 | grep -q "warning:"; then
-            echo "::error::PKGBUILD.template .desktop has warnings:"
+            echo "::error::packaging/arch/PKGBUILD.template .desktop has warnings:"
             desktop-file-validate /tmp/claude.desktop 2>&1 | grep "warning:"
             FAILED=true
           fi
@@ -920,7 +920,7 @@ jobs:
 
           mkdir -p /tmp/build-input /tmp/build-output
           cp "$DEB" /tmp/build-input/claude.deb
-          cp -r scripts patches js packaging CONSTRAINTS.md /tmp/build-input/
+          cp -r scripts patches js packaging /tmp/build-input/
 
           # Pass the bridge binaries if available: kwin-portal-bridge for KDE
           # Wayland Computer Use, x11-bridge for X11 / XWayland Computer Use.
@@ -1070,7 +1070,7 @@ jobs:
 
           mkdir -p /tmp/build-input-arm /tmp/build-output-arm
           cp "$DEB" /tmp/build-input-arm/claude.deb
-          cp -r scripts patches js packaging CONSTRAINTS.md /tmp/build-input-arm/
+          cp -r scripts patches js packaging /tmp/build-input-arm/
 
           # Bundle the prebuilt arm64 bridges: kwin-portal-bridge (KDE Wayland)
           # and x11-bridge (X11 / XWayland).
@@ -1552,6 +1552,8 @@ jobs:
           PREBUILT_URL="https://github.com/${REPO}/releases/download/${TAG}/claude-desktop-${VERSION}-linux.tar.gz"
           export DOWNLOAD_URL_AARCH64="https://github.com/${REPO}/releases/download/${TAG}/claude-desktop-${VERSION}-linux-aarch64.tar.gz"
           bash ./scripts/generate-pkgbuild.sh "${VERSION}" "${TARBALL_SHA256}" "$PREBUILT_URL" "${PKGREL}" > PKGBUILD
+          # The artifact is flat (PKGBUILD next to its install= file).
+          cp packaging/arch/claude-desktop-extra.install .
           cat PKGBUILD
 
       - name: Generate .SRCINFO
@@ -2912,7 +2914,7 @@ jobs:
           {
             echo "**Automatic release of v${VERSION} FAILED** - manual attention needed. ([failed run](${RUN_URL}))"
             echo ""
-            echo "Most likely cause: the upstream re-minify moved a patch anchor (fix the regex), or upstream natively implemented something we patch (then remove the patch or convert it to a regression guard - see AGENTS.md, Patch Strictness Rules). Run the \`/update ${VERSION}\` skill in a Claude Code session in this repo, or follow the prompt in the issue body above."
+            echo "Most likely cause: the upstream re-minify moved a patch anchor (fix the regex), or upstream natively implemented something we patch (then remove the patch - see AGENTS.md, Patch Strictness Rules). Run \`/update ${VERSION}\` in a Claude Code session in this repo."
             echo ""
             echo "The 2-hourly version check will NOT retry while this issue stays open; a successful release run closes it automatically."
           } > /tmp/failure-comment.md

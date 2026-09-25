@@ -66,7 +66,16 @@ claude-desktop --install-gnome-hotkey '<Super>space'  # or any accelerator
 claude-desktop --uninstall-gnome-hotkey               # remove it again
 ```
 
-See [wayland.md](../wayland.md#quick-entry-hotkey-not-firing-on-gnome) for the details. `--install-gnome-hotkey` targets the default profile; for a named one, add a custom shortcut for `claude-desktop --profile=NAME --toggle` in GNOME Settings -> Keyboard.
+Why the portal route is unreliable on GNOME: the approval prompt is easy to miss, and Electron's `globalShortcut.register()` returns `true` whether or not it went through, so the hotkey silently only works while Claude has focus ([#38](https://github.com/patrickjaja/claude-desktop-extra/issues/38)). The gsettings binding bypasses the portal entirely.
+
+Accelerators use the GNOME Settings -> Keyboard syntax (`<Primary>` = Ctrl, `<Shift>`, `<Alt>`, `<Super>`, keys verbatim). Re-running with a new accelerator replaces it and leaves your other custom keybindings alone. Verify it is installed:
+
+```bash
+gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings
+# should include '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/claude-desktop-quick-entry/'
+```
+
+`--install-gnome-hotkey` targets the default profile; for a named one, add a custom shortcut for `claude-desktop --profile=NAME --toggle` in GNOME Settings -> Keyboard.
 
 **KDE Plasma** - nothing to do; the hotkey shows up under System Settings -> Shortcuts, where you can change it.
 
@@ -76,3 +85,5 @@ Run `claude-desktop --diagnose`. Its GlobalShortcuts section probes the portal e
 
 - **The hotkey stays dead for the whole session after login.** The app checks for the portal once, at startup, with a short timeout. If `xdg-desktop-portal` was still starting at that moment (common for autostart launches), Wayland hotkeys stay off until the app restarts. Quit and relaunch it, or use a compositor bind to `claude-desktop --toggle`, which never depends on the portal.
 - **The app probes the portal with `busctl`** (part of systemd), at `/usr/bin/busctl` or, where that file does not exist (NixOS), on `PATH`. Without `busctl` it treats the portal as absent; `--diagnose` lists it under **Host capabilities**. A compositor bind to `claude-desktop --toggle` works either way.
+- **Quick Entry flashes and disappears on GNOME Wayland.** Mutter does not hand focus to a window shown from the background, but Electron still emits `blur`. A bundled patch ignores blur events that were never preceded by focus, so the popup stays; on GNOME Wayland close it with <kbd>Escape</kbd> or by submitting (click-outside dismiss is skipped there by design). X11, KDE and Hyprland dismiss on click-outside as usual.
+- **KDE: the hotkey stopped registering after a crash.** Stale `kglobalaccel` entries block it; see [Global shortcut not working on KDE Plasma](troubleshooting.md#global-shortcut-not-working-on-kde-plasma).

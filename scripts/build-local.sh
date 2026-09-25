@@ -178,7 +178,7 @@ log_info "Generating PKGBUILD..."
 "$SCRIPT_DIR/generate-pkgbuild.sh" "$VERSION" "$SHA256" "file://$TARBALL" ${PKGREL:+"$PKGREL"} > "$BUILD_DIR/PKGBUILD"
 
 # makepkg reads the install= file relative to the PKGBUILD dir, so copy it in.
-cp "$PROJECT_DIR/claude-desktop-extra.install" "$BUILD_DIR/claude-desktop-extra.install"
+cp "$PROJECT_DIR/packaging/arch/claude-desktop-extra.install" "$BUILD_DIR/claude-desktop-extra.install"
 
 # Build the package with makepkg.
 #

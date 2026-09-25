@@ -8,7 +8,7 @@
 #      plus three inert safety nets - see the comment at the sub-patch)
 #   4  preferences defaults (quietPenguinEnabled / louderPenguinEnabled)
 #
-# Retired 2026-09-23 (v2.7032.0, CONSTRAINTS.md P1 / AGENTS.md Rule 4):
+# Retired 2026-09-23 (v2.7032.0, AGENTS.md Rule 4):
 #   1  platform gate on the quietPenguin support function. The registry consumes
 #      it as `quietPenguin:X(fn)` where `X(e){return app.isPackaged?
 #      {status:"unavailable"}:e()}`, so the function is never called in a

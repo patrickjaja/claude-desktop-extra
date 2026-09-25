@@ -2,7 +2,7 @@
 name: linux
 description: Linux compatibility reference for the claude-desktop-extra project (repackaging Anthropic's official Claude Desktop Linux .deb and patching its app.asar for the distros Anthropic does not ship). Use when working on Linux support, session managers, distros, Computer Use input/screenshot backends, glibc floors, Wayland/X11, multi-profile, or any patch in patches/*/*.nim. Loads the distro/session matrix, the input + screenshot cascades, native-binary glibc floors, and known Linux gotchas.
 when_to_use: When the user mentions Linux compatibility, X11, Wayland, wlroots, GNOME, KDE, XWayland, a distro (Arch/Ubuntu/Debian/Fedora/RHEL/NixOS/Jetson), xdotool/ydotool/grim/spectacle, glibc, kwin-portal-bridge, app_id/WM_CLASS, profiles, or edits files under patches/ or scripts/.
-paths: patches/**, scripts/**, js/**, baseline/PLATFORM_GATE_BASELINE.md, wayland.md
+paths: patches/**, scripts/**, js/**, baseline/PLATFORM_GATE_BASELINE.md
 ---
 
 # Linux compatibility - claude-desktop-extra
@@ -64,6 +64,7 @@ The dispatch logic lives in checked-in JS under `js/`, embedded into `patches/li
 - **Three CU bridges are ours** (patrickjaja/x11-bridge, patrickjaja/wlroots-bridge, patrickjaja/gnome-bridge); **kwin-portal-bridge is mosi0815's** project - patrickjaja/kwin-portal-bridge is a fork, fixes go through a PR to mosi0815/kwin-portal-bridge. Built for x86_64 + arm64 by CI, cached by upstream HEAD SHA. Static bridges assert `statically linked|static-pie`; dynamic bridges assert the glibc floor.
 - On NixOS the static bridges run as bundled; the dynamic two do not (foreign glibc loader) - the runnable check rejects them, so KDE falls back to spectacle and GNOME needs `.override { gnome-portal-bridge = …; }`.
 - New native binary → pick floor = its minimum viable distro; CI verifies it via `objdump -T | grep GLIBC_`.
+- **RPM caveat:** per-binary floors above the distro floor only work because `packaging/rpm/claude-desktop-extra.spec` excludes the bundled tree from rpm's automatic ELF dependency generator (`__requires_exclude_from`); without it the gnome/kwin bridges' glibc-2.39 symbols become package requirements and the rpm cannot install on RHEL 9 (glibc 2.34). CI's rockylinux:9 install test guards this.
 
 ## Multi-profile / window identity (`scripts/claude-desktop-launcher.sh`)
 - Per-profile Electron binary at `~/.local/lib/claude-desktop/<APP_ID>-<name>` via **hardlink → reflink → copy** (never symlink - Electron derives identity from `realpath(/proc/self/exe)`, kernel resolves symlinks first), refreshed from `CLAUDE_ELECTRON` when set (Nix). Gives per-profile process/exe identity, NOT a per-profile window app_id. `--create-profile` is refused on the AppImage (its tree moves every run; use `--profile=NAME`). On wrapped installs (Nix) the profile shortcut is a two-line exec script and autostart/profile entries run `CLAUDE_LAUNCHER` (the wrapper), so they keep the wrapper env and survive GC.
@@ -85,7 +86,7 @@ The dispatch logic lives in checked-in JS under `js/`, embedded into `patches/li
 - `process.argv` undefined in renderer broke Claude Code web bundle → `fix_process_argv_renderer.nim`.
 - `app.dock.bounce` (macOS) → `fix_dock_bounce.nim` (stub).
 
-## wayland.md highlights
+## Wayland hotkey notes
 - GNOME hotkey: GlobalShortcuts portal exists only on GNOME 48+ and its approval is easy to miss (Electron returns true even if it failed). `claude-desktop --install-gnome-hotkey` writes a gsettings custom keybinding (bypasses portal), toggling via Unix socket in `$XDG_RUNTIME_DIR`.
 - xdg-desktop-portal-wlr has no GlobalShortcuts (Sway, river, niri): users bind `claude-desktop --toggle` in the compositor. Hyprland's portal has it but only fires through a `global` bind. The app's portal probe runs once per process (`busctl --timeout=2` under a 3 s exec timeout), so a portal that is slow at login leaves hotkeys off until restart. Per-compositor snippets: `docs/quick-entry.md`.
 - KDE stale kglobalaccel entries after crash block re-registration → `gdbus` unregister before re-register.

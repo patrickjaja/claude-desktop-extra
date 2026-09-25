@@ -28,7 +28,7 @@ Args: `$ARGUMENTS` (`force` / `no-force` override the auto-decision; empty = dec
    - If `.upstream-version` on HEAD differs from the upstream part of the last release tag → **FORCE=false** (new-upstream release, pkgrel resets to 1).
    - Else look at what changed: `git fetch --tags origin` then `git diff --name-only <last-tag>..origin/master`. Classify:
      - any `patches/` or `js/` file → **payload update** → FORCE=true
-     - else any `scripts/`, `packaging/`, `PKGBUILD.template`, `*.install`, `flake.nix`, `.github/workflows/` file → **packaging-only update** → FORCE=true
+     - else any `scripts/`, `packaging/`, `flake.nix`, `.github/workflows/` file → **packaging-only update** → FORCE=true
      - else (docs/site/skills/CHANGELOG/baseline only) → **STOP**: nothing shippable changed; tell the user a release would publish identical packages and ask if they really want `/deploy force`.
 3. Print a one-line plan including the classification, e.g. "Triggering build-and-release.yml on `master` (force_rebuild=true - packaging-only update, pkgrel will bump)". Mention the classification so the CHANGELOG/release notes wording can say "payload update" vs "packaging-only".
 4. Fire it (no interactive confirmation - the user already typed /deploy):

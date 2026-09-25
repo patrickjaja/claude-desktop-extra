@@ -55,6 +55,22 @@ for i,r in enumerate(rows):
 ```
 If "$ARGUMENTS" is about dispatch/cowork/skills not working, this transcript usually shows the failing tool call, a permission denial, or a wrong path.
 
+Which tools the CLI actually exposed to the model (a missing `SendUserMessage` / `present_files` / `send_message` explains "response never rendered"):
+```bash
+python3 -c "
+import json
+for l in open('$AUDIT'):
+    d=json.loads(l)
+    if d.get('tools') and len(d['tools'])>10:
+        names=[t if isinstance(t,str) else t.get('name','?') for t in d['tools']]
+        print(f'Tools ({len(names)}):', names)
+        for t in ['SendUserMessage','present_files','send_message']:
+            print(' ',t,[n for n in names if t in n] or 'MISSING')
+        break
+"
+```
+**Key insight:** `audit.jsonl` is what the model saw and did; `main.log` is how the bridge processed the model's output. Check both.
+
 ## 2. Claude Desktop logs (whatever exists - globbed, not hardcoded)
 ```bash
 ls -la "$CFG"/logs/ 2>/dev/null

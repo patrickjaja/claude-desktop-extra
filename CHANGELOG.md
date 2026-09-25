@@ -16,6 +16,21 @@ All notable changes to the claude-desktop-extra packages will be documented in t
   `--password-store=` choices, feature lists are merged, and the real command
   line still wins. See [Environment Variables](docs/environment-variables.md#persistent-electron-flags).
 
+### Repo cleanup
+
+- The repo root is down to 7 files. The README leads with a quick-install table and
+  keeps a "Reporting a bug" block (`--diagnose` + `claude-patches.log`); details moved
+  to `docs/` (new `troubleshooting.md` and `command-line.md`; `PATCHES.md` is now
+  `docs/patches.md`). AGENTS.md is half its size.
+- Removed docs superseded by skills: `update-prompt.md`, `UPDATE-PROMPT-CC-INPUT-MANUAL.md`
+  and `AGENT_TEAM_PROMPT.md` (the `/update` and `/audit` skills), `wayland.md` (merged
+  into `docs/`), `CLAUDE.md` (AGENTS.md is read natively).
+- `PKGBUILD.template` and `claude-desktop-extra.install` moved to `packaging/arch/`;
+  the generated PKGBUILD and the release assets are unchanged.
+- The absorption probe keeps its (empty) exception list in the script instead of
+  `CONSTRAINTS.md`; the gates are unchanged.
+- The new-version tracking issue gets a short inline body instead of a template.
+
 ## 2026-09-23
 
 ### Linux portability pass
