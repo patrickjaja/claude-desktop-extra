@@ -2520,6 +2520,33 @@ ELECTRON_ARGS=()
 _disable_features=()
 _enable_features=()
 
+# ---------------------------------------------------------------------------
+# Flags from config file
+# ---------------------------------------------------------------------------
+# Read Electron/Chromium flags from a config file, one flag per line.
+# Comments (# ...) and blank lines are ignored. Flags are added to
+# ELECTRON_ARGS with low priority: the launcher's own detection and
+# explicit CLI args both override them via Chromium's last-wins rule.
+# --enable-features and --disable-features are folded into the launcher's
+# feature lists so they are merged (not silently overwritten) with the
+# launcher's own entries and those from $@.
+_conf="${XDG_CONFIG_HOME:-$HOME/.config}/claude-desktop-flags.conf"
+if [[ -r "$_conf" ]]; then
+    while IFS= read -r _line || [[ -n "$_line" ]]; do
+        _line="${_line%%#*}"
+        [[ -n "${_line//[[:space:]]/}" ]] || continue
+        read -r -a _words <<< "$_line"
+        for _w in "${_words[@]}"; do
+            case "$_w" in
+                --disable-features=*) IFS=',' read -ra _uf <<< "${_w#*=}"; _disable_features+=("${_uf[@]}") ;;
+                --enable-features=*)  IFS=',' read -ra _uf <<< "${_w#*=}"; _enable_features+=("${_uf[@]}") ;;
+                *) ELECTRON_ARGS+=("$_w") ;;
+            esac
+        done
+    done < "$_conf"
+    log "Loaded flags from $_conf"
+fi
+
 if [[ "${CLAUDE_NATIVE_TITLEBAR:-}" == '1' ]]; then
     # No Chromium argument to add: `frame:true` in fix_native_frame.nim is what
     # opens the native window. The CustomTitlebar feature this used to disable
