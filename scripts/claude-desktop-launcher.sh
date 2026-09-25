@@ -2523,28 +2523,28 @@ _enable_features=()
 # ---------------------------------------------------------------------------
 # Flags from config file
 # ---------------------------------------------------------------------------
-# Read Electron/Chromium flags from a config file, one flag per line.
-# Comments (# ...) and blank lines are ignored. Flags are added to
-# ELECTRON_ARGS with low priority: the launcher's own detection and
-# explicit CLI args both override them via Chromium's last-wins rule.
-# --enable-features and --disable-features are folded into the launcher's
-# feature lists so they are merged (not silently overwritten) with the
-# launcher's own entries and those from $@.
+# Read Electron/Chromium flags from a config file, one or more per line.
+# Comments (# ...) and blank lines are ignored. The flags are handled exactly
+# like command-line arguments placed before the real ones, so the precedence is
+# launcher defaults < config file < command line: they are appended after
+# ELECTRON_ARGS (Chromium's last-wins rule lets --ozone-platform= or
+# --password-store= override the launcher's own choice, and an explicit
+# --password-store= skips the keyring detection), --enable-features and
+# --disable-features are merged with the launcher's lists below, and anything
+# passed on the command line still wins over the file.
 _conf="${XDG_CONFIG_HOME:-$HOME/.config}/claude-desktop-flags.conf"
 if [[ -r "$_conf" ]]; then
+    _conf_args=()
     while IFS= read -r _line || [[ -n "$_line" ]]; do
         _line="${_line%%#*}"
         [[ -n "${_line//[[:space:]]/}" ]] || continue
         read -r -a _words <<< "$_line"
-        for _w in "${_words[@]}"; do
-            case "$_w" in
-                --disable-features=*) IFS=',' read -ra _uf <<< "${_w#*=}"; _disable_features+=("${_uf[@]}") ;;
-                --enable-features=*)  IFS=',' read -ra _uf <<< "${_w#*=}"; _enable_features+=("${_uf[@]}") ;;
-                *) ELECTRON_ARGS+=("$_w") ;;
-            esac
-        done
+        _conf_args+=("${_words[@]}")
     done < "$_conf"
-    log "Loaded flags from $_conf"
+    if (( ${#_conf_args[@]} > 0 )); then
+        set -- "${_conf_args[@]}" "$@"
+        log "Loaded flags from $_conf: ${_conf_args[*]}"
+    fi
 fi
 
 if [[ "${CLAUDE_NATIVE_TITLEBAR:-}" == '1' ]]; then

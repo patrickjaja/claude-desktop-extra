@@ -28,6 +28,18 @@ Both switches are read by the app itself, from the userData dir it is actually u
 
 Set permanently in `~/.bashrc` / `~/.zshrc`, or pass per-launch: `CLAUDE_DISABLE_GPU=1 claude-desktop`
 
+## Persistent Electron flags
+
+For Chromium/Electron switches that should apply to every launch, including menu and autostart launches, put them in `~/.config/claude-desktop-flags.conf` (or `$XDG_CONFIG_HOME/claude-desktop-flags.conf`). You can put one or more flags on a line, `#` starts a comment, and blank lines are ignored:
+
+```
+# ~/.config/claude-desktop-flags.conf
+--password-store=basic
+--enable-features=VaapiVideoDecoder
+```
+
+The flags behave like command-line arguments given before your own: they override the launcher's automatic choices (`--ozone-platform=`, and `--password-store=`, which also turns off keyring detection), `--enable-features` / `--disable-features` are merged with the launcher's lists instead of replacing them, and flags passed on the command line still win over the file. The file is shared by all profiles. Values containing spaces are not supported.
+
 ## Feature-specific variables
 
 A few variables belong to specific features and are documented alongside them:

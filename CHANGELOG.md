@@ -2,6 +2,20 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-09-25
+
+### Launcher: persistent Electron flags file
+
+- The launcher reads Chromium/Electron flags from
+  `~/.config/claude-desktop-flags.conf` (`$XDG_CONFIG_HOME` honored; `#`
+  comments and blank lines ignored), the same convention as the AUR
+  `claude-desktop` package. Contributed by [@ytinyui](https://github.com/ytinyui)
+  in [#257](https://github.com/patrickjaja/claude-desktop-extra/pull/257).
+- The file's flags are treated like command-line arguments that come before your
+  own: they override the launcher's automatic `--ozone-platform=` and
+  `--password-store=` choices, feature lists are merged, and the real command
+  line still wins. See [Environment Variables](docs/environment-variables.md#persistent-electron-flags).
+
 ## 2026-09-23
 
 ### Linux portability pass
