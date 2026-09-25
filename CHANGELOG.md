@@ -30,6 +30,8 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - The absorption probe keeps its (empty) exception list in the script instead of
   `CONSTRAINTS.md`; the gates are unchanged.
 - The new-version tracking issue gets a short inline body instead of a template.
+- Arch install now leads with the AUR (`yay -S claude-desktop-extra`) in the README and on
+  the website; the signed pacman repository stays as the no-AUR-helper option.
 
 ## 2026-09-23
 

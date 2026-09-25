@@ -18,7 +18,7 @@ Everything else - Chat, Cowork, Claude Code, Browser Tools, 3P inference - is th
 
 | Distro | Command |
 |--------|---------|
-| Arch / Manjaro | `curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-pacman.sh \| sudo bash && sudo pacman -Syu claude-desktop-extra` |
+| Arch / Manjaro | `yay -S claude-desktop-extra` ([AUR](https://aur.archlinux.org/packages/claude-desktop-extra); no AUR helper: [signed pacman repo](#arch-linux--manjaro-pacman-repository)) |
 | Debian / Ubuntu | `curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install.sh \| sudo bash && sudo apt install claude-desktop-extra` |
 | Fedora / RHEL | `curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-rpm.sh \| sudo bash && sudo dnf install claude-desktop-extra` |
 | NixOS / Nix | `nix run github:patrickjaja/claude-desktop-extra` |
@@ -28,16 +28,22 @@ Updates arrive through your package manager. x86_64 and aarch64 are supported ev
 
 <a name="arch-linux--manjaro-pacman-repository"></a>
 <details>
-<summary><b>Arch Linux / Manjaro (Pacman Repository)</b></summary>
+<summary><b>Arch Linux / Manjaro (AUR or pacman repository)</b></summary>
+
+```bash
+yay -S claude-desktop-extra              # or: paru -S claude-desktop-extra / Manjaro: pamac build claude-desktop-extra
+```
+
+Updates arrive with `yay -Syu`. The [PKGBUILD](https://aur.archlinux.org/packages/claude-desktop-extra) is readable on the AUR before you build: it downloads the prebuilt, SHA256-pinned release tarball and repackages it (no compiling). CI updates it on every release; x86_64 and aarch64.
+
+**Without an AUR helper: signed pacman repository.** The same package, prebuilt and GPG-signed, updated by `sudo pacman -Syu`:
 
 ```bash
 curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-pacman.sh | sudo bash   # repo + signing key, once
 sudo pacman -Syu claude-desktop-extra
 ```
 
-**AUR alternative:** `yay -S claude-desktop-extra` builds the same [PKGBUILD](https://aur.archlinux.org/packages/claude-desktop-extra) from the checksummed release tarball.
-
-**Optional deps** (pacman skips `optdepends`): QEMU/KVM for Cowork ([setup](docs/cowork.md)), `nodejs` (system MCP servers), `sqlite` (project detection), `gjs` (GNOME search provider), `claude-code`.
+**Optional deps** (not installed automatically): QEMU/KVM for Cowork ([setup](docs/cowork.md)), `nodejs` (system MCP servers), `sqlite` (project detection), `gjs` (GNOME search provider), `claude-code`.
 
 <details>
 <summary>Manual <code>pacman.conf</code> setup (without the install script)</summary>

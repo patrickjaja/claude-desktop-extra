@@ -497,8 +497,7 @@
     </div>
     <div class="terminal-body" id="hero-terminal">
       <div><span class="terminal-comment"># install in one command</span></div>
-      <div><span class="terminal-prompt">$</span> <span class="terminal-cmd" id="hero-cmd">curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-pacman.sh | sudo bash</span></div>
-      <div><span class="terminal-prompt">$</span> <span class="terminal-cmd">sudo pacman -Syu claude-desktop-extra</span><span class="cursor"></span></div>
+      <div><span class="terminal-prompt">$</span> <span class="terminal-cmd" id="hero-cmd">yay -S claude-desktop-extra</span><span class="cursor"></span></div>
     </div>
   </div>
 
@@ -527,14 +526,11 @@
 
   <div class="tab-panel active" id="tab-arch">
     <div class="install-block">
-      <button class="copy-btn" data-copy="curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-pacman.sh | sudo bash
-sudo pacman -Syu claude-desktop-extra">Copy</button>
-      <pre><span class="comment"># Add repo + GPG key</span>
-curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-pacman.sh | sudo bash
-<span class="comment"># Install</span>
-sudo pacman -Syu claude-desktop-extra</pre>
+      <button class="copy-btn" data-copy="yay -S claude-desktop-extra">Copy</button>
+      <pre><span class="comment"># From the AUR (or: paru -S, Manjaro: pamac build)</span>
+yay -S claude-desktop-extra</pre>
     </div>
-    <div class="install-note">Updates arrive through <code>pacman -Syu</code> (or <code>yay -Syu</code>). Signed packages, x86_64 and aarch64. <a href="https://github.com/patrickjaja/claude-desktop-extra#arch-linux--manjaro-pacman-repository">Manual setup and <code>makepkg</code> build →</a></div>
+    <div class="install-note">Updates arrive through <code>yay -Syu</code>. x86_64 and aarch64. The <a href="https://aur.archlinux.org/packages/claude-desktop-extra">PKGBUILD</a> repackages the SHA256-pinned release tarball, no compiling. No AUR helper? <a href="https://github.com/patrickjaja/claude-desktop-extra#arch-linux--manjaro-pacman-repository">Use the signed pacman repository →</a></div>
   </div>
 
   <div class="tab-panel" id="tab-debian">
@@ -899,7 +895,7 @@ chmod +x Claude_Desktop-x86_64.AppImage
 <script>
   // Distro-specific hero commands and install tab mapping
   var distroCommands = {
-    arch:    'curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-pacman.sh | sudo bash\nsudo pacman -Syu claude-desktop-extra',
+    arch:    'yay -S claude-desktop-extra',
     debian:  'curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install.sh | sudo bash\nsudo apt install claude-desktop-extra',
     fedora:  'curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-rpm.sh | sudo bash\nsudo dnf install claude-desktop-extra',
     nix:     'nix run github:patrickjaja/claude-desktop-extra',
