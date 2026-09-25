@@ -32,4 +32,4 @@ Produce a report:
 - **Logs:** notable errors + likely cause.
 - **Solution approaches:** ranked, with effort estimate. Use `AskUserQuestion` for any decision (delete a patch? add one? change behavior per backend?). When findings amount to upstream drift (stale patterns, new gates, protocol mismatch), the remediation path is `/update` - point there for the structured fix workflow.
 
-Cross-reference memory (`~/.claude/projects/-home-patrickjaja-development-claude-desktop-bin/memory/`) for prior decisions before recommending changes. This is read-only review - propose, don't apply (unless the user then asks).
+Cross-reference memory (`~/.claude/projects/-home-patrickjaja-development-claude-desktop-extra/memory/`) for prior decisions before recommending changes. This is read-only review - propose, don't apply (unless the user then asks).

@@ -893,7 +893,7 @@ Previously (through v1.7196.0), Operon had 120+ endpoints across 33 sub-interfac
 
 Was gated behind GrowthBook flag `1306813456` - currently **unavailable** on all platforms (not enabled server-side). Do NOT force-enable; requires VM infrastructure (Nest).
 
-When active, Operon provided 14 "brain tools" (multi-agent delegation, skills, dashboards, planning), 7 "compute tools" (bash, python, R, artifacts, packages), 1 dynamic tool (`skill`), and 4 internal LLM tools. See [CLAUDE_FEATURE_FLAGS.md - Operon Tool Inventory](CLAUDE_FEATURE_FLAGS.md#operon-tool-inventory-v11348) for the full catalog.
+When active, Operon provided 14 "brain tools" (multi-agent delegation, skills, dashboards, planning), 7 "compute tools" (bash, python, R, artifacts, packages), 1 dynamic tool (`skill`), and 4 internal LLM tools. See [CLAUDE_FEATURE_FLAGS.md - Operon Tool Inventory](CLAUDE_FEATURE_FLAGS.md#operon-tool-inventory-v116170) for the full catalog.
 
 ## Version Notes
 

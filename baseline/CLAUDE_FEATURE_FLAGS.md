@@ -1270,7 +1270,7 @@ Dispatch is a remote task orchestration feature that lets you send tasks from yo
 
 If a future release breaks phone→desktop Dispatch on Linux, re-check these four before re-introducing a patch.
 
-**Note on `operon` (Nest):** Completely removed in v1.6608.0. Previously required VM infrastructure (120+ IPC endpoints across 31 sub-interfaces). See [Operon Tool Inventory](#operon-tool-inventory-v11062) below for the historical model-facing toolset.
+**Note on `operon` (Nest):** Completely removed in v1.6608.0. Previously required VM infrastructure (120+ IPC endpoints across 31 sub-interfaces). See [Operon Tool Inventory](#operon-tool-inventory-v116170) below for the historical model-facing toolset.
 
 **No patching needed for:**
 - Keep-awake (`powerSaveBlocker`) — works on Linux via Electron API

@@ -12,16 +12,25 @@ The issue to debug: **$ARGUMENTS**
 You are debugging the patched Claude Desktop. Cowork runs on the `.deb`'s bundled native VM backend (the old `claude-cowork-service` daemon is deprecated). Gather the relevant local evidence below (skip what's clearly irrelevant to "$ARGUMENTS"), form a hypothesis, then ask the user for anything you can't collect yourself. Read `/architecture` for how the pieces fit and `/linux` for session/CU specifics if relevant.
 
 ## 0. Resolve the config/log dir FIRST (1p vs 3p) - or you read stale evidence
-The runtime dir is **conditional**: a 3p/enterprise deployment relocates everything to `~/.config/Claude-3p/`.
-Resolve it once and use `$CFG` everywhere below.
+The runtime dir is **conditional**: 3P mode relocates everything to `~/.config/Claude-3p/`. 3P is active when an
+`inferenceProvider` is configured - via `/etc/claude-desktop/managed-settings.json`, Settings -> Extra -> Deployment,
+or `--3p`. The `/etc` file merely existing (e.g. only `managedMcpServers`) stays 1P. Resolve once, use `$CFG` below.
 ```bash
-# 3p (inference-gateway / Bedrock / managed) -> Claude-3p ; otherwise -> Claude
-if [ -f /etc/claude-desktop/managed-settings.json ]; then CFG=~/.config/Claude-3p; else CFG=~/.config/Claude; fi
-# sanity-check against the running process (named profiles add a further -<profile> suffix):
-pgrep -af claude | grep -o -- '--user-data-dir=[^ ]*' | head -1
+# 1. a running named profile passes its dir explicitly (match the app binary, not shells quoting this text)
+CFG=
+for p in $(pgrep -f -- '--user-data-dir='); do
+  readlink "/proc/$p/exe" 2>/dev/null | grep -q claude-desktop || continue
+  CFG=$(tr '\0' '\n' < "/proc/$p/cmdline" | sed -n 's/^--user-data-dir=//p' | head -1); break
+done
+# 2. else: policy-file provider, or the 3P dir's main.log is the fresher one (Deployment panel / --3p)
+if [ -z "$CFG" ]; then
+  if grep -qs '"inferenceProvider"' /etc/claude-desktop/managed-settings.json \
+     || [ ~/.config/Claude-3p/logs/main.log -nt ~/.config/Claude/logs/main.log ]; then
+    CFG=~/.config/Claude-3p; else CFG=~/.config/Claude; fi
+fi
+grep -a '3P mode active' "$CFG/logs/main.log" | tail -1   # confirms 3P when CFG is Claude-3p
 echo "using CFG=$CFG"
 ```
-If `pgrep` shows a `--user-data-dir` that differs from `$CFG` (e.g. a named profile), prefer that path.
 
 ## 1. Last local-agent-mode session transcript (the single source of truth for Cowork/Dispatch/agent runs)
 `audit.jsonl` records exactly what the model saw and did. Find the newest one and read **the user's last prompt + the assistant tool calls + any errors**:
@@ -98,7 +107,7 @@ Based on "$ARGUMENTS", use `AskUserQuestion` to request anything missing - only 
 - Session/distro: output of `claude-desktop --diagnose` and the `[claude-cu] diagnostics:` lines from terminal (for Computer Use / Wayland issues).
 - Whether to reproduce the issue now while tailing `cowork_vm_node.log` (step 3).
 - A screenshot / the exact error text shown in the UI.
-- For stale-state bugs: permission to clear `"$CFG"/local-agent-mode-sessions/` (the model can otherwise "remember" past errors; `$CFG` = `Claude-3p` under managed-settings.json, else `Claude`).
+- For stale-state bugs: permission to clear `"$CFG"/local-agent-mode-sessions/` (the model can otherwise "remember" past errors; `$CFG` as resolved in step 0).
 
 ## 5. Diagnose
-State the hypothesis grounded in the evidence (cite the log line / audit record / file:line). If it's a patch/upstream issue, point at the patch and suggest `/fresh-upstream` + `/update`. Propose the fix; apply only if the user asks. Cross-reference memory (`~/.claude/projects/-home-patrickjaja-development-claude-desktop-bin/memory/`, e.g. dispatch-linux-debug, cowork-crash-debug) for prior findings before concluding.
+State the hypothesis grounded in the evidence (cite the log line / audit record / file:line). If it's a patch/upstream issue, point at the patch and suggest `/fresh-upstream` + `/update`. Propose the fix; apply only if the user asks. Cross-reference memory (`~/.claude/projects/-home-patrickjaja-development-claude-desktop-extra/memory/`, e.g. dispatch-linux-debug, cowork-crash-debug) for prior findings before concluding.
