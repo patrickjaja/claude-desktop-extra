@@ -366,6 +366,39 @@ async function featuresPanel(featuresItem) {
     ok(qo.getAttribute("aria-checked") === "true", "the switch reflects the write");
   }
 
+  // --- Load large sessions in full: opt-in, NOT live, numbers shown but not edited
+  const tlSel = '.cdbx-switch[aria-label="load large Code sessions in full"]';
+  const tl = panel.querySelector(tlSel);
+  ok(!!tl, "renders the Load large sessions in full switch");
+  if (tl) {
+    const tlRow = tl.closest(".cdbx-row");
+    const tlState = function () { return tlRow.querySelector(".cdbx-state").textContent; };
+    const tlNote = tlRow.querySelector(".cdbx-note").textContent;
+    ok(tlRow.querySelector(".cdbx-id").textContent === "Load large sessions in full", "titled Load large sessions in full");
+    ok(tl.getAttribute("aria-checked") === "false", "off by default (opt-in)");
+    ok(!tl.disabled, "enabled when the .jsonc does not lock it");
+    ok(tlState() === "off - Anthropic's limits", "the off state says Anthropic's limits apply: " + tlState());
+    ok(/browser screenshots/.test(tlNote), "the note names what it is for (long sessions with browser screenshots)");
+    ok(/exactly as Anthropic ships them/.test(tlNote), "the note promises off leaves Anthropic's limits as shipped");
+    ok(/Takes effect after a restart/.test(tlNote), "the note says it needs a restart");
+    ok(/by default/.test(tlNote) && /adjustable in claude-desktop-extra\.jsonc/.test(tlNote),
+       "the note says the 256/192 are defaults and can be adjusted in the config file (file only, no GUI field)");
+    ok(tlNote.length < 700, "the note stays within the length range of the other rows (" + tlNote.length + " chars)");
+    ok(!tlRow.querySelector("input"), "no number field in the row: the numbers stay in the file");
+
+    tl.click();
+    await sleep(60);
+    ok((window.__tlCalls || []).length === 1 && window.__tlCalls[0] === true,
+       "clicking it calls transcriptLimitsSet(true) exactly once: " + JSON.stringify(window.__tlCalls));
+    ok(tl.getAttribute("aria-checked") === "true", "the switch reflects the write");
+    ok(tlState() === "on - 256 MiB main, 192 MiB subagents after a restart",
+       "switching on while the app runs off says a restart is owed: " + tlState());
+    tl.click();
+    await sleep(60);
+    ok(tlState() === "off - Anthropic's limits",
+       "switching straight back stops claiming a restart is owed: " + tlState());
+  }
+
   // --- the two window modes. Three mutually exclusive outcomes behind two
   // switches (native titlebar > no window controls > integrated), so the pair
   // is checked together: the override has to be visible in the overridden row,
@@ -594,7 +627,10 @@ async function featuresPanel(featuresItem) {
   // are the only rows a restart is allowed to reach: they are BrowserWindow
   // constructor options with no live setter on Electron 44. Every other row
   // must promise live, and a row that quietly stops promising it trips this.
-  const RESTART_ROWS = ["Hide window controls", "Native titlebar"];
+  // The rows that are NOT live: the two window modes (the frame is fixed when the
+  // window is created) and large-session loading (the limits are handed to the
+  // session manager when it is constructed at startup).
+  const RESTART_ROWS = ["Hide window controls", "Native titlebar", "Load large sessions in full"];
   const rowNotes = Array.from(panel.querySelectorAll(".cdbx-row")).map(function (r) {
     return {
       title: r.querySelector(".cdbx-id").textContent,
@@ -608,11 +644,11 @@ async function featuresPanel(featuresItem) {
       .map(function (r) { return r.title; }).join(",");
   };
   ok(liveRows.length === rowNotes.length - RESTART_ROWS.length && liveRows.length > 0,
-     "the panel is " + liveRows.length + " live rows plus the " + RESTART_ROWS.length + " window modes");
+     "the panel is " + liveRows.length + " live rows plus the " + RESTART_ROWS.length + " restart-needing rows");
   ok(!missing(liveRows, "applies live", true),
      "every live row's note says it applies live; these do not: " + missing(liveRows, "applies live", true));
   ok(restartRows.length === RESTART_ROWS.length && !missing(restartRows, "after a restart", true),
-     "and each window mode's note says it takes effect after a restart; these do not: " +
+     "and each restart-needing row's note says it takes effect after a restart; these do not: " +
      missing(restartRows, "after a restart", true));
   ok(!missing(restartRows, "applies live", false),
      "and neither of them also claims to apply live: " + missing(restartRows, "applies live", false));
@@ -691,6 +727,42 @@ async function featuresPanel(featuresItem) {
     ok(pick2.disabled, "and the switch is disabled because that file wins");
     ok(pick2.title.indexOf("claude-desktop-extra.jsonc") >= 0,
        "naming the file to edit: " + pick2.title);
+  }
+  // Load large sessions in full, against three more fixtures. Each remount
+  // re-reads transcriptLimitsRead(), which is the only way to see these states:
+  // the row's "restart owed" wording compares the SWITCH with what the running
+  // app was started with, and only a fresh read changes the latter.
+  async function remountTl(state) {
+    document.getElementById("row-account").click();
+    await sleep(30);
+    window.__tlState = state;
+    featuresItem.click();
+    await sleep(120);
+    const p = document.querySelector(".cdbx-panel");
+    const sw = p && p.querySelector('.cdbx-switch[aria-label="load large Code sessions in full"]');
+    return sw ? { sw: sw, state: sw.closest(".cdbx-row").querySelector(".cdbx-state").textContent } : null;
+  }
+  {
+    const base = { ok: true, mainMiB: 512, subagentMiB: 384 };
+    const locked = await remountTl(Object.assign({}, base, { enabled: true, lockedByJsonc: true, source: "jsonc-locked",
+      activeNow: true, activeMainMiB: 512, activeSubagentMiB: 384, pendingRestart: false }));
+    ok(!!locked, "the large-sessions switch renders again after remounting");
+    if (locked) {
+      ok(locked.sw.getAttribute("aria-checked") === "true", "locked: still reports its real state (on)");
+      ok(locked.sw.disabled, "locked: the switch is disabled once the .jsonc holds it");
+      ok(locked.sw.title.indexOf("claude-desktop-extra.jsonc") >= 0, "locked: names the file to edit: " + locked.sw.title);
+      ok(locked.state === "on - up to 512 MiB main, 384 MiB subagents - set in claude-desktop-extra.jsonc",
+         "locked and already running with it: shows the file's numbers, no restart wording: " + locked.state);
+    }
+    const changed = await remountTl(Object.assign({}, base, { mainMiB: 300, subagentMiB: 192, enabled: true,
+      lockedByJsonc: false, source: "json", activeNow: true, activeMainMiB: 256, activeSubagentMiB: 192, pendingRestart: true }));
+    ok(!!changed && changed.state === "on - 300 MiB main, 192 MiB subagents after a restart",
+       "numbers edited since the app started: the row says a restart is owed: " + (changed && changed.state));
+    const offRunning = await remountTl(Object.assign({}, base, { mainMiB: 256, subagentMiB: 192, enabled: false,
+      lockedByJsonc: false, source: "default", activeNow: true, activeMainMiB: 256, activeSubagentMiB: 192, pendingRestart: true }));
+    ok(!!offRunning && offRunning.state === "off - Anthropic's limits after a restart",
+       "switched off while the app runs on: the row says Anthropic's limits return after a restart: " + (offRunning && offRunning.state));
+    window.__tlState = undefined;
   }
   window.__pickerState = { ok: true, enabled: true, lockedByJsonc: null };
 }
@@ -1709,6 +1781,11 @@ window.cdbExtra = {
   },
   quickOpenRead: function () { return Promise.resolve(window.__quickOpenState || { ok: true, enabled: false, lockedByJsonc: false, source: "default" }); },
   quickOpenSet: function (enabled) { window.__quickOpenCalls = (window.__quickOpenCalls || []).concat([enabled]); return Promise.resolve({ ok: true, enabled: enabled }); },
+  // Load large sessions in full. Without these two the row is silently skipped
+  // (renderToggleRow answers nothing when its bridge half is missing), so a
+  // harness that omits them would pass while never rendering the row.
+  transcriptLimitsRead: function () { return Promise.resolve(window.__tlState || { ok: true, enabled: false, lockedByJsonc: false, source: "default", mainMiB: 256, subagentMiB: 192, activeNow: false, activeMainMiB: null, activeSubagentMiB: null, pendingRestart: false }); },
+  transcriptLimitsSet: function (enabled) { window.__tlCalls = (window.__tlCalls || []).concat([enabled]); return Promise.resolve({ ok: true, enabled: enabled }); },
   // The two window modes. Three fields the page treats as three different
   // facts, so a fixture that conflated any of them could not tell the states
   // apart: "enabled" is the SAVED setting, "active" what this window was built

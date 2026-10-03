@@ -122,6 +122,16 @@
       return ipcRenderer.invoke("cdb-qopen:pref-set", enabled === true);
     },
 
+    // Load large sessions in full (transcript load limits). BOTH channels are
+    // owned by patches/community/add_feature_transcript_limits.nim, not by the
+    // settings patch - the same cross-patch arrangement as quickOpenRead/Set.
+    transcriptLimitsRead: function () {
+      return ipcRenderer.invoke("cdb-tlimits:pref-read");
+    },
+    transcriptLimitsSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-tlimits:pref-set", enabled === true);
+    },
+
     // Frameless main window, no window-control buttons, no shadow. BOTH channels
     // are owned by patches/community/add_feature_window_controls.nim, not by the
     // settings patch - the same cross-patch arrangement as panelTabsRead/Set.

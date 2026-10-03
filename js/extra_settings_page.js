@@ -1238,6 +1238,49 @@
     });
   }
 
+  // --- sessions: how much of a big Code session the app loads ---------------
+  // Ours, opt-in, and the other kind of row from Files quick open: NOT live. The
+  // limits are handed to Anthropic's session manager when it is constructed at
+  // startup, so a saved change applies on the next start. The read response
+  // carries what the RUNNING app was started with (activeNow / activeMainMiB /
+  // activeSubagentMiB) next to the saved value, so describe() can say "after a
+  // restart" for exactly as long as that is true, and stop saying it once the
+  // app has been restarted. The numbers themselves stay hand-edited in the
+  // .jsonc (like coworkGlowOpacity); this row only shows them.
+  function renderTranscriptLimitsRow(panel) {
+    return renderToggleRow(panel, {
+      section: "Sessions",
+      title: "Load large sessions in full",
+      note: "Anthropic's app loads only the most recent part of a very large session - currently " +
+        "the last 50 MiB of the conversation plus 32 MiB shared by its subagents - and hides the " +
+        "rest behind \"This session is too large to load in full\". That is typical after long " +
+        "sessions with many browser screenshots. On loads up to 256 MiB and 192 MiB by default " +
+        "(adjustable in claude-desktop-extra.jsonc), using more memory and time to open a huge " +
+        "session. Off leaves the limits exactly as Anthropic ships them. Takes effect after a restart.",
+      ariaLabel: "load large Code sessions in full",
+      read: "transcriptLimitsRead",
+      write: "transcriptLimitsSet",
+      lockFile: "claude-desktop-extra.jsonc",
+      isOn: function (res) { return res.enabled === true; },
+      describe: function (on, res) {
+        // `on` is the switch as shown now; res.activeNow is what the running app
+        // was started with - they differ for exactly as long as a restart is owed.
+        var pending = on !== (res.activeNow === true) ||
+          (on && (res.mainMiB !== res.activeMainMiB || res.subagentMiB !== res.activeSubagentMiB));
+        var sizes = res.mainMiB + " MiB main, " + res.subagentMiB + " MiB subagents";
+        if (on) return pending ? "on - " + sizes + " after a restart" : "on - up to " + sizes;
+        return pending ? "off - Anthropic's limits after a restart" : "off - Anthropic's limits";
+      },
+      writeArg: function (next) { return next; },
+      toast: function (next) {
+        return next
+          ? "Large sessions on - restart Claude Desktop to apply"
+          : "Large sessions off - restart Claude Desktop to apply";
+      },
+      errorPrefix: "Could not change large-session loading: "
+    });
+  }
+
   // --- window: the three window modes ---------------------------------------
   // Two switches, three mutually exclusive outcomes, resolved by the main side
   // as: native titlebar > no window controls > integrated titlebar (default).
@@ -1932,6 +1975,7 @@
     renderDiffViewsRow,
     renderPanelTabsRow,
     renderFilesQuickOpenRow,
+    renderTranscriptLimitsRow,
     renderWindowControlsRow,
     renderNativeTitlebarRow,
     renderWindowTransparencyRow,

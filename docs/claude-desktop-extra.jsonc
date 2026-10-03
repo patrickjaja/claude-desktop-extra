@@ -48,6 +48,26 @@
   // dim end of upstream's own pulse). Hand edits need a restart.
   // "coworkGlowOpacity": 0.55,
 
+  // transcriptLimits: for long Code sessions, especially ones with many browser
+  // screenshots. The app only loads the last 50 MiB of a session's transcript, plus
+  // one shared 32 MiB for all of its subagents' transcripts, and hides the rest behind
+  // "This session is too large to load in full" (the start of the conversation, or
+  // some subagent activity). A screenshot returned inline is ~0.4 MB of base64 (stored
+  // twice in the main transcript), so 60-80 of them reach a limit. true loads
+  // up to 256 MiB of the conversation and 192 MiB of subagent activity instead, at the
+  // cost of memory and time when you open a huge session; omit it for Anthropic's own
+  // limits. Needs a restart. Settings -> Extra -> Community Features has a switch for
+  // this; a value set HERE wins the merge, so that switch shows itself as locked
+  // while this line is active.
+  // "transcriptLimits": true,
+
+  // transcriptLimitsMainMiB / transcriptLimitsSubagentMiB: what "true" allows, in
+  // MiB, clamped to 8..4096 (defaults 256 and 192; lower them on a machine with little RAM). The
+  // parse cache is sized from these automatically. Only used while transcriptLimits
+  // is true. Hand edits need a restart.
+  // "transcriptLimitsMainMiB": 512,
+  // "transcriptLimitsSubagentMiB": 384,
+
   "growthbookOverrides": {
     // "17519066": true, // external-browser URL block
     // "21606909": true, // app-menu Alt+letter mnemonics - hidden Alt+<initial> accelerators open the matching top-level menu (default ON) (new in v2.2553.0)

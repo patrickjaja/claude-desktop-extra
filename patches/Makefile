@@ -100,6 +100,12 @@ community/add_feature_files_quick_open: \
 
 community/add_feature_files_quick_open_bridge: ../js/files_quick_open_bridge.js
 
+# Load large sessions in full: the main patch embeds the main-process module, the
+# worker patch embeds the helper it prepends to the heavy-work worker.
+community/add_feature_transcript_limits: ../js/transcript_limits_main.js
+
+community/add_feature_transcript_limits_worker: ../js/transcript_limits_worker.js
+
 # Theme patch embeds the spinner-reshape installer (swaps the loading-star SVG
 # for the active theme's custom shape) and the bundled community + gaming palette
 # collections via staticRead.
