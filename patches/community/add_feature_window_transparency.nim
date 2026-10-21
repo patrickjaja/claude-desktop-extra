@@ -56,9 +56,11 @@ proc apply*(input: string): string =
     quit(1)
 
   # Sub-patch B first, so the module text injected by A is never searched.
+  # Since v3.1623.0 the background call takes an argument object
+  # (`backgroundColor:fQn({signedIn:c}),opacity:1,icon:`), hence the optional `{...}`.
   var n = 0
   result = result.replace(
-    re2"""(backgroundColor:[\w$]+(?:\.[\w$]+)*\(\),opacity:[^,{}]+,)(icon:)""",
+    re2"""(backgroundColor:[\w$]+(?:\.[\w$]+)*\((?:\{[^{}]*\})?\),opacity:[^,{}]+,)(icon:)""",
     proc(m: RegexMatch2, s: string): string =
       inc n
       s[m.group(0)] & HOOK & s[m.group(1)],

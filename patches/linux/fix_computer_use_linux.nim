@@ -622,8 +622,12 @@ proc apply*(input: string): string =
     # that the options object spreads (`S={...x(),readTheGrantsAfresh:x,...`).
     # Its body has braces and commas, so a hoisted decl may also be a
     # `()=>{...}` arrow with at most one nested brace level.
+    # v3.1623.0 grew the wrapper body between the `return async(...)` header
+    # and the decl to ~8.1k chars, past the former 8000 cap, so the skip is now
+    # 12000. Still safe against the nested-callback mis-binding above: there is
+    # exactly one `return async(` within 30k chars upstream of the decl.
     let seedPat =
-      re"""return async\(([\w$]+),[\w$]+\)=>\{[\s\S]{0,8000}?(?:const|let|var) ([\w$]+)=([\w$]+)\?void 0:[\w$]+(?:\.[\w$]+)*\.getLastScreenshotDims\?\.\(\),([\w$]+)=new AbortController(?:,[\w$]+=setTimeout\(\(?\(\)=>\4\.abort\(\)\)?,[\w$]+\))?(?:,[\w$]+=(?:[^{},]{1,200}|\(\)=>\{(?:[^{}]|\{[^{}]{0,400}\}){1,600}\}))*,([\w$]+)=\{"""
+      re"""return async\(([\w$]+),[\w$]+\)=>\{[\s\S]{0,12000}?(?:const|let|var) ([\w$]+)=([\w$]+)\?void 0:[\w$]+(?:\.[\w$]+)*\.getLastScreenshotDims\?\.\(\),([\w$]+)=new AbortController(?:,[\w$]+=setTimeout\(\(?\(\)=>\4\.abort\(\)\)?,[\w$]+\))?(?:,[\w$]+=(?:[^{},]{1,200}|\(\)=>\{(?:[^{}]|\{[^{}]{0,400}\}){1,600}\}))*,([\w$]+)=\{"""
     let maybeSeed = content.find(seedPat)
     if maybeSeed.isNone:
       echo "  [FAIL] screenshot intro note: wrapper seed anchor not found"

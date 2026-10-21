@@ -131,8 +131,15 @@ proc apply*(input: string): string =
   # site (patch 1). Patch 2 may sit in a *different* code-split chunk (it did
   # v1.26832.0-v1.30096.1) and captures its own local background helper --
   # see there.
+  #
+  # Since v3.1623.0 the main window's call carries an argument object
+  # (`backgroundColor:fQn({signedIn:c}),opacity:`) and the callee destructures
+  # it, so `bgFn()` would be a TypeError (no window at all). We therefore
+  # capture the WHOLE call expression, arguments included, and re-emit it
+  # verbatim: it is spliced into the very same options object literal, so every
+  # local it mentions (`c`) is in scope there.
   let bgFn = result.capture(
-    re2"""backgroundColor:([\w$]+(?:\.[\w$]+)*)\(\),opacity:""",
+    re2"""backgroundColor:([\w$]+(?:\.[\w$]+)*\((?:\{[^{}]*\})?\)),opacity:""",
     "backgroundColor function",
   )
   # The electron alias is NOT captured: the first `X.nativeTheme` in the staged
@@ -158,7 +165,7 @@ proc apply*(input: string): string =
   # the tree we repackage, so there is nothing to fix - only dead code to not
   # write. See the shadowing guard below.
   let overlayStyle =
-    "{color:" & bgFn & "(),symbolColor:" & electron &
+    "{color:" & bgFn & ",symbolColor:" & electron &
     ".nativeTheme.shouldUseDarkColors?\"#fff\":\"#000\",height:36}"
   var n = 0
   # v1.26832.0: `"hidden"` became a template literal and the titleBarOverlay
@@ -218,39 +225,39 @@ proc apply*(input: string): string =
         )
     echo "  [OK] no upstream duplicate shadows our injected options"
 
-  # Patch 2: opaque-color swap inside the helper that builds the overlay
-  # style. The non-Hb branch uses a background value that upstream may run
-  # through an alpha-blend helper; on Linux Wayland that has produced a grey
-  # strip instead of the window background. Force the plain background color
-  # in Linux integrated mode. Two occurrences: one per theme.
+  # Patch 2: no alpha-blend of the overlay background in Linux integrated mode.
+  # Upstream's overlay-style helper may run the window background through an
+  # alpha-blend helper (the dim scrim shown behind a modal); on Linux Wayland that
+  # has produced a grey strip instead of the window background. Force the plain
+  # background in Linux integrated mode.
   #
-  # This helper can live in a DIFFERENT code-split chunk than the main-window
-  # options patched above (it did v1.26832.0-v1.30096.1). `bgFn` captured up
-  # there would then not be in scope here -- emitting it would be a
-  # ReferenceError at runtime. Capture the helper's own background function
-  # from the declarator that feeds the style object instead.
-  #
-  # Up to v1.40609.0 the helper was an arrow whose declarator chain continued
-  # with `,n=<electron>.nativeTheme...`; since v1.46388.2 it is a
-  # `function(e)` taking "main"/"popout" (the overlay now also styles popout
-  # windows) and the chain ends with `;return <electron>.nativeTheme...`.
-  # Accept both joiners.
-  let localBg = result.capture(
-    re2"""=[\w$]+\?[\w$]+\(([\w$]+)\(\)\):[\w$]+\(\)(?:,[\w$]+=|;return )[\w$]+\.nativeTheme\.shouldUseDarkColors\?\{color:""",
-    "titleBarOverlay-helper background function",
-  )
+  # Shape since v3.1623.0 (the helper was rewritten; before it, two
+  # `{color:<hi?>"#hex":BG,symbolColor:` literals, one per theme, were swapped):
+  #   o=e==="main"&&pQn()||RI(),
+  #   s=n?<solid per theme>:r?e0n(o):o;
+  #   return <electron>.nativeTheme.shouldUseDarkColors?{color:s,symbolColor:...}
+  # `r` is the runtime scrim flag and `e0n` the blend, both module-level in the
+  # same scope, so gating the blend on our Linux condition needs no capture of
+  # anything outside this expression. The base value `o` is already the plain
+  # themed background, which is exactly what the old patch forced. Group 3 and 4
+  # must be the same variable (blend input == fallback), else it is the wrong site.
   n = 0
   result = result.replace(
-    re2"""(\{color:[\w$]+\?["`]#[0-9a-fA-F]+["`]:)([\w$]+)(,symbolColor:)""",
+    re2"""(:)([\w$]+)\?([\w$]+)\(([\w$]+)\):([\w$]+)(;return [\w$]+\.nativeTheme\.shouldUseDarkColors\?\{color:[\w$]+,symbolColor:)""",
     proc(m: RegexMatch2, s: string): string =
+      if s[m.group(3)] != s[m.group(4)]:
+        raise newException(
+          ValueError,
+          &"overlay blend site: blend input `{s[m.group(3)]}` != fallback " &
+            &"`{s[m.group(4)]}` -- wrong site",
+        )
       inc n
-      let bgVar = s[m.group(1)]
-      s[m.group(0)] & "(" & LINUX_INTEGRATED & ")?" & localBg & "():" & bgVar &
-        s[m.group(2)],
+      s[m.group(0)] & "(" & s[m.group(1)] & "&&!(" & LINUX_INTEGRATED & "))?" &
+        s[m.group(2)] & "(" & s[m.group(3)] & "):" & s[m.group(4)] & s[m.group(5)],
   )
-  if n != 2:
-    raise newException(ValueError, &"titleBarOverlay background swap: {n}/2")
-  echo &"  [OK] overlay background -> {localBg}() in Linux integrated mode: {n}"
+  if n != 1:
+    raise newException(ValueError, &"overlay blend gate: {n}/1")
+  echo &"  [OK] overlay background: no alpha-blend in Linux integrated mode: {n}"
 
 when isMainModule:
   if paramCount() != 1:

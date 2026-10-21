@@ -107,19 +107,25 @@ proc apply*(input: string): string =
   else:
     # v1.26832.0: `--startup` is a template literal and process is reached via a
     # namespace alias (L.default.argv), so accept either quoting and member chains.
-    let pattern3 = re2"""([\w$]+(?:\.[\w$]+)*)\.argv\.includes\(["`]--startup["`]\)"""
+    #
+    # v3.1623.0 added a second `process.argv.includes("--startup")`: the Reset App
+    # Data helper (`function f(){return process.argv.includes("--startup")}`,
+    # which only decides whether to show the "cannot open yet" dialog). Widening
+    # that one would swallow the dialog on a session restore, so the site is
+    # anchored on the window-show gate's own negated assignment (`??=!`).
+    let pattern3 = re2"""(\?\?=!)([\w$]+(?:\.[\w$]+)*)\.argv\.includes\(["`]--startup["`]\)"""
     var count3 = 0
     result = result.replace(
       pattern3,
       proc(m: RegexMatch2, s: string): string =
         inc count3
-        let processVar = s[m.group(0)]
+        let processVar = s[m.group(1)]
         # The result MUST be parenthesized: upstream negates this expression
         # (`showWindow ??= !<proc>.argv.includes("--startup")`) and `!` binds
         # tighter than `||`. Without the parens the injected heuristic would
         # read `(!includes)||restore` and *show* the window on session restore
         # - the exact opposite of what this patch is for.
-        "(" & processVar &
+        s[m.group(0)] & "(" & processVar &
           ".argv.includes(\"--startup\")||process.platform===\"linux\"&&" &
           GATE_JS.strip() & ")",
     )

@@ -157,8 +157,15 @@ proc apply*(input: string): string =
       # `regex` has no backreferences, so the parameter is captured at each of its
       # three positions and the three are compared explicitly below - the same
       # idiom add_feature_files_quick_open_worker uses for its method params.
+      # v3.1623.0 put an optional local between the signature and the ternary:
+      #   function FHa(e=[]){let t=G().type==="3p"&&ou()==="1p"?[...e,j$t]:e;
+      #                      a.app.isPackaged?Mj(!0,t):fj(t)}
+      # (3p mode appends a marker arg), so both arms forward that local, not the
+      # parameter. Group 2 is the optional `let <local>=<expr>;` prefix (empty on
+      # the older shape); the arms must forward the local when it is present and
+      # the parameter otherwise.
       let relaunchPat =
-        re2"""function ([\w$]+)\(([\w$]+)=\[\]\)\{[\w$]+\.app\.isPackaged\?[\w$]+\(!0,([\w$]+)\):[\w$]+\(([\w$]+)\)\}"""
+        re2"""function ([\w$]+)\(([\w$]+)=\[\]\)\{((?:let [\w$]+=[^;{}]*;)?)[\w$]+\.app\.isPackaged\?[\w$]+\(!0,([\w$]+)\):[\w$]+\(([\w$]+)\)\}"""
       # Count first: a second matching site after a re-minify would mean we are
       # guessing which one to capture.
       let hits = findAll(result, relaunchPat)
@@ -169,9 +176,19 @@ proc apply*(input: string): string =
       let m = hits[0]
       let fnName = result[m.group(0)]
       let param = result[m.group(1)]
-      if result[m.group(2)] != param or result[m.group(3)] != param:
-        echo "  [FAIL] relaunchApp capture: the two arms forward (" & result[m.group(2)] &
-          ", " & result[m.group(3)] & ") but the parameter is `" & param &
+      let prefix = result[m.group(2)]
+      var forwarded = param
+      if prefix.len > 0:
+        let localPat = re2"""^let ([\w$]+)="""
+        var lm: RegexMatch2
+        if not prefix.find(localPat, lm):
+          echo "  [FAIL] relaunchApp capture: cannot read the local declared in `" &
+            prefix & "`"
+          quit(1)
+        forwarded = prefix[lm.group(0)]
+      if result[m.group(3)] != forwarded or result[m.group(4)] != forwarded:
+        echo "  [FAIL] relaunchApp capture: the two arms forward (" & result[m.group(3)] &
+          ", " & result[m.group(4)] & ") but the forwarded value is `" & forwarded &
           "` -- wrong site"
         quit(1)
       result =

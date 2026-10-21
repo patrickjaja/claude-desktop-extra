@@ -2,6 +2,31 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-21
+
+### Re-fit for upstream 3.1623.0
+
+- **Six patches re-fitted for 3.1623.0; none removed.** The first automatic release failed the build:
+  - `fix_native_frame`, `add_feature_window_transparency`: the main window's background is now a call
+    with an argument object, `backgroundColor:fQn({signedIn:c})`, and the callee destructures it. The
+    anchors accept that shape and `fix_native_frame` re-emits the whole call (a bare `bgFn()` would be a
+    TypeError and no window). The overlay helper was rewritten (it now blends only while the modal scrim
+    is up), so the no-alpha-blend rule for Linux integrated mode gates that blend instead of swapping two
+    literals.
+  - `add_feature_extra_settings`: `relaunchApp` gained a local for the 3p marker argument
+    (`let t=...;isPackaged?x(!0,t):y(t)`); both arms now forward that local, not the parameter.
+  - `fix_startup_settings`: a second `process.argv.includes("--startup")` appeared in the Reset App Data
+    dialog helper. The session-restore gate is now anchored on the window-show gate's `??=!`, so the
+    dialog helper is left alone.
+  - `fix_computer_use_linux`: the tool wrapper grew past the 8000-character skip before the screenshot
+    seed; the cap is 12000 (the header is still the only `return async(` within 30k characters upstream).
+  - `fix_marketplace_linux`: the "already patched" check for the CCD gate matched an unrelated vendored
+    helper (`return process.platform==="linux"||e==="/"?...`) and reported A as absorbed while upstream's
+    `function D5(e){return e?.mode==="ccd"}` was still unpatched. It now asserts the gate itself
+    (AGENTS.md Rule 6).
+- `scripts/tests/linux/test-titlebar-modes.mjs`: the fixture carries the 3.1623.0 shapes, and its
+  `yP` throws without the `{signedIn}` object, so a patch that drops the argument fails the test.
+
 ## 2026-10-20
 
 ### Custom themes stay out of the browser pane (#284)

@@ -16,8 +16,13 @@ proc apply*(input: string): string =
   var patchesApplied = 0
 
   # A: CCD/Cowork gate
+  # Idempotency asserts OUR end state: the gate itself, `X.mode==="ccd"` ORed with
+  # the Linux check. A bare `return process.platform==="linux"||` is NOT enough:
+  # v3.1623.0 vendors an unrelated Sentry helper
+  # (`function Rs(e){return process.platform==="linux"||e==="/"?e:realpathSync(e)}`)
+  # that matched it and reported a false "already patched" (AGENTS.md Rule 6).
   if result.contains(
-    re"""function [\w$]+\([\w$]+\)\{return process\.platform==="linux"\|\|"""
+    re"""function [\w$]+\(([\w$]+)\)\{return process\.platform==="linux"\|\|\(\1==null\?void 0:\1\.mode\)==="ccd"\}"""
   ):
     echo "  [SKIP] A already patched"
     inc patchesApplied

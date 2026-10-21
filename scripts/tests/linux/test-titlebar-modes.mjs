@@ -110,7 +110,12 @@ function section(title) {
 // ---------------------------------------------------------------- fixture
 // A minimal script carrying the two sites fix_native_frame targets, copied from
 // the live bundle so the minified shapes are upstream's own rather than
-// invented. Identifiers are upstream's (v1.49585.0, index.chunk-EgDgo76G.js);
+// invented. Shapes are upstream's v3.1623.0: the overlay helper `a0n(e,t)` blends
+// the background only while the modal-scrim flag is set (`r?e0n(o):o`), and the
+// main window's background is a CALL WITH AN ARGUMENT OBJECT,
+// `backgroundColor:fQn({signedIn:c})`, whose callee destructures it. The fixture's
+// `yP` throws without that object so a patch that re-emits `yP()` fails here the
+// way it would crash the real window. Older identifiers were v1.49585.0;
 // the patch captures them by wildcard, so the exact spellings do not matter -
 // what matters is the SHAPE around them.
 //
@@ -124,9 +129,9 @@ function section(title) {
 // is kept here for faithfulness - see the closing NOTE.
 function fixture(overlaySlot) {
   return `"use strict";
-function p5t(e){let t=e==="main"&&Q8t,n=e==="main"&&e5t,r=t?d5t:e==="main"?B8t:V8t,i=n?u5t(yP()):yP();return o.nativeTheme.shouldUseDarkColors?{color:t?"#f9f8f4":i,symbolColor:t?"#000":"#c2c0b6",height:r}:{color:t?"#141412":i,symbolColor:t?"#fff":"#3d3d3a",height:r}}
+function p5t(e,t){let n=e==="main"&&Q8t,r=e==="main"&&e5t,i=Math.max(24,Math.round((n?d5t:e==="main"?B8t:V8t)*(t||1))),o=e==="main"&&pQn()||bgPlain(),s=n?a.nativeTheme.shouldUseDarkColors?"#f9f8f4":"#141412":r?u5t(o):o;return a.nativeTheme.shouldUseDarkColors?{color:s,symbolColor:n?"#000":"#c2c0b6",height:i}:{color:s,symbolColor:n?"#fff":"#3d3d3a",height:i}}
 function w_e(e){return e}
-function __cdbFixtureOptions(){let r=!0,u=!1,i={earlyWindowShow:!1},a={x:0,y:0,width:1200,height:800},n={default:{join:(...s)=>s.join("/")}};return w_e({x:a.x,y:a.y,width:a.width,height:a.height,minWidth:600,minHeight:400,titleBarStyle:"hidden",titleBarOverlay:${overlaySlot},trafficLightPosition:U9t(),show:r&&!u,backgroundColor:yP(),opacity:+!!i.earlyWindowShow,icon:n.default.join(p3r(),"icon.png"),webPreferences:{preload:"mainWindow.js"}})}
+function __cdbFixtureOptions(){let c=!0,r=!0,u=!1,i={earlyWindowShow:!1},a={x:0,y:0,width:1200,height:800},n={default:{join:(...s)=>s.join("/")}};return w_e({x:a.x,y:a.y,width:a.width,height:a.height,minWidth:600,minHeight:400,titleBarStyle:"hidden",titleBarOverlay:${overlaySlot},trafficLightPosition:U9t(),show:r&&!u,backgroundColor:yP({signedIn:c}),opacity:1,icon:n.default.join(p3r(),"icon.png"),webPreferences:{preload:"mainWindow.js"}})}
 `;
 }
 
@@ -155,7 +160,16 @@ function evalFixture(src, { platform, env, dark = true, nativeTb, noWinCtl } = {
     B8t: 36,
     V8t: 30,
     u5t: BLENDED,
-    yP: () => WINDOW_BG,
+    // main-window background: needs `{signedIn}` like v3's fQn; throws otherwise
+    yP: (arg) => {
+      if (!arg || typeof arg !== "object" || !("signedIn" in arg))
+        throw new TypeError("yP() called without {signedIn} - would crash the real window");
+      return WINDOW_BG;
+    },
+    // the overlay helper's own plain-background function (v3's RI) and the cached page colour
+    bgPlain: () => WINDOW_BG,
+    pQn: () => undefined,
+    a: { nativeTheme: { shouldUseDarkColors: dark } },
     o: { nativeTheme: { shouldUseDarkColors: dark } },
     // the injected overlay reads nativeTheme via require("electron"), never
     // through a captured alias (a cross-chunk capture crashed v2.9939.4)
