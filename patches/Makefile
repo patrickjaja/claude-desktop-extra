@@ -51,8 +51,6 @@ community/add_feature_dev_tools_toggle: ../js/dev_tools_toggle_main.js
 
 linux/fix_cowork_font: ../js/fix_cowork_font.js
 
-linux/fix_epitaxy_autoscroll: ../js/fix_epitaxy_autoscroll.js
-
 linux/fix_keep_awake_linux: ../js/keep_awake_inhibit.js
 
 linux/fix_quick_entry_kde_portal_rebind: ../js/kde_global_shortcuts_rebind.js
