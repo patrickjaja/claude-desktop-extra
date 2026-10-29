@@ -58,7 +58,7 @@
     try { return _app.getPath("userData"); } catch (e) { return null; }
   }
   // Same as every other config consumer (js/diff_views_main.js, extra_settings_main.js,
-  // growthbook_overrides.js, patches/add_feature_cowork_glow.nim): the one-time
+  // growthbook_overrides.js): the one-time
   // claude-desktop-bin.* -> claude-desktop-extra.* rename migration is installed by
   // the custom-themes patch and same-anchor prefix injections stack in reverse, so
   // it may not have run yet when we get here. Nudging it before every path
@@ -193,7 +193,7 @@
   }
   mirrorEnv(readPrefFromDisk().value === true);
 
-  // Exact-origin allowlist, same posture as the diff-views and cowork-glow
+  // Exact-origin allowlist, same posture as the diff-views and Extra settings
   // sender checks: comparing parsed origins instead of testing whether the raw
   // URL STRING contains "claude.ai"/"claude.com" anywhere. A substring test
   // would also pass a lookalike host such as "https://evil.example/?next=

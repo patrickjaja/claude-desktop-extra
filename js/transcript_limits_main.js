@@ -17,8 +17,8 @@
  *
  * It owns:
  *   - the opt-in pref `transcriptLimits` (default OFF) plus two optional numbers,
- *     `transcriptLimitsMainMiB` / `transcriptLimitsSubagentMiB`, hand-edited in
- *     the .jsonc like `coworkGlowOpacity` (no GUI field);
+ *     `transcriptLimitsMainMiB` / `transcriptLimitsSubagentMiB`, hand-edited
+ *     in the .jsonc (no GUI field);
  *   - the derivation of the two cache ceilings from those numbers (below);
  *   - globalThis.__cdbTranscriptLimits, read once per session manager when it is
  *     constructed (patches/community/add_feature_transcript_limits.nim);
@@ -72,7 +72,7 @@
   var DEFAULT_MAIN_MIB = 256;
   var DEFAULT_SUBAGENT_MIB = 192;
   // Both directions are allowed: a weak machine may want LESS than Anthropic's
-  // numbers. Outside this range a number is clamped, as coworkGlowOpacity is.
+  // numbers. Outside this range a number is clamped.
   var MIN_MIB = 8;
   var MAX_MIB = 1024;
   var MIB = 1048576;
@@ -138,8 +138,7 @@
     var jsonc = readFileJson(pathFor(JSONC_NAME));
     var json = readFileJson(pathFor(JSON_NAME));
     var en = pick(jsonc, json, PREF_KEY, isBool);
-    // Same as coworkGlowOpacity (patches/community/add_feature_cowork_glow.nim):
-    // a number, or a string parseFloat can read (a quoted "512" is an easy slip in
+    // A number, or a string parseFloat can read (a quoted "512" is an easy slip in
     // hand-edited JSON), is clamped into range; anything else is skipped, so the
     // next source (.jsonc, then .json, then the default) answers instead. Nothing
     // here warns - the effective numbers are what the row and the startup log show.
@@ -289,7 +288,7 @@
     return { ok: true, path: p };
   }
 
-  // Exact-origin allowlist, same posture as the diff-views, cowork-glow and
+  // Exact-origin allowlist, same posture as the diff-views, Extra settings and
   // quick-open sender checks: comparing parsed origins instead of testing whether
   // the raw URL STRING contains "claude.ai" anywhere, which would also pass a
   // lookalike such as "https://claude.ai.evil.example".

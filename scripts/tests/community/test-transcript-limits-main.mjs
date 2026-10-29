@@ -160,7 +160,7 @@ const snap = (o) => JSON.stringify(o);
   ok(load(dir).g.__cdbTranscriptLimits().mainBytes === 100 * MIB, "a fractional number is rounded to whole MiB");
   rmSync(dir, { recursive: true, force: true });
 }
-// Same as coworkGlowOpacity: a number outside the range is CLAMPED into it, a value that
+// A number outside the range is CLAMPED into it, a value that
 // is not a number falls back to the default, and nothing is warned about - the numbers in
 // effect (shown in the row and the startup log) are the feedback.
 for (const [label, val, want] of [["below the minimum", 7, 8], ["above the maximum", 5000, 1024], ["the old 4096 maximum", 4096, 1024], ["negative", -5, 8]]) {
@@ -168,15 +168,15 @@ for (const [label, val, want] of [["below the minimum", 7, 8], ["above the maxim
   const m = load(dir);
   const L = m.g.__cdbTranscriptLimits();
   await tick();
-  ok(L.mainBytes === want * MIB, "a number outside the range (" + label + ") is clamped to " + want + " MiB, as coworkGlowOpacity is");
+  ok(L.mainBytes === want * MIB, "a number outside the range (" + label + ") is clamped to " + want + " MiB");
   ok(m.logs.every((l) => !/WARN/.test(l)), "...without a warning (" + label + ")");
   rmSync(dir, { recursive: true, force: true });
 }
-// A quoted number is accepted, as coworkGlowOpacity accepts "0.5": an easy slip in hand-edited JSON.
+// A quoted number is accepted: an easy slip in hand-edited JSON.
 for (const [label, val, want] of [["a quoted number", "100", 100], ["a quoted number above the range", "5000", 1024], ["a quoted number below the range", "2", 8]]) {
   const dir = profile({ [J]: { transcriptLimits: true, transcriptLimitsMainMiB: val } });
   const L = load(dir).g.__cdbTranscriptLimits();
-  ok(L.mainBytes === want * MIB, label + " is read like coworkGlowOpacity reads one (" + JSON.stringify(val) + " -> " + want + " MiB)");
+  ok(L.mainBytes === want * MIB, label + " is read as a number (" + JSON.stringify(val) + " -> " + want + " MiB)");
   rmSync(dir, { recursive: true, force: true });
 }
 for (const [label, val] of [["text", "lots"], ["an empty string", ""], ["null", null], ["an object", {}], ["an array", []], ["a boolean", true]]) {
@@ -285,8 +285,8 @@ for (const [label, heap] of [["getHeapStatistics() throws", "throw"], ["heap_siz
 }
 
 // --- 4b. a misspelled key is ignored, exactly as every other feature's config is ----------
-// The real-world case was "transcriptLimtisMainMiB": 20 (letters swapped). Like a misspelled
-// coworkGlowOpacity it simply has no effect; the row and the startup log show the numbers
+// The real-world case was "transcriptLimtisMainMiB": 20 (letters swapped). Like any other
+// misspelled key it simply has no effect; the row and the startup log show the numbers
 // actually in effect, which is how it shows.
 {
   const dir = profile({ [J]: { transcriptLimits: true, transcriptLimtisMainMiB: 20 } });

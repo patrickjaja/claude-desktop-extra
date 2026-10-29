@@ -74,16 +74,6 @@
       return ipcRenderer.invoke("cdb-flags:unset", id);
     },
 
-    // Cowork glow. set() takes only the fixed strings "pulse"/"calm"; the main
-    // side re-validates and rejects anything else, so the page cannot smuggle a
-    // stylesheet or an arbitrary opacity through here.
-    glowRead: function () {
-      return ipcRenderer.invoke("cdb-glow:read");
-    },
-    glowSet: function (mode) {
-      return ipcRenderer.invoke("cdb-glow:set", String(mode));
-    },
-
     // Theme picker (Ctrl+Shift+T). The window and the hotkey are owned by
     // patches/community/add_feature_theme_picker.nim; these two channels only
     // read and persist the pref, which that patch re-reads on every press.

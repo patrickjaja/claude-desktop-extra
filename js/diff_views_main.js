@@ -243,8 +243,8 @@
   var prefEnabled = PREF_DEFAULT;
   var prefSource = "default";          // "default" | "json" | "jsonc-locked"
 
-  // Same stripper and the same .json-then-.jsonc precedence the cowork-glow
-  // patch uses, legacy claude-desktop-bin.* fallback included: the one-time
+  // Same stripper and the same .json-then-.jsonc precedence the theme engine
+  // uses, legacy claude-desktop-bin.* fallback included: the one-time
   // rename migration lives in the custom-themes patch and same-anchor
   // injections stack in reverse, so it may not have run yet when we read.
   function cfgStrip(s) {
@@ -2424,8 +2424,8 @@
         // as locked instead of silently disagreeing with the file. A separate
         // boolean rather than a value-or-null field, because the value here IS a
         // boolean and `false` must not read as "not locked". The FIELD NAME
-        // matches the glow handler's (js/extra_settings_main.js) so the settings
-        // page speaks of exactly one spelling.
+        // matches the other rows' handlers so the settings page speaks of
+        // exactly one spelling.
         lockedByJsonc: prefSource === "jsonc-locked",
         key: PREF_KEY,
         jsonPath: p.json,

@@ -4,10 +4,14 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-10-29
 
-### The Code transcript's stick-to-bottom fix is retired
+### The Code transcript's stick-to-bottom fix is retired (thanks @Felitendo, #303)
 
 - **claude.ai fixed the stranded transcript itself.** The Code transcript is now a virtualized feed with its own pin. Measured live against claude.ai without `fix_epitaxy_autoscroll`: a 3 px drift while a response streams is snapped back and the view follows to the end, and a deliberate scroll up of 30 px or 500 px is left alone.
 - **The patch now got in the way.** It pulled the view back down whenever it was within 64 px of the bottom, so a short scroll up that is not a wheel or touch gesture (dragging the scrollbar, for one) was undone by the next streamed line. `fix_epitaxy_autoscroll` and `js/fix_epitaxy_autoscroll.js` are removed.
+
+### The "Calm the Cowork glow" switch is gone (thanks @Felitendo, #302)
+
+- **claude.ai no longer has the glow it calmed.** Cowork now lives in the Claude tab, and the pulsing hero glow went with the old Cowork home: `.cowork-hero-glow` and its `cowork-hero-glow-pulse` keyframes are in none of claude.ai's current stylesheets, so the switch matched nothing and changed nothing. `add_feature_cowork_glow` and its Community Features row are removed; a leftover `coworkGlow` / `coworkGlowOpacity` key in `claude-desktop-extra.json(c)` is ignored.
 
 ## 2026-10-28
 

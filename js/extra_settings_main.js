@@ -2118,44 +2118,10 @@
       return { ok: true, paths: __cdbEx_paths() };
     },
 
-    // Cowork glow. The live half lives in patches/add_feature_cowork_glow.nim
-    // (globalThis.__cdbCoworkGlow); persistence is ours because this file is the
-    // single writer of the .json.
-    "cdb-glow:read": function () {
-      var g = globalThis.__cdbCoworkGlow;
-      if (!g) return { ok: false, error: "the Cowork glow patch is not installed in this build" };
-      var s = g.read();
-      var jsonc = __cdbEx_readFileKey(__cdbEx_paths().jsonc, "coworkGlow");
-      return {
-        ok: true,
-        mode: s.mode,
-        opacity: s.opacity,
-        defaultOpacity: s.defaultOpacity,
-        // A hand-edited .jsonc wins the per-key merge at startup, so the switch
-        // must show itself as locked rather than silently disagree with the file.
-        lockedByJsonc: jsonc === "pulse" || jsonc === "calm" ? jsonc : null
-      };
-    },
-
-    "cdb-glow:set": function (mode) {
-      var g = globalThis.__cdbCoworkGlow;
-      if (!g) return { ok: false, error: "the Cowork glow patch is not installed in this build" };
-      if (mode !== "pulse" && mode !== "calm") return { ok: false, error: "mode must be \"pulse\" or \"calm\"" };
-      var live = g.set(mode);
-      if (!live || live.ok !== true) return live || { ok: false, error: "could not apply the glow mode" };
-      var res = __cdbEx_writeCfg(function (cfg) {
-        if (mode === "calm") cfg.coworkGlow = "calm";
-        else delete cfg.coworkGlow;
-        return mode;
-      });
-      if (!res.ok) return { ok: false, error: "applied to " + live.windows + " window(s) but could not save: " + res.error };
-      return { ok: true, mode: mode, windows: live.windows, path: res.path };
-    },
-
     // Theme picker (Ctrl+Shift+T). The window and the hotkey live in
     // patches/community/add_feature_theme_picker.nim, which reads this same key
     // itself on every press - persistence is ours because this file is the
-    // single writer of the .json, the same cross-patch split as the glow above.
+    // single writer of the .json.
     //
     // ON IS THE DEFAULT: the shortcut is how a fresh install finds the themes,
     // so an absent key means enabled and only an explicit false takes it away.

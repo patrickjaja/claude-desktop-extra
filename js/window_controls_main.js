@@ -130,7 +130,7 @@
   }
 
   // Exact-origin allowlist, same posture as the panel-tabs, diff-views and
-  // cowork-glow sender checks: comparing parsed origins instead of testing
+  // Extra settings sender checks: comparing parsed origins instead of testing
   // whether the raw URL STRING contains "claude.ai"/"claude.com" anywhere. A
   // substring test would also pass a lookalike host such as
   // "https://evil.example/?next=claude.ai" or "https://claude.ai.evil.example"

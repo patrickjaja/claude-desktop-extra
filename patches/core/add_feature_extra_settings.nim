@@ -9,7 +9,7 @@
 # the live page. This patch is the main-process half of that.
 #
 #   * ipcMain handlers: cdb-extra:themes-list / :paths / :reveal / :diag,
-#     cdb-flags:catalog / :read / :set / :unset, cdb-glow:read / :set,
+#     cdb-flags:catalog / :read / :set / :unset,
 #     cdb-deploy:read / :mode / :set / :apply / :raw / :save-raw, cdb-app:relaunch.
 #     cdb-themes:apply and cdb-themes:active are NOT registered here - they are
 #     owned by add_feature_theme_picker.nim and the page calls them directly.

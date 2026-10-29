@@ -1179,9 +1179,8 @@
 
       // A hand-edited .jsonc wins the startup merge, so the switch must not
       // pretend it can override it.
-      // Truthy, not === true: the two handlers answer differently in KIND - the
-      // diff-views one with a boolean, the glow one with the locking value
-      // itself ("pulse"/"calm") or null. Both mean "the .jsonc decided this".
+      // Truthy, not === true: some handlers answer null rather than false when
+      // the .jsonc leaves the key alone.
       if (res.lockedByJsonc) {
         toggle.title = "Edit " + spec.lockFile + " to change this";
         stateLine.textContent = describe() + " - set in " + spec.lockFile;
@@ -1965,7 +1964,7 @@
   // activeSubagentMiB) next to the saved value, so describe() can say "after a
   // restart" for exactly as long as that is true, and stop saying it once the
   // app has been restarted. The numbers themselves stay hand-edited in the
-  // .jsonc (like coworkGlowOpacity); this row only shows them.
+  // .jsonc; this row only shows them.
   function renderTranscriptLimitsRow(panel) {
     return renderToggleRow(panel, {
       section: "Sessions",
@@ -2436,37 +2435,6 @@
     }
   }
 
-  // --- motion: the pulsing Cowork glow ------------------------------------
-  // Ours and it applies live, so it is a row in Community Features rather than a
-  // nav entry of its own.
-  function renderGlowRow(panel) {
-    return renderToggleRow(panel, {
-      section: "Motion",
-      title: "Calm the Cowork glow",
-      // Keep this short: the mechanism and the GPU reasoning belong in the README
-      // and the patch header, not in front of the user.
-      note: "Stops the Cowork hero glow from pulsing and dims it. Easier on laptops and weak GPUs. " +
-        "Applies live.",
-      ariaLabel: "calm the Cowork glow",
-      read: "glowRead",
-      write: "glowSet",
-      lockFile: "claude-desktop-extra.jsonc",
-      isOn: function (res) { return res.mode === "calm"; },
-      describe: function (on, res) {
-        return on
-          ? "calm - static at " + Math.round((res.opacity || 0) * 100) + "% opacity"
-          : "pulsing (claude.ai default)";
-      },
-      writeArg: function (next) { return next ? "calm" : "pulse"; },
-      toast: function (next, r) {
-        return next
-          ? "Cowork glow calmed in " + r.windows + " window(s)"
-          : "Cowork glow restored to pulsing";
-      },
-      errorPrefix: "Could not change the glow: "
-    });
-  }
-
   // --- shortcuts: the Ctrl+Shift+T theme gallery ---------------------------
   // The one row here that is ON unless you say otherwise: the shortcut is how a
   // fresh install finds the themes at all, so an absent key means on and only an
@@ -2770,8 +2738,6 @@
   //     expand button with it.
   //   * panel tabs - same shape: the page half polls state() every 5s and
   //     setEnabled(false) removes the tab bar and untags the columns.
-  //   * cowork glow - the set() handler insertCSS/removeInsertedCSS-es every
-  //     tracked claude.ai view immediately, so it is instant.
   //   * theme picker - the hotkey re-reads the config file on every press.
   // The two polled ones are the reason their notes promise "within a few
   // seconds" rather than "instantly".
@@ -2796,7 +2762,6 @@
     renderWindowControlsRow,
     renderNativeTitlebarRow,
     renderWindowTransparencyRow,
-    renderGlowRow,
     renderThemePickerRow,
     renderDevToolsRow,
     renderCuBackgroundRow

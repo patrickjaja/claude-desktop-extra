@@ -325,8 +325,7 @@ async function featuresPanel(featuresItem) {
     ok(!!rs && rs.classList.contains("cdbx-hide"), "a hidden Restart now next to the switch: " + label);
   });
   [
-    "show the Code tab's side panels as tabs instead of a split layout",
-    "calm the Cowork glow"
+    "show the Code tab's side panels as tabs instead of a split layout"
   ].forEach(function (label) {
     const sw = panel.querySelector('.cdbx-switch[aria-label="' + label + '"]');
     ok(!!sw, "renders the live row: " + label);
@@ -775,16 +774,6 @@ async function featuresPanel(featuresItem) {
   featuresItem.click();
   await sleep(200);
 
-  const glow = panel.querySelector(".cdbx-switch[aria-label='calm the Cowork glow']");
-  ok(!!glow, "the Cowork glow switch renders in the Community Features panel");
-  if (glow) {
-    ok(glow.getAttribute("aria-checked") === "false", "the glow switch reflects mode 'pulse'");
-    ok(!glow.disabled, "the glow switch is enabled when the .jsonc does not set it");
-    glow.click();
-    await sleep(60);
-    ok(glow.getAttribute("aria-checked") === "true", "clicking the glow switch turns it on");
-  }
-
   // The theme picker: the only switch that is on with nothing on disk, because
   // the shortcut is how a fresh install finds the themes at all.
   const pickSel = ".cdbx-switch[aria-label='open the theme gallery with Ctrl+Shift+T']";
@@ -882,8 +871,8 @@ async function featuresPanel(featuresItem) {
     ok(visible().join(",") === "Shortcuts",
        "a note match works too: " + visible().join(","));
 
-    await type("motion");
-    ok(visible().join(",") === "Motion", "so does a section match: " + visible().join(","));
+    await type("source control");
+    ok(visible().join(",") === "Source control", "so does a section match: " + visible().join(","));
 
     await type("no such feature");
     ok(visible().length === 0, "a needle nothing matches hides every row");
@@ -1651,7 +1640,7 @@ async function flagsPanel(flagsItem) {
   ok(panel.querySelector(".cdbx-h1").textContent === "Anthropic Features",
      "the heading spells the full name out even though the nav row says Anthropic: " +
      panel.querySelector(".cdbx-h1").textContent);
-  ok(!panel.querySelector(".cdbx-switch[aria-label='calm the Cowork glow']"),
+  ok(!panel.querySelector(".cdbx-switch[aria-label=\"show the Code tab's side panels as tabs instead of a split layout\"]"),
      "our own switches stayed behind in Community Features");
 
   // The restart notice speaks only for these flags, which is why it lives here.
@@ -1902,8 +1891,8 @@ async function themesPanel(themesItem) {
   themesItem.click();
   await sleep(80);
   ok(!!document.querySelector(".cdbx-sections"), "the Themes panel renders sections");
-  ok(!document.querySelector(".cdbx-panel .cdbx-switch[aria-label='calm the Cowork glow']"),
-     "the Cowork glow switch is NOT in the Themes panel");
+  ok(!document.querySelector(".cdbx-panel .cdbx-switch[aria-label=\"show the Code tab's side panels as tabs instead of a split layout\"]"),
+     "the panel tabs switch is NOT in the Themes panel");
 
   const secs = sections();
   ok(labels() === "Your themes:1 | Gaming:3 | Common:5 | More:1",
@@ -2702,8 +2691,6 @@ window.cdbExtra = {
     window.__relaunchCalls++;
     return Promise.resolve({ ok: true });
   },
-  glowRead: stub({ ok: true, mode: "pulse", opacity: 0.55, defaultOpacity: 0.55, lockedByJsonc: null }),
-  glowSet: stub({ ok: true, mode: "calm", windows: 1, path: "/tmp/x.json" }),
   panelTabsRead: function () { return Promise.resolve(window.__panelTabsState); },
   panelTabsSet: function (enabled) {
     window.__panelTabsCalls.push(enabled);

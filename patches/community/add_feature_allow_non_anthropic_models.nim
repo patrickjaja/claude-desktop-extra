@@ -181,7 +181,7 @@ proc apply*(input: string): string =
   # Basename order puts this patch before add_growthbook_overrides, so on a
   # pristine stage the directive is usually still there; when an earlier patch
   # has already displaced it, the prepend is the normal case, not an error.
-  # Same shape as add_feature_cowork_glow / add_feature_theme_picker.
+  # Same shape as add_feature_theme_picker.
   let strictPrefix = "\"use strict\";"
   if result.startsWith(strictPrefix):
     result = strictPrefix & MODULE_JS & "\n;\n" & result[strictPrefix.len .. ^1]
