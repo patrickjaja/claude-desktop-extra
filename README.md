@@ -96,7 +96,7 @@ sudo apt install claude-desktop-extra
 
 It replaces Anthropic's own `claude-desktop` package if installed (same files). Cowork packages come in as `Recommends`; only the `kvm` group step remains ([Cowork setup](docs/cowork.md)).
 
-Without the repo: `wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/claude-desktop-extra_4.29.0-2_amd64.deb && sudo dpkg -i claude-desktop-extra_*_amd64.deb`
+Without the repo: `wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/claude-desktop-extra_4.4212.0-1_amd64.deb && sudo dpkg -i claude-desktop-extra_*_amd64.deb`
 </details>
 
 <a name="fedora--rhel-dnf-repository"></a>
@@ -111,7 +111,7 @@ sudo dnf install claude-desktop-extra
 
 Cowork packages come in as weak deps; only the `kvm` group step remains ([Cowork setup](docs/cowork.md)).
 
-Without the repo: `wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/claude-desktop-extra-4.29.0-2.x86_64.rpm && sudo dnf install ./claude-desktop-extra-*.x86_64.rpm`
+Without the repo: `wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/claude-desktop-extra-4.4212.0-1.x86_64.rpm && sudo dnf install ./claude-desktop-extra-*.x86_64.rpm`
 </details>
 
 <a name="nixos--nix"></a>
@@ -132,7 +132,7 @@ Cowork tools (`qemu`, `virtiofsd`, OVMF) are baked into the closure (`.override 
 Works on standard and immutable distros (Bazzite, Silverblue/Kinoite, SteamOS, Universal Blue). The `claude://` handler for sign-in registers itself on first launch.
 
 ```bash
-wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/Claude_Desktop-4.29.0-x86_64.AppImage
+wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/Claude_Desktop-4.4212.0-x86_64.AppImage
 chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage
 ```
 
