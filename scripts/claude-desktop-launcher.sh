@@ -1625,7 +1625,10 @@ _diag_elf_foreign() {
 
 _diag_bridge_runs() {
     local bin="$1" env_var="$2" out rc=0 hint='' cause first
-    out="$(timeout -s KILL 3 "$bin" --version 2>&1 </dev/null)" || rc=$?
+    # Bridge calls use `timeout -k 1 N` (TERM, KILL a second later), never
+    # `-s KILL`: uutils timeout (Ubuntu 26.04's default) sends KILL to the
+    # direct child only, so a leftover child keeps $(...) waiting on the pipe.
+    out="$(timeout -k 1 3 "$bin" --version 2>&1 </dev/null)" || rc=$?
     if [[ "$rc" == 0 ]]; then
         echo "ok $(printf '%s\n' "$out" | head -1)"; return 0
     fi
@@ -1726,7 +1729,7 @@ _cu_bridges() {
 # A bridge's `doctor` JSON (empty when it fails), and its contract version:
 # 0 when doctor exits non-zero (2 = no such subcommand) or has no "contract".
 _cu_bridge_doctor() {
-    timeout -s KILL 5 "$1" doctor 2>/dev/null </dev/null || true
+    timeout -k 1 5 "$1" doctor 2>/dev/null </dev/null || true
 }
 _cu_bridge_contract() {
     local c
@@ -1758,7 +1761,7 @@ _cu_bridge_label() {
 # nothing this launcher can do about it, and nothing was stored by it.
 _reset_screen_sharing_one() {
     local label="$1" bin="$2" name="${3:-${2##*/}}" out rc=0 removed='' ended='' err env_var
-    out="$(timeout -s KILL 30 "$bin" forget-session 2>&1 </dev/null)" || rc=$?
+    out="$(timeout -k 1 30 "$bin" forget-session 2>&1 </dev/null)" || rc=$?
     if [[ "$out" =~ \"ok\"[[:space:]]*:[[:space:]]*true ]]; then
         [[ "$out" =~ \"token_removed\"[[:space:]]*:[[:space:]]*true ]] && removed=1
         if [[ "$out" =~ \"daemon\"[[:space:]]*:[[:space:]]*\"([a-z_-]+)\" ]] \
@@ -1916,7 +1919,7 @@ _diag_bridges() {
         # Advertise the reset only where it can work: --help answers 0 only
         # when the bridge has the subcommand (and runs nothing).
         local can_forget=''
-        timeout -s KILL 3 "$bin" forget-session --help >/dev/null 2>&1 </dev/null && can_forget=1
+        timeout -k 1 3 "$bin" forget-session --help >/dev/null 2>&1 </dev/null && can_forget=1
         case "$name" in
             gnome-portal-bridge)
                 [[ -n "$can_forget" ]] && any_session=1
