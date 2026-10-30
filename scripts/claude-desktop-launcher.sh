@@ -1840,7 +1840,7 @@ _reset_screen_sharing() {
 _diag_bridge_screens() {
     local name="$1" bin="$2" out rc=0 t0 ms flat rest chunk id
     t0=$(date +%s%3N)
-    out="$(timeout 10 "$bin" screens 2>&1 </dev/null)" || rc=$?
+    out="$(timeout -k 1 10 "$bin" screens 2>&1 </dev/null)" || rc=$?
     ms=$(( $(date +%s%3N) - t0 ))
     if [[ "$rc" != 0 ]]; then
         echo "  $name screens = FAILED (exit $rc after ${ms}ms)"
@@ -2274,7 +2274,7 @@ _diagnose() {
         # consent dialog; window titles are not printed (only a byte count).
         if [[ -x "$_cu_res/kwin-portal-bridge" ]]; then
             local _st_out _st_rc=0
-            _st_out="$(timeout 10 "$_cu_res/kwin-portal-bridge" windows 2>&1)" || _st_rc=$?
+            _st_out="$(timeout -k 1 10 "$_cu_res/kwin-portal-bridge" windows 2>&1)" || _st_rc=$?
             if [[ "$_st_rc" == 0 ]]; then
                 echo "kwin-portal-bridge windows = ok (${#_st_out} bytes)"
             else
