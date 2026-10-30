@@ -9,7 +9,10 @@
 # run in the heavy-work utility process"). That process bundles its OWN copy of
 # the session manager, with its own limits object literal:
 #
-#   {mainBytes:<id>,subagentBytes:<id>,cachedEntryBytes:<id>,cachedTotalBytes:<id>}
+#   {mainBytes:<id>,subagentBytes:<id>,cachedEntryBytes:<id>,cachedTotalBytes:<id>[,<key>:<id>...]}
+#
+# (since v4.4212.0 followed by historyWindowBytes, historyRequestBytes,
+# historyScanChunkBytes and historyReadDeadlineMs; the helper keeps those)
 #
 # and none of the main process's code, so the main half hands the numbers over in
 # process.env.CDB_TRANSCRIPT_LIMITS. This patch prepends
@@ -33,14 +36,14 @@ const HELPER_JS = staticRead("../../js/transcript_limits_worker.js")
 const MARKER = "__CDB_TRANSCRIPT_LIMITS_WORKER__"
 const DIRECTIVES = ["\"use strict\";", "'use strict';"]
 
-# Group 0 = the whole limits object literal.
+# Group 0 = the whole limits object literal, trailing keys included.
 let limitsRe =
-  re2"""(\{mainBytes:[\w$]+,subagentBytes:[\w$]+,cachedEntryBytes:[\w$]+,cachedTotalBytes:[\w$]+\})"""
+  re2"""(\{mainBytes:[\w$]+,subagentBytes:[\w$]+,cachedEntryBytes:[\w$]+,cachedTotalBytes:[\w$]+(?:,[\w$]+:[\w$]+)*\})"""
 # Our end-state, matched by SHAPE: the bare helper name also occurs in the helper's
 # own definition, so a substring test would report "wrapped" the moment the helper
 # is prepended, even if the rewrite never happened (Rule 6).
 let wrappedRe =
-  re2"""__cdbTranscriptLimitsWorker\(\{mainBytes:[\w$]+,subagentBytes:[\w$]+,cachedEntryBytes:[\w$]+,cachedTotalBytes:[\w$]+\}\)"""
+  re2"""__cdbTranscriptLimitsWorker\(\{mainBytes:[\w$]+,subagentBytes:[\w$]+,cachedEntryBytes:[\w$]+,cachedTotalBytes:[\w$]+(?:,[\w$]+:[\w$]+)*\}\)"""
 
 proc hasWrap(s: string): bool =
   s.findAll(wrappedRe).len == 1

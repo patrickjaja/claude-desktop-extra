@@ -6,8 +6,11 @@
  * add_feature_transcript_limits_worker.nim prepends this helper and wraps that
  * literal in it:
  *
- *     {mainBytes:..,subagentBytes:..,cachedEntryBytes:..,cachedTotalBytes:..}
+ *     {mainBytes:..,subagentBytes:..,cachedEntryBytes:..,cachedTotalBytes:..[,more]}
  *  -> __cdbTranscriptLimitsWorker({mainBytes:..,subagentBytes:..,...})
+ *
+ * The literal is the worker's complete defaults object, so any further keys
+ * (the history-window limits since v4.4212.0) are copied through unchanged.
  *
  * The main process decides (js/transcript_limits_main.js) and hands the numbers
  * over as process.env.CDB_TRANSCRIPT_LIMITS = "main,subagent,entry,total" (bytes)
@@ -21,7 +24,9 @@ function __cdbTranscriptLimitsWorker(orig) {
     if (!v) return orig;
     var p = String(v).split(",").map(Number);
     if (p.length !== 4 || !p.every(function (n) { return isFinite(n) && n > 0; })) return orig;
-    return { mainBytes: p[0], subagentBytes: p[1], cachedEntryBytes: p[2], cachedTotalBytes: p[3] };
+    // Keep the literal's other keys (historyWindowBytes, ... since v4.4212.0):
+    // the worker uses this object as its full defaults.
+    return Object.assign({}, orig, { mainBytes: p[0], subagentBytes: p[1], cachedEntryBytes: p[2], cachedTotalBytes: p[3] });
   } catch (e) {
     return orig;
   }

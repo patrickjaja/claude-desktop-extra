@@ -11,6 +11,8 @@ rest on three kinds of assumptions:
   and the internals of the Claude Code binary. These break at run time. The log lines at the end say
   which one moved.
 
+**v4.4212.0** (2026-10-30): sub-patch B re-fitted (the method now forwards to a free function, see its row); A, C (both wraps and both asserts) and D still one hit each as the build asserts them; Claude Code CLI unchanged at 2.1.309, so the local shapes below were not re-measured.
+
 Build-time anchors and local shapes re-measured on **v4.29.0** (2026-10-28; python `re.finditer` over the `index.js` + `index.chunk-*` + `index.pre.js` concat, every anchor below 1 hit; sub-patches B, C (both wraps and both asserts) and D one hit each, in `index.chunk-jeAh2Ty2.js` (B, D, the session manager) and `index.chunk-_m5A1BKv.js` (C, the Agent SDK)). v4.29.0 bundles **Claude Code CLI 2.1.309** (the CLI manifest `JSON.parse('{"version":"2.1.309","manifest":{...')`, Agent SDK 0.3.309, one `CLAUDE_AGENT_SDK_VERSION` copy; v3.6556.2 bundled 2.1.308, v3.1623.0 2.1.304, v2.37337.1 2.1.295). Every CLI row below was last verified on an older CLI and **needs a live check against 2.1.309**. The claude.ai rows were observed live on
 2026-09-13 by the feature's author; the CLI rows were checked against **CLI 2.1.266** (2026-09-14/15) and
 re-read in **CLI 2.1.281** (2026-09-24) and **CLI 2.1.284** (2026-09-29); routing live-checked on **CLI 2.1.295** (2026-10-09).
@@ -19,13 +21,13 @@ re-read in **CLI 2.1.281** (2026-09-24) and **CLI 2.1.284** (2026-09-29); routin
 
 | Sub-patch | Anchor (exactly one across the staged bundle) | Rewritten to |
 |---|---|---|
-| B | `async buildSessionEnv(<id>,<n>,…){let <id>=await <h>(<n>.sessionEnv)` - the Code session manager deriving the session env at every spawn (the argument must be its 2nd parameter; trailing parameters may carry a default, `u=!1` since v2.26454.0; `<h>` is a cross-chunk helper, `t.Ad` in v4.29.0 (`t.Zy` in v3.1623.0, `t.cy` in v2.37337.1), that applies managed network/proxy env - before v2.37337.1 the site was a plain `{...<n>.sessionEnv}` copy). v4.29.0: `async buildSessionEnv(e,n,r,i,a,o,s,c,u=!1){let d=await t.Ad(n.sessionEnv)` | the helper's argument becomes `{...n.sessionEnv,...((globalThis.__cdbCustomModels&&…cliEnv(n.sessionEnv))\|\|{})}`, so managed proxy policy still applies on top |
+| B | `buildSessionEnv(...<a>){return <F>((()=>({…})),...<a>)}` -> `async function <F>(<id>,<id>,<n>,…){let <id>=await <h>(<n>.sessionEnv)` - the Code session manager deriving the session env at every spawn. Since v4.4212.0 the method only forwards to a free function, prepending an identity thunk, so the base config is that function's **3rd** parameter; `<F>` is read from the forwarder (exactly one) and the body matched under that name (exactly one; the argument must be that 3rd parameter; trailing parameters may carry a default, `u=!1`). `<h>` is a cross-chunk helper, `t.hd` in v4.4212.0 (`t.Ad` in v4.29.0, `t.Zy` in v3.1623.0, `t.cy` in v2.37337.1), that applies managed network/proxy env. Up to v4.29.0 the body was the method itself: `async buildSessionEnv(e,n,r,i,a,o,s,c,u=!1){let d=await t.Ad(n.sessionEnv)`. v4.4212.0: `buildSessionEnv(...e){return JO((()=>({organizationUuid:this.currentOrgId,accountUuid:this.currentAccountId})),...e)}` + `async function JO(e,n,r,i,a,o,s,c,l,u=!1){let d=await t.hd(r.sessionEnv)` (both in `index.chunk-kLQCxBgD.js`) | the helper's argument becomes `{...r.sessionEnv,...((globalThis.__cdbCustomModels&&…cliEnv(r.sessionEnv))\|\|{})}`, so managed proxy policy still applies on top |
 | C | `appendSystemPrompt:this.initConfig?.appendSystemPrompt` and `agents:this.initConfig?.agents` in the Agent SDK's `Query.initialize` | each wrapped, with `this.transport` passed as the 2nd argument |
 | C (assert) | `{this.transport=<id>,this.isSingleUserTurn=` - the Query keeps its transport | nothing (precondition) |
 | C (assert) | `updateEnv(<id>){this.options.env?Object.assign(this.options.env,` - the transport keeps the spawn env in `options.env` | nothing (precondition) |
 | D | `async configureSSHSpawn(<ids>){` - the Code session manager turning a session into an SSH/WSL one | `remoteSpawn(<first param>)` called first |
 
-`rg` recipes: `grep -ao 'buildSessionEnv([^)]*){.\{0,60\}' index*.js`, `rg -o 'subtype:"initialize".{0,600}' index*.js`,
+`rg` recipes: `grep -ao 'buildSessionEnv([^)]*){.\{0,60\}' index*.js` then `grep -ao 'async function <F>(.\{0,80\}' index*.js`, `rg -o 'subtype:"initialize".{0,600}' index*.js`,
 `rg -o 'this\.transport=.{0,60}' index*.js`, `rg -o 'updateEnv\(.{0,80}' index*.js`,
 `rg -o 'configureSSHSpawn\(.{0,40}' index*.js` (add `-a`/use `grep -a` if the file has NUL bytes).
 

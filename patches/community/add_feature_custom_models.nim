@@ -24,8 +24,9 @@
 #      late, and its temporary config-loading queries run no model. The base
 #      env is passed in, so cliEnv() builds on what upstream would send - the
 #      user's Code-tab environment variables included. Anchored on the method
-#      name, which the minifier keeps, and the `.sessionEnv` argument of its
-#      second parameter. When the feature is off cliEnv() contributes {} and
+#      name, which the minifier keeps (the method forwards to a free function
+#      since v4.4212.0; the body is found under the name it forwards to), and
+#      the `.sessionEnv` argument of the base config parameter. When the feature is off cliEnv() contributes {} and
 #      the session is exactly upstream's; when on it adds BUN_OPTIONS=
 #      --preload=<userData>/custom-models/preload.js (the Claude Code binary is
 #      a compiled Bun program and honours BUN_OPTIONS), the routes.json path and
@@ -59,7 +60,8 @@
 # Break risk: VERY LOW for A (stable "use strict"; anchor). LOW for B - a
 # method name and a property name with an exact-count check; if upstream
 # reshapes that method the build fails loud here. To find it again:
-# grep -ao "buildSessionEnv([^)]*){.\{0,60\}" across index*.js.
+# grep -ao "buildSessionEnv([^)]*){.\{0,60\}" across index*.js, then
+# grep -ao "async function <name>(.\{0,80\}" for the body it forwards to.
 # LOW for C - two literal anchors plus the two shape asserts, each expected
 # exactly once across the concatenated bundle; to find them again:
 # rg 'subtype:"initialize"', rg 'this.transport=', rg 'updateEnv('.
@@ -73,29 +75,57 @@ const PRELOAD_JS = staticRead("../../js/custom_models_preload.js")
 
 const MARKER = "__CDB_CUSTOM_MODELS__"
 const PLACEHOLDER = "\"__CDB_CM_PRELOAD_SRC__\""
-# B. `async buildSessionEnv(e,n,...){let d=await t.cy(n.sessionEnv)` (since
-# v2.37337.1; before it was a plain `{...n.sessionEnv}` copy): the session env
-# goes through upstream's managed-network-env helper (`cy`, `Zy` in v3.1623.0 -> fills managed
-# proxy/CA variables the env lacks, then enforces managed proxy settings). We
-# hand that helper `{...n.sessionEnv,...cliEnv(n.sessionEnv)}` instead, so
-# managed policy still has the last word; cliEnv() sets no network variables.
-# The method name survives minification, the parameter, local and helper names
-# do not. The argument must be the method's own second parameter. Trailing
-# parameters may carry a default (`u=!1` since v2.26454.0).
+# B. The session env goes through upstream's managed-network-env helper
+# (`let d=await t.hd(r.sessionEnv)`; it fills managed proxy/CA variables the
+# env lacks, then enforces managed proxy settings). We hand that helper
+# `{...r.sessionEnv,...cliEnv(r.sessionEnv)}` instead, so managed policy still
+# has the last word; cliEnv() sets no network variables.
+# Since v4.4212.0 the method only forwards, prepending an identity thunk:
+#   buildSessionEnv(...e){return JO((()=>({organizationUuid:..,accountUuid:..})),...e)}
+#   async function JO(e,n,r,i,...,u=!1){let d=await t.hd(r.sessionEnv),...
+# so the base config, the method's second argument, is the function's THIRD
+# parameter. The method name survives minification; the function's name does
+# not, so it is read from the forwarder and the body is matched under that
+# name. Trailing parameters may carry a default (`u=!1`).
 proc envSplice(base: string): string =
   "{..." & base &
     ".sessionEnv,...((globalThis.__cdbCustomModels&&globalThis.__cdbCustomModels.cliEnv(" &
     base & ".sessionEnv))||{})}"
 
-let envSiteRe =
-  re2"""(async buildSessionEnv\([\w$]+,([\w$]+)(?:,[\w$]+(?:=[^,(){}]+)?)*\)\{let [\w$]+=await [\w$]+(?:\.[\w$]+)?\()([\w$]+)\.sessionEnv\)"""
-# Our injected end-state, asserted positively (Rule 6): the splice, made with
-# that same parameter, as the helper's argument.
-let envEndStateRe =
-  re2"""async buildSessionEnv\([\w$]+,([\w$]+)(?:,[\w$]+(?:=[^,(){}]+)?)*\)\{let [\w$]+=await [\w$]+(?:\.[\w$]+)?\(\{\.\.\.([\w$]+)\.sessionEnv,\.\.\.\(\(globalThis\.__cdbCustomModels&&globalThis\.__cdbCustomModels\.cliEnv\(([\w$]+)\.sessionEnv\)\)\|\|\{\}\)\}\)"""
+# Group 0 = the rest parameter, group 1 = the function, group 2 = the spread.
+let envForwarderRe =
+  re2"""buildSessionEnv\(\.\.\.([\w$]+)\)\{return ([\w$]+)\(\(\(\)=>\(\{[^{}]*\}\)\),\.\.\.([\w$]+)\)\}"""
 
-proc envEndStateCount(s: string): int =
-  for m in s.findAll(envEndStateRe):
+proc identRe(name: string): string =
+  name.replace("$", "\\$")
+
+proc envSiteRe(fn: string): Regex2 =
+  re2(
+    "(async function " & identRe(fn) &
+      """\([\w$]+,[\w$]+,([\w$]+)(?:,[\w$]+(?:=[^,(){}]+)?)*\)\{let [\w$]+=await [\w$]+(?:\.[\w$]+)?\()([\w$]+)\.sessionEnv\)"""
+  )
+
+# Our injected end-state, asserted positively (Rule 6): the splice, made with
+# that same third parameter, as the helper's argument.
+proc envEndStateRe(fn: string): Regex2 =
+  re2(
+    "async function " & identRe(fn) &
+      """\([\w$]+,[\w$]+,([\w$]+)(?:,[\w$]+(?:=[^,(){}]+)?)*\)\{let [\w$]+=await [\w$]+(?:\.[\w$]+)?\(\{\.\.\.([\w$]+)\.sessionEnv,\.\.\.\(\(globalThis\.__cdbCustomModels&&globalThis\.__cdbCustomModels\.cliEnv\(([\w$]+)\.sessionEnv\)\)\|\|\{\}\)\}\)"""
+  )
+
+# The function buildSessionEnv forwards to, or "" unless exactly one forwarder.
+proc envForwardee(s: string): string =
+  var names: seq[string]
+  for m in s.findAll(envForwarderRe):
+    if s[m.group(0)] == s[m.group(2)]:
+      names.add s[m.group(1)]
+  if names.len == 1:
+    names[0]
+  else:
+    ""
+
+proc envEndStateCount(s, fn: string): int =
+  for m in s.findAll(envEndStateRe(fn)):
     let p = s[m.group(0)]
     if s[m.group(1)] == p and s[m.group(2)] == p:
       inc result
@@ -176,9 +206,18 @@ proc apply*(input: string): string =
     else:
       echo "  [FAIL] custom models: main module not present after injection"
 
-  # B. CLI environment splice. Exactly one buildSessionEnv.
-  let already = envEndStateCount(result)
-  if already == 1:
+  # B. CLI environment splice. Exactly one buildSessionEnv forwarder, and
+  # exactly one body under the name it forwards to.
+  let envFn = envForwardee(result)
+  let already =
+    if envFn == "":
+      0
+    else:
+      envEndStateCount(result, envFn)
+  if envFn == "":
+    echo "  [FAIL] custom models: expected exactly 1 `buildSessionEnv(...e){return F((()=>({..})),...e)}` forwarder" &
+      " - the Code session env builder moved; re-audit sub-patch B"
+  elif already == 1:
     echo "  [OK] custom models: CLI env splice already present (idempotent)"
     inc patchesApplied
   elif already > 1:
@@ -188,7 +227,7 @@ proc apply*(input: string): string =
     var count = 0
     var sameParam = true
     result = result.replace(
-      envSiteRe,
+      envSiteRe(envFn),
       proc(m: RegexMatch2, s: string): string =
         inc count
         if s[m.group(1)] != s[m.group(2)]:
@@ -196,13 +235,15 @@ proc apply*(input: string): string =
         s[m.group(0)] & envSplice(s[m.group(2)]) & ")",
     )
     if count != 1 or not sameParam:
-      echo "  [FAIL] custom models: expected exactly 1 `async buildSessionEnv(_,n,...){let u=await h(n.sessionEnv)`, found " &
-        $count & (if sameParam: "" else: " spreading another name") &
+      echo "  [FAIL] custom models: expected exactly 1 `async function " & envFn &
+        "(_,_,r,...){let u=await h(r.sessionEnv)`, found " & $count &
+        (if sameParam: "" else: " spreading another name") &
         " - the Code session env copy moved; re-audit sub-patch B"
-    elif envEndStateCount(result) != 1:
+    elif envEndStateCount(result, envFn) != 1:
       echo "  [FAIL] custom models: env splice missing after replacement"
     else:
-      echo "  [OK] custom models: cliEnv() spliced into buildSessionEnv (1 match)"
+      echo "  [OK] custom models: cliEnv() spliced into buildSessionEnv's body " & envFn &
+        " (1 match)"
       inc patchesApplied
 
   # C. Sub-agent definitions and the system-prompt suffix of the initialize
@@ -292,7 +333,8 @@ when isMainModule:
     writeFile(filePath, output)
     echo "  [PASS] custom models applied"
   else:
-    if MARKER notin output or envEndStateCount(output) != 1 or
+    let envFn = envForwardee(output)
+    if MARKER notin output or envFn == "" or envEndStateCount(output, envFn) != 1 or
         initSitesDone(output) != INIT_SITES.len or sshEndStateCount(output) != 1:
       echo "  [FAIL] No changes made and injection is absent"
       quit(1)

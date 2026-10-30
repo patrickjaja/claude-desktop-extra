@@ -341,7 +341,7 @@
     };
   }
 
-  // The managed-config key catalog of Claude Desktop v4.29.0 (198 keys), read out of the
+  // The managed-config key catalog of Claude Desktop v4.4212.0 (201 keys), read out of the
   // bundle's own schema (flat key, zod leaf type, scopes, title). Upstream drives
   // its 3P Setup wizard from that schema; we cannot reach it from here (it is
   // module-scoped in index.pre.js), so this is a PINNED COPY and is therefore
@@ -581,6 +581,9 @@
       note: "Which home surface the app opens on. Upstream's own wizard offers only standard and off since v2.31226.0; simple and no-vm are still accepted values." },
     { key: "scheduledTasksEnabled", kind: "bool", group: "sandbox", scope: "3p",
       label: "Allow scheduled tasks" },
+    { key: "projectsEnabled", kind: "bool", group: "sandbox", scope: "3p", dflt: true,
+      label: "Allow projects",
+      note: "Off hides projects; an unreadable value counts as off. Applies to a running app (in the schema since v4.4212.0, which marks it for an upcoming release)." },
     { key: "userFileUploadsEnabled", kind: "bool", group: "sandbox", scope: "3p", dflt: true,
       label: "Allow file attachments",
       note: "Self-hosted sessions only: off makes the host refuse attached files and tells the app to disable attaching (upstream gates this @next, v4.29.0)." },
@@ -743,6 +746,9 @@
     { key: "mcpToolTimeoutSec", kind: "int", group: "connectors", scope: "3p", max: 3600,
       label: "MCP tool call timeout (s)",
       note: "Per-call deadline for every MCP tool call, 60 to 3600; Cowork and Chat default to 180, and setting it introduces a timeout in Code sessions too (available since v1.37937.0)." },
+    { key: "mcpAppWidgetsEnabled", kind: "bool", group: "connectors", scope: "3p",
+      label: "Show widgets from session host connectors",
+      note: "For self-hosted sessions only: lets the session host pass connector widgets to the app; no session host reads it yet (in the schema since v4.4212.0, which marks it for an upcoming release)." },
     { key: "claudeInChromeEnabled", kind: "bool", group: "connectors", scope: "3p",
       label: "Enable Claude in Chrome" },
     { key: "claudeInChromePasswordManagersEnabled", kind: "bool", group: "connectors", scope: "3p",
@@ -854,6 +860,9 @@
     { key: "banner", kind: "json", group: "appearance", scope: "both", label: "Organization banner" },
     { key: "disableFeatureDiscovery", kind: "bool", group: "appearance", scope: "3p",
       label: "Hide feature announcements" },
+    { key: "sessionStatusLine", kind: "json", group: "appearance", scope: "3p",
+      label: "Status line",
+      note: "JSON object { \"command\": \"/opt/example/bin/status-line\" } naming the program that draws the session status line; asks the user for consent first, and on Linux the program and every folder above it must belong to root and not be writable by group or others (in the schema since v4.4212.0, which marks it for an upcoming release)." },
 
     { key: "disableConfigDeprecationWarnings", kind: "bool", group: "appearance", scope: "both",
       label: "Hide configuration deprecation warnings",

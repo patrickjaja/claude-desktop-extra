@@ -2,6 +2,15 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-10-30
+
+### Upstream v4.4212.0
+
+- **Custom models re-fitted.** The Code session's env builder is now a free function the `buildSessionEnv` method forwards to, with the base config one parameter further right; `add_feature_custom_models` sub-patch B finds the function through the method and splices `cliEnv()` there.
+- **"Load large sessions in full" keeps upstream's new history window.** The session manager's limits now also carry `historyWindowBytes`, `historyRequestBytes`, `historyScanChunkBytes` and `historyReadDeadlineMs`. They belong to a paged history reader that nothing calls yet, so the feature still matters. The heavy-work worker's helper returned only our four sizes, which would have left those keys undefined in the worker once that reader is used; it now overrides the four sizes and keeps the rest, and `add_feature_transcript_limits_worker` matches the longer literal.
+- **Extra -> Deployment** lists the new managed keys `projectsEnabled`, `mcpAppWidgetsEnabled` and `sessionStatusLine` (201 keys).
+- **Audited:** feature flags (672 -> 695; the one new Linux-facing gate, `1116624256`, stops a bare Alt tap from opening the app menu on GNOME, matching upstream's release note), platform gates (no new macOS/Windows-only feature that Linux lacks), built-in MCP servers (no roster change), the ion-dist setup window (both ion patches apply unchanged) and the custom-models anchors. Electron stays 44.9.3, Claude Code 2.1.309.
+
 ## 2026-10-29
 
 ### The Code transcript's stick-to-bottom fix is retired (thanks @Felitendo, #303)
