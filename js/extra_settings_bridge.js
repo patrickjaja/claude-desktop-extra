@@ -85,6 +85,17 @@
       return ipcRenderer.invoke("cdb-picker:set", enabled === true);
     },
 
+    // Always use the white tray icon. Both channels are the settings patch's
+    // own; the tray patch (patches/linux/fix_tray_icon_theme.nim) only reads the
+    // pref through a helper and is re-run after a write. set() takes a plain
+    // boolean and the main side re-validates the type.
+    trayIconRead: function () {
+      return ipcRenderer.invoke("cdb-tray:read");
+    },
+    trayIconSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-tray:set", enabled === true);
+    },
+
     // Diff view modes (the Code tab's diff-scope dropdown). BOTH channels are
     // owned by patches/add_feature_diff_views.nim, not by the settings patch:
     // that patch reads and writes `diffViewModes` and applies it live, the same

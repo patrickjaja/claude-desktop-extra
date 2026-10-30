@@ -4,6 +4,11 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-10-30
 
+### Tray icon follows the theme again, with an "always white" switch (#305)
+
+- **The Linux tray glyph is white on GNOME and in dark mode, black in light mode**, like the stock app, so it no longer disappears on a light panel such as KDE Plasma with a light theme. It follows Claude's Appearance setting; with Appearance = System it follows the desktop color scheme.
+- **New Community switch "Always use the white tray icon"** (Settings -> Extra -> Community -> Tray, key `trayIconAlwaysWhite` in `claude-desktop-extra.json`) keeps the white glyph, for a dark panel with a light Claude theme or a bar that reports no color scheme (sway, Hyprland or waybar without a portal color-scheme). Off by default, applies live without a restart, and a `true`/`false` in `claude-desktop-extra.jsonc` locks it. Turn it on to keep the previous always-white behavior.
+
 ### Upstream v4.4212.0
 
 - **Custom models re-fitted.** The Code session's env builder is now a free function the `buildSessionEnv` method forwards to, with the base config one parameter further right; `add_feature_custom_models` sub-patch B finds the function through the method and splices `cliEnv()` there.

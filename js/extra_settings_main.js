@@ -258,6 +258,30 @@
     return undefined;
   }
 
+  // --- tray glyph: "Always use the white tray icon" (issue #305) -------------
+  // patches/linux/fix_tray_icon_theme.nim makes upstream's tray-icon selector
+  // ask globalThis.__cdbTrayAlwaysWhite() first: true picks the white glyph on
+  // every desktop, anything else leaves upstream's own choice (white on GNOME
+  // and in dark mode, black in light mode). This IIFE runs from the stub's
+  // "use strict"; prefix, before the stub requires any chunk, so the helper
+  // exists before the tray is first built. No cache: the selector only runs at
+  // startup, on a theme change and on a menu-bar toggle, and reading the files
+  // each time means a hand-edited .jsonc counts from the next of those.
+  var __cdbEx_TRAY_KEY = "trayIconAlwaysWhite";
+  // {value, locked}. Off is the default and the absence of the key; the .jsonc
+  // wins the per-key merge, so a boolean there locks the row.
+  function __cdbEx_trayPref() {
+    var p = __cdbEx_paths();
+    var jsonc = __cdbEx_readFileKey(p.jsonc, __cdbEx_TRAY_KEY);
+    if (typeof jsonc === "boolean") return { value: jsonc, locked: true };
+    return { value: __cdbEx_readFileKey(p.json, __cdbEx_TRAY_KEY) === true, locked: false };
+  }
+  if (process.platform === "linux") {
+    globalThis.__cdbTrayAlwaysWhite = function () {
+      try { return __cdbEx_trayPref().value === true; } catch (e) { return false; }
+    };
+  }
+
   // An id may only be written if the catalog knows it (or we force it on Linux
   // ourselves) - remote code cannot invent flag ids to persist.
   function __cdbEx_knownId(id) {
@@ -2168,6 +2192,45 @@
       return { ok: true, enabled: enabled, path: res.path };
     },
 
+    // Always use the white tray icon. The pref and its reader are above
+    // (__cdbEx_trayPref); globalThis.__cdbTrayRefresh is upstream's
+    // crash-contained tray update, published by fix_tray_icon_theme.nim, and
+    // its presence is how we know that patch is in this build. Off is the default.
+    "cdb-tray:read": function () {
+      if (typeof globalThis.__cdbTrayRefresh !== "function") {
+        return { ok: false, error: "the tray icon patch is not installed in this build" };
+      }
+      var s = __cdbEx_trayPref();
+      return { ok: true, enabled: s.value, lockedByJsonc: s.locked ? true : null };
+    },
+
+    "cdb-tray:set": function (enabled) {
+      if (typeof globalThis.__cdbTrayRefresh !== "function") {
+        return { ok: false, error: "the tray icon patch is not installed in this build" };
+      }
+      if (typeof enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
+      if (__cdbEx_trayPref().locked) {
+        return { ok: false, lockedByJsonc: true,
+          error: __cdbEx_TRAY_KEY + " is set in claude-desktop-extra.jsonc - edit that file to change it" };
+      }
+      var res = __cdbEx_writeCfg(function (cfg) {
+        if (enabled) cfg[__cdbEx_TRAY_KEY] = true;
+        else delete cfg[__cdbEx_TRAY_KEY];
+        return enabled;
+      });
+      if (!res.ok) return res;
+      // Re-run the tray update now: it re-asks the selector and only calls
+      // setImage when the chosen file changed. The setting is saved either way.
+      var refreshed = false;
+      try {
+        var refresh = globalThis.__cdbTrayRefresh;
+        if (typeof refresh === "function") { refresh(); refreshed = true; }
+      } catch (e) {
+        __cdbEx_log("tray refresh after " + __cdbEx_TRAY_KEY + "=" + enabled + " failed: " + ((e && e.message) || e));
+      }
+      return { ok: true, enabled: enabled, path: res.path, refreshed: refreshed };
+    },
+
     "cdb-flags:catalog": function () {
       var catalog = __cdbEx_catalog();
       if (!catalog) {
@@ -2645,10 +2708,13 @@
 
   // The background-display channels are Linux-only: on the downstream Windows
   // build they answer a plain refusal instead of touching /proc or X sockets.
+  // The tray switch too: the glyph it picks is a Linux icon.
   if (process.platform !== "linux") {
     Object.keys(__cdbEx_handlers).forEach(function (ch) {
       if (ch.indexOf("cdb-cubg:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use on a background display is Linux only" }; };
+      } else if (ch.indexOf("cdb-tray:") === 0) {
+        __cdbEx_handlers[ch] = function () { return { ok: false, error: "the tray icon switch is Linux only" }; };
       }
     });
   }

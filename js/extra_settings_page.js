@@ -2435,6 +2435,35 @@
     }
   }
 
+  // --- tray: always the white glyph -----------------------------------------
+  // Off by default, which keeps upstream's own choice. Linux only, like the
+  // whole Community panel (not in WINDOWS_NAV).
+  function renderTrayIconRow(panel) {
+    return renderToggleRow(panel, {
+      section: "Tray",
+      title: "Always use the white tray icon",
+      note: "Off follows the theme like the stock app: a white icon on GNOME and in dark mode, " +
+        "a black one in light mode. On keeps it white, for dark panels with a light Claude theme " +
+        "or bars that report no color scheme. Applies live.",
+      ariaLabel: "always show the white tray icon",
+      read: "trayIconRead",
+      write: "trayIconSet",
+      lockFile: "claude-desktop-extra.jsonc",
+      // Opt-in: only an explicit true is on.
+      isOn: function (res) { return res.enabled === true; },
+      describe: function (on) {
+        return on ? "on - always the white icon" : "off - follows the theme";
+      },
+      writeArg: function (next) { return next; },
+      toast: function (next) {
+        return next
+          ? "Tray icon is now always white"
+          : "Tray icon follows the theme again";
+      },
+      errorPrefix: "Could not change the tray icon: "
+    });
+  }
+
   // --- shortcuts: the Ctrl+Shift+T theme gallery ---------------------------
   // The one row here that is ON unless you say otherwise: the shortcut is how a
   // fresh install finds the themes at all, so an absent key means on and only an
@@ -2739,6 +2768,8 @@
   //   * panel tabs - same shape: the page half polls state() every 5s and
   //     setEnabled(false) removes the tab bar and untags the columns.
   //   * theme picker - the hotkey re-reads the config file on every press.
+  //   * tray icon - the set handler re-runs upstream's crash-contained tray
+  //     update (globalThis.__cdbTrayRefresh), which re-asks the patched selector.
   // The two polled ones are the reason their notes promise "within a few
   // seconds" rather than "instantly".
   //
@@ -2762,6 +2793,7 @@
     renderWindowControlsRow,
     renderNativeTitlebarRow,
     renderWindowTransparencyRow,
+    renderTrayIconRow,
     renderThemePickerRow,
     renderDevToolsRow,
     renderCuBackgroundRow
