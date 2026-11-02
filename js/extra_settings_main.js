@@ -282,6 +282,25 @@
     };
   }
 
+  // --- Computer Use: read app controls through AT-SPI (issue #306) ---------
+  // Same shape as the tray switch above. The Computer Use patch asks
+  // globalThis.__cdbCuAxElements?.() on every call that could involve the
+  // accessibility tools (tools/list build, cache key, our tool names); true
+  // means they may be offered. Off is the default and the absence of the key.
+  // No cache: each call reads the small settings files, which is cheap.
+  var __cdbEx_CUAX_KEY = "computerUseAxElements";
+  function __cdbEx_cuAxPref() {
+    var p = __cdbEx_paths();
+    var jsonc = __cdbEx_readFileKey(p.jsonc, __cdbEx_CUAX_KEY);
+    if (typeof jsonc === "boolean") return { value: jsonc, locked: true };
+    return { value: __cdbEx_readFileKey(p.json, __cdbEx_CUAX_KEY) === true, locked: false };
+  }
+  if (process.platform === "linux") {
+    globalThis.__cdbCuAxElements = function () {
+      try { return __cdbEx_cuAxPref().value === true; } catch (e) { return false; }
+    };
+  }
+
   // An id may only be written if the catalog knows it (or we force it on Linux
   // ourselves) - remote code cannot invent flag ids to persist.
   function __cdbEx_knownId(id) {
@@ -2231,6 +2250,27 @@
       return { ok: true, enabled: enabled, path: res.path, refreshed: refreshed };
     },
 
+    // Computer Use: read app controls (accessibility). Pref and reader above.
+    "cdb-cu-ax:read": function () {
+      var s = __cdbEx_cuAxPref();
+      return { ok: true, enabled: s.value, lockedByJsonc: s.locked ? true : null };
+    },
+
+    "cdb-cu-ax:set": function (enabled) {
+      if (typeof enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
+      if (__cdbEx_cuAxPref().locked) {
+        return { ok: false, lockedByJsonc: true,
+          error: __cdbEx_CUAX_KEY + " is set in claude-desktop-extra.jsonc - edit that file to change it" };
+      }
+      var res = __cdbEx_writeCfg(function (cfg) {
+        if (enabled) cfg[__cdbEx_CUAX_KEY] = true;
+        else delete cfg[__cdbEx_CUAX_KEY];
+        return enabled;
+      });
+      if (!res.ok) return res;
+      return { ok: true, enabled: enabled, path: res.path };
+    },
+
     "cdb-flags:catalog": function () {
       var catalog = __cdbEx_catalog();
       if (!catalog) {
@@ -2713,6 +2753,8 @@
     Object.keys(__cdbEx_handlers).forEach(function (ch) {
       if (ch.indexOf("cdb-cubg:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use on a background display is Linux only" }; };
+      } else if (ch.indexOf("cdb-cu-ax:") === 0) {
+        __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use app controls are Linux only" }; };
       } else if (ch.indexOf("cdb-tray:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "the tray icon switch is Linux only" }; };
       }

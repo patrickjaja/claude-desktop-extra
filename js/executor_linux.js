@@ -1781,6 +1781,12 @@ export function createLinuxExecutor(opts = {}) {
       }
     },
 
+    // Accessibility tools (js/cu_ax_tools.js): the user stopped screen sharing
+    // for this Computer Use session (#293 latch), so input-like AX actions stop too.
+    __stoppedByUser() {
+      return stoppedByUser
+    },
+
     __normalizeDisplayId(displayId) {
       const normalized =
         legacyDisplayIdToElectronDisplayId.get(displayId) ?? displayId

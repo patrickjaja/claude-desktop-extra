@@ -116,6 +116,8 @@ python3 scripts/apply_patches.py patches <scratch copy of tmp/app.asar.contents>
 - a ruling changed a design decision
 - the change is over 500 non-test lines
 
+A worker that ends without a report (the notification says none was delivered) is asked for it with SendMessage; never re-dispatch the work.
+
 Weigh each finding against the live evidence. A reviewer's mechanism claim can be contradicted by a measured run, as finding 1 of the #299 review was. Record accepted findings as rulings in the spec.
 
 ## Phase 6 - ship
@@ -125,8 +127,11 @@ Weigh each finding against the live evidence. A reviewer's mechanism claim can b
    - Build only when the maintainer asks; they install (`sudo pacman -U ...`). Check that the running app started after the install before testing.
    - Run the Xvfb repro against `/usr/lib/claude-desktop/claude` in a worker.
    - Exercise Computer Use in a real **Code tab session**. A plain chat never gets `computer_*` tools on Linux, and its "computer use is off" answer is misleading. When the maintainer authorizes it (e.g. while AFK), a worker may drive the real logged-in app with the bundled x11-bridge: back up and restore the settings files, kill only its own processes, never signal Claude, and use a virtual display for anything it starts.
+     - Start the app detached (`setsid -f claude-desktop`), never under `timeout` or any wrapper that signals it. Make the maintainer restart the app after every reinstall (a running instance keeps the old asar). Before the first Code-tab turn, expect a "Sign in again" dialog after a long idle; ask the maintainer to log in, do not retry.
+     - Multi-monitor, display names and compositor-vs-toolkit string differences (window titles, app ids) only show up live; the harness cannot. Plan one rebuild round for what the live run finds.
+     - Bridge-level VM runs (KDE, Hyprland) need no login and are worth it when a backend's coordinate math has only run on a private bus. Run them in parallel with the host test.
    - Read `~/.config/Claude/logs/claude-patches.log` afterwards to confirm the exact argv or path.
-2. **Bridge repos first.** That covers `patrickjaja/{wlroots,x11,gnome,kwin-portal}-bridge` (local checkouts usually sit next to this repo, e.g. `../computer-use/<bridge>`). CI fetches bridge HEAD from GitHub, so push the bridges before the main repo. Auto mode may block the push as an external write; commit and push in separate calls after the maintainer's explicit go.
+2. **Bridge repos first.** That covers `patrickjaja/{wlroots,x11,gnome,kwin-portal}-bridge` (local checkouts usually sit next to this repo, e.g. `../computer-use/<bridge>`). CI fetches bridge HEAD from GitHub, so push the bridges before the main repo. A new shared crate goes first of all: bridges can only pin its git rev after it is pushed. Auto mode blocks pushes as external writes even after the maintainer's go; commit locally, then hand the maintainer one `! git -C <repo> push ...` line per repo.
 3. **Main repo.** Commit to `master` per `/commit-fast`. A push rejected because CI committed README versions or the Nix hash is safe to `git rebase origin/master` and push again; check that the CI commits touch other files first. Reference the issue numbers without closing keywords, so the issues close with the release comment instead.
 4. **Release:** `gh workflow run build-and-release.yml --ref master -f force_rebuild=true` (or `/deploy force`). Watch the run in the background with `gh run watch <id> --exit-status`, then confirm the tag with `gh release view v<ver>-<n>`.
 
@@ -134,7 +139,8 @@ Weigh each finding against the live evidence. A reviewer's mechanism claim can b
 
 Use the `/comment` voice for every comment:
 - one per issue
-- name the fix and the **release** in bold
+- a fix comment is two or three sentences: thanks, what now works (and any new switch, by its menu path), the release. No bullet lists, no rationale, no edge cases
+- name the fix and the **release** in bold. The maintainer may want it posted while the release run is still going; then say the build is running and name the expected tag, and close the issue once the tag exists
 - no blame on our patches
 - no internals and no speculation
 - for a new UI feature, attach screenshots with a rectangle around what is new. The maintainer wants them as attachments of the comment itself. `gh` cannot upload those, so a worker uses claude-in-chrome with the maintainer's GitHub session to drag them into the comment editor. Release assets (`gh release upload` plus embedded URLs) are only a fallback; ask before using them. Check every PNG for personal data (names, avatar, sidebar, paths, other windows) before uploading.
@@ -161,3 +167,5 @@ Before reporting done, update **this file**: `.claude/skills/check-issue/SKILL.m
 
 - 2026-10-26 (#297-#299): an upstream reload that "should" run after a watchdog crash request was lost in live runs. Prefer guaranteed recovery over avoiding a duplicate reload, and measure before accepting a reviewer's claim about the mechanism.
 - 2026-10-26: when a renderer is resumed after upstream's crash request, it executes the queued crash. Do not make "a resumed renderer must survive" an acceptance criterion.
+- 2026-10-30 (#305): `nativeTheme.shouldUseDarkColors` follows Claude's own Appearance setting (upstream sets `themeSource` from it), not the desktop or panel. Anything "theme-aware" on Linux is only desktop-aware with Appearance = System; offer a switch for the mismatch instead of guessing the panel color.
+- 2026-10-30 (#305): when a refresh hook calls into upstream code, call upstream's own wrapper (crash containment, retries) rather than the inner function it wraps.

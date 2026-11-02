@@ -1788,6 +1788,39 @@ globalThis.__linuxExecutor={
   __targetActive(){return !!_tgt},
   // computer_batch brackets its actions with +1 / -1 (cu_handler_injection.js).
   __targetBatch(d){_tgtBatch=Math.max(0,_tgtBatch+d);return !0},
+  // Accessibility tools (js/cu_ax_tools.js, issue #306): the bridge their ax-*
+  // subcommands run on - the one this executor uses for windows, with the
+  // background display's env overlay - or null when none can run.
+  // The user stopped GNOME screen sharing for this session (#293 latch):
+  // cu_ax_tools.js refuses input-like AX actions until it lifts.
+  __stoppedByUser(){return _gnomeStoppedByUser},
+  __axBridge(){
+    if(_tgt&&(_tgt.refuse||!_tgt.bin))return null;
+    if(_useWlBridge()){var b=_wlBridge();return{bin:b.bin,name:b.name,env:_spo({},b.bin).env}}
+    var x=_x11BridgeBin();
+    return x?{bin:x,name:"x11-bridge",env:_spo({},x).env}:null;
+  },
+  // The frame the next full screenshot of the monitor holding DIP point (x, y)
+  // will have (same monitor list and _cuTargetDims rule the capture uses), so
+  // app_ax_find can report positions before any screenshot was taken.
+  __axFrameFor(x,y){
+    var mons=_getMonitors();if(!mons||!mons.length)return null;
+    var m=null;
+    for(var i=0;i<mons.length;i++){var c=mons[i];if(x>=c.originX&&x<c.originX+c.width&&y>=c.originY&&y<c.originY+c.height){m=c;break}}
+    if(!m){for(var j=0;j<mons.length;j++){if(mons[j].isPrimary){m=mons[j];break}}m=m||mons[0]}
+    var sf=m.scaleFactor||1,xr=_x11PxRect(m.originX,m.originY,m.width,m.height,m.displayId);
+    var d=_cuTargetDims(xr?xr.w:Math.round(m.width*sf),xr?xr.h:Math.round(m.height*sf));
+    return{imgW:d.width,imgH:d.height,dispW:m.width,dispH:m.height,originX:m.originX||0,originY:m.originY||0,displayId:m.displayId,label:m.label,count:mons.length};
+  },
+  // x11-bridge root pixel -> Electron DIP (inverse of _x11Px), so an element's
+  // AT-SPI screen position lands in the screenshot frame on X11 HiDPI.
+  // Unchanged wherever _x11Px passes coordinates through.
+  __axToDip(x,y){
+    var list=_x11PxDisplays();
+    if(!list)return[x,y];
+    for(var i=0;i<list.length;i++){var m=list[i],w=m.b.width*m.sf,h=m.b.height*m.sf;if(x>=m.ox&&x<m.ox+w&&y>=m.oy&&y<m.oy+h)return[m.b.x+(x-m.ox)/m.sf,m.b.y+(y-m.oy)/m.sf]}
+    return[x,y];
+  },
   async listDisplays(){await _tgtPrime();return _getMonitors()},
   // Display index a capture with no display selected should use, or null for
   // "Electron's primary". Non-null only on GNOME with a portal share recorded

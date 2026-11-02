@@ -65,6 +65,19 @@ Bridges without a session (`session_supported: false`) answer exactly:
 {"ok":true,"ended":false,"daemon":"none","token_removed":false,"token_path":null}
 ```
 
+## Optional: accessibility (AT-SPI) commands
+
+Bridges may add four commands that read and act on a window's accessibility tree. They are additive and optional: contract v1 does not change, and a consumer calls them only when the bridge has them. All four bridges (x11, wlroots, kwin, gnome) implement them with the shared `cu-atspi` crate.
+
+- `ax-enable --holder-pid <pid>` turns the desktop accessibility service (`IsEnabled`) on for a long-lived holder process (Claude's main process, not the short-lived bridge) and remembers the previous value. A screen reader that is running is never touched. Output carries `previous`, `changed`, `screen_reader`, `holders`, and a `reason` when nothing changed.
+- `ax-restore --holder-pid <pid>` drops the holder and turns the service back off only when it was ours and no other holder is left. Always safe to call; a no-op when there is nothing of ours.
+- `ax-find --window <id> [--role R] [--title-contains T] [--all] [--include-hidden] [--max-nodes N] [--max-depth N]` lists a window's elements (role, name, states, value, position) and returns an opaque `scope` plus a `ref` per element. `<id>` is an id from `windows`. The gnome bridge, whose window list carries no ids on stock GNOME, takes `--app-id <id> [--title <t>]` instead of (or with) `--window`.
+- `ax-action --scope <scope> --ref <ref> --action click|focus|set-text` acts on an element from `ax-find`. For `set-text` the text is read from stdin (whole, UTF-8, untrimmed) and never from argv.
+
+Exit codes: a missing a11y bus, a screen reader, an unknown or ambiguous window, a stale element or an unsupported action is an **unavailable result** (a JSON object with an `unavailable` reason, exit 0), not an error. Bad usage, including invalid UTF-8 on the `set-text` stdin, exits 2. Other runtime errors exit 1.
+
+`doctor` may add the optional key `atspi`: `{"bus": <bool>, "is_enabled": <bool>, "screen_reader": <bool>}`, plus `error` when the session bus is unreachable. It never activates the accessibility bus and never fails the command; on a hung bus it can take up to 5 seconds, so callers use a timeout above that.
+
 ## Older bridges
 
 A bridge whose `doctor` exits 2 or has no `contract` key is contract 0: consumers fall back to their per-bridge behaviour. A `forget-session` that exits 2 means the bridge cannot reset its grant; the launcher says so and tells the user to update.

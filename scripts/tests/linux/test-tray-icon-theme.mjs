@@ -471,6 +471,7 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
     globalThis.__cdbDiag = (m) => diag.push(m);
     delete globalThis.__cdbTrayRefresh;
     delete globalThis.__cdbTrayAlwaysWhite;
+    delete globalThis.__cdbCuAxElements;
     try {
       require2(mod);
     } finally {
@@ -536,6 +537,33 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
     r = await call("cdb-tray:read");
     check("a non-boolean in the .jsonc does not lock", JSON.stringify([r.enabled, r.lockedByJsonc]), "[false,null]");
 
+    // --- computerUseAxElements (issue #306): same pref shape, no refresh hook ---
+    writeFileSync(json, JSON.stringify({ activeTheme: "nord" }, null, 2));
+    rmSync(jsonc, { force: true });
+    check("cu-ax: helper installed on Linux", typeof globalThis.__cdbCuAxElements, "function");
+    check("cu-ax: clean profile: helper says off", globalThis.__cdbCuAxElements(), false);
+    check("cu-ax: channels registered", !!handlers["cdb-cu-ax:read"] && !!handlers["cdb-cu-ax:set"], true);
+    r = await call("cdb-cu-ax:read");
+    check("cu-ax: read off by default, not locked", JSON.stringify([r.ok, r.enabled, r.lockedByJsonc]), "[true,false,null]");
+    r = await call("cdb-cu-ax:set", true);
+    check("cu-ax: set(true) writes the key, keeps the others", JSON.stringify(readJson()), '{"activeTheme":"nord","computerUseAxElements":true}');
+    check("cu-ax: helper now says on", globalThis.__cdbCuAxElements(), true);
+    r = await call("cdb-cu-ax:set", false);
+    check("cu-ax: set(false) removes the key", JSON.stringify(readJson()), '{"activeTheme":"nord"}');
+    r = await call("cdb-cu-ax:set", "yes");
+    check("cu-ax: non-boolean refused", r.ok === false && /boolean/.test(r.error), true);
+    writeFileSync(jsonc, '{\n  // hand-edited\n  "computerUseAxElements": true,\n}\n');
+    check("cu-ax: .jsonc true: helper on", globalThis.__cdbCuAxElements(), true);
+    r = await call("cdb-cu-ax:read");
+    check("cu-ax: .jsonc locks the row", JSON.stringify([r.enabled, r.lockedByJsonc]), "[true,true]");
+    const cuBefore = readFileSync(json, "utf8");
+    r = await call("cdb-cu-ax:set", false);
+    check("cu-ax: set refused as locked, .json untouched", r.ok === false && r.lockedByJsonc === true && readFileSync(json, "utf8") === cuBefore, true);
+    writeFileSync(jsonc, '{ "computerUseAxElements": "yes" }');
+    r = await call("cdb-cu-ax:read");
+    check("cu-ax: a non-boolean in the .jsonc does not lock", JSON.stringify([r.enabled, r.lockedByJsonc]), "[false,null]");
+    check("cu-ax: tray key and cu-ax key are independent", (writeFileSync(jsonc, '{ "trayIconAlwaysWhite": true }'), globalThis.__cdbCuAxElements()), false);
+
     rmSync(dir, { recursive: true, force: true });
     delete globalThis.__cdbTrayRefresh;
     delete globalThis.__cdbTrayAlwaysWhite;
@@ -554,6 +582,11 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
   api.trayIconSet("yes");
   api.trayIconSet(true);
   check("bridge: fixed channels, boolean only", JSON.stringify(calls), '[["cdb-tray:read"],["cdb-tray:set",false],["cdb-tray:set",true]]');
+  calls.length = 0;
+  api.cuAxRead();
+  api.cuAxSet("yes");
+  api.cuAxSet(true);
+  check("bridge: cu-ax fixed channels, boolean only", JSON.stringify(calls), '[["cdb-cu-ax:read"],["cdb-cu-ax:set",false],["cdb-cu-ax:set",true]]');
 
   // The page row: wired to those methods, in the Community list, plain dashes.
   const page = readFileSync(join(ROOT, "js", "extra_settings_page.js"), "utf8");
@@ -565,6 +598,17 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
     check("page: no em-dash in the row", row[0].includes("—"), false);
   }
   check("page: row is in FEATURE_ROWS", /var FEATURE_ROWS = \[[^\]]*renderTrayIconRow/.test(page), true);
+  const axRow = /function renderCuAxRow\(panel\) \{[\s\S]*?\n {2}\}\n/.exec(page);
+  check("page: renderCuAxRow exists", !!axRow, true);
+  if (axRow) {
+    check("page: cu-ax row reads/writes the bridge methods", /read: "cuAxRead",\s*write: "cuAxSet"/.test(axRow[0]), true);
+    check("page: cu-ax row title and Experimental badge", /title: "Computer Use: read app controls \(accessibility\)",\s*sharedSection: true,\s*badge: "Experimental"/.test(axRow[0]), true);
+    check("page: cu-ax row hidden on Linux-only refusal", /hideIf:[^\n]*Linux only/.test(axRow[0]), true);
+    check("page: cu-ax row joins the Computer Use section (no second header)", /sharedSection: true/.test(axRow[0]) && /if \(!spec\.sharedSection\) panel\.appendChild\(head\)/.test(page), true);
+    check("page: exactly one non-shared Computer Use section row", (page.match(/section: "Computer Use"/g) || []).length === 2 && (page.match(/sharedSection: true/g) || []).length === 1, true);
+    check("page: no em-dash in the cu-ax row", axRow[0].includes("\u2014"), false);
+  }
+  check("page: cu-ax row is in FEATURE_ROWS", /var FEATURE_ROWS = \[[^\]]*renderCuAxRow/.test(page), true);
 }
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

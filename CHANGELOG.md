@@ -2,6 +2,14 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-02
+
+### Computer Use can read and press app controls through accessibility (#306)
+
+- **New Community switch "Computer Use: read app controls (accessibility)"** (Settings -> Extra -> Community Features, key `computerUseAxElements`, `Experimental`, off by default). It adds the app-scoped tools `app_list_windows`, `app_ax_find`, `app_click` and `app_type`: Claude lists a window's controls (role, name, states, position) from the desktop accessibility bus and presses a control or sets a text field by its `[N]` index, instead of locating everything by screenshot. With the switch off the tools do not exist and the accessibility bus is never touched.
+- **Safe by construction.** The desktop accessibility service is switched on only while a Computer Use session needs it and restored afterwards; a running screen reader is never touched; password and terminal text is never read. Every missing piece returns a plain "unavailable" result and normal Computer Use is unaffected.
+- **Coverage.** All four bundled bridges (X11, wlroots, KDE, GNOME) carry the new `ax-enable`, `ax-restore`, `ax-find` and `ax-action` commands (optional additions to the bridge contract, still v1). GTK, Qt, Firefox and LibreOffice apps expose their controls; Electron and Chromium apps need `--force-renderer-accessibility`.
+
 ## 2026-10-30
 
 ### Tray icon follows the theme again, with an "always white" switch (#305)

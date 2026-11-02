@@ -1123,7 +1123,9 @@
 
     var head = el("div", "cdbx-sec-h");
     head.appendChild(el("span", "cdbx-sec-t", spec.section));
-    panel.appendChild(head);
+    // spec.sharedSection: this row sits under the section header the row before
+    // it already rendered, so it gets no header of its own (head stays detached).
+    if (!spec.sharedSection) panel.appendChild(head);
 
     var host = el("div", "cdbx-list");
     var node = el("div", "cdbx-row");
@@ -2464,6 +2466,38 @@
     });
   }
 
+  // --- Computer Use: read app controls through accessibility (#306) --------
+  function renderCuAxRow(panel) {
+    return renderToggleRow(panel, {
+      section: "Computer Use",
+      title: "Computer Use: read app controls (accessibility)",
+      sharedSection: true,
+      badge: "Experimental",
+      note: "Lets Claude find and press buttons and fill fields through the desktop accessibility " +
+        "service instead of only screenshots. Works best with GTK, Qt, Firefox and LibreOffice apps; " +
+        "Electron and Chromium apps usually expose nothing. Turns the desktop accessibility service on " +
+        "during Computer Use sessions and restores it afterwards. Applies to new Computer Use sessions.",
+      ariaLabel: "let Computer Use read app controls through the accessibility service",
+      read: "cuAxRead",
+      write: "cuAxSet",
+      lockFile: "claude-desktop-extra.jsonc",
+      // The downstream Windows build carries this page; its main side answers
+      // "Linux only" and the row must not appear there.
+      hideIf: function (res) { return failed(res) && /Linux only/.test(reason(res)); },
+      isOn: function (res) { return res.enabled === true; },
+      describe: function (on) {
+        return on ? "on - for new Computer Use sessions" : "off - screenshots only";
+      },
+      writeArg: function (next) { return next; },
+      toast: function (next) {
+        return next
+          ? "Computer Use will read app controls in new sessions"
+          : "Computer Use goes back to screenshots only";
+      },
+      errorPrefix: "Could not change the setting: "
+    });
+  }
+
   // --- shortcuts: the Ctrl+Shift+T theme gallery ---------------------------
   // The one row here that is ON unless you say otherwise: the shortcut is how a
   // fresh install finds the themes at all, so an absent key means on and only an
@@ -2796,7 +2830,8 @@
     renderTrayIconRow,
     renderThemePickerRow,
     renderDevToolsRow,
-    renderCuBackgroundRow
+    renderCuBackgroundRow,
+    renderCuAxRow
   ];
 
   function renderFeatures(panel) {

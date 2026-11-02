@@ -18,6 +18,19 @@ See [CLAUDE_BUILT_IN_MCP.md](../baseline/CLAUDE_BUILT_IN_MCP.md#17-computer-use)
 
 **Debugging:** Computer Use patches emit `[claude-cu] diagnostics:` lines showing the detected session, available/missing tools, and screenshot cascade. Find them in `~/.config/Claude/logs/claude-patches.log` (also printed to stderr on terminal launches) and share that file when reporting Computer Use issues. See also [Debugging](../README.md#debugging).
 
+## Read app controls through accessibility (experimental)
+
+Settings -> Extra -> Community Features -> **Computer Use: read app controls (accessibility)** (off by default) gives Claude the app-scoped tools `app_list_windows`, `app_ax_find`, `app_click` and `app_type`. `app_ax_find` lists a window's controls (role, name, states, position) from the desktop accessibility bus (AT-SPI), and `app_click` / `app_type` press a control or set a text field by its `[N]` index, so Claude finds controls by name instead of by screenshot coordinates. With the switch off the tools do not exist and nothing touches the accessibility bus.
+
+While a Computer Use session uses it, Claude turns the desktop accessibility service on, and turns it back off when the session ends (a crash is healed at the next start). A running screen reader is never touched. The text of password fields and terminals is never read. It needs `at-spi2-core` (installed with every common desktop). Switching the desktop accessibility setting on or off yourself during a Computer Use session is overridden: Claude Desktop switches it on when the tools are used and back to the previous value afterwards.
+
+| Session | Coverage |
+|---|---|
+| X11 / XWayland, KDE Plasma Wayland | Controls with names, states and screen positions |
+| GNOME Wayland, Sway / Hyprland / Niri | Names and actions; positions where the compositor reports them (Sway and Hyprland IPC), otherwise "position unknown" and Claude uses a screenshot to click. On GNOME, XWayland apps report positions as unknown |
+
+GTK, Qt, Firefox and LibreOffice apps expose their controls. Electron and Chromium apps expose almost nothing unless started with `--force-renderer-accessibility`; Claude uses screenshots there. Every missing piece (no `at-spi2-core`, no matching window) gives a plain "unavailable" answer and normal Computer Use carries on.
+
 ## Computer Use on a background display (experimental)
 
 By default Computer Use acts on your own desktop: Claude's mouse and keyboard are yours, so you cannot work while it runs. The **Computer Use on a background display** switch (Settings -> Extra -> Community Features, marked **Experimental**) moves it to a second display.

@@ -9,7 +9,12 @@
 # embeds them via staticRead at compile time; Python reads them at runtime.
 # No codegen — the .js files are the single source of truth.
 #
-# All 38 sub-patches use std/nre (PCRE) because many require backreferences.
+# All 42 sub-patches use std/nre (PCRE) because many require backreferences.
+# Sub-patches 15a-15d add the Linux accessibility tools (issue #306,
+# js/cu_ax_tools.js, injected with the executors by Patch 1): upstream's tool
+# builder, its tools/list cache key, the teach-mode read-only set and upstream's
+# dispatch (kwin mode) each call into that runtime, which answers "nothing" while
+# its Settings -> Extra switch is off.
 # Sub-patch 4e hooks main's releaseRemoteCuLock IPC (claude.ai's task-end
 # event: running->idle, Stop, archive, delete) and hands the id, source and
 # the CU lock's current holder to the Linux executor's __cuTaskBoundary.
@@ -27,6 +32,7 @@ const LINUX_EXECUTOR_JS = staticRead("../../js/cu_linux_executor.js")
 const LINUX_HANDLER_INJECTION_JS = staticRead("../../js/cu_handler_injection.js")
 const MODE_PREAMBLE_JS = staticRead("../../js/cu_mode_preamble.js")
 const KWIN_EXECUTOR_SOURCE = staticRead("../../js/executor_linux.js")
+const AX_TOOLS_JS = staticRead("../../js/cu_ax_tools.js")
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -366,6 +372,27 @@ proc endStateMarkers(): seq[EndStateMarker] =
       "${globalThis.__cuKwinMode?' This computer is running Linux with KDE Plasma. The desktop shell is plasmashell.",
       2,
     ),
+    lit("1b accessibility tools runtime", "globalThis.__cdbAxTools=function(t){"),
+    rx(
+      "15a tool builder",
+      """\.\.\.\(process\.platform==="linux"&&globalThis\.__cdbAxTools\?\.\([\w$]+\)\|\|\[\]\)\]\}""",
+    ),
+    rx(
+      "15b tools/list cache key",
+      """\$\{process\.platform==="linux"&&globalThis\.__cdbAxKey\?\.\(\)\|\|""\}`;""",
+    ),
+    rx(
+      "15c read-only tools",
+      """return!\([\w$]+\.has\(([\w$]+)\)\|\|process\.platform==="linux"&&\(\1==="app_ax_find"\|\|\1==="app_list_windows"\)\)\}""",
+    ),
+    rx(
+      "15d.1 dispatch session id",
+      """,__cdbAxSid:process\.platform==="linux"\?[\w$]+\.sessionId:void 0\}""",
+    ),
+    rx(
+      "15d.2 dispatch",
+      """\{if\(process\.platform==="linux"&&globalThis\.__cdbAxHandles\?\.\([\w$]+\)\)return await globalThis\.__cdbAxCall\([\w$]+,[\w$]+,\{sid:[\w$]+\.__cdbAxSid,ctx:[\w$]+,tier:\(__cdbA,__cdbT\)=>[\w$]+\([\w$]+,__cdbA,__cdbT\)\}\);let [\w$]+=[\w$]+\.executor\.appScoped;""",
+    ),
   ]
 
 # ─── main patch ─────────────────────────────────────────────────────────────
@@ -375,7 +402,7 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 38
+  const EXPECTED_PATCHES = 42
 
   let gateSet = cuPlatformSetName(content)
   if gateSet == "":
@@ -410,6 +437,9 @@ proc apply*(input: string): string =
   block:
     let regularJs = LINUX_EXECUTOR_JS.strip()
     let kwinJs = buildKwinLinuxExecutorInjection().strip()
+    # The accessibility tools runtime (issue #306) goes after the executors: it
+    # hooks the executor's lock/task-boundary methods and asks it for its bridge.
+    let axJs = AX_TOOLS_JS.strip()
     # v1.26832.0 switched minifier: most string literals became backtick
     # template literals (app.on(`ready`)). Accept either quote style here and
     # everywhere else a literal is part of an anchor.
@@ -423,7 +453,8 @@ proc apply*(input: string): string =
       pat,
       proc(m: RegexMatch): string =
         m.captures[0] & "if(process.platform===\"linux\"){" & MODE_PREAMBLE_JS &
-          "if(globalThis.__cuKwinMode){" & kwinJs & "}else{" & regularJs & "}}",
+          "if(globalThis.__cuKwinMode){" & kwinJs & "}else{" & regularJs & "}" & axJs &
+          "}",
     )
     if n >= 1:
       echo &"  [OK] Linux executor: injected regular + kwin-wayland variants ({n} match)"
@@ -1817,6 +1848,151 @@ proc apply*(input: string): string =
       inc patchesApplied
     else:
       echo &"  [FAIL] 14d CU env prompt: {envCount} environment sentence anchors, expected 2"
+
+  # ─── Patch 15: accessibility tools (issue #306, js/cu_ax_tools.js) ────
+  # Upstream's app-scoped AX tools (app_ax_find, app_click, ...) are darwin
+  # only (`appScoped` is set by a darwin-gated flag). Ours reuse the names and
+  # argument shapes, served by the bridges' ax-* subcommands. Every hook is
+  # behind process.platform==="linux" and returns "nothing" while the switch is
+  # off: no tool, an unchanged cache key, upstream's own dispatch.
+  const SPLIT_MARK = "\n/*__CDB_SPLIT__"
+  proc partOf(c: string, at: int): int =
+    ## Start of the staged chunk part containing offset `at` (0 = the stub).
+    let p = c.rfind(SPLIT_MARK, last = at)
+    if p == -1: 0 else: p
+
+  # 15a: tool builder tail `...t.appScoped?Pe(t.appScoped.supportsRawInput??!1,
+  # t.platform):[]]}` -> also spread our tools. Same builder serves the local
+  # computer-use server and the remote-devices bridge; the runtime leaves the
+  # latter out (it passes saveToDisk:false).
+  block:
+    let pat =
+      re"""(\.\.\.([\w$]+)\.appScoped\?[\w$]+\(\2\.appScoped\.supportsRawInput\?\?!1,\2\.platform\):\[\])\]\}"""
+    let n = countMatches(content, pat)
+    if n != 1:
+      echo &"  [FAIL] 15a tool builder tail (`...t.appScoped?X(...):[]]}}`): {n} matches, expected 1"
+    else:
+      discard replaceFirst(
+        content,
+        pat,
+        proc(m: RegexMatch): string =
+          m.captures[0] & ",...(process.platform===\"linux\"&&globalThis.__cdbAxTools?.(" &
+            m.captures[1] & ")||[])]}",
+      )
+      echo "  [OK] 15a tool builder: Linux accessibility tools appended (1 match)"
+      inc changes
+      inc patchesApplied
+
+  # 15b: tools/list cache key `${flag()}:${teach()}:${opts().adaptiveResolution}`
+  # -> also the switch, so a flip takes effect for the next session. "" while
+  # off: the key is upstream's byte for byte.
+  block:
+    let pat =
+      re"""(function [\w$]+\(\)\{let [\w$]+=`\$\{[\w$]+\(\)\}:\$\{[\w$]+(?:\.[\w$]+)?\(\)\}:\$\{[\w$]+(?:\.[\w$]+)?\(\)\.adaptiveResolution\})`;"""
+    let n = countMatches(content, pat)
+    if n != 1:
+      echo &"  [FAIL] 15b tools/list cache key template: {n} matches, expected 1"
+    else:
+      discard replaceFirst(
+        content,
+        pat,
+        proc(m: RegexMatch): string =
+          m.captures[0] &
+            "${process.platform===\"linux\"&&globalThis.__cdbAxKey?.()||\"\"}`;",
+      )
+      echo "  [OK] 15b tools/list cache key: includes the accessibility switch (1 match)"
+      inc changes
+      inc patchesApplied
+
+  # 15c: teach mode's read-only set (a tool outside it counts as an action and
+  # ends a teach step). app_ax_find / app_list_windows only read. Linux only:
+  # on macOS upstream's own app_* tools keep upstream's classification.
+  block:
+    let pat =
+      re"""(if\(([\w$]+)===(["`])computer_batch\3\)\{let ([\w$]+)=[\w$]+\.input\?\.actions;return Array\.isArray\(\4\)\?\4\.some\(\(?([\w$]+)=>typeof \5\?\.action==(["`])string\6&&!([\w$]+)\.has\(\5\.action\)\)\)?:!1\}return!)\7\.has\(\2\)\}"""
+    let n = countMatches(content, pat)
+    if n != 1:
+      echo &"  [FAIL] 15c read-only tool set (computer_batch arm + `return!SET.has(name)}}`): {n} matches, expected 1"
+    else:
+      discard replaceFirst(
+        content,
+        pat,
+        proc(m: RegexMatch): string =
+          let nm = m.captures[1]
+          m.captures[0] & "(" & m.captures[6] & ".has(" & nm &
+            ")||process.platform===\"linux\"&&(" & nm & "===\"app_ax_find\"||" & nm &
+            "===\"app_list_windows\"))}",
+      )
+      echo "  [OK] 15c read-only tool set: app_ax_find + app_list_windows on Linux (1 match)"
+      inc changes
+      inc patchesApplied
+
+  # 15d: upstream's dispatch. Where upstream dispatches (kwin mode), our names
+  # would hit its app_* branch, which needs executor.appScoped (darwin). Before
+  # that branch, hand our tools to the runtime with the session's context (its
+  # lastScreenshot), the session id (added to that context in the per-session
+  # wrapper, which has it) and upstream's own tier check (`{error}` or
+  # `{grant}`: read / click / full per tool). Upstream's earlier gates (no
+  # grants, CU disabled, another session's lock) still run first.
+  block:
+    let sidPat =
+      re"""(typingWaitAllowance:([\w$]+)\.getTypingWaitAllowance\?\.\(\),cuOnlyMode:\2\.cuOnlyMode)\}"""
+    let tierPat =
+      re"""function ([\w$]+)\(([\w$]+),([\w$]+),([\w$]+)\)\{let ([\w$]+)=\2\.allowedApps\.find\(\(?([\w$]+)=>\6\.bundleId===\3\)\)?;if\(!\5\)return \2\.policyDeniedBundleIds"""
+    let qaPat =
+      re"""(async function [\w$]+\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\)\{let\{logger:[\w$]+,serverName:[\w$]+\}=\2,([\w$]+)=[\w$]+\(\5\);[\s\S]{0,1500}?,([\w$]+)=[\w$]+\(\4\);[\s\S]{0,1500}?if\(([\w$]+)\(\3\)\)\{)(let [\w$]+=\2\.executor\.appScoped;return )"""
+    let nSid = countMatches(content, sidPat)
+    let nTier = countMatches(content, tierPat)
+    let nQa = countMatches(content, qaPat)
+    if nSid != 1 or nTier != 1 or nQa != 1:
+      echo &"  [FAIL] 15d dispatch anchors: session context {nSid}, tier check {nTier}, app_* branch {nQa} match(es), expected 1 each"
+    else:
+      let sidM = content.find(sidPat).get()
+      let tierM = content.find(tierPat).get()
+      let qaM = content.find(qaPat).get()
+      let tierFn = tierM.captures[0]
+      let eiFn = qaM.captures[7]
+      # The app_* predicate must be upstream's: `function Ei(e){return
+      # e==="app_release"||...`. And all three sites live in one chunk part:
+      # the tier check is called by name, and the session id travels on the
+      # context object the wrapper builds for this dispatch.
+      let eiPat = re(
+        "function " & escapeRe(eiFn) &
+          """\(([\w$]+)\)\{return \1===(["`])app_release\2\|\|"""
+      )
+      let part = partOf(content, qaM.matchBounds.a)
+      if countMatches(content, eiPat) != 1:
+        echo &"  [FAIL] 15d app_* predicate {eiFn} is not upstream's app_release/app_* test"
+      elif partOf(content, tierM.matchBounds.a) != part or
+          partOf(content, sidM.matchBounds.a) != part:
+        echo "  [FAIL] 15d dispatch, tier check and session context are not in one chunk part"
+      else:
+        let n1 = replaceFirst(
+          content,
+          sidPat,
+          proc(m: RegexMatch): string =
+            m.captures[0] & ",__cdbAxSid:process.platform===\"linux\"?" & m.captures[1] &
+              ".sessionId:void 0}",
+        )
+        let n2 = replaceFirst(
+          content,
+          qaPat,
+          proc(m: RegexMatch): string =
+            let toolName = m.captures[2]
+            let ctxVar = m.captures[5]
+            let argsVar = m.captures[6]
+            m.captures[0] &
+              "if(process.platform===\"linux\"&&globalThis.__cdbAxHandles?.(" & toolName &
+              "))return await globalThis.__cdbAxCall(" & toolName & "," & argsVar &
+              ",{sid:" & ctxVar & ".__cdbAxSid,ctx:" & ctxVar & ",tier:(__cdbA,__cdbT)=>" &
+              tierFn & "(" & ctxVar & ",__cdbA,__cdbT)});" & m.captures[8],
+        )
+        if n1 == 1 and n2 == 1:
+          echo &"  [OK] 15d dispatch: Linux accessibility tools before upstream's app_* branch, tier check {tierFn} (2 sites)"
+          inc changes, 2
+          inc patchesApplied
+        else:
+          echo &"  [FAIL] 15d dispatch: {n1}/1 session context, {n2}/1 dispatch rewrites"
 
   if patchesApplied < EXPECTED_PATCHES:
     raise newException(

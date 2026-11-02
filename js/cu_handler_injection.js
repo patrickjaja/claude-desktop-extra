@@ -65,6 +65,10 @@ function __untxC(x,y){
 // getLastScreenshotDims), so Eq's pixels branch reproduces __txC exactly:
 // displayWidth/width == dispW/imgW, originX == originX. This makes teach anchors
 // and teach action coordinates land identically to our click path.
+// switch_display's pin, shared with the accessibility tools (app_ax_find makes
+// the display holding the searched window current): the next screenshot, zoom
+// and click use display d; the old screenshot geometry is dropped.
+function __pinDisplay(d){globalThis.__cuPinnedDisplay=d.displayId;globalThis.__cuActiveOrigin={x:d.originX||0,y:d.originY||0};globalThis.__cuLastShot=null;__syncUpstreamShotDims(void 0)}
 function __syncUpstreamShotDims(dims){
   try{if(__SESSION__&&typeof __SESSION__.onCuScreenshotDimsUpdated==="function")__SESSION__.onCuScreenshotDimsUpdated(dims)}catch(e){}
 }
@@ -74,6 +78,9 @@ var __actionTools=new Set(["left_click","right_click","double_click","triple_cli
 // raw bridge error (and refuses every following call until it answers).
 async function __tgtErr(err){try{if(ex.__targetAfterError){var m=await ex.__targetAfterError(err);if(m){(globalThis.__cdbDiag||console.log)("[claude-cu] tool call refused ("+__TOOL_NAME__+"): "+m);return{isError:!0,content:[{type:"text",text:m}]}}}}catch(e){}return null}
 async function __hideWindows(fn){if(ex.__targetActive&&ex.__targetActive())return await fn();var __bws=require("electron").BrowserWindow.getAllWindows().filter(function(w){return!w.isDestroyed()});for(var __i=0;__i<__bws.length;__i++)__bws[__i].setIgnoreMouseEvents(true);try{await new Promise(function(r){setTimeout(r,50)});return await fn()}finally{for(var __i=0;__i<__bws.length;__i++){if(!__bws[__i].isDestroyed())__bws[__i].setIgnoreMouseEvents(false)}}}
+// Accessibility tools (issue #306, js/cu_ax_tools.js): only while their switch
+// is on (__cdbAxHandles), otherwise these names fall through as before.
+if(typeof globalThis.__cdbAxHandles==="function"&&globalThis.__cdbAxHandles(__TOOL_NAME__)){try{return await globalThis.__cdbAxCall(__TOOL_NAME__,__INPUT__,{sid:__SESSION__&&__SESSION__.sessionId,pin:__pinDisplay,sync:__syncUpstreamShotDims})}catch(err){return(await __tgtErr(err))||{content:[{type:"text",text:"Error: "+(err&&err.message||err)}],isError:!0}}}
 if(__actionTools.has(__TOOL_NAME__)){try{return await __hideWindows(async function(){switch(__TOOL_NAME__){
 case"left_click":{var __lc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]);await ex.click(__lc[0],__lc[1],"left",1);return{content:[{type:"text",text:"Clicked at ("+__lc[0]+","+__lc[1]+")"}]}}
 case"right_click":{var __rc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]);await ex.click(__rc[0],__rc[1],"right",1);return{content:[{type:"text",text:"Right clicked"}]}}
@@ -169,7 +176,7 @@ case"open_application":{var __oaName=__INPUT__.app||__INPUT__.application||"";va
   // action "opened" = Wayland-native/non-bridge launch-only, or an xdg-open of a
   // path/URL. Byte-for-byte the pre-feature text so non-X11 sessions are unchanged.
   return{content:[{type:"text",text:"Opened app"}]}}
-case"switch_display":{var __displays=await ex.listDisplays();var __target=__INPUT__.display;if(__target==="auto"||!__target){globalThis.__cuPinnedDisplay=void 0;globalThis.__cuLastShot=null;__syncUpstreamShotDims(void 0);return{content:[{type:"text",text:"Display mode set to auto (follows cursor). Available: "+__displays.map(function(d){return d.label+" ("+d.width+"x"+d.height+")"}).join(", ")}]}}var __found=__displays.find(function(d){return d.label===__target||String(d.displayId)===String(__target)});if(__found){globalThis.__cuPinnedDisplay=__found.displayId;globalThis.__cuActiveOrigin={x:__found.originX||0,y:__found.originY||0};globalThis.__cuLastShot=null;__syncUpstreamShotDims(void 0);return{content:[{type:"text",text:"Switched to display: "+__found.label+" ("+__found.width+"x"+__found.height+"). Take a screenshot to refresh coordinates."}]}}return{content:[{type:"text",text:"Display '"+__target+"' not found. Available: "+__displays.map(function(d){return d.label}).join(", ")}]}}
+case"switch_display":{var __displays=await ex.listDisplays();var __target=__INPUT__.display;if(__target==="auto"||!__target){globalThis.__cuPinnedDisplay=void 0;globalThis.__cuLastShot=null;__syncUpstreamShotDims(void 0);return{content:[{type:"text",text:"Display mode set to auto (follows cursor). Available: "+__displays.map(function(d){return d.label+" ("+d.width+"x"+d.height+")"}).join(", ")}]}}var __found=__displays.find(function(d){return d.label===__target||String(d.displayId)===String(__target)});if(__found){__pinDisplay(__found);return{content:[{type:"text",text:"Switched to display: "+__found.label+" ("+__found.width+"x"+__found.height+"). Take a screenshot to refresh coordinates."}]}}return{content:[{type:"text",text:"Display '"+__target+"' not found. Available: "+__displays.map(function(d){return d.label}).join(", ")}]}}
 case"list_granted_applications":{return{content:[{type:"text",text:"All applications are accessible on Linux (no grants needed)"}]}}
 case"read_clipboard":{var cb=await ex.readClipboard();return{content:[{type:"text",text:cb}]}}
 case"write_clipboard":{await ex.writeClipboard(__INPUT__.text||"");return{content:[{type:"text",text:"Written to clipboard"}]}}
