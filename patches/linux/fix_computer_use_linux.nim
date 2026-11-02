@@ -9,7 +9,7 @@
 # embeds them via staticRead at compile time; Python reads them at runtime.
 # No codegen — the .js files are the single source of truth.
 #
-# All 42 sub-patches use std/nre (PCRE) because many require backreferences.
+# All 43 sub-patches use std/nre (PCRE) because many require backreferences.
 # Sub-patches 15a-15d add the Linux accessibility tools (issue #306,
 # js/cu_ax_tools.js, injected with the executors by Patch 1): upstream's tool
 # builder, its tools/list cache key, the teach-mode read-only set and upstream's
@@ -18,6 +18,12 @@
 # Sub-patch 4e hooks main's releaseRemoteCuLock IPC (claude.ai's task-end
 # event: running->idle, Stop, archive, delete) and hands the id, source and
 # the CU lock's current holder to the Linux executor's __cuTaskBoundary.
+# Sub-patch 4b hands the new lock holder along with the acquire
+# (`__setLockHeld(true, holder)`), and sub-patch 4f exposes upstream's
+# remote-session status accessor as globalThis.__cdbRemoteSessionMode (Linux
+# only): js/cu_session_check.js (injected by Patch 1 before both executors)
+# polls it while a portal session is up for a cloud Cowork holder and ends the
+# session when the server reports the turn ended (issue #293).
 #
 # Idempotency is a MARKER SET (endStateMarkers below): one positive end-state
 # pattern per sub-patch, each with its exact expected count. All present =
@@ -33,6 +39,7 @@ const LINUX_HANDLER_INJECTION_JS = staticRead("../../js/cu_handler_injection.js"
 const MODE_PREAMBLE_JS = staticRead("../../js/cu_mode_preamble.js")
 const KWIN_EXECUTOR_SOURCE = staticRead("../../js/executor_linux.js")
 const AX_TOOLS_JS = staticRead("../../js/cu_ax_tools.js")
+const SESSION_CHECK_JS = staticRead("../../js/cu_session_check.js")
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -225,6 +232,11 @@ proc endStateMarkers(): seq[EndStateMarker] =
       """app\.on\(["`]ready["`],\(?async\(\)=>\{if\(process\.platform==="linux"\)\{""",
     ),
     rx(
+      # js/cu_session_check.js embedded by Patch 1 (#293): its one definition.
+      "1 session check embed",
+      """globalThis\.__cdbCuSessionCheck\s*=\s*\{""",
+    ),
+    rx(
       "2 CU platform gate",
       "function [\\w$]+\\(\\)\\{if\\(process\\.platform===\"linux\"\\)return!0;" &
         CU_PLATFORM_FN_BODY,
@@ -241,9 +253,9 @@ proc endStateMarkers(): seq[EndStateMarker] =
       "4d platform executor factory",
       """if\(process\.platform===["`]darwin["`]\)return [\w$]+(?:\.[\w$]+)*\([\w$]+\);if\(process\.platform==="linux"&&globalThis\.__linuxExecutor\)return globalThis\.__linuxExecutor;(?:if\(process\.platform===["`]linux["`]\)return [^;]{1,80};)?throw (?:new )?Error\(["`]computer-use executor not implemented""",
     ),
-    lit(
+    rx(
       "4b cu lock acquire",
-      ",process.platform===\"linux\"&&globalThis.__linuxExecutor?.__setLockHeld?.(!0).catch?.(",
+      """,process\.platform==="linux"&&globalThis\.__linuxExecutor\?\.__setLockHeld\?\.\(!0,[\w$]+\)\.catch\?\.\(""",
     ),
     lit(
       "4b.2 cu lock release",
@@ -253,6 +265,10 @@ proc endStateMarkers(): seq[EndStateMarker] =
     rx(
       "4e task boundary",
       """releaseRemoteCuLock:\(([\w$]+),([\w$]+)\)=>\{try\{process\.platform==="linux"&&globalThis\.__linuxExecutor\?\.__cuTaskBoundary\?\.\(\1\?\?void 0,\2==="stop_click"\?"stop_click":"renderer",exports\.[\w$]+\.currentHolder\)\?\.catch\?\.\(""",
+    ),
+    rx(
+      "4f session check accessor",
+      """refresh:[\w$]+\.refreshRemoteChromeSessionMode\}\}process\.platform==="linux"&&\(globalThis\.__cdbRemoteSessionMode=[\w$]+\);""",
     ),
     lit(
       "5 ensureOsPermissions",
@@ -402,7 +418,7 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 42
+  const EXPECTED_PATCHES = 43
 
   let gateSet = cuPlatformSetName(content)
   if gateSet == "":
@@ -440,6 +456,10 @@ proc apply*(input: string): string =
     # The accessibility tools runtime (issue #306) goes after the executors: it
     # hooks the executor's lock/task-boundary methods and asks it for its bridge.
     let axJs = AX_TOOLS_JS.strip()
+    # The cloud-session check (issue #293) goes before both executors: each calls
+    # globalThis.__cdbCuSessionCheck at run time. The newline only keeps the
+    # embed and the executor code that follows on separate lines/statements.
+    let sessionJs = SESSION_CHECK_JS.strip()
     # v1.26832.0 switched minifier: most string literals became backtick
     # template literals (app.on(`ready`)). Accept either quote style here and
     # everywhere else a literal is part of an anchor.
@@ -453,11 +473,11 @@ proc apply*(input: string): string =
       pat,
       proc(m: RegexMatch): string =
         m.captures[0] & "if(process.platform===\"linux\"){" & MODE_PREAMBLE_JS &
-          "if(globalThis.__cuKwinMode){" & kwinJs & "}else{" & regularJs & "}" & axJs &
-          "}",
+          sessionJs & "\n" & "if(globalThis.__cuKwinMode){" & kwinJs & "}else{" &
+          regularJs & "}" & axJs & "}",
     )
     if n >= 1:
-      echo &"  [OK] Linux executor: injected regular + kwin-wayland variants ({n} match)"
+      echo &"  [OK] Linux executor: injected session check + regular + kwin-wayland variants ({n} match)"
       inc changes, n
       inc patchesApplied
     else:
@@ -623,13 +643,16 @@ proc apply*(input: string): string =
         "  [FAIL] platform executor factory: 0 matches (issue #159 throw-site anchor) - re-audit",
       )
 
-  # ── Patch 4b (kwin-wayland): cu lock acquire → __setLockHeld(true) ──────
+  # ── Patch 4b (kwin-wayland): cu lock acquire → __setLockHeld(true, holder) ──
   # v1.20186.1 refactored the lock class: `this.holder` became
   # `this.exclusiveHolder`, and acquire() changed from a `this.holder===void
   # 0&&(this.holder=X,emit(...),cb())` guarded expression into an early-return
   # guard shape ending in `return this.exclusiveHolder=X,emit(...),cb(),!0`.
   # The cuLockChanged emit is unchanged; anchor the acquire-side emit and inject
   # __setLockHeld(true) right before it.
+  # 4.4212.0 (#293): also pass the holder just assigned (the captured right-hand
+  # side of `this.exclusiveHolder=`, `e` in 4.4212.0), so the executor knows the
+  # cloud session id it may poll for the turn end (js/cu_session_check.js).
   block:
     # v1.26832.0: the trailing callback became a method call (`e.nn()`) and the
     # event name a backtick literal. Capture the whole emit-and-callback tail and
@@ -639,20 +662,25 @@ proc apply*(input: string): string =
     # Allow (and keep verbatim) zero or more `this.<field>++,` steps there.
     let pat =
       re"""(return this\.exclusiveHolder=([\w$]+),(?:this\.[\w$]+\+\+,)*)(this\.emit\(["`]cuLockChanged["`],\{holder:\2\}\),[\w$]+(?:\.[\w$]+)*\(\),!0)"""
-    let n = replaceFirst(
-      content,
-      pat,
-      proc(m: RegexMatch): string =
-        m.captures[0] &
-          "process.platform===\"linux\"&&globalThis.__linuxExecutor?.__setLockHeld?.(!0).catch?.(e=>(globalThis.__cdbDiag||console.warn)(\"[linux-executor] failed to start bridge session on lock acquire\",e))," &
-          m.captures[2],
-    )
-    if n >= 1:
-      echo &"  [OK] cu lock acquire: start bridge session on Linux ({n} match)"
+    let hits = countMatches(content, pat)
+    var n = 0
+    if hits == 1:
+      n = replaceFirst(
+        content,
+        pat,
+        proc(m: RegexMatch): string =
+          m.captures[0] &
+            "process.platform===\"linux\"&&globalThis.__linuxExecutor?.__setLockHeld?.(!0," &
+            m.captures[1] &
+            ").catch?.(e=>(globalThis.__cdbDiag||console.warn)(\"[linux-executor] failed to start bridge session on lock acquire\",e))," &
+            m.captures[2],
+      )
+    if n == 1:
+      echo &"  [OK] 4b cu lock acquire: start bridge session on Linux, hand over the holder ({n} match)"
       inc changes, n
       inc patchesApplied
     else:
-      echo "  [FAIL] cu lock acquire pattern: 0 matches"
+      echo &"  [FAIL] 4b cu lock acquire pattern: {hits} matches, expected 1"
 
   # ── Patch 4b.2: cu lock release → __setLockHeld(false) ─────────────────
   # v1.20186.1: `this.holder` → `this.exclusiveHolder` (see Patch 4b).
@@ -765,6 +793,67 @@ proc apply*(input: string): string =
             inc patchesApplied
           else:
             echo "  [FAIL] 4e releaseRemoteCuLock handler: replacement did not apply"
+
+  # ── Patch 4f: session check accessor → globalThis.__cdbRemoteSessionMode ──
+  # Upstream main reaches its remote-session status check through a lazy
+  # accessor (4.4212.0: `ner` in index.chunk-CvhJZ02X.js):
+  #   async function ner(){if(AB!==void 0)return AB;let e=await Promise.resolve()
+  #   .then((()=>require("./index.chunk-CL5khZ71.js"))).then((e=>e.t));
+  #   return{resolve:e.resolveRemoteChromeSessionMode,
+  #   refresh:e.refreshRemoteChromeSessionMode}}
+  # We assign it, on Linux only, to globalThis.__cdbRemoteSessionMode right after
+  # its declaration; js/cu_session_check.js calls `(await it()).refresh(id)` while
+  # a portal session is up for a cloud Cowork holder (#293). No call of ours runs
+  # here, so nothing changes until the poller asks; off Linux nothing is assigned.
+  #
+  # refreshRemoteChromeSessionMode(id) (4.4212.0: `Xt` -> `Y` in
+  # index.chunk-CL5khZ71.js) GETs `/v1/code/sessions/<id>` (cookie auth, 5 s
+  # timeout, one retry on a transient result) and resolves to exactly one of:
+  #   HTTP 5xx/429/408, network error, timeout -> {ok:!1,transient:!0}
+  #   HTTP 404, or a body without a session    -> {ok:!1,notFound:!0}
+  #   any other non-2xx status                 -> {ok:!1}
+  #   success -> {ok:!0,mode,scheduledFire,triggerId,ended,coworkRemote,
+  #     projectThread,[codeCloud,browserHost],[deviceBound,boundDeviceId],
+  #     conversationUuid,terminal,unconfirmedChat,presentedChat,presentedPending,
+  #     hubChat,chatTabGroupKey,title}
+  # where `ended` is `o.status==="archived"||o.status==="failed"||
+  # o.worker_status==="idle"||o.worker_status==="running"&&
+  # o.connection_status==="disconnected"`. A non-ok, non-transient result is
+  # cached for 30 s and refresh() hands the cached failure back until then; an
+  # ok result is dropped from the cache and fetched again.
+  #
+  # Anchor: the function whose brace-free body ends in the
+  # `return{resolve:X.resolveRemoteChromeSessionMode,refresh:X.refreshRemoteChromeSessionMode}}`
+  # pair (the export names are the stable part), exactly once, with a require()
+  # of the module in that body. The `(?<=[;}])` lookbehind keeps it a statement-
+  # level declaration (4.4212.0: `var AB;async function ner(){...`), so the
+  # injected statement never lands in expression position.
+  block:
+    let pat =
+      re"""(?<=[;}])(async function ([\w$]+)\(\)\{([^{}]{0,400})return\{resolve:([\w$]+)\.resolveRemoteChromeSessionMode,refresh:\4\.refreshRemoteChromeSessionMode\}\})"""
+    let hits = countMatches(content, pat)
+    if hits != 1:
+      echo &"  [FAIL] 4f session check accessor: {hits} matches, expected 1"
+    else:
+      let m0 = content.find(pat).get()
+      let fnName = m0.captures[1]
+      if "require(" notin m0.captures[2]:
+        echo &"  [FAIL] 4f session check accessor {fnName}: body does not require() the session module - re-audit"
+      else:
+        let n = replaceFirst(
+          content,
+          pat,
+          proc(m: RegexMatch): string =
+            m.captures[0] &
+              "process.platform===\"linux\"&&(globalThis.__cdbRemoteSessionMode=" &
+              m.captures[1] & ");",
+        )
+        if n == 1:
+          echo &"  [OK] 4f session check accessor: {fnName} exposed as globalThis.__cdbRemoteSessionMode on Linux (1 match)"
+          inc changes, n
+          inc patchesApplied
+        else:
+          echo "  [FAIL] 4f session check accessor: replacement did not apply"
 
   # ── Patch 5: ensureOsPermissions → skip TCC on Linux ───────────────────
   block:

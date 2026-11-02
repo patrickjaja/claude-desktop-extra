@@ -30,6 +30,7 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
+process.setMaxListeners(50);                         // one exit hook per loaded executor
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const EXECUTOR = path.join(ROOT, "js", "cu_linux_executor.js");
 
@@ -1190,9 +1191,14 @@ const IDLE_MS = 120000;
 function makeClock() {
   let now = 0, seq = 0;
   const timers = new Map();
-  return {
+  const clock = {
+    // hold(): any delay on the virtual clock (the session check's 10 s timers).
+    hold(fn, ms, ...a) { return clock.setTimeout(fn, ms, ...a, { __hold: true }); },
+    now() { return now; },
     setTimeout(fn, ms, ...a) {
-      if (!(ms >= 60000)) return setTimeout(fn, ms, ...a);
+      const held = a.length && a[a.length - 1] && a[a.length - 1].__hold;
+      if (held) a = a.slice(0, -1);
+      if (!held && !(ms >= 60000)) return setTimeout(fn, ms, ...a);
       const t = { __fake: true, id: ++seq, ms, due: now + ms, fn, a, unrefd: false,
                   unref() { this.unrefd = true; return this; }, ref() { this.unrefd = false; return this; }, hasRef() { return !this.unrefd; } };
       timers.set(t.id, t);
@@ -1211,6 +1217,7 @@ function makeClock() {
       now = end;
     }
   };
+  return clock;
 }
 const PORTAL_SUBS = new Set(["zoom", "screenshot", "pointer-move", "pointer-click", "pointer-scroll", "pointer-drag",
                              "left-mouse-down", "left-mouse-up", "key-sequence", "type", "hold-key"]);
@@ -1708,9 +1715,317 @@ console.log("\n[34] __cuTaskBoundary: same session (alias ids) ends the portal s
     process.env.XDG_CURRENT_DESKTOP = "KDE";
     const r = await call(rig, undefined, "renderer", undefined);
     process.env.XDG_CURRENT_DESKTOP = savedDe;
-    ok(r === "ok" && countCalls(rig, "session-end") === 0 && !rig.log.some(l => l.includes("task boundary")),
-       "off GNOME: a no-op", r);
+    ok(r === "ok" && countCalls(rig, "session-end") === 0 && !rig.log.some(l => l.includes("task boundary") && !l.includes("): received ")),
+       "off GNOME: a no-op (only the received diagnostic line)", r);
   } finally { process.env.XDG_CURRENT_DESKTOP = savedDe; rig.restore(); }
+}
+
+// ── Cloud-session check (js/cu_session_check.js, #293 round 8) ──
+// While a portal session is up for a cloud lock holder, the shared poller asks
+// upstream's session-state check (globalThis.__cdbRemoteSessionMode, exposed by
+// sub-patch 4f) 10 s after the last portal command; an ended session goes
+// through __cuTaskBoundary(holder, "session-check", holder). Result keys come
+// from upstream's refreshRemoteChromeSessionMode: ended / ok / transient /
+// notFound. All its timers run on the rig's virtual clock (clock.hold).
+const SESSION_CHECK = path.join(ROOT, "js", "cu_session_check.js");
+function loadSessionCheck() {
+  if (!globalThis.__cdbCuSessionCheck) new Function(readFileSync(SESSION_CHECK, "utf8"))();
+  return globalThis.__cdbCuSessionCheck;
+}
+const RUNNING = { ok: true, ended: false, transient: false, notFound: false };
+const ENDED = { ok: true, ended: true, transient: false, notFound: false };
+// results: function (id, n) -> result | Error (thrown). opts.holder (default
+// cse_X), opts.noAccessor (no 4f accessor at all), opts.noCommand.
+async function checkRig(results, opts = {}) {
+  const rig = idleRig(opts.delays);
+  const sc = loadSessionCheck();
+  sc._seam({ setTimeout: rig.clock.hold, clearTimeout: rig.clock.clearTimeout, now: rig.clock.now });
+  rig.requests = [];
+  if (opts.noAccessor) delete globalThis.__cdbRemoteSessionMode;
+  else globalThis.__cdbRemoteSessionMode = async () => ({
+    resolve: async () => ({}),
+    refresh: async (id) => { rig.requests.push(id); const r = results(id, rig.requests.length); if (r instanceof Error) throw r; return r; }
+  });
+  rig.ex.__setLockHeld(true, "holder" in opts ? opts.holder : "cse_X");
+  await sleep(60);
+  if (!opts.noCommand) await rig.zoom();
+  // Virtual seconds, one at a time, letting the async check settle in between.
+  rig.tick = async (secs) => { for (let i = 0; i < secs; i++) { rig.clock.advance(1000); for (let j = 0; j < 8; j++) await new Promise(r => setImmediate(r)); } await sleep(20); };
+  rig.checkLog = () => rig.log.filter(l => l.includes("[claude-cu] session check:"));
+  const restore = rig.restore;
+  rig.restore = () => { sc._seam(); delete globalThis.__cdbRemoteSessionMode; restore(); };
+  return rig;
+}
+
+console.log("\n[35] session check: first check 10 s after the last command; ended -> the portal session ends once");
+{
+  const rig = await checkRig(() => ENDED);
+  try {
+    await rig.tick(9);
+    ok(rig.requests.length === 0, "nothing asked 9 s after the command", rig.requests.join(" "));
+    await rig.tick(1);
+    ok(rig.requests.length === 1 && rig.requests[0] === "cse_X", "at 10 s: one check for cse_X", rig.requests.join(" "));
+    ok(countCalls(rig, "session-end") === 1, "ended: session-end", String(countCalls(rig, "session-end")));
+    ok(rig.log.some(l => l.includes("[claude-cu] session check: cse_X ended, ending the portal session")), "the end is logged");
+    ok(rig.log.some(l => l.includes("[claude-cu] task boundary (session-check): ending the portal session")),
+       "through the task boundary", rig.log.filter(l => l.includes("task boundary")).join(" | "));
+    await rig.tick(40);
+    ok(rig.requests.length === 1 && countCalls(rig, "session-end") === 1, "no further checks or ends until the next arm",
+       rig.requests.length + " / " + countCalls(rig, "session-end"));
+    ok((await tryRun(rig.zoom)) === "no error" && countCalls(rig, "session-start") === 2, "the next command starts a session again");
+    await rig.tick(10);
+    ok(rig.requests.length === 2, "and arms the check again", String(rig.requests.length));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[36] session check: a running session is left alone, checked every 10 s, without log lines");
+{
+  const rig = await checkRig(() => RUNNING);
+  try {
+    await rig.tick(35);
+    ok(rig.requests.length === 3, "checks at 10, 20 and 30 s", String(rig.requests.length));
+    ok(countCalls(rig, "session-end") === 0, "no session-end", String(countCalls(rig, "session-end")));
+    ok(rig.checkLog().length === 0, "no per-check log line", rig.checkLog().join(" | "));
+    const armed = rig.clock.pending().filter(t => t.ms === 10000);
+    ok(armed.length === 1 && armed[0].unrefd, "one unref'd 10 s timer stays armed", JSON.stringify(armed.map(t => t.unrefd)));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[37] session check: deferred while a command is in flight or a mouse button is held");
+{
+  const rig = await checkRig(() => ENDED, { delays: { zoom: 150 } });
+  try {
+    const p = rig.zoom();
+    await sleep(20);
+    await rig.tick(12);
+    ok(rig.requests.length === 0 && countCalls(rig, "session-end") === 0, "a command in flight: no request", String(rig.requests.length));
+    await p;
+    await rig.tick(9);
+    ok(rig.requests.length === 0, "the command's end re-arms: nothing 9 s after it", String(rig.requests.length));
+    await rig.ex.mouseDown();
+    await rig.tick(25);
+    ok(rig.requests.length === 0 && countCalls(rig, "session-end") === 0, "a held button: no request", String(rig.requests.length));
+    await rig.ex.mouseUp();
+    await rig.tick(10);
+    ok(rig.requests.length === 1 && countCalls(rig, "session-end") === 1, "released: checked and ended 10 s later",
+       rig.requests.length + " / " + countCalls(rig, "session-end"));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[38] session check: errors back off to 20/40/60 s and never end the session");
+{
+  const rig = await checkRig((id, n) => n % 2 ? new Error("net::ERR_INTERNET_DISCONNECTED") : { ok: false, ended: false, transient: true, notFound: false });
+  try {
+    await rig.tick(10);
+    ok(rig.requests.length === 1, "first check at 10 s", String(rig.requests.length));
+    await rig.tick(19);
+    ok(rig.requests.length === 1, "nothing before 30 s", String(rig.requests.length));
+    await rig.tick(1);
+    ok(rig.requests.length === 2, "second at 30 s (20 s)", String(rig.requests.length));
+    await rig.tick(40);
+    ok(rig.requests.length === 3, "third at 70 s (40 s)", String(rig.requests.length));
+    await rig.tick(30);                             // t = 100 s: an action keeps the idle end away
+    await rig.zoom();
+    await rig.tick(59);
+    ok(rig.requests.length === 3, "after an action the backed-off interval stays: nothing at 159 s", String(rig.requests.length));
+    await rig.tick(1);
+    ok(rig.requests.length === 4, "capped at 60 s: the next check at 160 s", String(rig.requests.length));
+    await rig.tick(30);
+    ok(rig.requests.length === 4, "and still 60 s after it (nothing at 190 s)", String(rig.requests.length));
+    const backoff = rig.checkLog().filter(l => l.includes("backing off"));
+    ok(backoff.length === 3 && /20 s/.test(backoff[0]) && /40 s/.test(backoff[1]) && /60 s/.test(backoff[2]),
+       "one log line per change: 20, 40, 60 s", backoff.join(" | "));
+    ok(countCalls(rig, "session-end") === 0, "an error never ends the session", String(countCalls(rig, "session-end")));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[39] session check: notFound stops the check for this holder; the idle timer still ends it");
+{
+  const rig = await checkRig(() => ({ ok: false, ended: false, transient: false, notFound: true }));
+  try {
+    await rig.tick(10);
+    ok(rig.requests.length === 1 && rig.checkLog().length === 1 && rig.checkLog()[0].includes("cse_X"), "one check, logged once", rig.checkLog().join(" | "));
+    await rig.tick(30);
+    await rig.zoom();
+    await rig.tick(30);
+    ok(rig.requests.length === 1 && rig.checkLog().length === 1, "never asked again for this holder, even after an action", String(rig.requests.length));
+    await rig.tick(91);
+    ok(countCalls(rig, "session-end") === 1 && rig.idleLogged(), "the idle backstop ends it", String(countCalls(rig, "session-end")));
+  } finally { rig.restore(); }
+}
+{
+  // Any other non-2xx answers a bare {ok:false} (a 401 during a cookie
+  // refresh; upstream caches it for 30 s): backed off like a transient error,
+  // never a stop.
+  const rig = await checkRig(() => ({ ok: false }));
+  try {
+    await rig.tick(40);
+    ok(rig.requests.length === 2 && countCalls(rig, "session-end") === 0 && !rig.checkLog().some(l => l.includes("stopping")),
+       "a bare {ok:false}: checked at 10 and 30 s, backed off, nothing ended", rig.requests.length + " / " + rig.checkLog().join(" | "));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[40] session check: a session_X holder is asked as cse_X and passes the task boundary's id check");
+{
+  const rig = await checkRig(() => ENDED, { holder: "session_01AbC" });
+  try {
+    await rig.tick(10);
+    ok(rig.requests.join(" ") === "cse_01AbC", "request id cse_01AbC", rig.requests.join(" "));
+    ok(countCalls(rig, "session-end") === 1 && !rig.log.some(l => l.includes("task boundary (session-check): ignored")),
+       "ended: session-end, not ignored", String(countCalls(rig, "session-end")));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[41] session check: a hub-chat (UUID) holder or no holder is never checked");
+for (const holder of ["3f2b6c1e-8d4a-4c3b-9e2f-1a2b3c4d5e6f", undefined]) {
+  const rig = await checkRig(() => ENDED, { holder });
+  try {
+    await rig.tick(40);
+    ok(rig.requests.length === 0 && rig.checkLog().length === 0 && countCalls(rig, "session-end") === 0,
+       "holder " + holder + ": no check, no log", rig.requests.length + " / " + rig.checkLog().join(" | "));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[42] session check: a lock release, a session end or a task boundary stops it");
+{
+  let rig = await checkRig(() => ENDED);
+  try {
+    await rig.tick(5);
+    await rig.ex.__setLockHeld(false);
+    await sleep(30);
+    await rig.tick(30);
+    ok(rig.requests.length === 0, "lock released: no check", String(rig.requests.length));
+    ok(rig.checkLog().filter(l => l.includes("stopped for cse_X (lock released)")).length === 1, "one stop line", rig.checkLog().join(" | "));
+  } finally { rig.restore(); }
+  rig = await checkRig(() => ENDED);
+  try {
+    await rig.tick(5);
+    await rig.ex.__cuTaskBoundary("cse_X", "renderer", "cse_X");
+    await sleep(30);
+    await rig.tick(30);
+    ok(rig.requests.length === 0 && countCalls(rig, "session-end") === 1, "renderer task boundary: no check after it", String(rig.requests.length));
+  } finally { rig.restore(); }
+  rig = await checkRig(() => RUNNING);
+  try {
+    await rig.tick(5);
+    rig.clock.advance(IDLE_MS);                    // idle end (the check reschedules itself on the way)
+    await sleep(30);
+    const n = rig.requests.length;
+    await rig.tick(30);
+    ok(countCalls(rig, "session-end") === 1 && rig.requests.length === n, "idle end: the check stops with it", n + " -> " + rig.requests.length);
+  } finally { rig.restore(); }
+  rig = await checkRig(() => ENDED);
+  try {
+    // A reply that lands after the lock release is dropped.
+    let release;
+    globalThis.__cdbRemoteSessionMode = async () => ({ refresh: (id) => { rig.requests.push(id); return new Promise(r => { release = r; }); } });
+    await rig.tick(10);
+    ok(rig.requests.length === 1 && typeof release === "function", "a check in flight");
+    await rig.ex.__setLockHeld(false);
+    await sleep(30);
+    if (typeof release === "function") release(ENDED);
+    await sleep(30);
+    ok(!rig.log.some(l => l.includes("session check: cse_X ended")) && countCalls(rig, "session-end") === 1,
+       "its late 'ended' is ignored (only the release's session-end)", String(countCalls(rig, "session-end")));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[43] session check: with the stop-sharing latch set, an ended session lifts it through the task boundary");
+{
+  const rig = await checkRig((id, n) => n === 1 ? RUNNING : ENDED);
+  try {
+    rig.stop.on = true;
+    ok((await tryRun(() => rig.ex.moveMouse(5, 5))).startsWith("Screen sharing was stopped"), "latched");
+    await rig.tick(10);
+    ok(rig.requests.length === 1 && countCalls(rig, "session-end") === 0, "running: the latch stays", String(countCalls(rig, "session-end")));
+    await rig.tick(10);
+    ok(rig.requests.length === 2 && countCalls(rig, "session-end") === 1 &&
+       rig.log.some(l => l.includes("stopped-by-user latch cleared (task boundary)")),
+       "ended: session-end and the latch is cleared", rig.log.filter(l => l.includes("latch")).join(" | "));
+    rig.stop.on = false;
+    ok((await tryRun(() => rig.ex.moveMouse(5, 5))) === "no error", "the next action shares again");
+  } finally { rig.restore(); }
+}
+
+console.log("\n[44] session check: no session-state accessor (older patch set) -> never checks; the idle backstop ends at 120 s");
+{
+  const rig = await checkRig(() => ENDED, { noAccessor: true });
+  try {
+    await rig.tick(60);
+    ok(rig.checkLog().length === 0 && rig.clock.pending().every(t => t.ms !== 10000), "no check armed, nothing logged", rig.checkLog().join(" | "));
+    ok(countCalls(rig, "session-end") === 0, "still up at 60 s");
+    await rig.tick(61);
+    ok(countCalls(rig, "session-end") === 1 && rig.idleLogged(), "idle end at 120 s", String(countCalls(rig, "session-end")));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[45] session check: notFound lasts until the lock is released; the same holder on the next lock is checked again");
+{
+  let mode = "notFound";
+  const rig = await checkRig(() => mode === "notFound" ? { ok: false, ended: false, transient: false, notFound: true } : ENDED);
+  try {
+    await rig.tick(10);
+    ok(rig.requests.length === 1, "notFound at 10 s", String(rig.requests.length));
+    await rig.ex.__setLockHeld(false); await sleep(40);
+    mode = "ended";
+    rig.ex.__setLockHeld(true, "cse_X"); await sleep(60);
+    await rig.zoom();
+    await rig.tick(10);
+    ok(rig.requests.length === 2 && countCalls(rig, "session-end") === 2, "a new lock for cse_X: checked, ended",
+       rig.requests.length + " / " + countCalls(rig, "session-end"));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[46] session check: an 'ended' reply that lands after a tool call began (its screens query) is dropped");
+{
+  let release;
+  // No command yet: the lock's session start armed the check, and the zoom's
+  // monitor list is not cached, so it starts with a `screens` query.
+  const rig = await checkRig(() => ENDED, { delays: { screens: 200 }, noCommand: true });
+  try {
+    globalThis.__cdbRemoteSessionMode = async () => ({ refresh: (id) => { rig.requests.push(id); return new Promise(r => { release = r; }); } });
+    await rig.tick(10);
+    ok(rig.requests.length === 1 && typeof release === "function", "a check in flight");
+    const p = tryRun(rig.zoom);                    // screens query first (200 ms), then the zoom
+    await sleep(30);
+    if (typeof release === "function") release(ENDED);
+    const r = await p; await sleep(50);
+    ok(r === "no error" && countCalls(rig, "session-end") === 0 && countCalls(rig, "session-start") === 1,
+       "the zoom runs on its session: no session-end, no second session-start",
+       r + " / end " + countCalls(rig, "session-end") + " / start " + countCalls(rig, "session-start"));
+    globalThis.__cdbRemoteSessionMode = async () => ({ refresh: async (id) => { rig.requests.push(id); return ENDED; } });
+    await rig.tick(10);
+    ok(rig.requests.length === 2 && countCalls(rig, "session-end") === 1, "10 s after the zoom: checked again and ended",
+       rig.requests.length + " / " + countCalls(rig, "session-end"));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[47] session check: a task boundary while a session-start is in flight leaves no check armed");
+{
+  const rig = await checkRig(() => RUNNING);
+  try {
+    await rig.ex.__cuTaskBoundary("cse_X", "renderer", "cse_X"); await sleep(40);
+    const p = tryRun(rig.zoom);                    // lazy session-start (20 ms consent)
+    await sleep(5);
+    await rig.ex.__cuTaskBoundary("cse_X", "renderer", "cse_X");
+    await p; await sleep(80);
+    const n = rig.requests.length;
+    await rig.tick(35);
+    ok(countCalls(rig, "session-end") === 2 && rig.requests.length === n, "after the end: no check runs",
+       "requests +" + (rig.requests.length - n) + " / end " + countCalls(rig, "session-end"));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[48] session check: a backed-off interval does not carry into the next turn");
+{
+  const rig = await checkRig((id, n) => n === 1 ? new Error("net::ERR_NETWORK_CHANGED") : ENDED);
+  try {
+    await rig.tick(30);
+    ok(rig.requests.length === 2 && countCalls(rig, "session-end") === 1, "error at 10 s, ended at 30 s", rig.requests.length + " / " + countCalls(rig, "session-end"));
+    await rig.zoom();                              // next turn: new session
+    await rig.tick(10);
+    ok(rig.requests.length === 3, "the next turn is checked 10 s after its command", String(rig.requests.length));
+  } finally { rig.restore(); }
 }
 
 console.log("\n" + (fail ? `${pass} passed, ${fail} FAILED` : `ALL ${pass} CHECKS PASSED`));

@@ -756,7 +756,7 @@ function _gnomeLatchStopped(why){
   if(_gnomeStoppedByUser)return;
   _gnomeStoppedByUser=!0;_gnomeSessionActive=!1;_gnomeDaemonMayExist=!0;_gnomeMouseHeld=!1;_wlScreensInvalidate();
   globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge: screen sharing was stopped ("+why+"); no new session until the task ends or "+Math.round(CU_PORTAL_IDLE_MS/1000)+" s pass without Computer Use actions");
-  _gnomeIdleArm();
+  _gnomeIdleArm();_gnomeCheckArm();
 }
 // A portal COMMAND answered exit 5: latch and return the error for the model.
 // Not while a start or an end is in flight: those own the flags (a marker left
@@ -844,20 +844,42 @@ function _gnomeIdleFire(){
 // Bracket the bridge spawn of a portal command (not the ensure before it: a
 // start in flight is _gnomeSessionStarting, and the sync one blocks anyway).
 // A command that passed its session checks re-arms the timer as it spawns.
-function _gnomeCmdBegin(){_gnomeCmdsInFlight++;_gnomeIdleArm()}
+function _gnomeCmdBegin(){_gnomeCmdsInFlight++;_gnomeIdleArm();_gnomeCheckArm()}
 function _gnomeCmdEnd(sub,ok){
   _gnomeCmdsInFlight--;
   if(ok&&sub==="left-mouse-down")_gnomeMouseHeld=!0;
   _gnomeHeldDeferred=!1;
-  _gnomeIdleArm();
+  _gnomeIdleArm();_gnomeCheckArm();
 }
 // Any left_mouse_up attempt releases the hold as far as the idle timer is
 // concerned, even one refused or failed before the bridge answers.
 function _gnomeCmdSeen(sub){if(sub==="left-mouse-up")_gnomeMouseHeld=!1}
+// ── Cloud-session check (js/cu_session_check.js, #293) ──
+// A cloud Cowork task never tells main that its turn ended, and upstream holds
+// the lock for up to 12 min after it. While a portal session is up (or the stop
+// latch is set) for a cloud lock holder (session_X / cse_X, from
+// __setLockHeld), the shared poller asks upstream's session-state check 10 s
+// after the last portal command; an ended session goes through __cuTaskBoundary
+// (via __linuxExecutor, so the accessibility tools' wrapper sees it too). Armed
+// next to the idle timer, stopped by every session end; the idle timer stays
+// the backstop. Busy = what defers the idle end (_gnomeIdleFire), held button
+// included; active = a session up or the stop latch set (else it stops). Every
+// bridge call touches it, so a reply in flight never ends a session that a
+// tool call has just started to use. Hub chats (UUID holders) are never checked.
+var _gnomeHolder=null;
+function _gnomeCheckBusy(){var l=_gnomeStoppedByUser;return !!(_gnomeSessionStarting||_gnomeSessionEnding||!l&&(_gnomeCmdsInFlight>0||_gnomeQueriesInFlight>0||_gnomeMouseHeld))}
+function _gnomeCheckArm(){
+  var c=globalThis.__cdbCuSessionCheck,h=_gnomeHolder;
+  if(!c||!h||!(_gnomeSessionActive||_gnomeStoppedByUser))return;
+  c.arm(h,{busy:_gnomeCheckBusy,active:function(){return _gnomeSessionActive||_gnomeStoppedByUser},onEnded:function(){var ex=globalThis.__linuxExecutor;return ex&&typeof ex.__cuTaskBoundary==="function"?ex.__cuTaskBoundary(h,"session-check",h):void 0}});
+}
+function _gnomeCheckStop(why){var c=globalThis.__cdbCuSessionCheck;if(c)c.stop(why)}
+function _gnomeCheckTouch(){var c=globalThis.__cdbCuSessionCheck;if(c&&typeof c.touch==="function")c.touch()}
 var _gnomePortalCmds={"zoom":1,"screenshot":1,"pointer-move":1,"pointer-click":1,"pointer-scroll":1,"pointer-drag":1,"left-mouse-down":1,"left-mouse-up":1,"key-sequence":1,"type":1,"hold-key":1};
 function _wlBridgeCall(args){
   if(_tgt&&_tgt.refuse)throw _tgtErr();
   var b=_wlBridge();if(!b)throw new Error("no covered Wayland bridge available");
+  if(b.name==="gnome-portal-bridge")_gnomeCheckTouch();
   var portalCmd=b.name==="gnome-portal-bridge"&&_gnomePortalCmds[args[0]]===1;
   // A portal command with no portal session behind it can only fail. Running it
   // anyway costs another full blocking timeout, so refuse while latched down.
@@ -895,6 +917,7 @@ function _wlBridgeCall(args){
 async function _wlBridgeCallAsync(args,timeoutOverrideMs){
   if(_tgt&&_tgt.refuse)throw _tgtErr();
   var b=_wlBridge();if(!b)throw new Error("no covered Wayland bridge available");
+  if(b.name==="gnome-portal-bridge")_gnomeCheckTouch();
   var portalCmd=b.name==="gnome-portal-bridge"&&_gnomePortalCmds[args[0]]===1;
   if(portalCmd){
     // This path can await the consent dialog, so a vanished daemon is simply
@@ -941,9 +964,9 @@ function _gnomeEnsureSessionSync(){
   var bin=_gnomeBridgeBin();if(!bin)return !1;
   if(!_gnomeExitHooked){_gnomeExitHooked=!0;process.once("exit",function(){if(_gnomeSessionActive||_gnomeDaemonMayExist){try{_cp.execFileSync(_gnomeBridgeBin(),["session-end"],{timeout:5000,stdio:"ignore"})}catch(e){}}})}
   _gnomeDaemonMayExist=!0;
-  try{_bridge(bin,["session-start"],GNOME_SYNC_START_MS);_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session started (sync backstop)");return !0}
+  try{_bridge(bin,["session-start"],GNOME_SYNC_START_MS);_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();_gnomeCheckArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session started (sync backstop)");return !0}
   catch(e){
-    if(_gnomeAlreadyActive(e)){_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session already active (sync backstop); using it");return !0}
+    if(_gnomeAlreadyActive(e)){_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();_gnomeCheckArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session already active (sync backstop); using it");return !0}
     // Closed before it became ready: a stop, not a fault - latch, no cooldown, no retry.
     if(e&&e.__cdbStoppedByUser){_gnomeLatchStopped("sync backstop session-start exit 5");return !1}
     // No restore token (the user left "Remember this selection" unticked, or
@@ -1129,9 +1152,9 @@ function _gnomeAlreadyActive(e){return /already active/i.test(String(e&&(e.messa
 async function _gnomeSessionStart(){
   var bin=_gnomeBridgeBin();if(!bin)return;
   _gnomeDaemonMayExist=!0;
-  try{await _bridgeAsync(bin,["session-start"],GNOME_SESSION_START_MS);_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session started")}
+  try{await _bridgeAsync(bin,["session-start"],GNOME_SESSION_START_MS);_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();_gnomeCheckArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session started")}
   catch(e){
-    if(_gnomeAlreadyActive(e)){_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session already active; using it");return}
+    if(_gnomeAlreadyActive(e)){_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();_gnomeCheckArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session already active; using it");return}
     // The new daemon was closed before it became ready (the user stopped
     // sharing, or the desktop ended the session): latch for this lock instead
     // of the cooldown, so nothing starts it again until the lock ends.
@@ -1165,6 +1188,7 @@ async function _gnomeSessionEnd(why){
   // Every end cancels the idle timer and drops a held button (the daemon that
   // pressed it goes away); the next session arms the timer afresh.
   _gnomeIdleCancel();_gnomeMouseHeld=!1;_gnomeHeldDeferred=!1;
+  _gnomeCheckStop(why||"lock released");
   if(_gnomeSessionEnding)return _gnomeSessionEnding;
   var bin=_gnomeBridgeBin();
   // Snapshot BEFORE clearing: the skip below has to ask whether a session was up
@@ -1195,8 +1219,9 @@ async function _gnomeSessionEnd(why){
     _gnomeSessionActive=!1;
     try{await _bridgeAsync(bin,["session-end"],15000);_gnomeDaemonMayExist=!1}catch(e){}
     _gnomeSessionActive=!1;
-    // A start that resolved while we waited armed the timer; nothing is up now.
-    _gnomeIdleCancel();
+    // A start that resolved while we waited armed the timer and the session
+    // check; nothing is up now.
+    _gnomeIdleCancel();_gnomeCheckStop(why||"lock released");
     // The stop the user made applies no longer: the lock or the task is over,
     // or the idle time passed.
     _gnomeStoppedClear(why||"lock released");
@@ -1726,7 +1751,13 @@ globalThis.__linuxExecutor={
   // and chain .catch() — so this MUST return a Promise, hence async). On GNOME
   // this scopes the gnome-portal-bridge portal session (one consent dialog per
   // CU session; dialog-free on GNOME 46+ via restore token) to the lock.
-  async __setLockHeld(held){
+  async __setLockHeld(held,holder){
+    // The lock holder names the cloud session the session check asks about
+    // (4b passes upstream's exclusiveHolder; 4b.2 releases without one).
+    _gnomeHolder=held&&typeof holder==="string"?holder:null;
+    if(!held)_gnomeCheckStop("lock released");
+    // A notFound holder is checked again on the next lock.
+    if(globalThis.__cdbCuSessionCheck&&typeof globalThis.__cdbCuSessionCheck.forget==="function")globalThis.__cdbCuSessionCheck.forget();
     // The background-display setting is re-latched on every lock acquire (a
     // fresh check of the display), and before every tool call (_tgtSync). In
     // target mode a GNOME portal session left from an earlier desktop lock
@@ -1743,7 +1774,7 @@ globalThis.__linuxExecutor={
     // transitions cancel the idle timer; a session that is up for the new lock
     // counts its idle time from here.
     _gnomeIdleCancel();
-    if(held){_gnomeStoppedClear("new lock");await _gnomeEnsureSession();if(_gnomeSessionActive&&!_gnomeIdleTimer)_gnomeIdleArm()}else await _gnomeSessionEnd();
+    if(held){_gnomeStoppedClear("new lock");await _gnomeEnsureSession();if(_gnomeSessionActive&&!_gnomeIdleTimer)_gnomeIdleArm();_gnomeCheckArm()}else await _gnomeSessionEnd();
   },
   // Task-end event: upstream's renderer IPC releaseRemoteCuLock (a cloud
   // session's running->idle edge, Stop, archive, delete), forwarded by
@@ -1755,11 +1786,13 @@ globalThis.__linuxExecutor={
   // Then it does what the idle expiry does: end the portal session and lift a
   // stop-sharing latch. Nothing up: silent, it fires on every turn end.
   async __cuTaskBoundary(id,source,holder){
+    globalThis.__cdbDiag("[claude-cu] task boundary ("+source+"): received id="+id+" holder="+holder+" active="+_gnomeSessionActive+" starting="+_gnomeSessionStarting+" daemonMayExist="+_gnomeDaemonMayExist+" stoppedByUser="+_gnomeStoppedByUser+" gnomeCovered="+_isGnomeCovered());
     if(!_isGnomeCovered()||!_gnomeBridgeBin())return;
     if(!_gnomeSessionActive&&!_gnomeSessionStarting&&!_gnomeDaemonMayExist&&!_gnomeStoppedByUser)return;
     function key(v){return String(v).toLowerCase().replace(/^(?:session_|cse_)/,"")}
     if(id!=null&&holder!=null&&key(id)!==key(holder)){globalThis.__cdbDiag("[claude-cu] task boundary ("+source+"): ignored, it names another session than the Computer Use lock holder");return}
     globalThis.__cdbDiag("[claude-cu] task boundary ("+source+"): ending the portal session");
+    _gnomeCheckStop("task boundary");
     await _gnomeSessionEnd("task boundary");
   },
   // Background display gate, awaited by our tool handler (cu_handler_injection.js)

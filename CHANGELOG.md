@@ -10,6 +10,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - **Safe by construction.** The desktop accessibility service is switched on only while a Computer Use session needs it and restored afterwards; a running screen reader is never touched; password and terminal text is never read. Every missing piece returns a plain "unavailable" result and normal Computer Use is unaffected.
 - **Coverage.** All four bundled bridges (X11, wlroots, KDE, GNOME) carry the new `ax-enable`, `ax-restore`, `ax-find` and `ax-action` commands (optional additions to the bridge contract, still v1). GTK, Qt, Firefox and LibreOffice apps expose their controls; Electron and Chromium apps need `--force-renderer-accessibility`.
 
+### Screen sharing ends with the cloud Cowork task (#293)
+
+- **On GNOME and KDE Wayland the Computer Use screen-sharing session now ends when the task ends.** The app checks the session's state every 10 seconds while screen sharing is up and ends it within about 10 seconds of the turn end; the page's release and Claude's `computer_release_lock` still end it immediately, and 2 minutes without Computer Use actions stays the fallback.
+
 ## 2026-10-30
 
 ### Tray icon follows the theme again, with an "always white" switch (#305)

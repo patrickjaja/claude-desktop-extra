@@ -274,6 +274,7 @@ async function refreshTargetSetting() {
   applyTargetSetting()
 }
 async function execBridge(command, args, opts = {}) {
+  if (command !== 'session-end' && command !== 'session-start') touchSessionCheck()
   if (command !== 'session-end') await refreshTargetSetting()
   if (targetRestartMessage && command !== 'session-end') throw new Error(targetRestartMessage)
   if (!KWIN_SESSION_COMMANDS.has(command)) return execBridgeOnce(command, args, opts)
@@ -390,6 +391,7 @@ async function execBridgeJson(command, args, opts) {
 }
 
 async function ensureBridgeSession() {
+  touchSessionCheck()
   await refreshTargetSetting()
   if (targetRestartMessage) throw new Error(targetRestartMessage)
   if (!bridgeSessionActive) {
@@ -450,10 +452,56 @@ function armIdleTimer() {
 }
 
 // A Computer Use action happened: restart the countdown and the held-button
-// deferral.
+// deferral, and the cloud-session check.
 function touchIdleTimer() {
   idleHeldDeferred = false
   armIdleTimer()
+  armSessionCheck()
+}
+
+// Cloud-session check (js/cu_session_check.js, issue #293). A cloud Cowork
+// task never tells main that its turn ended, and upstream holds the lock for up
+// to 12 min after it. While the bridge session is up (or the stop latch is set)
+// for a cloud lock holder (session_X / cse_X, from __setLockHeld), the shared
+// poller asks upstream's session-state check 10 s after the last Computer Use
+// action; an ended session goes through __cuTaskBoundary. Armed with the idle
+// timer on activity, stopped by every session end; the idle timer stays the
+// backstop. Every tool call touches it on entry (before its first await), so a
+// reply in flight never ends a session a command has started to use. Hub chats
+// (UUID holders) are never checked.
+let lockHolder = null
+let sessionCheckExecutor = null
+
+// Busy = what defers the idle end (onIdleTimer), a held button included.
+function sessionCheckBusy() {
+  return !!(sessionStartInFlight || sessionStopPromise
+    || (!stoppedByUser && (portalCommandsInFlight > 0 || mouseButtonHeld)))
+}
+
+function armSessionCheck() {
+  const check = globalThis.__cdbCuSessionCheck
+  const holder = lockHolder
+  if (!check || !holder || !bridgeSessionActive || !bridgeSessionMayBeUp()) return
+  check.arm(holder, {
+    busy: sessionCheckBusy,
+    // No session up and no stop latch: nothing to end, the check stops.
+    active: () => bridgeSessionActive && bridgeSessionMayBeUp(),
+    // Through __linuxExecutor when it is set, so the accessibility tools'
+    // wrapper (js/cu_ax_tools.js) sees the task boundary too.
+    onEnded: () => {
+      const ex = globalThis.__linuxExecutor
+      const target = ex && typeof ex.__cuTaskBoundary === 'function' ? ex : sessionCheckExecutor
+      return target?.__cuTaskBoundary(holder, 'session-check', holder)
+    },
+  })
+}
+
+function stopSessionCheck(reason) {
+  globalThis.__cdbCuSessionCheck?.stop(reason)
+}
+
+function touchSessionCheck() {
+  globalThis.__cdbCuSessionCheck?.touch?.()
 }
 
 function bridgeSessionMayBeUp() {
@@ -500,6 +548,7 @@ function clearStoppedByUser(reason) {
 // Never rejects.
 function endBridgeSessionKeepLock(reason) {
   clearIdleTimer()
+  stopSessionCheck(reason)
   overlayNeedsReapply = true
   // The daemon goes away with the session, and the button with it.
   mouseButtonHeld = false
@@ -530,6 +579,8 @@ function endBridgeSessionKeepLock(reason) {
     if (sessionStopPromise === stopPromise) sessionStopPromise = null
     // A session-start after this removes the bridge's marker in any case.
     clearStoppedByUser(reason)
+    // A command in flight during the end re-armed the check on its way out.
+    stopSessionCheck(reason)
   })
   sessionStopPromise = stopPromise
   return stopPromise
@@ -584,6 +635,7 @@ async function startBridgeSession() {
 async function stopBridgeSession() {
   bridgeSessionActive = false
   clearIdleTimer()
+  stopSessionCheck('lock released')
   mouseButtonHeld = false
   if (sessionStopPromise) {
     return sessionStopPromise
@@ -1731,8 +1783,15 @@ export function createLinuxExecutor(opts = {}) {
       hostBundleId,
     },
 
-    async __setLockHeld(isHeld) {
-      debugLog('__setLockHeld', { isHeld })
+    async __setLockHeld(isHeld, holder) {
+      debugLog('__setLockHeld', { isHeld, holder })
+      // The lock holder names the cloud session the session check asks about
+      // (patch 4b passes upstream's exclusiveHolder; 4b.2 releases without one).
+      lockHolder = isHeld && typeof holder === 'string' ? holder : null
+      sessionCheckExecutor = this
+      if (!isHeld) stopSessionCheck('lock released')
+      // A notFound holder is checked again on the next lock.
+      globalThis.__cdbCuSessionCheck?.forget?.()
       if (isHeld) {
         try { if (typeof globalThis.__cuTargetSig === 'function') targetSigLast = await globalThis.__cuTargetSig() } catch {}
         applyTargetSetting()
@@ -1775,6 +1834,7 @@ export function createLinuxExecutor(opts = {}) {
           return
         }
         globalThis.__cdbDiag(`[linux-executor] task boundary (${source}): ending the bridge session`)
+        stopSessionCheck('task boundary')
         await endBridgeSessionKeepLock(`task boundary (${source})`)
       } catch (error) {
         globalThis.__cdbDiag('[linux-executor] task boundary failed', error)

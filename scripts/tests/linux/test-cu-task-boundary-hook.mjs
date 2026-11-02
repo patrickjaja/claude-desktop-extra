@@ -27,6 +27,16 @@
 //   [4] the patched handler, evaluated in a vm sandbox: the hook receives the
 //       args before upstream's call runs; upstream's call always runs, also when
 //       the hook throws or rejects or is missing; off Linux nothing is called.
+//   [5] sub-patch 4b hands the new holder (`__setLockHeld?.(!0,<holder>)`) and
+//       sub-patch 4f exposes upstream's remote-session status accessor as
+//       globalThis.__cdbRemoteSessionMode on Linux only (#293): the pristine
+//       accessor and the `ended` expression of refreshRemoteChromeSessionMode
+//       (with worker_status==="idle") are pinned, the injection lands once
+//       right after the accessor, is a positive end-state marker (a bundle
+//       missing only it is refused as half-patched), and passes node --check.
+//       4.4212.0: accessor `ner` in index.chunk-CvhJZ02X.js, the status check
+//       in index.chunk-CL5khZ71.js; its result keys are ok / transient /
+//       notFound on failure and ok / ended / coworkRemote / ... on success.
 // Sections SKIP when the binary or the extract is missing. CDB_CU_PATCH_BIN
 // points at another compiled binary (e.g. master's, to see the harness fail).
 //
@@ -85,6 +95,17 @@ const PATCHED_HANDLER_RE =
 const LOCK_DECL_RE = /(?<![\w$.])([\w$]+)=new class extends [\w$]+(?:\.[\w$]+)*\{/g;
 const HOLDER_GETTER = "get currentHolder(){return this.exclusiveHolder}";
 const SPLIT_RE = /\n\/\*__CDB_SPLIT__([^*\n]+?)__\*\/\n/;
+// 4b / 4f (#293).
+const ACQUIRE_RE = /return this\.exclusiveHolder=([\w$]+),(?:this\.[\w$]+\+\+,)*/;
+const LOCK_HELD_TRUE_RE = /__setLockHeld\?\.\(!0,([\w$]+)\)\.catch\?\.\(/g;
+const ACCESSOR_RE =
+  /async function ([\w$]+)\(\)\{([^{}]{0,400})return\{resolve:([\w$]+)\.resolveRemoteChromeSessionMode,refresh:\3\.refreshRemoteChromeSessionMode\}\}/g;
+const ACCESSOR_PATCHED_RE =
+  /async function ([\w$]+)\(\)\{[^{}]{0,400}return\{resolve:([\w$]+)\.resolveRemoteChromeSessionMode,refresh:\2\.refreshRemoteChromeSessionMode\}\}(process\.platform==="linux"&&\(globalThis\.__cdbRemoteSessionMode=([\w$]+)\);)/g;
+// 4.4212.0: u=o.status==="archived"||o.status==="failed"||o.worker_status==="idle"||
+//   o.worker_status==="running"&&o.connection_status==="disconnected"
+const ENDED_RE =
+  /(?<![\w$.])([\w$]+)=([\w$]+)\.status===(["`])archived\3\|\|\2\.status===\3failed\3\|\|\2\.worker_status===\3idle\3\|\|\2\.worker_status===\3running\3&&\2\.connection_status===\3disconnected\3[,;]/g;
 
 function splitParts(blob) {
   const pieces = blob.split(SPLIT_RE);
@@ -376,6 +397,104 @@ if (patchMissing || !existsSync(stub)) {
         check(`${platform}: lock export not read`, h.holderReads(), 0);
       }
     }
+
+    console.log("\n[5] 4b hands the holder, 4f exposes the session check accessor (#293)");
+    // Pristine side.
+    const acq = ACQUIRE_RE.exec(blob) || [];
+    check("pristine lock acquire assigns a holder", acq.length > 1, true);
+    check("pristine: no __setLockHeld yet", count(blob, "__setLockHeld"), 0);
+    const accessors = [...blob.matchAll(ACCESSOR_RE)];
+    check("pristine accessor (resolve/refresh pair) present once", accessors.length, 1);
+    const accName = accessors[0]?.[1];
+    check("pristine accessor body require()s the session module", /require\(/.test(accessors[0]?.[2] || ""), true);
+    check("pristine: no __cdbRemoteSessionMode yet", count(blob, "__cdbRemoteSessionMode"), 0);
+    const statusIdx = pristine.bodies.findIndex((b) => /refreshRemoteChromeSessionMode:\(\)=>[\w$]+/.test(b));
+    check("chunk exporting refreshRemoteChromeSessionMode found", statusIdx >= 0, true);
+    const statusPart = statusIdx >= 0 ? pristine.bodies[statusIdx] : "";
+    const endedM = [...statusPart.matchAll(ENDED_RE)];
+    check('`ended` expression (worker_status==="idle" ...) present once', endedM.length, 1);
+    const endedVar = endedM[0]?.[1] || "\u0000";
+    const esc = (x) => x.replace(/\$/g, "\\$");
+    check(
+      "success result {ok:!0,...,ended:<that expression>,coworkRemote:...}",
+      countRe(statusPart, new RegExp("\\{ok:!0,[^{}]*?,ended:" + esc(endedVar) + ",coworkRemote:")),
+      1
+    );
+    check("transient result {ok:!1,transient:!0} present", count(statusPart, "{ok:!1,transient:!0}") >= 1, true);
+    check("notFound result {ok:!1,notFound:!0} present", count(statusPart, "{ok:!1,notFound:!0}") >= 1, true);
+    console.log(
+      `  (accessor ${accName} in ${pristine.names[pristine.bodies.findIndex((b) => b.includes("refresh:" + (accessors[0]?.[3] || "\u0000") + ".refreshRemoteChromeSessionMode}}"))]}, status check in ${pristine.names[statusIdx]}, ended = ${endedVar})`
+    );
+
+    // Patch log.
+    check(
+      "4b reported [OK] (hands the holder)",
+      /\[OK\] 4b cu lock acquire: start bridge session on Linux, hand over the holder \(1 match\)/.test(r1.out),
+      true
+    );
+    check(
+      "4f reported [OK] with the accessor name (1 match)",
+      new RegExp(
+        "\\[OK\\] 4f session check accessor: " + esc(accName || "\u0000") +
+          " exposed as globalThis\\.__cdbRemoteSessionMode on Linux \\(1 match\\)"
+      ).test(r1.out),
+      true
+    );
+
+    // Patched side: 4b.
+    const held = [...patched.matchAll(LOCK_HELD_TRUE_RE)];
+    check("__setLockHeld?.(!0,<holder>) present once", held.length, 1);
+    check("the holder passed is the one acquire() assigns", held[0]?.[1], acq[1]);
+    check("no holder-less __setLockHeld?.(!0) left", count(patched, "__setLockHeld?.(!0)"), 0);
+    check("release still __setLockHeld?.(!1) (twice)", count(patched, "__setLockHeld?.(!1)"), 2);
+
+    // Patched side: 4f.
+    check("globalThis.__cdbRemoteSessionMode= present once", count(patched, "globalThis.__cdbRemoteSessionMode="), 1);
+    const exposed = [...patched.matchAll(ACCESSOR_PATCHED_RE)];
+    check("assignment sits right after the accessor", exposed.length, 1);
+    check("assigned name is the accessor itself", exposed[0]?.[4], accName);
+    check("accessor named in the assignment is the declared one", exposed[0]?.[1], accName);
+    const accIdx = after.bodies.findIndex((b) => b.includes("globalThis.__cdbRemoteSessionMode="));
+    if (accIdx >= 0 && accIdx !== pIdx) {
+      const f = join(scratch, after.names[accIdx]);
+      writeFileSync(f, after.bodies[accIdx]);
+      let ok = true;
+      try {
+        execFileSync("node", ["--check", f], { stdio: "pipe" });
+      } catch {
+        ok = false;
+      }
+      check(`node --check ${after.names[accIdx]}`, ok, true);
+    } else {
+      // Same chunk as the handler: node --check ran on it in [3].
+      check("accessor chunk located (node --check'ed in [3])", accIdx >= 0, true);
+    }
+    // The injected statement: assigns on Linux only.
+    if (exposed[0]) {
+      for (const [platform, want] of [
+        ["linux", "function"],
+        ["darwin", "undefined"],
+        ["win32", "undefined"],
+      ]) {
+        const ctx = { process: { platform } };
+        vm.createContext(ctx);
+        vm.runInContext(`async function ${accName}(){return 1}` + exposed[0][3], ctx);
+        check(`${platform}: __cdbRemoteSessionMode is ${want}`, typeof ctx.__cdbRemoteSessionMode, want);
+      }
+    }
+
+    // Idempotency is a positive end state: the second run above saw 4f's marker;
+    // a bundle that has everything but 4f's injection is refused, not re-patched.
+    const missing4f = join(scratch, "missing_4f.js");
+    writeFileSync(missing4f, exposed[0] ? patched.replace(exposed[0][3], "") : patched);
+    const r3 = spawnSync(PATCH_BIN, [missing4f], { encoding: "utf8" });
+    const out3 = String(r3.stdout || "") + String(r3.stderr || "");
+    check("bundle without 4f's injection: patch exits non-zero", r3.status !== 0, true);
+    check(
+      "bundle without 4f's injection: refused as half-patched, missing 4f",
+      /half-patched input: .*missing: 4f session check accessor/.test(out3),
+      true
+    );
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

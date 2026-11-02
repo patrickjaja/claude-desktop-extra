@@ -52,13 +52,14 @@ Each brief carries:
 
 **Reproduce without the user's running app.** The user's Claude is in use: never signal its processes, and identify yours by your own `--user-data-dir`.
 - **Renderer, main-process or Electron behaviour:** run on a private Xvfb display with `env -i` and a throwaway HOME, XDG_RUNTIME_DIR, CLAUDE_CONFIG_DIR and `--user-data-dir`. Use the installed binary or a scratch patched tree. A hung renderer is simulated with `SIGSTOP` on the main renderer.
+- **A logged-in scratch instance** (cloud session timing, anything that needs the account): copy `~/.config/Claude` minus logs, caches, vm_bundles and `bridge-state.json` into a 0700 scratch dir and use it as `--user-data-dir`, pass the real `DBUS_SESSION_BUS_ADDRESS` so libsecret can decrypt the cookies, and delete the copy afterwards. `--remote-debugging-port` makes the app refuse to start; append a probe to the scratch asar's `index.js` instead (wrap main-side hooks, `executeJavaScript` into the claude.ai page every few seconds). On Xvfb the CU overlay renders solid black, so the model never clicks anything: good for lock, turn-end and API timing, useless for click accuracy. Upstream re-shows the session page when the lock is released, so a 'page not mounted' run has to re-assert the home after that.
 - **Wayland, wlroots or fractional scale:** use headless sway per `/test-native`, and run the bridge CLI directly against it. The Wayland socket path must stay under 108 bytes, so use a short `mktemp -d /tmp/xx.XXXX` runtime dir rather than the scratchpad.
 - **GNOME portal (gnome-portal-bridge) without a VM:** headless nested GNOME on the host (`dbus-run-session -- gnome-shell --wayland --no-x11 --devkit --virtual-monitor WxH`, private XDG_RUNTIME_DIR, own xdg-desktop-portal + pipewire), with the consent dialog and "Stop sharing" driven over accessibility/Shell.Eval. Good for bridge-level session tests; it cannot host a logged-in Claude.
 - **VMs:** allowed, but never start Cowork inside a VM. Turn off the guest's idle lock before handing a VM to a worker: auto mode rightly refuses to get past a lock screen, so a locked VM stalls the run.
 
 **Session types.** Upstream's Computer Use lock lives differently per session type: the Code tab and local Cowork release it after every turn, cloud Cowork only after an idle sweep or Stop. Anything of ours tied to the lock (bridge sessions, latches) must be checked against each type, and against the reporter's type from their first comment.
 
-**Verify before presenting.** Spot-check a worker's key upstream claim in the pristine bundle yourself before calling it the root cause; the maintainer will ask whether it was audited, and whether there is an event to hook instead of a timer.
+**Verify before presenting.** Spot-check a worker's key upstream claim in the pristine bundle yourself before calling it the root cause; the maintainer will ask whether it was audited, and whether there is an event to hook instead of a timer. When a report says one of our hooks never fired, check first whether the hook logs on entry: a silent early return (#293 `__cuTaskBoundary`) makes 'never arrived' and 'arrived too late' look the same. Reading the remote claude.ai SPA needs the Chrome worker: fetch chunks from the page origin with `fetch()` in javascript_tool (host curl gets 403), and expect its output filter to block raw minified code (swap `= & ; ?` for other characters to get snippets through).
 
 **Fallback paths.** When a backend has a fallback path, check which path the reporter's data came from before blaming the primary one. In #298 the bridge was correct and the Electron fallback was not.
 
@@ -85,6 +86,8 @@ Ask the real design forks with AskUserQuestion: one question per fork, with the 
 - `make` does not track `js/`. After a JS edit, `touch` the embedding `.nim` file before `make`.
 - Patch work follows AGENTS.md strictness: every sub-patch must apply, idempotency checks positive end state, `[\w$]+` anchors.
 - A new harness must fail against the old code. Ask for the before/after count.
+- A hook on an upstream event logs one line on entry, before any early return, so an empty grep later means the event never arrived.
+- A harness that runs the compiled patch is only valid after `make` ran AFTER the last `js/` edit (the binary embeds the JS); reviewers rebuild in a scratch copy before trusting counts.
 - A harness must fire the trigger upstream really uses. If it only calls our own injected hook (e.g. the CU lock hook), it misses upstream paths that bypass that hook: #300 passed ~400 harness cases and a private-display rig, then failed in the first real Code-tab turn.
 - Live checks run on scratch trees only.
 
@@ -145,11 +148,12 @@ Use the `/comment` voice for every comment:
 - no internals and no speculation
 - for a new UI feature, attach screenshots with a rectangle around what is new. The maintainer wants them as attachments of the comment itself. `gh` cannot upload those, so a worker uses claude-in-chrome with the maintainer's GitHub session to drag them into the comment editor. Release assets (`gh release upload` plus embedded URLs) are only a fallback; ask before using them. Check every PNG for personal data (names, avatar, sidebar, paths, other windows) before uploading.
 
-**Asking for more data.** Give one action plus one copy-paste command, and end with "empty output is fine too" when that is true. Never ask them to look for strings themselves. Never explain what each line would mean. `claude-desktop --diagnose` is the default collector, but never ask for it again when the thread already has one. Use a targeted `grep` only when the evidence is not in `--diagnose`, which does not include `claude-patches.log`.
+**Asking for more data.** Only after local reproduction is exhausted: the maintainer dislikes round-trips with reporters, and a logged-in scratch instance (Phase 2) answers most timing and lifecycle questions here. Give one action plus one copy-paste command, and end with "empty output is fine too" when that is true. Never ask them to look for strings themselves. Never explain what each line would mean. `claude-desktop --diagnose` is the default collector, but never ask for it again when the thread already has one. Use a targeted `grep` only when the evidence is not in `--diagnose`, which does not include `claude-patches.log`.
 
 **After posting:**
-- Close the fixed issues with `--reason completed`.
-- Keep an issue open only if its comment waits on reporter data.
+- Close fixed BUG issues with `--reason completed`.
+- A FEATURE REQUEST stays open: once the tag exists, EDIT the fix comment (never add a second one) so it links the release and asks whether they have time to test it and report back, naming `claude-desktop --diagnose` as the thing to attach for anything that fails. Close it once they confirm or go quiet.
+- Keep a bug issue open only if its comment waits on reporter data.
 - Answer follow-up questions from reporters in one or two lines.
 
 ## Phase 8 - self-improve (always, last step)
@@ -169,3 +173,4 @@ Before reporting done, update **this file**: `.claude/skills/check-issue/SKILL.m
 - 2026-10-26: when a renderer is resumed after upstream's crash request, it executes the queued crash. Do not make "a resumed renderer must survive" an acceptance criterion.
 - 2026-10-30 (#305): `nativeTheme.shouldUseDarkColors` follows Claude's own Appearance setting (upstream sets `themeSource` from it), not the desktop or panel. Anything "theme-aware" on Linux is only desktop-aware with Appearance = System; offer a switch for the mismatch instead of guessing the panel color.
 - 2026-10-30 (#305): when a refresh hook calls into upstream code, call upstream's own wrapper (crash containment, retries) rather than the inner function it wraps.
+- 2026-11-02 (#293 round 8): upstream main has no task-end signal for cloud Cowork sessions; the page's `releaseRemoteCuLock` is view-scoped and the model's `computer_release_lock` is optional. The server's `worker_status` (upstream's own `refreshRemoteChromeSessionMode`, cookie-authenticated) flips to idle with the `result` event; poll it instead of guessing with a timer.
