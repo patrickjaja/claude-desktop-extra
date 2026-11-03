@@ -1698,7 +1698,7 @@ jobs:
                   nixpkgs.hostPlatform = "x86_64-linux";
                   programs.claude-desktop-extra.tpmAccess.enable = enable;
                   boot.loader.grub.enable = false;
-                  fileSystems."/".device = "none";
+                  fileSystems."/" = { device = "none"; fsType = "tmpfs"; };
                   system.stateVersion = "25.05";
                 } ];
               };
