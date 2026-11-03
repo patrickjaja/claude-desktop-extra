@@ -1751,7 +1751,13 @@ async function checkRig(results, opts = {}) {
   if (!opts.noCommand) await rig.zoom();
   // Virtual seconds, one at a time, letting the async check settle in between.
   rig.tick = async (secs) => { for (let i = 0; i < secs; i++) { rig.clock.advance(1000); for (let j = 0; j < 8; j++) await new Promise(r => setImmediate(r)); } await sleep(20); };
-  rig.checkLog = () => rig.log.filter(l => l.includes("[claude-cu] session check:"));
+  // The poll/stop lines; the arm decisions (armed / not armed) have their own list.
+  const isDecision = (l) => /session check: (armed for |not armed )/.test(l);
+  rig.checkLog = () => rig.log.filter(l => l.includes("[claude-cu] session check:") && !isDecision(l));
+  // The rig prefixes diag lines with "DIAG ": the new-line helpers return the bare text.
+  const bare = (l) => l.replace(/^DIAG /, "");
+  rig.decisionLog = () => rig.log.filter(isDecision).map(bare);
+  rig.lockLog = () => rig.log.map(bare).filter(l => /^\[claude-cu\] lock (taken by|released)/.test(l));
   const restore = rig.restore;
   rig.restore = () => { sc._seam(); delete globalThis.__cdbRemoteSessionMode; restore(); };
   return rig;
@@ -2026,6 +2032,127 @@ console.log("\n[48] session check: a backed-off interval does not carry into the
     await rig.tick(10);
     ok(rig.requests.length === 3, "the next turn is checked 10 s after its command", String(rig.requests.length));
   } finally { rig.restore(); }
+}
+
+// ── #293 round 9: the lock and the session check are observable ──
+// Every line goes through __cdbDiag (rig.log). The triggers are the real ones:
+// __setLockHeld (the lock hook), portal commands (rig.zoom arms the check) and
+// the poll replies.
+const NOT_ARMED_NONE = "[claude-cu] session check: not armed (no Computer Use lock holder; the portal session was started outside the lock)";
+
+console.log("\n[49] diagnostics: lock taken/released lines carry the holder, on entry; one 'armed' line per lock");
+{
+  const rig = await checkRig(() => RUNNING);
+  try {
+    await rig.zoom(); await rig.zoom();
+    ok(rig.lockLog().length === 1 && rig.lockLog()[0] === "[claude-cu] lock taken by cse_X", "lock taken by cse_X, once", rig.lockLog().join(" | "));
+    ok(rig.decisionLog().length === 1 && rig.decisionLog()[0] === "[claude-cu] session check: armed for cse_X",
+       "armed for cse_X logged once although every command arms (dedup)", rig.decisionLog().join(" | "));
+    await rig.ex.__setLockHeld(false); await sleep(40);
+    ok(rig.lockLog().length === 2 && rig.lockLog()[1] === "[claude-cu] lock released", "lock released", rig.lockLog().join(" | "));
+    rig.ex.__setLockHeld(true, "cse_X"); await sleep(60);
+    await rig.zoom(); await rig.zoom();
+    ok(rig.lockLog()[2] === "[claude-cu] lock taken by cse_X", "the same holder taken again is logged again", rig.lockLog().join(" | "));
+    ok(rig.decisionLog().length === 2, "the dedup reset on release: armed for cse_X logs again for the new lock", rig.decisionLog().join(" | "));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[50] diagnostics: lock taken without a holder is 'none'");
+{
+  const rig = await checkRig(() => RUNNING, { holder: undefined, noCommand: true });
+  try {
+    ok(rig.lockLog()[0] === "[claude-cu] lock taken by none", "lock taken by none", rig.lockLog().join(" | "));
+    await rig.ex.__setLockHeld(false); await sleep(30);
+    ok(rig.lockLog()[1] === "[claude-cu] lock released", "released", rig.lockLog().join(" | "));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[51] diagnostics: each not-armed reason is logged once per (holder, reason), also with no holder");
+{
+  let rig = await checkRig(() => RUNNING, { holder: undefined });
+  try {
+    await rig.zoom(); await rig.zoom(); await rig.tick(15);
+    ok(rig.decisionLog().length === 1 && rig.decisionLog()[0] === NOT_ARMED_NONE, "no holder: one 'not armed' line, deduplicated over every command",
+       rig.decisionLog().join(" | "));
+    ok(rig.requests.length === 0, "and nothing is checked", String(rig.requests.length));
+    await rig.ex.__setLockHeld(false); await sleep(30);
+    rig.ex.__setLockHeld(true); await sleep(60); await rig.zoom();
+    ok(rig.decisionLog().filter(l => l === NOT_ARMED_NONE).length === 2, "a new lock without a holder logs again", rig.decisionLog().join(" | "));
+  } finally { rig.restore(); }
+  const uuid = "3f2b6c1e-8d4a-4c3b-9e2f-1a2b3c4d5e6f";
+  rig = await checkRig(() => RUNNING, { holder: uuid });
+  try {
+    await rig.zoom(); await rig.zoom();
+    ok(rig.decisionLog().length === 1 && rig.decisionLog()[0] === "[claude-cu] session check: not armed (holder " + uuid + " is not a cloud session)",
+       "UUID holder: not a cloud session, once", rig.decisionLog().join(" | "));
+  } finally { rig.restore(); }
+  rig = await checkRig(() => RUNNING, { noAccessor: true });
+  try {
+    await rig.zoom(); await rig.zoom();
+    ok(rig.decisionLog().length === 1 && rig.decisionLog()[0] === "[claude-cu] session check: not armed (the session-state check is not available)",
+       "no accessor: not available, once", rig.decisionLog().join(" | "));
+  } finally { rig.restore(); }
+  rig = await checkRig(() => ({ ok: false, ended: false, transient: false, notFound: true }));
+  try {
+    await rig.tick(10);
+    await rig.zoom(); await rig.zoom();
+    const nk = "[claude-cu] session check: not armed (holder cse_X is not known to the server)";
+    ok(rig.decisionLog().filter(l => l === nk).length === 1, "notFound holder: 'not known to the server' once, although every command re-arms",
+       rig.decisionLog().join(" | "));
+    ok(rig.requests.length === 1, "behaviour unchanged: never asked again", String(rig.requests.length));
+    await rig.ex.__setLockHeld(false); await sleep(30);
+    rig.ex.__setLockHeld(true, "cse_X"); await sleep(60); await rig.zoom();
+    ok(rig.decisionLog().filter(l => l.includes("armed for cse_X")).length === 2, "the next lock arms again (and logs it)", rig.decisionLog().join(" | "));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[52] diagnostics: a task boundary stops the check and resets the dedup");
+{
+  const rig = await checkRig(() => RUNNING);
+  try {
+    await rig.zoom();
+    await rig.ex.__cuTaskBoundary("cse_X", "renderer", "cse_X"); await sleep(40);
+    await rig.zoom(); await rig.zoom();
+    ok(rig.decisionLog().filter(l => l.includes("armed for cse_X")).length === 2,
+       "a task boundary stops the check; the next session arms and logs again", rig.decisionLog().join(" | "));
+  } finally { rig.restore(); }
+}
+
+console.log("\n[53] diagnostics: per-poll lines only with CDB_CU_DEBUG=1");
+{
+  const pollLines = (rig) => rig.log.filter(l => /session check: cse_X -> /.test(l)).map(l => l.replace(/^DIAG /, ""));
+  let rig = await checkRig(() => RUNNING);
+  try {
+    await rig.tick(35);
+    ok(rig.requests.length === 3 && pollLines(rig).length === 0, "off: three polls, no per-poll line", pollLines(rig).join(" | "));
+  } finally { rig.restore(); }
+  process.env.CDB_CU_DEBUG = "1";
+  try {
+    rig = await checkRig(() => RUNNING);
+    try {
+      await rig.tick(35);
+      ok(pollLines(rig).length === 3 && pollLines(rig).every(l => l === "[claude-cu] session check: cse_X -> ok=true ended=false next in 10 s"),
+         "on: one line per poll", pollLines(rig).join(" | "));
+    } finally { rig.restore(); }
+    rig = await checkRig((id, n) => n === 1 ? { ok: false, ended: false, transient: true, notFound: false } : ENDED);
+    try {
+      await rig.tick(30);
+      ok(pollLines(rig)[0] === "[claude-cu] session check: cse_X -> ok=false ended=false transient next in 20 s", "transient, with the backed-off interval", pollLines(rig).join(" | "));
+      ok(pollLines(rig)[1] === "[claude-cu] session check: cse_X -> ok=true ended=true", "ended", pollLines(rig).join(" | "));
+    } finally { rig.restore(); }
+    rig = await checkRig(() => ({ ok: false, ended: false, transient: false, notFound: true }));
+    try {
+      await rig.tick(10);
+      ok(pollLines(rig).length === 1 && pollLines(rig)[0] === "[claude-cu] session check: cse_X -> ok=false ended=false notFound", "notFound", pollLines(rig).join(" | "));
+    } finally { rig.restore(); }
+    rig = await checkRig(() => ENDED, { delays: { zoom: 150 } });
+    try {
+      const p = rig.zoom(); await sleep(20);
+      await rig.tick(12);
+      ok(pollLines(rig).some(l => l === "[claude-cu] session check: cse_X -> busy-skip next in 10 s"), "busy-skip", pollLines(rig).join(" | "));
+      await p;
+    } finally { rig.restore(); }
+  } finally { delete process.env.CDB_CU_DEBUG; }
 }
 
 console.log("\n" + (fail ? `${pass} passed, ${fail} FAILED` : `ALL ${pass} CHECKS PASSED`));

@@ -870,8 +870,8 @@ var _gnomeHolder=null;
 function _gnomeCheckBusy(){var l=_gnomeStoppedByUser;return !!(_gnomeSessionStarting||_gnomeSessionEnding||!l&&(_gnomeCmdsInFlight>0||_gnomeQueriesInFlight>0||_gnomeMouseHeld))}
 function _gnomeCheckArm(){
   var c=globalThis.__cdbCuSessionCheck,h=_gnomeHolder;
-  if(!c||!h||!(_gnomeSessionActive||_gnomeStoppedByUser))return;
-  c.arm(h,{busy:_gnomeCheckBusy,active:function(){return _gnomeSessionActive||_gnomeStoppedByUser},onEnded:function(){var ex=globalThis.__linuxExecutor;return ex&&typeof ex.__cuTaskBoundary==="function"?ex.__cuTaskBoundary(h,"session-check",h):void 0}});
+  if(!c||!(_gnomeSessionActive||_gnomeStoppedByUser))return;
+  c.arm(h||null,{busy:_gnomeCheckBusy,active:function(){return _gnomeSessionActive||_gnomeStoppedByUser},onEnded:function(){var ex=globalThis.__linuxExecutor;return ex&&typeof ex.__cuTaskBoundary==="function"?ex.__cuTaskBoundary(h,"session-check",h):void 0}});
 }
 function _gnomeCheckStop(why){var c=globalThis.__cdbCuSessionCheck;if(c)c.stop(why)}
 function _gnomeCheckTouch(){var c=globalThis.__cdbCuSessionCheck;if(c&&typeof c.touch==="function")c.touch()}
@@ -1755,6 +1755,7 @@ globalThis.__linuxExecutor={
     // The lock holder names the cloud session the session check asks about
     // (4b passes upstream's exclusiveHolder; 4b.2 releases without one).
     _gnomeHolder=held&&typeof holder==="string"?holder:null;
+    globalThis.__cdbDiag?.("[claude-cu] "+(held?"lock taken by "+(_gnomeHolder||"none"):"lock released"));
     if(!held)_gnomeCheckStop("lock released");
     // A notFound holder is checked again on the next lock.
     if(globalThis.__cdbCuSessionCheck&&typeof globalThis.__cdbCuSessionCheck.forget==="function")globalThis.__cdbCuSessionCheck.forget();

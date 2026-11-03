@@ -495,6 +495,47 @@ if (patchMissing || !existsSync(stub)) {
       /half-patched input: .*missing: 4f session check accessor/.test(out3),
       true
     );
+
+    // [6] the lock hook the patched bundle calls (4b: __setLockHeld(!0,<holder>),
+    // 4b.2: __setLockHeld(!1)) logs on entry in both executors (#293 round 9):
+    // `lock taken by <holder|none>` / `lock released`, before any early return,
+    // so an empty grep proves the hook never arrived. Source-level: both
+    // executors are wired to the hook exactly as the patched bundle calls it.
+    console.log("\n[6] the executors log the lock hook's holder on entry (#293)");
+    const gnomeSrc = readFileSync(join(repo, "js", "cu_linux_executor.js"), "utf8");
+    const kwinSrc = readFileSync(join(repo, "js", "executor_linux.js"), "utf8");
+    const gBody = gnomeSrc.slice(gnomeSrc.indexOf("async __setLockHeld(held,holder){"));
+    const kBody = kwinSrc.slice(kwinSrc.indexOf("async __setLockHeld(isHeld, holder) {"));
+    check("GNOME: __setLockHeld(held,holder) present", gBody.length < gnomeSrc.length, true);
+    check("KWin: __setLockHeld(isHeld, holder) present", kBody.length < kwinSrc.length, true);
+    const gLog = gBody.indexOf('"[claude-cu] "+(held?"lock taken by "+');
+    const gRet = gBody.search(/\breturn\b/);
+    check("GNOME: lock line logged through __cdbDiag before the first return", gLog > 0 && gLog < gRet, true);
+    const kLog = kBody.indexOf("[claude-cu] ${isHeld ? `lock taken by ");
+    const kRet = kBody.search(/\breturn\b/);
+    check("KWin: lock line logged before the first return", kLog > 0 && kLog < kRet, true);
+    check("KWin: the lock line does not go through debugLog/console.debug", /globalThis\.__cdbDiag\?\.\(`\[claude-cu\] \$\{isHeld/.test(kBody), true);
+    check("both: 'lock released' text", gBody.includes('"lock released"') && kBody.includes("'lock released'"), true);
+    // Run both __setLockHeld lock lines against a stub diag with the holder the
+    // patched call site passes (a string) and with none (4b.2's release).
+    const lines = [];
+    const lockLine = (src, rx) => rx.exec(src)?.[0];
+    const gExpr = lockLine(gBody, /globalThis\.__cdbDiag\?\.\("\[claude-cu\] "\+\(held\?"lock taken by "\+\(_gnomeHolder\|\|"none"\):"lock released"\)\)/);
+    const kExpr = lockLine(kBody, /globalThis\.__cdbDiag\?\.\(`\[claude-cu\] \$\{isHeld \? `lock taken by \$\{typeof holder === 'string' && holder \? holder : 'none'\}` : 'lock released'\}`\)/);
+    check("GNOME lock expression extracted", !!gExpr, true);
+    check("KWin lock expression extracted", !!kExpr, true);
+    for (const [held, holder, want] of [
+      [true, "cse_X", "[claude-cu] lock taken by cse_X"],
+      [true, undefined, "[claude-cu] lock taken by none"],
+      [false, undefined, "[claude-cu] lock released"],
+    ]) {
+      const out = [];
+      const ctx = { globalThis: { __cdbDiag: (m) => out.push(m) }, held, isHeld: held, holder, _gnomeHolder: held && typeof holder === "string" ? holder : null };
+      vm.createContext(ctx);
+      if (gExpr) vm.runInContext(gExpr, ctx);
+      if (kExpr) vm.runInContext(kExpr, ctx);
+      check(`held=${held} holder=${holder}: GNOME and KWin log "${want}"`, JSON.stringify(out), JSON.stringify([want, want]));
+    }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

@@ -487,7 +487,10 @@ async function loadChecked(results, opts = {}) {
     resolve: async () => ({}),
     refresh: async (id) => { r.requests.push(id); const x = results(id, r.requests.length); if (x instanceof Error) throw x; return x; }
   });
-  r.checkLog = () => r.diag.filter(l => l.includes("[claude-cu] session check:"));
+  const isDecision = (l) => /session check: (armed for |not armed )/.test(l);
+  r.checkLog = () => r.diag.filter(l => l.includes("[claude-cu] session check:") && !isDecision(l));
+  r.decisionLog = () => r.diag.filter(isDecision);
+  r.lockLog = () => r.diag.filter(l => /^\[claude-cu\] lock (taken by|released)/.test(l));
   await r.ex.__setLockHeld(true, "holder" in opts ? opts.holder : "cse_X"); await settle();
   if (!opts.noCommand) ok(await r.fails(() => r.ex.key("a")) === "no error", "a key works");
   return r;
@@ -682,6 +685,91 @@ await checkedCase("[29] session check: a backed-off interval does not carry into
   ok(await r.fails(() => r.ex.key("b")) === "no error", "next turn: a key");
   await r.advance(10000);
   ok(r.requests.length === 3, "checked 10 s after it", String(r.requests.length));
+});
+
+// ── #293 round 9: the lock and the session check are observable (KWin) ──
+// Through globalThis.__cdbDiag (r.diag), never debugLog (console.debug is
+// discarded by the official .deb). Triggers: __setLockHeld, bridge commands.
+const NOT_ARMED_NONE = "[claude-cu] session check: not armed (no Computer Use lock holder; the portal session was started outside the lock)";
+
+await checkedCase("[30] diagnostics: lock taken/released carry the holder; one 'armed' line per lock (dedup)", async () => {
+  const r = await loadChecked(() => RUNNING);
+  await r.ex.key("b"); await r.ex.key("c");
+  ok(r.lockLog().length === 1 && r.lockLog()[0] === "[claude-cu] lock taken by cse_X", "lock taken by cse_X, once", r.lockLog().join(" / "));
+  ok(r.decisionLog().length === 1 && r.decisionLog()[0] === "[claude-cu] session check: armed for cse_X",
+     "armed for cse_X once although every command arms", r.decisionLog().join(" / "));
+  await r.ex.__setLockHeld(false); await settle();
+  ok(r.lockLog()[1] === "[claude-cu] lock released", "lock released", r.lockLog().join(" / "));
+  await r.ex.__setLockHeld(true, "cse_X"); await settle();
+  await r.ex.key("d"); await r.ex.key("e");
+  ok(r.lockLog()[2] === "[claude-cu] lock taken by cse_X", "taken again, logged again", r.lockLog().join(" / "));
+  ok(r.decisionLog().length === 2, "the dedup reset on release: a new lock logs armed again", r.decisionLog().join(" / "));
+});
+
+await checkedCase("[31] diagnostics: lock taken without a holder is 'none', and the arm decision says so (once per lock)", async () => {
+  const r = await loadChecked(() => RUNNING, { holder: undefined });
+  await r.ex.key("b"); await r.ex.key("c"); await r.advance(15000);
+  ok(r.lockLog()[0] === "[claude-cu] lock taken by none", "lock taken by none", r.lockLog().join(" / "));
+  ok(r.decisionLog().length === 1 && r.decisionLog()[0] === NOT_ARMED_NONE, "no holder: one 'not armed' line over many commands", r.decisionLog().join(" / "));
+  ok(r.requests.length === 0, "and nothing is checked", String(r.requests.length));
+  await r.ex.__setLockHeld(false); await settle();
+  await r.ex.__setLockHeld(true); await settle();
+  await r.ex.key("d");
+  ok(r.decisionLog().filter(l => l === NOT_ARMED_NONE).length === 2, "a new holder-less lock logs again", r.decisionLog().join(" / "));
+});
+
+await checkedCase("[32] diagnostics: not armed for a UUID holder, without the accessor, and for a notFound holder (each once)", async () => {
+  const uuid = "3f2b6c1e-8d4a-4c3b-9e2f-1a2b3c4d5e6f";
+  let r = await loadChecked(() => RUNNING, { holder: uuid });
+  await r.ex.key("b"); await r.ex.key("c");
+  ok(r.decisionLog().length === 1 && r.decisionLog()[0] === "[claude-cu] session check: not armed (holder " + uuid + " is not a cloud session)",
+     "UUID holder: not a cloud session, once", r.decisionLog().join(" / "));
+  unloadChecked();
+  r = await loadChecked(() => RUNNING, { noAccessor: true });
+  await r.ex.key("b"); await r.ex.key("c");
+  ok(r.decisionLog().length === 1 && r.decisionLog()[0] === "[claude-cu] session check: not armed (the session-state check is not available)",
+     "no accessor: not available, once", r.decisionLog().join(" / "));
+  unloadChecked();
+  r = await loadChecked(() => ({ ok: false, ended: false, transient: false, notFound: true }));
+  await r.advance(10000);
+  await r.ex.key("b"); await r.ex.key("c");
+  const nk = "[claude-cu] session check: not armed (holder cse_X is not known to the server)";
+  ok(r.decisionLog().filter(l => l === nk).length === 1, "notFound holder: once, although every command re-arms", r.decisionLog().join(" / "));
+  ok(r.requests.length === 1, "behaviour unchanged: never asked again", String(r.requests.length));
+  await r.ex.__setLockHeld(false); await settle();
+  await r.ex.__setLockHeld(true, "cse_X"); await settle();
+  await r.ex.key("d");
+  ok(r.decisionLog().filter(l => l.includes("armed for cse_X") && !l.includes("not armed")).length === 2, "the next lock arms again, and says so", r.decisionLog().join(" / "));
+});
+
+await checkedCase("[33] diagnostics: a task boundary stops the check and resets the dedup", async () => {
+  const r = await loadChecked(() => RUNNING);
+  await r.ex.__cuTaskBoundary("cse_X", "renderer", "cse_X"); await settle();
+  await r.ex.key("b"); await r.ex.key("c");
+  ok(r.decisionLog().filter(l => l.includes("armed for cse_X")).length === 2, "armed again for the next session", r.decisionLog().join(" / "));
+});
+
+await checkedCase("[34] diagnostics: per-poll lines only with CDB_CU_DEBUG=1", async () => {
+  const pollLines = (r) => r.diag.filter(l => /session check: cse_X -> /.test(l));
+  let r = await loadChecked(() => RUNNING);
+  await r.advance(35000);
+  ok(r.requests.length === 3 && pollLines(r).length === 0, "off: three polls, no per-poll line", pollLines(r).join(" / "));
+  unloadChecked();
+  process.env.CDB_CU_DEBUG = "1";
+  try {
+    r = await loadChecked(() => RUNNING);
+    await r.advance(35000);
+    ok(pollLines(r).length === 3 && pollLines(r).every(l => l === "[claude-cu] session check: cse_X -> ok=true ended=false next in 10 s"), "on: one line per poll", pollLines(r).join(" / "));
+    unloadChecked();
+    r = await loadChecked((id, n) => n === 1 ? { ok: false, ended: false, transient: true, notFound: false } : ENDED);
+    await r.advance(30000);
+    ok(pollLines(r)[0] === "[claude-cu] session check: cse_X -> ok=false ended=false transient next in 20 s", "transient, backed-off interval", pollLines(r).join(" / "));
+    ok(pollLines(r)[1] === "[claude-cu] session check: cse_X -> ok=true ended=true", "ended", pollLines(r).join(" / "));
+    unloadChecked();
+    r = await loadChecked(() => ({ ok: false, ended: false, transient: false, notFound: true }));
+    await r.advance(10000);
+    ok(pollLines(r).length === 1 && pollLines(r)[0] === "[claude-cu] session check: cse_X -> ok=false ended=false notFound", "notFound", pollLines(r).join(" / "));
+  } finally { delete process.env.CDB_CU_DEBUG; }
 });
 
 delete globalThis.__cuKwinBridgeBin;

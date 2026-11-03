@@ -9,6 +9,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - **Keyless registration is detected and fixable.** Cloud Cowork and Dispatch reach this computer's Computer Use only when the desktop has a TPM-backed device key, which needs access to `/dev/tpmrm0`. Settings -> Extra -> Community -> Computer Use status shows this desktop, the device key and the cloud state, and **Enable TPM access** (administrator prompt) grants the active seat user access through an opt-in udev rule; **Disable TPM access** removes it. NixOS: `programs.claude-desktop-extra.tpmAccess.enable = true;`. `claude-desktop --diagnose` reports the TPM, the rule and the last device connect. Restart Claude and start a new Cowork task afterwards. Details and security note: [docs/computer-use.md](docs/computer-use.md#computer-use-in-cloud-cowork-and-dispatch).
 - **Wayland sessions with a bundled bridge (KWin, GNOME, wlroots) now offer the computer tools to cloud Cowork and Dispatch too** (`fix_computer_use_linux` sub-patch 4g).
 
+### Computer Use screen-sharing session diagnostics (#293)
+
+- **Computer Use on Wayland now logs every lock take and release with its holder, and why the screen-sharing session check did or did not start.** `CDB_CU_DEBUG=1` adds one `[claude-cu] session check:` line per check to `claude-patches.log`.
+
 ## 2026-11-02
 
 ### Computer Use can read and press app controls through accessibility (#306)

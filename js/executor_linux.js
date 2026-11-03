@@ -481,8 +481,8 @@ function sessionCheckBusy() {
 function armSessionCheck() {
   const check = globalThis.__cdbCuSessionCheck
   const holder = lockHolder
-  if (!check || !holder || !bridgeSessionActive || !bridgeSessionMayBeUp()) return
-  check.arm(holder, {
+  if (!check || !bridgeSessionActive || !bridgeSessionMayBeUp()) return
+  check.arm(holder || null, {
     busy: sessionCheckBusy,
     // No session up and no stop latch: nothing to end, the check stops.
     active: () => bridgeSessionActive && bridgeSessionMayBeUp(),
@@ -1785,6 +1785,7 @@ export function createLinuxExecutor(opts = {}) {
 
     async __setLockHeld(isHeld, holder) {
       debugLog('__setLockHeld', { isHeld, holder })
+      globalThis.__cdbDiag?.(`[claude-cu] ${isHeld ? `lock taken by ${typeof holder === 'string' && holder ? holder : 'none'}` : 'lock released'}`)
       // The lock holder names the cloud session the session check asks about
       // (patch 4b passes upstream's exclusiveHolder; 4b.2 releases without one).
       lockHolder = isHeld && typeof holder === 'string' ? holder : null

@@ -27,6 +27,10 @@
 //   the next check is 10 s (or the backed-off interval) away.
 // stop(reason): cancel; one log line only when a check was armed.
 // forget(): lock released or taken: a notFound holder is checked again.
+// Observability: arm() logs one line per decision (armed / not armed + reason),
+// deduplicated on (holder, reason) until stop/idle/forget, so arming on every
+// portal command does not spam. CDB_CU_DEBUG=1 (read from process.env at arm)
+// adds one line per poll.
 // _seam({setTimeout, clearTimeout, now}): test seam, also resets all state.
 (function () {
   if (globalThis.__cdbCuSessionCheck) return;
@@ -38,13 +42,23 @@
   // the server does not know; not polled again until forget() (lock released or
   // taken).
   var S;
-  function reset() { S = { holder: null, hooks: null, timer: null, interval: CU_SESSION_CHECK_MS, seq: 0, inFlight: false, dead: null, armedAt: 0 }; }
+  function reset() { S = { holder: null, hooks: null, timer: null, interval: CU_SESSION_CHECK_MS, seq: 0, inFlight: false, dead: null, armedAt: 0, lastDecision: null, debug: false }; }
   reset();
   function isCloud(h) { return typeof h === "string" && /^(session_|cse_)/i.test(h); }
   function requestId(h) { return h.replace(/^session_/i, "cse_"); }
   function log(m) {
     var f = S.hooks && typeof S.hooks.log === "function" ? S.hooks.log : globalThis.__cdbDiag;
     try { if (typeof f === "function") f(m); } catch (e) {}
+  }
+  function decide(holder, msg) {
+    var key = String(holder) + "|" + msg;
+    if (S.lastDecision === key) return;
+    S.lastDecision = key;
+    log("[claude-cu] session check: " + msg);
+  }
+  function pollLog(holder, parts, ms) {
+    if (!S.debug) return;
+    log("[claude-cu] session check: " + requestId(holder) + " -> " + parts + (ms ? " next in " + Math.round(ms / 1000) + " s" : ""));
   }
   function clear() { if (S.timer) { try { T.clearTimeout(S.timer); } catch (e) {} S.timer = null; } }
   function schedule(ms) {
@@ -55,10 +69,11 @@
   function call(hooks, name) {
     try { return !!(hooks && typeof hooks[name] === "function" && hooks[name]()); } catch (e) { return false; }
   }
-  function idle() { S.holder = null; S.hooks = null; S.seq++; S.inFlight = false; S.interval = CU_SESSION_CHECK_MS; clear(); }
+  function idle() { S.lastDecision = null; S.holder = null; S.hooks = null; S.seq++; S.inFlight = false; S.interval = CU_SESSION_CHECK_MS; clear(); }
   function stopNow(reason) {
     var was = S.holder;
     clear();
+    S.lastDecision = null;
     if (!was) return;
     log("[claude-cu] session check: stopped for " + was + " (" + (reason || "stopped") + ")");
     idle();
@@ -76,7 +91,7 @@
     var holder = S.holder, hooks = S.hooks, seq = S.seq;
     if (!holder) return;
     if (inactive(hooks)) { stopNow("no portal session"); return; }
-    if (call(hooks, "busy")) { schedule(S.interval); return; }
+    if (call(hooks, "busy")) { pollLog(holder, "busy-skip", S.interval); schedule(S.interval); return; }
     var r, err = null;
     S.inFlight = true;
     try {
@@ -88,6 +103,7 @@
     // Stopped, re-armed or re-held while the request ran: this reply is stale.
     if (seq !== S.seq || S.holder !== holder) return;
     if (err || !r || typeof r !== "object") {
+      pollLog(holder, "ok=false ended=false (" + (err ? (err.message || String(err)) : "no result") + ")", Math.min(S.interval * 2, CU_SESSION_CHECK_MAX_MS));
       backOff("the session state is unavailable (" + (err ? (err.message || String(err)) : "no result") + ")");
       schedule(S.interval);
       return;
@@ -95,7 +111,8 @@
     if (r.ended === true) {
       // The session may have gone, or a tool call begun, while the request ran.
       if (inactive(hooks)) { stopNow("no portal session"); return; }
-      if (call(hooks, "busy")) { schedule(S.interval); return; }
+      if (call(hooks, "busy")) { pollLog(holder, "ok=" + r.ok + " ended=true busy-skip", S.interval); schedule(S.interval); return; }
+      pollLog(holder, "ok=" + r.ok + " ended=true");
       log("[claude-cu] session check: " + holder + " ended, ending the portal session");
       idle();
       try { if (hooks && typeof hooks.onEnded === "function") await hooks.onEnded(); }
@@ -103,11 +120,13 @@
       return;
     }
     if (r.notFound) {
+      pollLog(holder, "ok=" + r.ok + " ended=" + r.ended + " notFound");
       log("[claude-cu] session check: " + holder + " is not known to the server, stopping the check until the lock is released (the idle timer still ends the portal session)");
       idle(); S.dead = holder;
       return;
     }
     if (r.ok === false) {
+      pollLog(holder, "ok=false ended=" + r.ended + (r.transient ? " transient" : ""), Math.min(S.interval * 2, CU_SESSION_CHECK_MAX_MS));
       backOff("the session state is unavailable (" + (r.transient ? "transient" : "request failed") + ")");
       schedule(S.interval);
       return;
@@ -116,18 +135,25 @@
       S.interval = CU_SESSION_CHECK_MS;
       log("[claude-cu] session check: the session state is available again, checking every " + (CU_SESSION_CHECK_MS / 1000) + " s");
     }
+    pollLog(holder, "ok=" + r.ok + " ended=" + r.ended, S.interval);
     schedule(S.interval);
   }
   globalThis.__cdbCuSessionCheck = {
     CU_SESSION_CHECK_MS: CU_SESSION_CHECK_MS,
     arm: function (holder, hooks) {
-      if (!isCloud(holder)) return;
+      if (holder === null || holder === undefined || holder === "") {
+        decide(null, "not armed (no Computer Use lock holder; the portal session was started outside the lock)");
+        return;
+      }
+      if (!isCloud(holder)) { decide(holder, "not armed (holder " + holder + " is not a cloud session)"); return; }
       // No session-state check exposed (an older patch set): never armed.
-      if (typeof globalThis.__cdbRemoteSessionMode !== "function") return;
-      if (S.dead !== null && S.dead === holder) return;
+      if (typeof globalThis.__cdbRemoteSessionMode !== "function") { decide(holder, "not armed (the session-state check is not available)"); return; }
+      if (S.dead !== null && S.dead === holder) { decide(holder, "not armed (holder " + holder + " is not known to the server)"); return; }
       if (S.holder !== holder) S.interval = CU_SESSION_CHECK_MS;
       S.holder = holder; S.hooks = hooks || null; S.seq++; S.inFlight = false;
       S.armedAt = T.now();
+      try { S.debug = !!(typeof process !== "undefined" && process.env && process.env.CDB_CU_DEBUG === "1"); } catch (e) { S.debug = false; }
+      decide(holder, "armed for " + holder);
       schedule(S.interval);
     },
     touch: function () {
@@ -135,8 +161,8 @@
       S.seq++; S.inFlight = false;
       schedule(S.interval);
     },
-    stop: function (reason) { stopNow(reason); },
-    forget: function () { S.dead = null; },
+    stop: function (reason) { stopNow(reason); S.lastDecision = null; },
+    forget: function () { S.dead = null; S.lastDecision = null; },
     _state: function () { return { holder: S.holder, armed: !!S.timer, interval: S.interval, inFlight: S.inFlight, dead: S.dead, armedAt: S.armedAt }; },
     _seam: function (o) {
       clear();
