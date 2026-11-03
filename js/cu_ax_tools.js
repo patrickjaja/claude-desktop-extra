@@ -1,6 +1,6 @@
 (function(){
 // ── Computer Use: accessibility elements (AT-SPI) on Linux (issue #306) ──────
-// Settings -> Extra -> Community -> "Computer Use: read app controls
+// Settings -> Extra -> Computer Use -> "Computer Use: read app controls
 // (accessibility)", read through globalThis.__cdbCuAxElements() (undefined or
 // anything but true = off). Adds four tools with upstream's macOS app-scoped
 // names and argument shapes - app_list_windows, app_ax_find, app_click,

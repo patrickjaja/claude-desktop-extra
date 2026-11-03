@@ -602,21 +602,35 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
   check("page: renderCuAxRow exists", !!axRow, true);
   if (axRow) {
     check("page: cu-ax row reads/writes the bridge methods", /read: "cuAxRead",\s*write: "cuAxSet"/.test(axRow[0]), true);
-    check("page: cu-ax row title and Experimental badge", /title: "Computer Use: read app controls \(accessibility\)",\s*sharedSection: true,\s*badge: "Experimental"/.test(axRow[0]), true);
+    check("page: cu-ax row title and Experimental badge", /title: "Computer Use: read app controls \(accessibility\)",\s*(\/\/[^\n]*\n\s*)?sharedSection: true,\s*badge: "Experimental"/.test(axRow[0]), true);
     check("page: cu-ax row hidden on Linux-only refusal", /hideIf:[^\n]*Linux only/.test(axRow[0]), true);
-    check("page: cu-ax row joins the Computer Use section (no second header)", /sharedSection: true/.test(axRow[0]) && /if \(!spec\.sharedSection\) panel\.appendChild\(head\)/.test(page), true);
-    // One heading for the Computer Use section: the status row draws it, the
-    // background display row joins it whenever the status row exists (its own
-    // heading only on an older preload without the status bridge), cu-ax always joins.
-    check("page: exactly one non-shared Computer Use section row",
-      (page.match(/section: "Computer Use"/g) || []).length === 3 &&
-      (page.match(/sharedSection: true/g) || []).length === 1 &&
-      (page.match(/sharedSection: cuStatusApiOk\(\)/g) || []).length === 1 &&
-      /function renderCuStatusRow\(panel\) \{\s*if \(!cuStatusApiOk\(\)\) return;/.test(page) &&
-      /var FEATURE_ROWS = \[[^\]]*renderCuStatusRow,\s*renderCuBackgroundRow,\s*renderCuAxRow\s*\]/.test(page), true);
+    check("page: cu-ax row joins the Options section (no second header)", /sharedSection: true/.test(axRow[0]) && /if \(!spec\.sharedSection\) panel\.appendChild\(head\)/.test(page), true);
     check("page: no em-dash in the cu-ax row", axRow[0].includes("\u2014"), false);
   }
-  check("page: cu-ax row is in FEATURE_ROWS", /var FEATURE_ROWS = \[[^\]]*renderCuAxRow/.test(page), true);
+  // Computer Use has its own Extra entry, between Community and Models: its
+  // page is the status block, then an Options heading it draws once, then the
+  // two switches in this order. None of them is left in Community Features.
+  const navKinds = ((/var NAV_ITEMS = \[([\s\S]*?)\n {2}\];/.exec(page) || [])[1] || "").match(/kind: "(\w+)"/g) || [];
+  check("page: nav order themes, features, cu, models, flags, deploy", navKinds.join(","),
+    'kind: "themes",kind: "features",kind: "cu",kind: "models",kind: "flags",kind: "deploy"');
+  check("page: the cu entry is labelled Computer Use and not carried on Windows",
+    /\{ kind: "cu", label: "Computer Use", icon: ICON_CU \}/.test(page) && /var WINDOWS_NAV = \{ models: true \};/.test(page) &&
+    /cu: renderCu,/.test(page), true);
+  check("page: CU_ROWS is background display, then read app controls",
+    /var CU_ROWS = \[\s*renderCuBackgroundRow,\s*renderCuAxRow\s*\];/.test(page), true);
+  check("page: no Computer Use row left in FEATURE_ROWS",
+    /var FEATURE_ROWS = \[[^\]]*renderCu(Status|Background|Ax)/.test(page) || /function renderCuStatusRow\b/.test(page), false);
+  check("page: both switches share the one Options heading",
+    (page.match(/section: "Options"/g) || []).length === 2 && (page.match(/sharedSection: true/g) || []).length === 2 &&
+    !/section: "Computer Use"/.test(page), true);
+  const cuPage = /function renderCu\(panel\) \{[\s\S]*?\n {2}\}\n/.exec(page);
+  check("page: renderCu draws the status block first, then the Options heading, then CU_ROWS",
+    !!cuPage && (() => {
+      const t = cuPage[0];
+      const i = [t.indexOf("renderCuStatusBlock(panel"), t.indexOf('"Options"'), t.indexOf("CU_ROWS.forEach")];
+      return i.every((x) => x > 0) && i[0] < i[1] && i[1] < i[2];
+    })(), true);
+  check("page: no Back button on the Computer Use page", !!cuPage && !/cdbx-cubg-back|Back to/.test(cuPage[0]), true);
 }
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

@@ -551,6 +551,14 @@
     ["circle", { cx: "17.4", cy: "18.3", r: "1.5" }, SOLID]
   ];
 
+  // A screen with the pointer on it: Claude driving this desktop.
+  var ICON_CU = [
+    ["rect", { x: "2.8", y: "3.4", width: "18.4", height: "12.8", rx: "2" }, STROKE],
+    ["line", { x1: "12", y1: "16.2", x2: "12", y2: "20.4" }, STROKE],
+    ["line", { x1: "8.4", y1: "20.4", x2: "15.6", y2: "20.4" }, STROKE],
+    ["path", { d: "M9.4 6.4l6.4 2.5-2.7 1.1-1.1 2.7z" }, SOLID]
+  ];
+
   // The rows of our nav group, in render order. Everything that builds, binds or
   // dispatches them iterates THIS list, so a new panel is one entry plus one
   // render function.
@@ -559,13 +567,18 @@
     // Short labels: upstream's nav column is narrow and truncates anything
     // longer, so the full name lives in a tooltip and in the panel's own h1.
     { kind: "features", label: "Community", icon: ICON_FEATURES, tooltip: "Community Features" },
+    // Computer Use is upstream's feature, not a community add-on: its status
+    // and our switches for it get their own entry.
+    { kind: "cu", label: "Computer Use", icon: ICON_CU },
     { kind: "models", label: "Models", icon: ICON_MODELS, tooltip: "Custom models" },
     { kind: "flags", label: "Anthropic", icon: ICON_FLAGS, tooltip: "Anthropic Features" },
     { kind: "deploy", label: "Deployment", icon: ICON_DEPLOY }
   ];
   // On Windows (a downstream Windows build of this patch set) only custom
   // models is carried: the other panels drive Linux-only patches or Linux
-  // paths (/etc/claude-desktop) that do not exist there.
+  // paths (/etc/claude-desktop) that do not exist there. Computer Use is one of
+  // them: every cdb-cu-status / cdb-cubg / cdb-cu-ax channel answers "Linux
+  // only" on win32, so the page would hold nothing.
   var WINDOWS_NAV = { models: true };
   if (/^Win/.test((typeof navigator !== "undefined" && navigator.platform) || "")) {
     NAV_ITEMS = NAV_ITEMS.filter(function (it) { return WINDOWS_NAV[it.kind] === true; });
@@ -1118,7 +1131,7 @@
   function renderToggleRow(panel, spec) {
     // The bridge half of these switches lives in the mainView preload. On a
     // partially updated install (older preload, newer page) skip the row instead
-    // of throwing and taking the whole Community Features panel down with it.
+    // of throwing and taking the whole panel down with it.
     if (!api || typeof api[spec.read] !== "function" || typeof api[spec.write] !== "function") return;
 
     var head = el("div", "cdbx-sec-h");
@@ -1454,11 +1467,10 @@
     var lastRes = null;
     var noteNode = null;
     var row = renderToggleRow(panel, {
-      section: "Computer Use",
+      section: "Options",
       title: "Computer Use on a background display",
-      // Under the Computer Use status row's heading; its own when that row is
-      // not there (older preload).
-      sharedSection: cuStatusApiOk(),
+      // Under the Options heading renderCu draws.
+      sharedSection: true,
       badge: "Experimental",
       note: cubgNote(null),
       ariaLabel: "let Computer Use work on a background display instead of your desktop",
@@ -1502,20 +1514,23 @@
     return row;
   }
 
-  // --- Computer Use status (cloud Cowork / Dispatch) ------------------------
-  // The first row of the Computer Use section: a one-line verdict from a cheap
-  // main-side read (no child processes), and Details, a page in this same panel
-  // with three rows - this desktop, the device key (TPM), cloud Cowork and
-  // Dispatch - and only the actions that apply. Re-check, the page opening and
-  // the end of each action are the only reads; nothing here polls.
+  // --- Computer Use (its own Extra entry) -----------------------------------
+  // Computer Use is an upstream feature everyone expects to work, so it has its
+  // own page rather than rows among the community add-ons: the status block
+  // (this desktop, the device key (TPM), cloud Cowork and Dispatch, with only
+  // the actions that apply) at the top, then our Computer Use switches. Opening
+  // the page, Re-check and the end of each action are the only status reads;
+  // nothing here polls.
   // Main side: cdb-cu-status:* in js/extra_settings_main.js. No call takes an
-  // argument; the main side decides every path it runs.
-  var CUS_API = ["cuStatusSummary", "cuStatusRead", "cuStatusTpmEnable", "cuStatusTpmDisable", "cuStatusResetScreenSharing"];
+  // argument; the main side decides every path it runs, and the pkexec actions
+  // carry the exact command it runs and what that changes, shown before
+  // anything runs.
+  var CUS_API = ["cuStatusRead", "cuStatusTpmEnable", "cuStatusTpmDisable", "cuStatusResetScreenSharing"];
   var CUS_WORD = { ok: "OK", action: "Needs action", na: "Not available", unknown: "Unknown" };
   var CUS_TITLES = { desktop: "This desktop", tpm: "Device key (TPM)", cloud: "Cloud Cowork and Dispatch" };
-  // CUS_RISK is the same text main's confirmation dialog shows before it runs
-  // pkexec (__cdbEx_CUS_TPM_RISK, pinned equal by test-cu-status-main.mjs). That
-  // dialog is the consent; the page shows the text and only calls the channel.
+  // What enabling exposes, shown in full next to Enable. Main's confirmation
+  // dialog (__cdbEx_CUS_TPM_CONFIRM) is the consent and stays short: it points
+  // here for this text and the exact command.
   var CUS_RISK = "This applies to every account that logs in at this computer's screen (the active local seat), and only to /dev/tpmrm0, never /dev/tpm0. Any program such an account runs can then use the TPM, including clearing it (which destroys TPM-sealed keys such as LUKS/systemd-cryptenroll or BitLocker keys), triggering its dictionary-attack lockout, or setting its owner or lockout password. If the TPM's lockout or owner authorization is empty, set one first: tpm2_changeauth -c lockout and tpm2_changeauth -c owner.";
   var CUS_SECURITY = CUS_RISK + " Details: docs/computer-use.md in the claude-desktop-extra repository.";
 
@@ -1523,43 +1538,12 @@
     return !!api && CUS_API.every(function (n) { return typeof api[n] === "function"; });
   }
 
-  function renderCuStatusRow(panel) {
-    if (!cuStatusApiOk()) return;
-    var spec = {
-      section: "Computer Use",
-      title: "Computer Use status",
-      note: "Whether Computer Use works on this desktop and in cloud Cowork and Dispatch tasks, why not, " +
-        "and the fix this package can make. Details runs the checks."
-    };
-    var head = el("div", "cdbx-sec-h");
-    head.appendChild(el("span", "cdbx-sec-t", spec.section));
-    panel.appendChild(head);
-    var host = el("div", "cdbx-list");
-    var node = el("div", "cdbx-row cdbx-cus-summary");
-    var main = el("div", "cdbx-row-main");
-    main.appendChild(el("div", "cdbx-id", spec.title));
-    main.appendChild(el("div", "cdbx-note", spec.note));
-    var stateLine = el("div", "cdbx-state", "Loading...");
-    main.appendChild(stateLine);
-    node.appendChild(main);
-    var aside = el("div", "cdbx-row-aside");
-    var details = el("button", "cdbx-btn", "Details");
-    details.type = "button";
-    details.title = "Check this desktop, the device key and cloud Cowork / Dispatch";
-    details.addEventListener("click", function () { renderCuStatus(panel); });
-    aside.appendChild(details);
-    node.appendChild(aside);
-    host.appendChild(node);
-    panel.appendChild(host);
-    api.cuStatusSummary().then(function (res) {
-      // The downstream Windows build answers "Linux only": no row there.
-      if (failed(res) && /Linux only/.test(reason(res))) { head.remove(); host.remove(); return; }
-      stateLine.textContent = failed(res) ? "Unavailable: " + reason(res) : String(res.line || "");
-    }, function (err) {
-      stateLine.textContent = "Unavailable: " + (err && err.message ? err.message : String(err));
-    });
-    return { head: head, host: host, spec: spec };
-  }
+  // The Computer Use switches, below the status block. Same keys, same rows as
+  // they had under Community Features.
+  var CU_ROWS = [
+    renderCuBackgroundRow,
+    renderCuAxRow
+  ];
 
   // One status row: the word, the fact line, the explanation, its actions.
   function cusRow(host, key, row) {
@@ -1601,45 +1585,82 @@
       : "Run this in a terminal:";
   }
 
-  function renderCuStatus(panel) {
-    clear(panel);
-    var back = el("button", "cdbx-btn cdbx-cubg-back", "Back to Community Features");
-    back.type = "button";
-    back.addEventListener("click", function () { renderFeatures(panel); });
-    panel.appendChild(back);
-    var top = el("div", "cdbx-cus-top");
-    top.appendChild(el("div", "cdbx-h1", "Computer Use status"));
-    var recheck = cusButton("Re-check", "Run the checks again");
-    top.appendChild(recheck);
-    panel.appendChild(top);
-    panel.appendChild(el("div", "cdbx-sub",
-      "Code sessions use Computer Use on this desktop. Cloud Cowork and Dispatch tasks reach it only when this " +
-      "computer connects as a device with a key kept in its TPM, and offers the computer tools."));
-    if (!cuStatusApiOk()) {
-      panel.appendChild(el("div", "cdbx-error",
-        "This build's preload does not expose the Computer Use status bridge - reinstall to pick it up."));
-      return;
+  // An Enable/Disable button's transparency block: the exact command it runs
+  // (main's own string, never rebuilt here), and in "What this does" the file
+  // it changes, the rule, the udev reload and how to undo it. Every command is
+  // copyable, so a user can run them in a terminal instead of clicking.
+  function cusPkexecInfo(host, verb, act) {
+    if (typeof act.command !== "string" || !act.command) return;
+    var enable = verb === "enable";
+    var box = el("div", "cdbx-cus-cmd cdbx-cus-pk");
+    box.setAttribute("data-verb", verb);
+    box.appendChild(el("div", "cdbx-note", (enable ? "Enable" : "Disable") +
+      " TPM access runs this command, which you can also run in a terminal yourself:"));
+    box.appendChild(codeBlock(act.command));
+    var what = el("details", "cdbx-cus-what");
+    what.appendChild(el("summary", "cdbx-note", "What this does"));
+    function say(text, code) {
+      what.appendChild(el("div", "cdbx-note", text));
+      if (code) what.appendChild(codeBlock(code));
     }
-    var page = el("div", "cdbx-cus");
-    panel.appendChild(page);
-    panel.appendChild(el("div", "cdbx-note cdbx-cus-foot",
-      "Full report for an issue: run claude-desktop --diagnose in a terminal."));
+    if (enable) {
+      say("It links this package's udev rule into udev's rules directory (link -> rule file):",
+        String(act.link || "") + " -> " + String(act.target || ""));
+      say("The rule gives the user at the active local seat access to the TPM resource manager, and nothing else:",
+        String(act.rule || ""));
+    } else {
+      say("It removes this link, and only while it points at a claude-desktop-extra rule:", String(act.link || ""));
+    }
+    if (act.apply) {
+      say("Then it reloads udev and re-applies the rules to the TPM device" +
+        (enable ? ", so access applies now without logging out:" : ":"), String(act.apply));
+    }
+    if (enable) {
+      say("To undo it: Disable TPM access on this page, or run:", String(act.undo || ""));
+      if (act.undoManual) say("or remove the link by hand:", String(act.undoManual));
+    } else {
+      what.appendChild(el("div", "cdbx-note",
+        "Access this session already has lasts until you log out. To turn it on again: Enable TPM access."));
+    }
+    box.appendChild(what);
+    host.appendChild(box);
+  }
 
+  // The status block: the three rows and their actions, drawn into `page`.
+  // `scope` is the element whose buttons a running action disables; `recheck`
+  // the page's Re-check button.
+  function renderCuStatusBlock(scope, page, recheck) {
     var running = false;
     function setBusy(on) {
       running = on;
-      Array.prototype.forEach.call(panel.querySelectorAll(".cdbx-cus .cdbx-btn, .cdbx-cus-top .cdbx-btn"), function (b) {
+      Array.prototype.forEach.call(scope.querySelectorAll(".cdbx-cus .cdbx-btn, .cdbx-cus-top .cdbx-btn"), function (b) {
         if (!b.classList.contains("cdbx-cubg-copy")) b.disabled = on;
       });
     }
 
     // failure: the last Enable/Disable that did not change anything, shown
     // under the TPM row until the next Re-check.
+    var slowTimer = null;
+    function stopSlowTimer() { if (slowTimer !== null) { clearTimeout(slowTimer); slowTimer = null; } }
     function load(failure) {
+      stopSlowTimer();
       clear(page);
-      page.appendChild(el("div", "cdbx-empty", "Checking..."));
+      var wait = el("div", "cdbx-empty cdbx-cus-wait");
+      wait.setAttribute("role", "status");
+      wait.setAttribute("aria-busy", "true");
+      wait.appendChild(el("span", "cdbx-spin"));
+      var waitText = el("span", "cdbx-cus-wait-t", "Checking this desktop...");
+      wait.appendChild(waitText);
+      page.appendChild(wait);
+      // One timer: the bridge check normally answers at once; only a hung
+      // portal makes it run to main's 8 s timeout.
+      slowTimer = setTimeout(function () {
+        slowTimer = null;
+        waitText.textContent = "Checking this desktop... This can take up to 8 seconds.";
+      }, 2000);
       recheck.disabled = true;
       api.cuStatusRead().then(function (st) {
+        stopSlowTimer();
         recheck.disabled = false;
         clear(page);
         if (failed(st)) {
@@ -1648,6 +1669,7 @@
         }
         draw(st, failure);
       }, function (err) {
+        stopSlowTimer();
         recheck.disabled = false;
         clear(page);
         page.appendChild(el("div", "cdbx-error", "The status is unavailable: " + (err && err.message ? err.message : String(err))));
@@ -1712,6 +1734,7 @@
           var enable = cusButton("Enable TPM access", "Asks you to confirm, then for an administrator password, then lets this session use the TPM");
           enable.addEventListener("click", function () { tpmAction("enable"); });
           tpm.aside.appendChild(enable);
+          cusPkexecInfo(tpm.main, "enable", en);
         } else if (en.kind === "nixos") {
           cusCommand(tpm.main, "Add this to your NixOS configuration, then rebuild and restart Claude:", String(en.text || ""));
         } else if (en.kind === "command") {
@@ -1724,6 +1747,7 @@
           var disable = cusButton("Disable TPM access", "Removes this package's TPM rule link; access already granted lasts until you log out");
           disable.addEventListener("click", function () { tpmAction("disable"); });
           tpm.aside.appendChild(disable);
+          cusPkexecInfo(tpm.main, "disable", dis);
         } else if (dis.kind === "command") {
           cusCommand(tpm.main, "To turn TPM access off again - " + cusWhere(dis).charAt(0).toLowerCase() + cusWhere(dis).slice(1),
             String(dis.text || ""));
@@ -1747,6 +1771,43 @@
 
     recheck.addEventListener("click", function () { if (!running) load(null); });
     load(null);
+  }
+
+  function renderCu(panel) {
+    clear(panel);
+    var top = el("div", "cdbx-cus-top");
+    top.appendChild(el("div", "cdbx-h1", "Computer Use"));
+    var recheck = cusButton("Re-check", "Run the checks again");
+    top.appendChild(recheck);
+    panel.appendChild(top);
+    panel.appendChild(el("div", "cdbx-sub",
+      "Code sessions use Computer Use on this desktop. Cloud Cowork and Dispatch tasks reach it only when this " +
+      "computer connects as a device with a key kept in its TPM, and offers the computer tools."));
+
+    var head = el("div", "cdbx-sec-h");
+    head.appendChild(el("span", "cdbx-sec-t", "Status"));
+    panel.appendChild(head);
+    if (cuStatusApiOk()) {
+      var page = el("div", "cdbx-cus");
+      panel.appendChild(page);
+      panel.appendChild(el("div", "cdbx-note cdbx-cus-foot",
+        "Full report for an issue: run claude-desktop --diagnose in a terminal."));
+      renderCuStatusBlock(panel, page, recheck);
+    } else {
+      recheck.remove();
+      panel.appendChild(el("div", "cdbx-error",
+        "This build's preload does not expose the Computer Use status bridge - reinstall to pick it up."));
+    }
+
+    // The switches share one "Options" heading, drawn here (each row passes
+    // sharedSection); it goes again when no switch row is there to carry it.
+    var opts = el("div", "cdbx-sec-h");
+    opts.appendChild(el("span", "cdbx-sec-t", "Options"));
+    panel.appendChild(opts);
+    var rows = 0;
+    CU_ROWS.forEach(function (render) { if (render(panel)) rows++; });
+    if (!rows) opts.remove();
+    jsoncFootnote(panel);
   }
 
   // A copyable command block. There is no other copy button on these pages;
@@ -1876,14 +1937,14 @@
     host.appendChild(img);
   }
 
-  // The setup page, drawn into the Community Features panel itself; Back
-  // redraws the feature list. Every block fills in from its own async call, so
+  // The setup page, drawn into the Computer Use panel itself; Back redraws
+  // that page. Every block fills in from its own async call, so
   // one slow probe never holds up the rest.
   function renderCuBackground(panel) {
     clear(panel);
-    var back = el("button", "cdbx-btn cdbx-cubg-back", "Back to Community Features");
+    var back = el("button", "cdbx-btn cdbx-cubg-back", "Back to Computer Use");
     back.type = "button";
-    back.addEventListener("click", function () { renderFeatures(panel); });
+    back.addEventListener("click", function () { renderCu(panel); });
     panel.appendChild(back);
     var h1 = el("div", "cdbx-h1", "Computer Use on a background display");
     h1.appendChild(experimentalBadge());
@@ -2719,8 +2780,9 @@
   // --- Computer Use: read app controls through accessibility (#306) --------
   function renderCuAxRow(panel) {
     return renderToggleRow(panel, {
-      section: "Computer Use",
+      section: "Options",
       title: "Computer Use: read app controls (accessibility)",
+      // Under the Options heading renderCu draws.
       sharedSection: true,
       badge: "Experimental",
       note: "Lets Claude find and press buttons and fill fields through the desktop accessibility " +
@@ -3079,10 +3141,7 @@
     renderWindowTransparencyRow,
     renderTrayIconRow,
     renderThemePickerRow,
-    renderDevToolsRow,
-    renderCuStatusRow,
-    renderCuBackgroundRow,
-    renderCuAxRow
+    renderDevToolsRow
   ];
 
   function renderFeatures(panel) {
@@ -3138,22 +3197,25 @@
     search.addEventListener("input", function () { draw(search.value); });
     draw("");
 
-    // The config file this page answers to, presented exactly as the other two
-    // panels present theirs: ONLY the .jsonc is linked, because that is the file
-    // a human edits and the one whose value wins per key - a switch it sets
-    // renders locked and says so. The .json these switches are persisted to is
-    // internal bookkeeping and is deliberately not advertised, the same call the
-    // flag list makes. Appended last, after the rows, so it reads as a footnote;
-    // a failure is silent because a missing footnote is not worth an error box.
-    if (api && typeof api.paths === "function") {
-      api.paths().then(function (res) {
-        if (failed(res)) return;
-        var paths = (res && res.paths) || {};
-        if (!paths.jsonc) return;
-        panel.appendChild(pathRow("Switches you set by hand here win over this page",
-          paths.jsonc, cfgLocation(paths.jsonc)));
-      }, function () {});
-    }
+    jsoncFootnote(panel);
+  }
+
+  // The config file a switch page answers to, presented exactly as the other
+  // panels present theirs: ONLY the .jsonc is linked, because that is the file
+  // a human edits and the one whose value wins per key - a switch it sets
+  // renders locked and says so. The .json these switches are persisted to is
+  // internal bookkeeping and is deliberately not advertised, the same call the
+  // flag list makes. Appended last, after the rows, so it reads as a footnote;
+  // a failure is silent because a missing footnote is not worth an error box.
+  function jsoncFootnote(panel) {
+    if (!api || typeof api.paths !== "function") return;
+    api.paths().then(function (res) {
+      if (failed(res)) return;
+      var paths = (res && res.paths) || {};
+      if (!paths.jsonc) return;
+      panel.appendChild(pathRow("Switches you set by hand here win over this page",
+        paths.jsonc, cfgLocation(paths.jsonc)));
+    }, function () {});
   }
 
   // --- models: Anthropic-compatible endpoints in the Code picker -------------
@@ -4856,6 +4918,7 @@
   var PANELS = {
     themes: renderThemes,
     features: renderFeatures,
+    cu: renderCu,
     models: renderModels,
     flags: renderFlags,
     deploy: renderDeploy

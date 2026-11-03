@@ -9,7 +9,7 @@
 #
 #   /etc/udev/rules.d/70-claude-desktop-extra-tpm.rules -> <this dir>/70-claude-desktop-extra-tpm.rules
 #
-# Run as root: pkexec (Settings -> Extra -> Community -> Computer Use status) or sudo.
+# Run as root: pkexec (Settings -> Extra -> Computer Use, Enable/Disable TPM access) or sudo.
 #
 # Usage:  cdb-tpm-access enable|disable
 # Exit:   0 done (also when it was already in that state)

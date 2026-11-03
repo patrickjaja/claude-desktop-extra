@@ -2142,15 +2142,15 @@
     }).then(function (res) { res.ms = Date.now() - t0; return res; });
   }
 
-  // --- Computer Use status (Community -> Computer Use -> Details) -----------
+  // --- Computer Use status (Settings -> Extra -> Computer Use) -------------
   // Three rows: this desktop (the app's own startup decision + the bridge's
   // `doctor`), the device key (TPM) and cloud Cowork / Dispatch (this run's
   // remote-device lines in main.log). OK only from a fact observed here; any
   // read that fails is "unknown" with its error, never OK.
   //
   // NEVER BLOCKS: fs.promises only; the one child of a read is `doctor`, through
-  // the cubg exec queue with an 8 s timeout, and only for cdb-cu-status:read
-  // (the summary spawns nothing). Nothing runs at module load.
+  // the cubg exec queue with an 8 s timeout, and only for cdb-cu-status:read.
+  // Nothing runs at module load.
   //
   // SECURITY: the caller is remote code and no channel takes an argument. The
   // helper path comes from process.resourcesPath (resolved and ownership-checked
@@ -2178,6 +2178,11 @@
     "# Claude Desktop keeps its device identity key in the TPM. Give the user at the\n" +
     "# active local seat an ACL on the kernel resource manager node only (not tpm0).\n" +
     "SUBSYSTEM==\"tpmrm\", KERNEL==\"tpmrm[0-9]*\", ACTION!=\"remove\", TAG+=\"uaccess\"\n";
+  // The rule's one active line (the comments dropped), shown on the page.
+  var __cdbEx_TPM_RULE_LINE = __cdbEx_TPM_RULE_TEXT.split("\n").filter(function (l) { return l && l.charAt(0) !== "#"; }).join("\n");
+  // What the helper runs after it changed the link, for enable and disable alike
+  // (packaging/udev/cdb-tpm-access, "apply now").
+  var __cdbEx_TPM_APPLY = "udevadm control --reload\nudevadm trigger --action=change --subsystem-match=tpmrm";
   var __cdbEx_TPM_NIXOS_OPT = "programs.claude-desktop-extra.tpmAccess.enable = true;";
   var __cdbEx_CUS_NIXOS = "/etc/NIXOS";
   // Container markers: the same list, in this order, as CONTAINER_MARKERS in
@@ -2194,9 +2199,11 @@
   // After an Enable that was declined, cancelled or failed, further Enable
   // requests are refused for this long (no polkit prompt loop from page script).
   var __cdbEx_CUS_ENABLE_COOLDOWN_MS = 30000;
-  // What enabling exposes. Main's confirmation dialog shows it before every
-  // pkexec enable; the page shows the same text inline (CUS_RISK, pinned equal).
-  var __cdbEx_CUS_TPM_RISK = "This applies to every account that logs in at this computer's screen (the active local seat), and only to /dev/tpmrm0, never /dev/tpm0. Any program such an account runs can then use the TPM, including clearing it (which destroys TPM-sealed keys such as LUKS/systemd-cryptenroll or BitLocker keys), triggering its dictionary-attack lockout, or setting its owner or lockout password. If the TPM's lockout or owner authorization is empty, set one first: tpm2_changeauth -c lockout and tpm2_changeauth -c owner.";
+  // Main's confirmation dialog before every pkexec enable: short on purpose.
+  // The full risk text, the exact command, what it changes and how to undo it
+  // are on the page (CUS_RISK and the "What this does" block in
+  // js/extra_settings_page.js); the dialog only has to be the consent.
+  var __cdbEx_CUS_TPM_CONFIRM = "This adds a udev rule that grants access to the TPM, and asks for an administrator password. It applies to every account that logs in at this computer's screen. Details and the exact command: Settings -> Extra -> Computer Use.";
   var __cdbEx_CUS_LOG_TAIL = 512 * 1024;
   var __cdbEx_CUS_LOG_SLACK_MS = 2000;
   var __cdbEx_CUS_FRAME_RE = /connect frame sent: device_id (keyed|keyless|none)(?: \((.*)\))?/;
@@ -2383,19 +2390,37 @@
     return "sudo " + __cdbEx_cusQuote(g.helper.path) + " " + verb;
   }
 
+  // The pkexec button as the page shows it: the command, word for word what
+  // __cdbEx_cusPkexecRun executes (the same g.pkexec and g.helper.path), and
+  // what it changes - before anything runs.
+  function __cdbEx_cusPkexecCmd(g, verb) {
+    return __cdbEx_cusQuote(g.pkexec) + " " + __cdbEx_cusQuote(g.helper.path) + " " + verb;
+  }
+  function __cdbEx_cusPkexecAct(g, verb) {
+    var act = { kind: "pkexec", command: __cdbEx_cusPkexecCmd(g, verb), link: __cdbEx_TPM_LINK, apply: __cdbEx_TPM_APPLY };
+    if (verb === "enable") {
+      // The helper links the rule next to itself (readlink -f of its own path).
+      act.target = _path.dirname(g.helper.path) + "/" + __cdbEx_TPM_RULE;
+      act.rule = __cdbEx_TPM_RULE_LINE;
+      act.undo = __cdbEx_cusPkexecCmd(g, "disable");
+      act.undoManual = "sudo rm -f " + __cdbEx_cusQuote(__cdbEx_TPM_LINK) + " && sudo udevadm control --reload";
+    }
+    return act;
+  }
+
   function __cdbEx_cusEnableAct(g, link) {
     var stale = link.state === "stale";
     if (g.nixos) return { kind: "nixos", text: __cdbEx_TPM_NIXOS_OPT };
     if (g.container || !g.udev) return { kind: "command", text: __cdbEx_cusTee(stale), where: "host" };
     if (g.appimage) return { kind: "command", text: __cdbEx_cusTee(stale), where: "here" };
-    if (g.button) return { kind: "pkexec" };
+    if (g.button) return __cdbEx_cusPkexecAct(g, "enable");
     if (g.helper.safe) return { kind: "command", text: __cdbEx_cusHelperCmd(g, "enable"), where: "here" };
     return { kind: "command", text: __cdbEx_cusTee(stale), where: "here" };
   }
   function __cdbEx_cusDisableAct(g, link) {
     if (link.state === "ours" || link.state === "stale") {
       if (g.container || !g.udev) return { kind: "command", text: __cdbEx_cusRm(), where: "host" };
-      if (g.button) return { kind: "pkexec" };
+      if (g.button) return __cdbEx_cusPkexecAct(g, "disable");
       if (g.helper.safe) return { kind: "command", text: __cdbEx_cusHelperCmd(g, "disable"), where: "here" };
       return { kind: "command", text: __cdbEx_cusRm(), where: "here" };
     }
@@ -2532,9 +2557,9 @@
     return null;
   }
 
-  // The desktop row. withDoctor=false (summary): the decision only, no child.
+  // The desktop row: the decision, then the bridge's doctor.
   // Answers {row, doctor} - doctor is the parsed contract-1 doctor or null.
-  function __cdbEx_cusDesktop(withDoctor) {
+  function __cdbEx_cusDesktop() {
     var d = __cdbEx_cusDecision();
     if (!d) return Promise.resolve({ row: __cdbEx_cusRow("unknown", "Computer Use reported no backend decision in this run", "desktop"), doctor: null });
     var t = d.target;
@@ -2557,9 +2582,6 @@
         : __cdbEx_cusRow("na", "no Computer Use backend for this desktop", "desktop"), doctor: null });
     }
     var ovr = d.override ? " (override " + d.override + ")" : "";
-    if (!withDoctor) {
-      return Promise.resolve({ row: __cdbEx_cusRow("unknown", __cdbEx_cusSession(d) + " - " + d.backend + ovr + " (not checked)", "desktop"), doctor: null });
-    }
     return __cdbEx_cubgExec(d.bin, ["doctor"], process.env, 1024 * 1024, __cdbEx_CUS_DOCTOR_MS).then(function (r) {
       var pre = d.backend + " doctor gave no status";
       if (!r.ok) {
@@ -2583,32 +2605,13 @@
     });
   }
 
-  function __cdbEx_cusState(withDoctor) {
-    return Promise.all([__cdbEx_cusDesktop(withDoctor), __cdbEx_cusTpm(), __cdbEx_cusLog(),
-      withDoctor ? __cdbEx_cusGate() : Promise.resolve(null)]).then(function (a) {
+  function __cdbEx_cusState() {
+    return Promise.all([__cdbEx_cusDesktop(), __cdbEx_cusTpm(), __cdbEx_cusLog(), __cdbEx_cusGate()]).then(function (a) {
       var d = __cdbEx_cusDecision();
       var tpm = __cdbEx_cusTpmRow(a[1], a[3]);
       var cloud = __cdbEx_cusCloudRow(a[2], tpm, d);
       return { desktop: a[0], tpm: tpm, cloud: cloud, link: a[1].link, gate: a[3], decision: d };
     });
-  }
-
-  function __cdbEx_cusSummaryLine(s) {
-    var d = s.decision;
-    var here = !d ? "unknown" : __cdbEx_CUS_BRIDGES.indexOf(d.backend) >= 0 && d.bin ? d.backend
-      : d.backend === "fallback" ? "fallback route" : "no backend";
-    if (d && __cdbEx_CUS_BRIDGES.indexOf(d.backend) < 0 && __cdbEx_cusBridgeFail()) here = __cdbEx_cusBridgeFail().name + " cannot run";
-    var c = s.cloud;
-    var cloud;
-    if (c.status === "ok") cloud = "ready";
-    else if (s.tpm.state === "restart") cloud = "restart Claude to use the TPM";
-    else if (c.status === "action" && /TPM not accessible/.test(c.fact)) cloud = "needs TPM access";
-    else if (c.status === "action") cloud = "device keyless, see Details";
-    else if (/no TPM 2\.0/.test(c.fact)) cloud = "no TPM 2.0 on this computer";
-    else if (/Wayland session/.test(c.fact)) cloud = "not offered on this Wayland session";
-    else if (/withheld/.test(c.fact)) cloud = "withheld by the app";
-    else cloud = "not reported yet";
-    return "This desktop: " + here + " - Cloud Cowork and Dispatch: " + cloud;
   }
 
   var __cdbEx_cusReadP = null;
@@ -2619,7 +2622,7 @@
 
   function __cdbEx_cusRead() {
     if (__cdbEx_cusReadP) return __cdbEx_cusReadP;
-    var p = __cdbEx_cusState(true).then(function (s) {
+    var p = __cdbEx_cusState().then(function (s) {
       var actions = {
         tpmEnable: s.tpm.enable,
         tpmDisable: s.tpm.disable,
@@ -2636,8 +2639,9 @@
   }
 
   // Main's own consent for Enable: the page (remote code) can ask, only this
-  // dialog decides. Resolves true only for the "Enable TPM access" button;
-  // Cancel, Escape, closing it or any error is false.
+  // dialog decides. Disable has none: it only takes access away, and pkexec
+  // still asks for the administrator password. Resolves true only for the
+  // "Enable TPM access" button; Cancel, Escape, closing it or any error is false.
   function __cdbEx_cusConfirmEnable(sender) {
     var dlg = _electron.dialog;
     if (!dlg || typeof dlg.showMessageBox !== "function") return Promise.resolve(false);
@@ -2650,7 +2654,7 @@
       type: "warning",
       title: "Enable TPM access",
       message: "Let Claude Desktop use this computer's TPM for its device identity key?",
-      detail: __cdbEx_CUS_TPM_RISK,
+      detail: __cdbEx_CUS_TPM_CONFIRM,
       buttons: ["Cancel", "Enable TPM access"],
       defaultId: 0,
       cancelId: 0,
@@ -3288,11 +3292,6 @@
     },
 
     // Computer Use status. No channel takes an argument (see the section above).
-    "cdb-cu-status:summary": function () {
-      return __cdbEx_cusState(false).then(function (st) {
-        return { ok: true, line: __cdbEx_cusSummaryLine(st) };
-      }).then(null, function (e) { return { ok: false, error: (e && e.message) || String(e) }; });
-    },
     "cdb-cu-status:read": function () {
       return __cdbEx_cusRead().then(null, function (e) { return { ok: false, error: (e && e.message) || String(e) }; });
     },

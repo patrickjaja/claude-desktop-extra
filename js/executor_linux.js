@@ -252,7 +252,7 @@ export function notSharedText(message, isNotShared = false) {
 // (upstream's app-scoped lock, acquireApp, never reaches __setLockHeld): one
 // async stat pair per command (__cuTargetSig, cu_mode_preamble.js), no read
 // while the files are unchanged.
-const TARGET_RESTART_TEXT = 'Computer Use is set to a background display, which takes effect on KDE Plasma after Claude restarts. Ask the user to restart Claude, or to turn off Settings -> Extra -> Community -> Computer Use on a background display.'
+const TARGET_RESTART_TEXT = 'Computer Use is set to a background display, which takes effect on KDE Plasma after Claude restarts. Ask the user to restart Claude, or to turn off Settings -> Extra -> Computer Use -> Computer Use on a background display.'
 let targetRestartMessage = null
 let targetSigLast = null
 try { if (typeof globalThis.__cuTargetSigSync === 'function') targetSigLast = globalThis.__cuTargetSigSync() } catch {}

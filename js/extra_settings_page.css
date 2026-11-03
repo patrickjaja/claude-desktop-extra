@@ -803,7 +803,7 @@
 }
 
 /* --- Computer Use on a background display -------------------------------- *
- * The setup page in the Community Features panel. Rows wrap their buttons
+ * The setup page in the Computer Use panel. Rows wrap their buttons
  * under the text on a narrow dialog, and commands and screenshots never
  * widen the panel: code wraps, images scale down.
  */
@@ -858,14 +858,25 @@
 .cdbx-cubg-code .cdbx-cubg-copy { flex: 0 0 auto; margin-top: 0; }
 
 /* --- Computer Use status ------------------------------------------------- *
- * The Details page behind the first Computer Use row: three status rows, each
- * a word pill, a fact line and an explanation, with only the actions that
+ * The status block at the top of the Computer Use panel: three status rows,
+ * each a word pill, a fact line and an explanation, with only the actions that
  * apply. Commands wrap instead of widening the panel (.cdbx-cubg-code).
  */
 .cdbx-cus-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .cdbx-cus .cdbx-row { flex-wrap: wrap; }
 .cdbx-cus .cdbx-row-aside { flex-wrap: wrap; }
 .cdbx-cus .cdbx-btn:disabled { opacity: 0.5; cursor: default; }
+.cdbx-cus-wait { display: flex; align-items: center; gap: 8px; }
+.cdbx-spin {
+  flex: none; width: 12px; height: 12px; box-sizing: border-box; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--cdbx-ink, CanvasText) 25%, transparent);
+  border-top-color: var(--cdbx-ink, CanvasText);
+  animation: cdbx-spin 0.8s linear infinite;
+}
+@keyframes cdbx-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .cdbx-spin { animation: none; border-top-color: color-mix(in srgb, var(--cdbx-ink, CanvasText) 25%, transparent); background: color-mix(in srgb, var(--cdbx-ink, CanvasText) 55%, transparent); }
+}
 .cdbx-cus-fact { margin-top: 2px; font-size: 12px; overflow-wrap: anywhere; }
 .cdbx-cus-st {
   display: inline-block;
@@ -886,3 +897,7 @@
 .cdbx-cus-cmd { margin-top: 6px; }
 .cdbx-cus-fail { margin-top: 6px; }
 .cdbx-cus-foot { margin-top: 12px; }
+/* "What this does" under an Enable/Disable command: closed by default. */
+.cdbx-cus-what { margin-top: 6px; }
+.cdbx-cus-what > summary { cursor: pointer; user-select: none; }
+.cdbx-cus-what > .cdbx-note { margin-top: 6px; }

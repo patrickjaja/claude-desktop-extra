@@ -2081,7 +2081,7 @@ _diag_device_key() {
         fix="sudo install -m 0644 $res/linux-udev/70-claude-desktop-extra-tpm.rules $link && sudo udevadm control --reload && sudo udevadm trigger --action=change --subsystem-match=tpmrm"
     fi
     if [[ "$_diag_tpm" == denied ]]; then
-        _diag_problems+=("cloud Cowork and Dispatch get no Computer Use: the device key needs $dev - Settings -> Extra -> Community -> Computer Use status, or $fix; without logind: sudo usermod -aG tss \$USER and log in again")
+        _diag_problems+=("cloud Cowork and Dispatch get no Computer Use: the device key needs $dev - Settings -> Extra -> Computer Use, or $fix; without logind: sudo usermod -aG tss \$USER and log in again")
     elif [[ "$_diag_tpm" == ok && "$_diag_connect" == keyless ]]; then
         _diag_problems+=("device registered keyless${_diag_connect_reason:+ ($_diag_connect_reason)} although $dev is accessible: restart Claude; if it stays keyless, attach this report to an issue")
     fi

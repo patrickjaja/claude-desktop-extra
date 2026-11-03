@@ -1,7 +1,7 @@
 # @patch-target: app.asar.contents/.vite/build/index.js
 # @patch-type: nim
 #
-# "Extra" area inside the claude.ai Settings modal (Themes + Community Features +
+# "Extra" area inside the claude.ai Settings modal (Themes + Community Features + Computer Use +
 # Models + Anthropic Features + Deployment).
 #
 # The Settings modal is rendered by the REMOTE claude.ai SPA inside the mainView
@@ -235,6 +235,6 @@ when isMainModule:
 
   if output != input:
     writeFile(filePath, output)
-    echo "  [PASS] Extra settings area (Themes + Community Features + Models + Anthropic Features + Deployment) added"
+    echo "  [PASS] Extra settings area (Themes + Community Features + Computer Use + Models + Anthropic Features + Deployment) added"
   else:
     echo "  [WARN] No changes made"

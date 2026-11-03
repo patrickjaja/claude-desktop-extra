@@ -343,12 +343,9 @@
       return ipcRenderer.invoke("cdb-cubg:tools");
     },
 
-    // Computer Use status (Community -> Computer Use -> Details). No channel
+    // Computer Use status (Settings -> Extra -> Computer Use). No channel
     // takes an argument: the helper path, the launcher and the bridge are all
     // decided on the main side, so the page can only name one of these actions.
-    cuStatusSummary: function () {
-      return ipcRenderer.invoke("cdb-cu-status:summary");
-    },
     cuStatusRead: function () {
       return ipcRenderer.invoke("cdb-cu-status:read");
     },

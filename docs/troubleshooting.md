@@ -144,8 +144,8 @@ A healthy window has a textarea about 40 px tall, `focused` and `docFocus` true,
 
 Cloud Cowork and Dispatch offer this computer's Computer Use only to a desktop that registered with a TPM-backed device key. Without access to `/dev/tpmrm0` it registers keyless and the session gets no computer tools. Code tab sessions are unaffected.
 
-1. Check: Settings -> Extra -> Community -> Computer Use -> Computer Use status (Details), or `claude-desktop --diagnose`, or `grep 'connect frame sent' ~/.config/Claude/logs/main.log` (`device_id keyed` is good, `keyless` is the problem).
-2. Fix: click **Enable TPM access** in that panel (`.deb`, `.rpm`, pacman), run the command it shows (AppImage, no logind), set `programs.claude-desktop-extra.tpmAccess.enable = true;` (NixOS), or `sudo usermod -aG tss $USER` and log in again.
+1. Check: Settings -> Extra -> Computer Use, or `claude-desktop --diagnose`, or `grep 'connect frame sent' ~/.config/Claude/logs/main.log` (`device_id keyed` is good, `keyless` is the problem).
+2. Fix: click **Enable TPM access** on that page (`.deb`, `.rpm`, pacman), run the command it shows (AppImage, no logind), set `programs.claude-desktop-extra.tpmAccess.enable = true;` (NixOS), or `sudo usermod -aG tss $USER` and log in again.
 3. Restart Claude and start a new Cowork task.
 
 No TPM 2.0 on the machine: cloud Cowork and Dispatch cannot use Computer Use there; Code sessions still can. Security implications and how to turn it off: [Computer Use in cloud Cowork and Dispatch](computer-use.md#computer-use-in-cloud-cowork-and-dispatch).

@@ -3,7 +3,7 @@
 //
 // WHY THIS EXISTS
 // ---------------
-// Settings -> Extra -> Community -> "Computer Use: read app controls
+// Settings -> Extra -> Computer Use -> "Computer Use: read app controls
 // (accessibility)" adds app_list_windows / app_ax_find / app_click / app_type,
 // served by the bridges' ax-* subcommands (js/cu_ax_tools.js). Sub-patches
 // 15a-15d of fix_computer_use_linux.nim wire the runtime into UPSTREAM's code:

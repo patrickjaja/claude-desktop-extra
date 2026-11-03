@@ -747,7 +747,7 @@ safe("D12", () => {
     const owner = spawnSync("stat", ["-c", "%U:%G", devDenied], { encoding: "utf8" }).stdout.trim();
     check("denied line names owner, group and octal mode", lines(o)[0], `device key (TPM) = NOT ACCESSIBLE (${owner} 0000)`);
     check("denied: the fix problem", problems(o)[0],
-      `cloud Cowork and Dispatch get no Computer Use: the device key needs ${devDenied} - Settings -> Extra -> Community -> Computer Use status, or sudo ${udev}/cdb-tpm-access enable; without logind: sudo usermod -aG tss $USER and log in again`);
+      `cloud Cowork and Dispatch get no Computer Use: the device key needs ${devDenied} - Settings -> Extra -> Computer Use, or sudo ${udev}/cdb-tpm-access enable; without logind: sudo usermod -aG tss $USER and log in again`);
     o = dk(devDenied, link, fixture, "CLAUDE_APPIMAGE_PATH=/x/Claude.AppImage;");
     check("denied on AppImage: the copy command instead of the image's helper",
       problems(o)[0].includes(`or sudo install -m 0644 ${rule} ${link} && sudo udevadm control --reload && sudo udevadm trigger --action=change --subsystem-match=tpmrm;`), true);
