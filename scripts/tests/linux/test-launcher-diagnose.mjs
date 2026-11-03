@@ -780,7 +780,7 @@ safe("D12", () => {
   check("dangling Nix store link: stale", l, `TPM access rule = stale link (-> ${goneStore}, missing)`);
   check("stale: the re-point problem", p[0], `TPM access rule link points at a removed install: sudo ${udev}/cdb-tpm-access enable`);
   [l] = ruleLine(() => sym("/usr/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules"));
-  check("package path link: ours (enabled or stale, never foreign)", /^TPM access rule = (enabled \(link|stale link \(-> )\/usr\/lib\/claude-desktop\//.test(l), true);
+  check("package path link: ours (enabled or stale, never foreign)", /^TPM access rule = (enabled \(link -> |stale link \(-> )\/usr\/lib\/claude-desktop\//.test(l), true);
   [l, p] = ruleLine(() => sym("/nix/store/a/b/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules"));
   check("store path with two segments: unsafe", l.startsWith("TPM access rule = unsafe link (-> /nix/store/a/b/"), true);
   [l, p] = ruleLine(() => sym("/nix/store/0000000000000000000000000000000-x/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules"));

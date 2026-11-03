@@ -29,6 +29,7 @@ On Wayland, with one of the bundled bridges (KWin, GNOME or wlroots) in use, the
 - Settings -> Extra -> Community -> Computer Use status -> Details (three rows: this desktop, device key (TPM), cloud Cowork and Dispatch).
 - `claude-desktop --diagnose`: the `device key (TPM)`, `TPM access rule` and `last remote-device connect` lines in the Computer Use section.
 - `~/.config/Claude/logs/main.log`: `connect frame sent: device_id keyed` (works) or `keyless` (no computer tools).
+- The Cowork device popover for this computer: a keyless desktop shows a warning dot and "Connected without a device key, so Computer Use is not available in Cowork." instead of "Claude can use the files and apps on your computer."
 
 **Fix.**
 
