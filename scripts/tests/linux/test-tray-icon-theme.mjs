@@ -605,7 +605,15 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
     check("page: cu-ax row title and Experimental badge", /title: "Computer Use: read app controls \(accessibility\)",\s*sharedSection: true,\s*badge: "Experimental"/.test(axRow[0]), true);
     check("page: cu-ax row hidden on Linux-only refusal", /hideIf:[^\n]*Linux only/.test(axRow[0]), true);
     check("page: cu-ax row joins the Computer Use section (no second header)", /sharedSection: true/.test(axRow[0]) && /if \(!spec\.sharedSection\) panel\.appendChild\(head\)/.test(page), true);
-    check("page: exactly one non-shared Computer Use section row", (page.match(/section: "Computer Use"/g) || []).length === 2 && (page.match(/sharedSection: true/g) || []).length === 1, true);
+    // One heading for the Computer Use section: the status row draws it, the
+    // background display row joins it whenever the status row exists (its own
+    // heading only on an older preload without the status bridge), cu-ax always joins.
+    check("page: exactly one non-shared Computer Use section row",
+      (page.match(/section: "Computer Use"/g) || []).length === 3 &&
+      (page.match(/sharedSection: true/g) || []).length === 1 &&
+      (page.match(/sharedSection: cuStatusApiOk\(\)/g) || []).length === 1 &&
+      /function renderCuStatusRow\(panel\) \{\s*if \(!cuStatusApiOk\(\)\) return;/.test(page) &&
+      /var FEATURE_ROWS = \[[^\]]*renderCuStatusRow,\s*renderCuBackgroundRow,\s*renderCuAxRow\s*\]/.test(page), true);
     check("page: no em-dash in the cu-ax row", axRow[0].includes("\u2014"), false);
   }
   check("page: cu-ax row is in FEATURE_ROWS", /var FEATURE_ROWS = \[[^\]]*renderCuAxRow/.test(page), true);

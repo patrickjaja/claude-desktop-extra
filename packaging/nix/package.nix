@@ -286,6 +286,21 @@ stdenvNoCC.mkDerivation {
     rm -rf $out/lib/claude-desktop/resources
     cp -r claude-desktop/resources $out/lib/claude-desktop/resources
 
+    # Opt-in TPM access (cloud Cowork / Dispatch Computer Use): the udev rule and
+    # its root helper stay in the tree, disabled. On NixOS the module option
+    # programs.claude-desktop-extra.tpmAccess.enable (flake.nix) installs the
+    # rule instead; on other distros `sudo <this dir>/cdb-tpm-access enable`
+    # links it from the store (fixupPhase's patchShebangs points the helper at
+    # the store's sh). The polkit action is dropped: its exec.path names the
+    # /usr/lib install, and polkit on a non-NixOS host does not read the store.
+    # Guarded: release tarballs before this change do not ship linux-udev/.
+    udev=$out/lib/claude-desktop/resources/linux-udev
+    if [ -d $udev ]; then
+      rm -f $udev/io.github.patrickjaja.claude-desktop-extra.tpm-access.policy
+      chmod 755 $udev $udev/cdb-tpm-access
+      chmod 644 $udev/70-claude-desktop-extra-tpm.rules
+    fi
+
     # Release stamp for the in-app update check: the release tag (releaseTag,
     # the same tag src is fetched from) and the package format, which picks the
     # README install section the "Update available" button opens. Exe-adjacent

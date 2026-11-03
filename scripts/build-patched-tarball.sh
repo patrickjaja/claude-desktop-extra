@@ -721,6 +721,41 @@ else
     log_warn "gnome-portal-bridge not available — skipping (GNOME Wayland Computer Use will require manual install)"
 fi
 
+# Opt-in TPM access for cloud Cowork / Dispatch Computer Use (the device identity
+# key lives in /dev/tpmrm0). Shipped DISABLED next to upstream's resources/linux-mime/:
+# the udev rule, the root helper that links it into /etc/udev/rules.d (pkexec or
+# sudo), and the helper's polkit action, which deb/rpm/pacman also install to
+# /usr/share/polkit-1/actions/. No package scriptlet touches any of them.
+UDEV_SRC_DIR="$PROJECT_DIR/packaging/udev"
+UDEV_DST_DIR="$TREE_DIR/resources/linux-udev"
+UDEV_POLICY="io.github.patrickjaja.claude-desktop-extra.tpm-access.policy"
+if [ -e "$UDEV_DST_DIR" ]; then
+    log_error "upstream now ships resources/linux-udev/ - re-audit before overlaying our TPM access files"
+    exit 1
+fi
+for f in 70-claude-desktop-extra-tpm.rules cdb-tpm-access "$UDEV_POLICY"; do
+    if [ ! -f "$UDEV_SRC_DIR/$f" ]; then
+        log_error "packaging/udev/$f missing"
+        exit 1
+    fi
+done
+if ! grep -qF '<annotate key="org.freedesktop.policykit.exec.path">/usr/lib/claude-desktop/resources/linux-udev/cdb-tpm-access</annotate>' \
+        "$UDEV_SRC_DIR/$UDEV_POLICY"; then
+    log_error "packaging/udev/$UDEV_POLICY: exec.path is not the installed helper path"
+    exit 1
+fi
+install -d -m 0755 "$UDEV_DST_DIR"
+install -m 0644 "$UDEV_SRC_DIR/70-claude-desktop-extra-tpm.rules" "$UDEV_DST_DIR/70-claude-desktop-extra-tpm.rules"
+install -m 0755 "$UDEV_SRC_DIR/cdb-tpm-access" "$UDEV_DST_DIR/cdb-tpm-access"
+install -m 0644 "$UDEV_SRC_DIR/$UDEV_POLICY" "$UDEV_DST_DIR/$UDEV_POLICY"
+if command -v shellcheck &>/dev/null; then
+    if ! shellcheck -S error "$UDEV_DST_DIR/cdb-tpm-access"; then
+        log_error "cdb-tpm-access failed shellcheck - fix packaging/udev/cdb-tpm-access"
+        exit 1
+    fi
+fi
+log_info "Bundled TPM access rule + helper + polkit action (resources/linux-udev/, disabled)"
+
 # Every ELF in the shipped tree (upstream's and the bridges we just added) must
 # match the .deb's arch. Hard failure: a foreign binary is dead weight at best
 # and a confusing runtime error at worst.

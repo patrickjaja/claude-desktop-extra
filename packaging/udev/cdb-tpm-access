@@ -1,0 +1,235 @@
+#!/bin/sh
+# cdb-tpm-access - claude-desktop-extra: turn the opt-in TPM access rule on or off.
+#
+# Claude Desktop keeps its device identity key in the TPM (/dev/tpmrm0). The
+# rule next to this helper (70-claude-desktop-extra-tpm.rules) gives the user at
+# the active local seat an ACL on that node. "enable" links it into udev's
+# admin directory, "disable" removes only that link; both then reload udev and
+# re-trigger tpmrm devices, so the ACL follows now (no relogin):
+#
+#   /etc/udev/rules.d/70-claude-desktop-extra-tpm.rules -> <this dir>/70-claude-desktop-extra-tpm.rules
+#
+# Run as root: pkexec (Settings -> Extra -> Community -> Computer Use status) or sudo.
+#
+# Usage:  cdb-tpm-access enable|disable
+# Exit:   0 done (also when it was already in that state)
+#         1 not root
+#         2 usage
+#         3 udev not reachable here (no /run/udev/control socket, container, chroot)
+#         4 the link path was left alone (not ours, or the system manages /etc/udev)
+#           or a file operation failed
+#         5 this helper is not at a known install path, or the rule next to
+#           it is missing, unsafe, or not byte-identical to RULE_TEXT below
+# Output: exactly one "cdb-tpm-access: ..." line, on stdout on success, on
+#         stderr (and nothing on stdout) on failure.
+#
+# Nothing is read from the environment: PATH is reset, and every tool runs by
+# an absolute path resolved from the fixed system directories below.
+#
+# Known rule paths (known_src): the deb/rpm/pacman install path
+#   /usr/lib/claude-desktop/resources/linux-udev/<rule>
+# or a Nix store install path (Nix package on a non-NixOS host)
+#   /nix/store/<32-char hash>-<name>/lib/claude-desktop/resources/linux-udev/<rule>
+# The helper links only its own rule, and only when that rule is at one of
+# these paths: a link into any other tree (a build tree or extracted AppImage
+# under /tmp) dangles once that tree is deleted, and then whoever can recreate
+# the path writes a rule udevd runs as root. A known path is recreated only by
+# the package manager or the Nix daemon. The rule and its ancestors must also
+# be root-owned and not group/world writable; the one exception is /nix/store
+# itself (root-owned, sticky, group nixbld), whose entries only the daemon adds.
+# A link counts as ours only when its raw target (readlink, not -f) is a known
+# rule path, dangling or not. The rule linked must also equal RULE_TEXT below
+# byte for byte: whatever owns a known path, only this exact rule gets linked.
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+LC_ALL=C
+export LC_ALL
+IFS='
+'
+umask 022
+set -eu
+
+ME=cdb-tpm-access
+RULE=70-claude-desktop-extra-tpm.rules
+RULES_DIR=/etc/udev/rules.d
+LINK=$RULES_DIR/$RULE
+PKG_SRC=/usr/lib/claude-desktop/resources/linux-udev/$RULE
+# The rule, byte for byte (trailing newline included). Single source checks:
+# packaging/udev/70-claude-desktop-extra-tpm.rules and __cdbEx_TPM_RULE_TEXT in
+# js/extra_settings_main.js must stay identical (scripts/tests/core/test-cu-status-main.mjs).
+RULE_TEXT='# claude-desktop-extra: TPM access for the active seat user (see cdb-tpm-access)
+# Claude Desktop keeps its device identity key in the TPM. Give the user at the
+# active local seat an ACL on the kernel resource manager node only (not tpm0).
+SUBSYSTEM=="tpmrm", KERNEL=="tpmrm[0-9]*", ACTION!="remove", TAG+="uaccess"
+'
+# Container markers (systemd, Docker, Podman, Flatpak), one per line. The same
+# list, in this order, as __cdbEx_CUS_CONTAINER in js/extra_settings_main.js.
+CONTAINER_MARKERS='/run/systemd/container
+/.dockerenv
+/run/.containerenv
+/.flatpak-info'
+
+fail() { # <exit code> <reason>
+    printf '%s: %s\n' "$ME" "$2" >&2
+    exit "$1"
+}
+
+tool() { # <name>: absolute path of a system tool, never from the caller's PATH
+    for _d in /usr/bin /bin /usr/sbin /sbin; do
+        if [ -x "$_d/$1" ] && [ ! -d "$_d/$1" ]; then
+            printf '%s\n' "$_d/$1"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# --- usage (checked first, so it can be tested without root) -----------------
+[ "$#" -eq 1 ] || fail 2 "usage: $ME enable|disable"
+case "$1" in
+    enable|disable) ACTION=$1 ;;
+    *) fail 2 "usage: $ME enable|disable" ;;
+esac
+
+# --- where this helper lives (string checks, so they run before the root check)
+known_src() { # <path>: is it a known rule path (see the header)?
+    case "$1" in
+        "$PKG_SRC") return 0 ;;
+        /nix/store/*) ;;
+        *) return 1 ;;
+    esac
+    _rest=${1#/nix/store/}
+    _seg=${_rest%%/*}
+    [ "$_rest" = "$_seg/lib/claude-desktop/resources/linux-udev/$RULE" ] || return 1
+    _hash=${_seg%%-*}
+    _name=${_seg#*-}
+    [ "$_hash" != "$_seg" ] && [ "${#_hash}" -eq 32 ] && [ -n "$_name" ] || return 1
+    case "$_hash" in *[!0123456789abcdfghijklmnpqrsvwxyz]*) return 1 ;; esac
+    case "$_name" in *[!A-Za-z0-9+._?=-]*) return 1 ;; esac
+    return 0
+}
+
+READLINK=$(tool readlink) || fail 4 "missing tool: readlink"
+SELF=$("$READLINK" -f -- "$0") || fail 5 "cannot resolve the helper's own path"
+case "$SELF" in /*) ;; *) fail 5 "cannot resolve the helper's own path" ;; esac
+DIR=${SELF%/*}
+SRC=$DIR/$RULE
+known_src "$SRC" \
+    || fail 5 "refused: $SRC is not an installed claude-desktop-extra rule ($PKG_SRC or a Nix store install)"
+
+# --- root ---------------------------------------------------------------------
+ID=$(tool id) || fail 1 "cannot find id(1) to check for root"
+[ "$("$ID" -u)" = 0 ] || fail 1 "must run as root (pkexec or sudo)"
+
+STAT=$(tool stat) || fail 4 "missing tool: stat"
+LN=$(tool ln) || fail 4 "missing tool: ln"
+RM=$(tool rm) || fail 4 "missing tool: rm"
+MKDIR=$(tool mkdir) || fail 4 "missing tool: mkdir"
+MV=$(tool mv) || fail 4 "missing tool: mv"
+CAT=$(tool cat) || fail 5 "missing tool: cat"
+
+# --- udev must be the host's ---------------------------------------------------
+# A container's /etc is not what the host's udevd reads, even when /run/udev is
+# shared into it.
+for _c in $CONTAINER_MARKERS; do
+    if [ -e "$_c" ]; then fail 3 "running inside a container ($_c): run this on the host"; fi
+done
+[ -S /run/udev/control ] || fail 3 "udev is not running here (/run/udev/control is not a socket)"
+UDEVADM=$(tool udevadm) || fail 3 "missing tool: udevadm"
+
+# --- our own rule -------------------------------------------------------------
+safe() { # <path> <file|dir>: root-owned, not group/world writable (/nix/store: sticky)
+    _om=$("$STAT" -c '%u %a' -- "$1" 2>/dev/null) || return 1
+    _uid=${_om%% *}
+    _mode=${_om#* }
+    [ "$_uid" = 0 ] || return 1
+    case "$_mode" in ''|*[!0-7]*) return 1 ;; esac
+    _m=$((0$_mode))
+    if [ $((_m & 022)) -ne 0 ]; then
+        [ "$2" = dir ] && [ "$1" = /nix/store ] && [ $((_m & 01000)) -ne 0 ] || return 1
+    fi
+    return 0
+}
+
+if [ -L "$SRC" ] || [ ! -f "$SRC" ]; then
+    fail 5 "$SRC is missing or not a regular file"
+fi
+safe "$SRC" file || fail 5 "$SRC must be owned by root and not group/world writable"
+_p=$DIR
+while [ -n "$_p" ]; do
+    safe "$_p" dir || fail 5 "$_p must be owned by root and not group/world writable"
+    _p=${_p%/*}
+done
+safe / dir || fail 5 "/ must be owned by root and not group/world writable"
+# Content, byte for byte: same size (so no NUL byte hides in it) and same text.
+_size=$("$STAT" -c '%s' -- "$SRC") || fail 5 "cannot read $SRC"
+_have=$("$CAT" -- "$SRC" && printf x) || fail 5 "cannot read $SRC"
+_have=${_have%x}
+if [ "$_size" != "${#RULE_TEXT}" ] || [ "$_have" != "$RULE_TEXT" ]; then
+    fail 5 "refused: $SRC does not match the rule this helper ships"
+fi
+
+# --- the link -------------------------------------------------------------------
+if [ -e /etc/NIXOS ]; then
+    fail 4 "left alone: NixOS manages /etc/udev - set programs.claude-desktop-extra.tpmAccess.enable = true; instead"
+fi
+if [ -L /etc/udev ] || [ -L "$RULES_DIR" ]; then
+    fail 4 "left alone: $RULES_DIR is a symlink managed by the system configuration"
+fi
+
+read_target() { # sets TARGET to the raw target of LINK, trailing newlines kept
+    _t=$("$READLINK" -- "$LINK" && printf x) || return 1
+    _t=${_t%x}
+    TARGET=${_t%?}
+}
+
+if [ -L "$LINK" ]; then
+    read_target || fail 4 "cannot read the link $LINK"
+    known_src "$TARGET" \
+        || fail 4 "left alone: $LINK is a symlink to $TARGET, not managed by claude-desktop-extra"
+    if [ "$TARGET" = "$SRC" ]; then STATE=current; else STATE=stale; fi
+elif [ -e "$LINK" ]; then
+    fail 4 "left alone: $LINK exists and is not a claude-desktop-extra link"
+else
+    STATE=absent
+fi
+
+case "$ACTION:$STATE" in
+    enable:absent)
+        "$MKDIR" -p -- "$RULES_DIR" || fail 4 "cannot create $RULES_DIR"
+        "$LN" -s -- "$SRC" "$LINK" || fail 4 "cannot create the link $LINK"
+        MSG="enabled ($LINK -> $SRC)"
+        ;;
+    enable:stale)
+        # A new link under a name udev ignores (not *.rules), then an atomic
+        # rename over the old one: udev never sees the path missing or half-made.
+        _tmp=$RULES_DIR/.$RULE.tmp.$$
+        "$RM" -f -- "$_tmp" || fail 4 "cannot remove $_tmp"
+        "$LN" -s -- "$SRC" "$_tmp" || fail 4 "cannot create the link $_tmp"
+        "$MV" -T -- "$_tmp" "$LINK" || { "$RM" -f -- "$_tmp"; fail 4 "cannot re-point the link $LINK"; }
+        MSG="re-pointed ($LINK -> $SRC)"
+        ;;
+    enable:current)
+        MSG="already enabled"
+        ;;
+    disable:current|disable:stale)
+        "$RM" -f -- "$LINK" || fail 4 "cannot remove the link $LINK"
+        MSG="disabled"
+        ;;
+    disable:absent)
+        printf '%s: %s\n' "$ME" "already disabled"
+        exit 0
+        ;;
+esac
+
+# --- apply now: reload rules, re-run them for the TPM resource manager ---------
+# Also on "already enabled", so the ACL reaches the current seat session.
+"$UDEVADM" control --reload >&2 \
+    || fail 3 "$MSG, but udevadm control --reload failed"
+"$UDEVADM" trigger --action=change --subsystem-match=tpmrm >&2 \
+    || fail 3 "$MSG, but udevadm trigger --action=change --subsystem-match=tpmrm failed"
+"$UDEVADM" settle --timeout=10 >&2 || :
+
+printf '%s: %s\n' "$ME" "$MSG"
+exit 0

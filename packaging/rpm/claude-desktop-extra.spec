@@ -254,6 +254,23 @@ if [ ! -f "$MIME_SRC" ]; then
 fi
 install -pDm644 "$MIME_SRC" %{buildroot}/usr/share/mime/packages/com.anthropic.Claude.xml
 
+# Opt-in TPM access (cloud Cowork / Dispatch Computer Use): the rule and its
+# root helper stay disabled inside the tree (%%files covers them through
+# /usr/lib/claude-desktop/, and __requires_exclude_from keeps the helper's
+# shebang out of the generated requires); the helper's polkit action is a
+# package file so pkexec shows our prompt. No scriptlet touches them.
+UDEV_DIR=%{buildroot}/usr/lib/claude-desktop/resources/linux-udev
+UDEV_POLICY=io.github.patrickjaja.claude-desktop-extra.tpm-access.policy
+for f in 70-claude-desktop-extra-tpm.rules cdb-tpm-access "$UDEV_POLICY"; do
+    if [ ! -f "$UDEV_DIR/$f" ]; then
+        echo "ERROR: resources/linux-udev/$f missing from the tarball - rebuild it" >&2
+        exit 1
+    fi
+done
+chmod 0755 "$UDEV_DIR" "$UDEV_DIR/cdb-tpm-access"
+chmod 0644 "$UDEV_DIR/70-claude-desktop-extra-tpm.rules" "$UDEV_DIR/$UDEV_POLICY"
+install -pDm644 "$UDEV_DIR/$UDEV_POLICY" %{buildroot}/usr/share/polkit-1/actions/$UDEV_POLICY
+
 %post
 # Ensure chrome-sandbox has SUID root (required by Chromium's setuid sandbox)
 if [ -f /usr/lib/claude-desktop/chrome-sandbox ]; then
@@ -350,3 +367,4 @@ fi
 /usr/share/gnome-shell/search-providers/com.anthropic.Claude.search-provider.ini
 /usr/share/dbus-1/services/com.anthropic.Claude.SearchProvider.service
 /usr/share/mime/packages/com.anthropic.Claude.xml
+/usr/share/polkit-1/actions/io.github.patrickjaja.claude-desktop-extra.tpm-access.policy

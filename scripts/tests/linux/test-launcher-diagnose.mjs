@@ -695,6 +695,316 @@ safe("D11", () => {
   check("diagnose without a resettable bridge: no reset footer", (r.stdout || "").includes("--reset-screen-sharing forgets"), false);
 });
 
+// ---------------------------------------------------------------- D12
+// Device key lines (cloud Cowork / Dispatch Computer Use): TPM access, the
+// opt-in rule link and the last remote-device connect, plus their Problems.
+// Fake /dev and /etc paths are passed as arguments; the main.log parsing reads
+// the fixture the Extra settings status panel's harness reads too.
+console.log("D12: --diagnose device key (TPM), rule link and last connect");
+safe("D12", () => {
+  const root = join(scratch, "d12");
+  const res = join(root, "tree", "resources");
+  const udev = join(res, "linux-udev");
+  const rule = join(udev, "70-claude-desktop-extra-tpm.rules");
+  mkdirSync(udev, { recursive: true });
+  writeFileSync(rule, "# rule\n");
+  const fixture = join(repo, "scripts", "tests", "fixtures", "main-log-device.txt");
+  if (!existsSync(fixture)) throw new Error("shared fixture scripts/tests/fixtures/main-log-device.txt missing");
+  const env = { PATH: "/usr/bin:/bin" };
+  const FNS = ["_diag_tpm_state", "_cdb_tpm_rule_ours", "_diag_tpm_rule", "_diag_last_connect", "_diag_device_key"];
+  const dk = (dev, link, log, extra = "") => runFns(FNS,
+    `_diag_problems=(); ${extra} _diag_device_key '${dev}' '${link}' '${res}' '${log}'; printf 'P=%s\\n' "\${_diag_problems[@]:-}"`, env);
+  const lines = (o) => o.out.split("\n");
+  const problems = (o) => lines(o).filter((l) => l.startsWith("P=")).map((l) => l.slice(2)).filter(Boolean);
+
+  const devOk = join(root, "tpmrm0-ok");
+  writeFileSync(devOk, "");
+  chmodSync(devOk, 0o600);
+  const devDenied = join(root, "tpmrm0-denied");
+  writeFileSync(devDenied, "");
+  chmodSync(devDenied, 0o000);
+  const isRoot = process.getuid && process.getuid() === 0;
+  const link = join(root, "rules.d", "70-claude-desktop-extra-tpm.rules");
+  mkdirSync(dirname(link), { recursive: true });
+  const noLog = join(root, "no-such-main.log");
+
+  // TPM states, in contract order (three lines, this order).
+  let o = dk(devOk, link, fixture);
+  check("ok: three lines in order", lines(o).slice(0, 3).map((l) => l.split(" = ")[0]).join("|"),
+    "device key (TPM)|TPM access rule|last remote-device connect");
+  check("ok line", lines(o)[0], `device key (TPM) = ok (${devOk} rw)`);
+  check("no link: not enabled", lines(o)[1], "TPM access rule = not enabled");
+  check("fixture: last connect of the log is keyed", lines(o)[2], "last remote-device connect = keyed (2026-11-03 12:21:03)");
+  check("ok + keyed: no problem", problems(o).length, 0);
+  o = dk(join(root, "absent"), link, noLog);
+  check("absent line", lines(o)[0], "device key (TPM) = absent (no TPM 2.0 resource manager)");
+  check("no main.log: not seen", lines(o)[2], "last remote-device connect = not seen");
+  check("absent: no problem", problems(o).length, 0);
+  if (isRoot) {
+    console.log("  SKIP NOT ACCESSIBLE cases (running as root)");
+  } else {
+    o = dk(devDenied, link, fixture);
+    const owner = spawnSync("stat", ["-c", "%U:%G", devDenied], { encoding: "utf8" }).stdout.trim();
+    check("denied line names owner, group and octal mode", lines(o)[0], `device key (TPM) = NOT ACCESSIBLE (${owner} 0000)`);
+    check("denied: the fix problem", problems(o)[0],
+      `cloud Cowork and Dispatch get no Computer Use: the device key needs ${devDenied} - Settings -> Extra -> Community -> Computer Use status, or sudo ${udev}/cdb-tpm-access enable; without logind: sudo usermod -aG tss $USER and log in again`);
+    o = dk(devDenied, link, fixture, "CLAUDE_APPIMAGE_PATH=/x/Claude.AppImage;");
+    check("denied on AppImage: the copy command instead of the image's helper",
+      problems(o)[0].includes(`or sudo install -m 0644 ${rule} ${link} && sudo udevadm control --reload && sudo udevadm trigger --action=change --subsystem-match=tpmrm;`), true);
+  }
+
+  // Last connect: keyless with its reason, none, unparsable.
+  const log2 = join(root, "main-keyless.log");
+  writeFileSync(log2, readFileSync(fixture, "utf8").split("\n").filter((l) => !l.includes("12:21:03") || !l.includes("device_id keyed")).join("\n"));
+  o = dk(devOk, link, log2);
+  check("keyless line with reason", lines(o)[2], "last remote-device connect = keyless (row_pk_no_row) (2026-11-03 12:20:58)");
+  check("ok + keyless: the Q6 problem", problems(o)[0],
+    `device registered keyless (row_pk_no_row) although ${devOk} is accessible: restart Claude; if it stays keyless, attach this report to an issue`);
+  const log3 = join(root, "main-none.log");
+  writeFileSync(log3, "2026-11-03 13:00:00 [info] [remote-tools-device] connect frame sent: device_id none\n");
+  check("none line", lines(dk(devOk, link, log3))[2], "last remote-device connect = none (2026-11-03 13:00:00)");
+  const log4 = join(root, "main-moved.log");
+  writeFileSync(log4, "2026-11-03 13:00:00 [info] [remote-tools-device] connect frame sent: deviceId=keyed\n");
+  check("moved wording: not seen", lines(dk(devOk, link, log4))[2], "last remote-device connect = not seen");
+
+  // Rule link states.
+  const ruleLine = (setup) => { rmSync(link, { force: true }); setup(); const r = dk(devOk, link, fixture); return [lines(r)[1], problems(r)]; };
+  const sym = (t) => spawnSync("ln", ["-s", t, link]);
+  // A link into this run's own tree (an AppImage mount, a build tree) is not
+  // ours: the tree goes away and whoever recreates the path writes a root rule.
+  let [l, p] = ruleLine(() => sym(rule));
+  check("link to this run's tree: unsafe, remove it", l, `TPM access rule = unsafe link (-> ${rule}, not an installed claude-desktop-extra rule - remove it)`);
+  check("unsafe: the rm problem", p[0], `TPM access rule link points outside an installed claude-desktop-extra rule (udev reads it as root), remove it: sudo rm -f ${link} && sudo udevadm control --reload`);
+  const goneStore = "/nix/store/00000000000000000000000000000000-claude-desktop-extra-1.0/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules";
+  [l, p] = ruleLine(() => sym(goneStore));
+  check("dangling Nix store link: stale", l, `TPM access rule = stale link (-> ${goneStore}, missing)`);
+  check("stale: the re-point problem", p[0], `TPM access rule link points at a removed install: sudo ${udev}/cdb-tpm-access enable`);
+  [l] = ruleLine(() => sym("/usr/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules"));
+  check("package path link: ours (enabled or stale, never foreign)", /^TPM access rule = (enabled \(link|stale link \(-> )\/usr\/lib\/claude-desktop\//.test(l), true);
+  [l, p] = ruleLine(() => sym("/nix/store/a/b/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules"));
+  check("store path with two segments: unsafe", l.startsWith("TPM access rule = unsafe link (-> /nix/store/a/b/"), true);
+  [l, p] = ruleLine(() => sym("/nix/store/0000000000000000000000000000000-x/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules"));
+  check("store path with a 31-char hash: unsafe (the helper's exact shape only)", l.startsWith("TPM access rule = unsafe link "), true);
+  [l, p] = ruleLine(() => sym("/etc/hostname"));
+  check("other target: unsafe", l, "TPM access rule = unsafe link (-> /etc/hostname, not an installed claude-desktop-extra rule - remove it)");
+  check("unsafe: one problem with the rm command", p.length === 1 && p[0].includes(`sudo rm -f ${link}`), true);
+  [l, p] = ruleLine(() => sym("/dev/null"));
+  check("link to /dev/null: masked, no problem", `${l}|${p.length}`, "TPM access rule = masked (link -> /dev/null)|0");
+  [l] = ruleLine(() => writeFileSync(link, "# admin copy\n"));
+  check("regular file: not managed", l, "TPM access rule = enabled (file, not managed by claude-desktop-extra)");
+  rmSync(link, { force: true });
+
+  // The real --diagnose prints the three lines inside --- Computer Use ---.
+  const home = join(root, "home");
+  mkdirSync(join(home, ".config", "Claude", "logs"), { recursive: true });
+  writeFileSync(join(home, ".config", "Claude", "logs", "main.log"), readFileSync(fixture));
+  const electron = fakeTree(join(root, "tree2"), { "x11-bridge": "#!/bin/sh\necho 'x11-bridge 0.1.0'\n" });
+  const r = spawnSync(BASH, [launcherPath, "--diagnose"], {
+    env: { PATH: "/usr/bin:/bin", HOME: home, CLAUDE_ELECTRON: electron, XDG_RUNTIME_DIR: join(root, "run"),
+           DISPLAY: ":0", XDG_SESSION_TYPE: "x11" }, encoding: "utf8", timeout: 90000 });
+  const d = r.stdout || "";
+  check("diagnose: exit 0", r.status, 0);
+  const cu = d.slice(d.indexOf("--- Computer Use ---"), d.indexOf("--- Computer Use bridges"));
+  check("diagnose: device key line in the Computer Use section", /^device key \(TPM\) = (ok \(\/dev\/tpmrm0 rw\)|NOT ACCESSIBLE \(.+ [0-7]{4}\)|absent \(no TPM 2\.0 resource manager\))$/m.test(cu), true);
+  check("diagnose: rule line follows", /^device key \(TPM\) = .*\nTPM access rule = .*\nlast remote-device connect = /m.test(cu), true);
+  check("diagnose: last connect read from the profile's main.log", cu.includes("last remote-device connect = keyed (2026-11-03 12:21:03)"), true);
+});
+
+// ---------------------------------------------------------------- D13
+// cdb-tpm-access: the real helper with its fixed system paths pointed into a
+// scratch dir, the root/ownership checks keyed to this user, the scratch
+// install added to its known rule paths and the scratch dir's sticky ancestors
+// (/tmp) to its sticky exception, so every exit code path runs unprivileged.
+// A fake udevadm records its calls.
+console.log("D13: cdb-tpm-access helper (paths rewritten into a scratch dir)");
+safe("D13", () => {
+  const helperSrc = readFileSync(join(repo, "packaging", "udev", "cdb-tpm-access"), "utf8");
+  const uid = String(process.getuid());
+  const root = join(scratch, "d13");
+  const etc = join(root, "etc");
+  const calls = join(root, "udevadm.calls");
+  const fakeUdevadm = join(root, "bin", "udevadm");
+  const inst = join(root, "lib", "linux-udev");
+  const sticky = [];
+  for (let d = scratch; dirname(d) !== d; d = dirname(d)) {
+    if (existsSync(d) && (lstatSync(d).mode & 0o1000)) sticky.push(d);
+  }
+  writeExe(fakeUdevadm, `#!/bin/sh\necho "$*" >> '${calls}'\n[ -e '${root}/udevadm-fail' ] && exit 1\nexit 0\n`);
+  const subst = [
+    ['RULES_DIR=/etc/udev/rules.d', `RULES_DIR=${etc}/udev/rules.d`],
+    ['[ "$("$ID" -u)" = 0 ]', `[ "$("$ID" -u)" = ${uid} ]`],
+    ['[ "$_uid" = 0 ] || return 1', `{ [ "$_uid" = 0 ] || [ "$_uid" = ${uid} ]; } || return 1`],
+    ["CONTAINER_MARKERS='/run/systemd/container\n/.dockerenv\n/run/.containerenv\n/.flatpak-info'", `CONTAINER_MARKERS='${root}/nothing-here\n${root}/containerenv'`],
+    ['[ -S /run/udev/control ]', `[ -e ${root}/udev-control ]`],
+    ['UDEVADM=$(tool udevadm)', `UDEVADM=${fakeUdevadm}`],
+    ['[ -e /etc/NIXOS ]', `[ -e ${etc}/NIXOS ]`],
+    ['[ -L /etc/udev ]', `[ -L ${etc}/udev ]`],
+  ];
+  const known = ['"$PKG_SRC") return 0 ;;', `"$PKG_SRC"|'${inst}/'"$RULE") return 0 ;;`];
+  const stickyOk = ['[ "$1" = /nix/store ]', `{ ${["/nix/store", ...sticky].map((d) => `[ "$1" = '${d}' ]`).join(" || ")}; }`];
+  const build = (list) => {
+    let src = helperSrc;
+    for (const [a, b] of list) {
+      if (src.split(a).length !== 2) throw new Error(`helper anchor not found exactly once: ${a}`);
+      src = src.replace(a, b);
+    }
+    return src;
+  };
+  const src = build([...subst, known, stickyOk]);
+  mkdirSync(etc, { recursive: true });
+  const helper = join(inst, "cdb-tpm-access");
+  const rule = join(inst, "70-claude-desktop-extra-tpm.rules");
+  writeExe(helper, src);
+  writeFileSync(rule, readFileSync(join(repo, "packaging", "udev", "70-claude-desktop-extra-tpm.rules")));
+  chmodSync(rule, 0o644);
+  writeFileSync(join(root, "udev-control"), "");
+  const link = join(etc, "udev", "rules.d", "70-claude-desktop-extra-tpm.rules");
+  const run = (...args) => {
+    const r = spawnSync(helper, args, { env: { PATH: join(root, "bin") }, encoding: "utf8" });
+    return { rc: r.status, out: r.stdout || "", err: r.stderr || "" };
+  };
+  const one = (r) => r.out.split("\n").filter(Boolean).length === 1 && r.out.startsWith("cdb-tpm-access: ");
+  const udevCalls = () => existsSync(calls) ? readFileSync(calls, "utf8").trim() : "";
+
+  let r = run("bogus");
+  check("usage: exit 2, nothing on stdout", `${r.rc}|${r.out}`, "2|");
+  r = run();
+  check("no argument: exit 2", r.rc, 2);
+  r = run("enable", "extra");
+  check("two arguments: exit 2", r.rc, 2);
+
+  r = run("enable");
+  check("enable: exit 0", r.rc, 0);
+  check("enable: one stdout line", r.out.trim(), `cdb-tpm-access: enabled (${link} -> ${rule})`);
+  check("enable: a symlink to the shipped rule (no copy)", lstatSync(link).isSymbolicLink() && readlinkSync(link) === rule, true);
+  check("enable: reload, trigger tpmrm, settle", udevCalls(),
+    "control --reload\ntrigger --action=change --subsystem-match=tpmrm\nsettle --timeout=10");
+  rmSync(calls, { force: true });
+  r = run("enable");
+  check("enable again: already enabled, still re-triggers", `${r.rc}|${r.out.trim()}|${udevCalls().split("\n").length}`, "0|cdb-tpm-access: already enabled|3");
+
+  // Stale link (an older Nix store install) is re-pointed.
+  const store = "/nix/store/0000000000000000000000000000000z-claude-desktop-extra-1.0/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules";
+  rmSync(link); spawnSync("ln", ["-s", store, link]);
+  r = run("enable");
+  check("stale store link: re-pointed", `${r.rc}|${r.out.trim()}`, `0|cdb-tpm-access: re-pointed (${link} -> ${rule})`);
+  check("stale store link: now points at the shipped rule", readlinkSync(link), rule);
+  check("stale store link: re-pointed by rename, no temp link left", readdirSync(dirname(link)).join(","), "70-claude-desktop-extra-tpm.rules");
+  check("the re-point is ln -s to a temp name + mv -T, never ln -sfn", /"\$MV" -T -- "\$_tmp" "\$LINK"/.test(helperSrc) && !/ln -sfn|-sfn/.test(helperSrc), true);
+
+  rmSync(calls, { force: true });
+  r = run("disable");
+  check("disable: one line, link gone", `${r.rc}|${one(r)}|${r.out.trim()}|${existsSync(link) || (() => { try { lstatSync(link); return true; } catch { return false; } })()}`,
+    "0|true|cdb-tpm-access: disabled|false");
+  check("disable: reload + trigger", udevCalls().split("\n").slice(0, 2).join("|"), "control --reload|trigger --action=change --subsystem-match=tpmrm");
+  rmSync(calls, { force: true });
+  r = run("disable");
+  check("disable again: already disabled, udev untouched", `${r.rc}|${r.out.trim()}|${udevCalls()}`, "0|cdb-tpm-access: already disabled|");
+
+  // Dangling link to the deb/rpm/pacman path (uninstalled package) is ours.
+  spawnSync("ln", ["-s", "/usr/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules", link]);
+  r = run("disable");
+  check("package-path link: disabled", `${r.rc}|${r.out.trim()}`, "0|cdb-tpm-access: disabled");
+
+  // Anything else at LINK is left alone (exit 4) on enable AND disable.
+  writeFileSync(link, "# admin rule\n");
+  for (const a of ["enable", "disable"]) {
+    r = run(a);
+    check(`regular file, ${a}: exit 4, untouched, stderr only`,
+      `${r.rc}|${r.out}|${readFileSync(link, "utf8")}|${/^cdb-tpm-access: left alone: /.test(r.err)}`, "4||# admin rule\n|true");
+  }
+  rmSync(link);
+  spawnSync("ln", ["-s", "/etc/hostname", link]);
+  for (const a of ["enable", "disable"]) {
+    r = run(a);
+    check(`foreign symlink, ${a}: exit 4, untouched`, `${r.rc}|${readlinkSync(link)}`, "4|/etc/hostname");
+  }
+  rmSync(link);
+  spawnSync("ln", ["-s", "/nix/store/x/y/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules", link]);
+  check("store link with an extra segment: foreign, exit 4", run("disable").rc, 4);
+  rmSync(link);
+  spawnSync("ln", ["-s", "/nix/store/x/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules", link]);
+  check("store link without a hash-name segment: foreign, exit 4", run("disable").rc, 4);
+  rmSync(link);
+  // A dangling link into a deleted /tmp tree (the hijack case) is never ours.
+  spawnSync("ln", ["-s", "/tmp/cdb-gone-tree/resources/linux-udev/70-claude-desktop-extra-tpm.rules", link]);
+  for (const a of ["enable", "disable"]) {
+    r = run(a);
+    check(`dangling link into a /tmp tree, ${a}: exit 4, untouched`, `${r.rc}|${readlinkSync(link)}`,
+      "4|/tmp/cdb-gone-tree/resources/linux-udev/70-claude-desktop-extra-tpm.rules");
+  }
+  rmSync(link);
+  spawnSync("ln", ["-s", store, link]);
+  r = run("disable");
+  check("dangling Nix store link: disabled", `${r.rc}|${r.out.trim()}`, "0|cdb-tpm-access: disabled");
+
+  // The same helper at a location that is not a known rule path (a build tree or
+  // extracted AppImage under /tmp): exit 5 before anything, even with root keyed.
+  const tmpTree = join(root, "tree", "resources", "linux-udev");
+  writeExe(join(tmpTree, "cdb-tpm-access"), build([...subst, stickyOk]));
+  writeFileSync(join(tmpTree, "70-claude-desktop-extra-tpm.rules"), readFileSync(rule));
+  chmodSync(join(tmpTree, "70-claude-desktop-extra-tpm.rules"), 0o644);
+  r = { ...spawnSync(join(tmpTree, "cdb-tpm-access"), ["enable"], { env: { PATH: join(root, "bin") }, encoding: "utf8" }) };
+  check("helper outside the known rule paths: exit 5, no link, says refused", `${r.status}|${r.stdout}|${existsSync(link)}|${/refused: .* is not an installed claude-desktop-extra rule/.test(r.stderr)}`,
+    "5||false|true");
+  // A sticky world-writable ancestor other than /nix/store is not accepted.
+  if (sticky.length) {
+    writeExe(helper, build([...subst, known]));
+    r = run("enable");
+    check(`sticky ancestor ${sticky.join(",")} not accepted: exit 5, no link`, `${r.rc}|${existsSync(link)}`, "5|false");
+    writeExe(helper, src);
+  } else {
+    console.log("  SKIP the scratch dir has no sticky ancestor");
+  }
+
+  // Unsafe or missing shipped rule: exit 5, nothing linked.
+  chmodSync(rule, 0o664);
+  r = run("enable");
+  check("group-writable rule: exit 5", `${r.rc}|${existsSync(link)}`, "5|false");
+  chmodSync(rule, 0o644);
+  chmodSync(inst, 0o777);
+  check("world-writable rule dir: exit 5", run("enable").rc, 5);
+  chmodSync(inst, 0o755);
+  rmSync(rule);
+  spawnSync("ln", ["-s", join(repo, "packaging", "udev", "70-claude-desktop-extra-tpm.rules"), rule]);
+  check("rule is a symlink: exit 5", run("enable").rc, 5);
+  rmSync(rule);
+  check("rule missing: exit 5", run("enable").rc, 5);
+  // Root-owned and at a known path, but not the shipped text: never linked.
+  const shipped = readFileSync(join(repo, "packaging", "udev", "70-claude-desktop-extra-tpm.rules"));
+  for (const [what, body] of [["an added RUN line", Buffer.concat([shipped, Buffer.from('SUBSYSTEM=="tpmrm", RUN+="/bin/sh -c id"\n')])],
+    ["no trailing newline", shipped.subarray(0, shipped.length - 1)], ["a NUL byte appended", Buffer.concat([shipped, Buffer.from([0])])],
+    ["empty", Buffer.alloc(0)]]) {
+    writeFileSync(rule, body); chmodSync(rule, 0o644);
+    r = run("enable");
+    check(`rule with ${what}: exit 5, says it does not match, no link`,
+      `${r.rc}|${r.out}|${/does not match the rule this helper ships/.test(r.err)}|${existsSync(link)}`, "5||true|false");
+  }
+  writeFileSync(rule, shipped);
+  chmodSync(rule, 0o644);
+
+  // No udev here / container / NixOS / udevadm failing.
+  rmSync(join(root, "udev-control"));
+  check("no udev control socket: exit 3", run("enable").rc, 3);
+  writeFileSync(join(root, "udev-control"), "");
+  writeFileSync(join(root, "containerenv"), "");
+  r = run("enable");
+  check("container: exit 3, says run it on the host", `${r.rc}|${r.err.includes("run this on the host")}`, "3|true");
+  rmSync(join(root, "containerenv"));
+  writeFileSync(join(etc, "NIXOS"), "");
+  check("NixOS: exit 4 (module option instead)", run("enable").rc, 4);
+  rmSync(join(etc, "NIXOS"));
+  writeFileSync(join(root, "udevadm-fail"), "");
+  r = run("enable");
+  check("udevadm reload fails after the link: exit 3, no stdout", `${r.rc}|${r.out}`, "3|");
+  rmSync(join(root, "udevadm-fail"));
+  check("...and the link it made is ours: disable works", run("disable").rc, 0);
+
+  // Unmodified helper from the source tree: not a known rule path, exit 5 before anything.
+  const real = spawnSync(join(repo, "packaging", "udev", "cdb-tpm-access"), ["enable"], { encoding: "utf8" });
+  check("real helper from the source tree: exit 5, nothing on stdout", `${real.status}|${real.stdout}`, "5|");
+});
+
 rmSync(scratch, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) {

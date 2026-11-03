@@ -66,6 +66,10 @@ Ubuntu/Debian ship an incompatible v0.1.8 - build v1.0.4 with the setup script:
 curl -fsSL https://raw.githubusercontent.com/patrickjaja/claude-desktop-extra/master/scripts/setup-ydotool.sh | sudo bash
 ```
 
+## TPM access (optional, cloud Cowork and Dispatch)
+
+Cloud Cowork and Dispatch offer this computer's Computer Use only when the desktop can use the TPM 2.0 resource manager (`/dev/tpmrm0`) for its device key. Code sessions do not need it. On `.deb`, `.rpm` and pacman installs, Settings -> Extra -> Community -> Computer Use status -> **Enable TPM access** does this through polkit (`pkexec` and a polkit agent in your session, which desktop environments provide). Without a polkit agent, or on AppImage, the panel shows a command to run with `sudo`. NixOS: `programs.claude-desktop-extra.tpmAccess.enable = true;` (module `nixosModules.default`). Any distro: `sudo usermod -aG tss $USER` and log in again. See [Computer Use in cloud Cowork and Dispatch](computer-use.md#computer-use-in-cloud-cowork-and-dispatch).
+
 <a id="nixos"></a>
 ## NixOS
 

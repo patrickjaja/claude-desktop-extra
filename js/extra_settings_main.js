@@ -1366,10 +1366,14 @@
     } catch (e) { return false; }
   }
 
+  // A handler marked by __cdbEx_withSender gets the (already checked) event as
+  // its only argument instead of the page's arguments.
+  function __cdbEx_withSender(fn) { fn.__cdbExWithSender = true; return fn; }
   function __cdbEx_guard(fn) {
     return function (ev) {
       if (!__cdbEx_okSender(ev)) return { ok: false, error: "rejected: unrecognized sender" };
       try {
+        if (fn.__cdbExWithSender === true) return fn(ev);
         return fn.apply(null, Array.prototype.slice.call(arguments, 1));
       } catch (e) {
         return { ok: false, error: (e && e.message) || String(e) };
@@ -1673,7 +1677,10 @@
   var __cdbEx_cubgQueue = [];
   // Async execFile with a hard timeout, queued behind __cdbEx_CUBG_MAX_CHILDREN.
   // Resolves (never rejects) to {ok, stdout} or {ok:false, error, timedOut}.
-  function __cdbEx_cubgExec(bin, args, env, maxBuffer) {
+  // timeoutMs: optional, for a caller that needs longer than the default (the
+  // Computer Use status page's `doctor`, which may take 5 s on a hung a11y bus).
+  function __cdbEx_cubgExec(bin, args, env, maxBuffer, timeoutMs) {
+    var tmo = timeoutMs || __cdbEx_CUBG_TIMEOUT_MS;
     return new Promise(function (resolve) {
       function run() {
         __cdbEx_cubgActive++;
@@ -1687,10 +1694,11 @@
           resolve(r);
         }
         try {
-          __cdbEx_cubgCp().execFile(bin, args, {
-            env: env, timeout: __cdbEx_CUBG_TIMEOUT_MS, killSignal: "SIGKILL",
+          var opts = {
+            env: env, timeout: tmo, killSignal: "SIGKILL",
             maxBuffer: maxBuffer || 1024 * 1024, encoding: "utf8", windowsHide: true
-          }, function (err, stdout, stderr) {
+          };
+          __cdbEx_cubgCp().execFile(bin, args, opts, function (err, stdout, stderr) {
             if (!err) { fin({ ok: true, stdout: String(stdout || "") }); return; }
             if (err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
               fin({ ok: false, error: "output larger than " + Math.round((maxBuffer || 1048576) / 1048576) + " MB - refused" });
@@ -1701,7 +1709,8 @@
               .filter(Boolean)[0] || "";
             fin({
               ok: false, timedOut: timedOut,
-              error: timedOut ? "no answer within " + (__cdbEx_CUBG_TIMEOUT_MS / 1000) + " s"
+              exitCode: typeof err.code === "number" ? err.code : null,
+              error: timedOut ? "no answer within " + (tmo / 1000) + " s"
                 : (line || err.message || String(err)).slice(0, 400)
             });
           });
@@ -2131,6 +2140,628 @@
         });
       });
     }).then(function (res) { res.ms = Date.now() - t0; return res; });
+  }
+
+  // --- Computer Use status (Community -> Computer Use -> Details) -----------
+  // Three rows: this desktop (the app's own startup decision + the bridge's
+  // `doctor`), the device key (TPM) and cloud Cowork / Dispatch (this run's
+  // remote-device lines in main.log). OK only from a fact observed here; any
+  // read that fails is "unknown" with its error, never OK.
+  //
+  // NEVER BLOCKS: fs.promises only; the one child of a read is `doctor`, through
+  // the cubg exec queue with an 8 s timeout, and only for cdb-cu-status:read
+  // (the summary spawns nothing). Nothing runs at module load.
+  //
+  // SECURITY: the caller is remote code and no channel takes an argument. The
+  // helper path comes from process.resourcesPath (resolved and ownership-checked
+  // before pkexec runs it), pkexec from a fixed list of system paths (never
+  // PATH), the launcher from CLAUDE_LAUNCHER, the bridge from
+  // __cdbCuDecision.bin. The page can only name one of the fixed actions.
+  var __cdbEx_TPM_DEV = "/dev/tpmrm0";
+  var __cdbEx_TPM_LINK = "/etc/udev/rules.d/70-claude-desktop-extra-tpm.rules";
+  var __cdbEx_TPM_RULE = "70-claude-desktop-extra-tpm.rules";
+  // Known rule directories, the same list as packaging/udev/cdb-tpm-access
+  // known_src(): the deb/rpm/pacman tree, or a Nix store install (non-NixOS).
+  // Only a rule there is linked (a link into a build tree or extracted AppImage
+  // dangles once it is deleted, and whoever recreates the path writes a root
+  // udev rule), and only a link to one of them counts as ours.
+  var __cdbEx_TPM_RULE_DIRS = ["/usr/lib/claude-desktop/resources/linux-udev"];
+  var __cdbEx_TPM_NIX_DIR_RE = /^\/nix\/store\/[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+\/lib\/claude-desktop\/resources\/linux-udev$/;
+  // The only sticky group/world-writable ancestor the helper accepts.
+  var __cdbEx_CUS_STICKY_DIRS = ["/nix/store"];
+  // pkexec is looked up here only, never on PATH (the app's PATH is the user's).
+  var __cdbEx_CUS_PKEXEC = ["/usr/bin/pkexec", "/bin/pkexec"];
+  // The rule file, byte for byte: packaging/udev/70-claude-desktop-extra-tpm.rules
+  // and RULE_TEXT in packaging/udev/cdb-tpm-access hold the same text (the
+  // helper links only a file equal to it; test-cu-status-main.mjs pins all three).
+  var __cdbEx_TPM_RULE_TEXT = "# claude-desktop-extra: TPM access for the active seat user (see cdb-tpm-access)\n" +
+    "# Claude Desktop keeps its device identity key in the TPM. Give the user at the\n" +
+    "# active local seat an ACL on the kernel resource manager node only (not tpm0).\n" +
+    "SUBSYSTEM==\"tpmrm\", KERNEL==\"tpmrm[0-9]*\", ACTION!=\"remove\", TAG+=\"uaccess\"\n";
+  var __cdbEx_TPM_NIXOS_OPT = "programs.claude-desktop-extra.tpmAccess.enable = true;";
+  var __cdbEx_CUS_NIXOS = "/etc/NIXOS";
+  // Container markers: the same list, in this order, as CONTAINER_MARKERS in
+  // packaging/udev/cdb-tpm-access (systemd's, Docker's, Podman's, Flatpak's).
+  var __cdbEx_CUS_CONTAINER = ["/run/systemd/container", "/.dockerenv", "/run/.containerenv", "/.flatpak-info"];
+  var __cdbEx_CUS_UDEV_SOCK = "/run/udev/control";
+  var __cdbEx_CUS_PASSWD = "/etc/passwd";
+  var __cdbEx_CUS_GROUP = "/etc/group";
+  // Owners the helper, its directories and pkexec may have. Only root.
+  var __cdbEx_CUS_TRUSTED_UIDS = [0];
+  var __cdbEx_CUS_DOCTOR_MS = 8000;
+  var __cdbEx_CUS_PKEXEC_MS = 120000;
+  var __cdbEx_CUS_RESET_MS = 30000;
+  // After an Enable that was declined, cancelled or failed, further Enable
+  // requests are refused for this long (no polkit prompt loop from page script).
+  var __cdbEx_CUS_ENABLE_COOLDOWN_MS = 30000;
+  // What enabling exposes. Main's confirmation dialog shows it before every
+  // pkexec enable; the page shows the same text inline (CUS_RISK, pinned equal).
+  var __cdbEx_CUS_TPM_RISK = "This applies to every account that logs in at this computer's screen (the active local seat), and only to /dev/tpmrm0, never /dev/tpm0. Any program such an account runs can then use the TPM, including clearing it (which destroys TPM-sealed keys such as LUKS/systemd-cryptenroll or BitLocker keys), triggering its dictionary-attack lockout, or setting its owner or lockout password. If the TPM's lockout or owner authorization is empty, set one first: tpm2_changeauth -c lockout and tpm2_changeauth -c owner.";
+  var __cdbEx_CUS_LOG_TAIL = 512 * 1024;
+  var __cdbEx_CUS_LOG_SLACK_MS = 2000;
+  var __cdbEx_CUS_FRAME_RE = /connect frame sent: device_id (keyed|keyless|none)(?: \((.*)\))?/;
+  var __cdbEx_CUS_DO_RE = /connecting DO bridge with:/;
+  var __cdbEx_CUS_TS_RE = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/;
+  var __cdbEx_CUS_BRIDGES = ["kwin-portal-bridge", "wlroots-bridge", "gnome-portal-bridge", "x11-bridge"];
+  var __cdbEx_CUS_NOTES = {
+    desktop: "Claude's Code sessions see and control your screen through this.",
+    tpm: "Claude keeps this computer's device identity key in the TPM; cloud tasks trust only a device with that key.",
+    cloud: "Cloud tasks reach this screen only through a keyed device that offers computer tools."
+  };
+
+  function __cdbEx_cusRow(status, fact, which) {
+    return { status: status, fact: String(fact), note: __cdbEx_CUS_NOTES[which] };
+  }
+  function __cdbEx_cusErr(e) { return (e && (e.code || e.message)) || String(e); }
+
+  function __cdbEx_cusHelper() {
+    return process.resourcesPath ? _path.join(process.resourcesPath, "linux-udev", "cdb-tpm-access") : "";
+  }
+  // Is p (a rule path, compared as given) one of the known rule paths?
+  function __cdbEx_cusKnownRule(p) {
+    if (typeof p !== "string" || _path.basename(p) !== __cdbEx_TPM_RULE) return false;
+    var dir = p.slice(0, -(__cdbEx_TPM_RULE.length + 1));
+    if (p !== dir + "/" + __cdbEx_TPM_RULE) return false;
+    return __cdbEx_TPM_RULE_DIRS.indexOf(dir) >= 0 || __cdbEx_TPM_NIX_DIR_RE.test(dir);
+  }
+
+  // The decision js/cu_mode_preamble.js made at startup (frozen, set once).
+  function __cdbEx_cusDecision() {
+    var d = globalThis.__cdbCuDecision;
+    return d && typeof d === "object" && d.v === 1 && typeof d.backend === "string" ? d : null;
+  }
+
+  function __cdbEx_cusQuote(s) {
+    return /^[A-Za-z0-9_\/.,:=+@-]+$/.test(s) ? s : "'" + String(s).replace(/'/g, "'\\''") + "'";
+  }
+
+  function __cdbEx_cusIdNames(file) {
+    return _fs.promises.readFile(file, "utf8").then(function (t) {
+      var m = {};
+      t.split("\n").forEach(function (l) {
+        var f = l.split(":");
+        if (f.length >= 3 && /^\d+$/.test(f[2]) && m[f[2]] === undefined) m[f[2]] = f[0];
+      });
+      return m;
+    }, function () { return {}; });
+  }
+
+  function __cdbEx_cusExists(p) {
+    return _fs.promises.access(p, _fs.constants.F_OK).then(function () { return true; }, function () { return false; });
+  }
+
+  // /dev/tpmrm0 and the rule link. dev: ok | denied | absent | error.
+  // link: absent | ours | stale | foreign | file | error.
+  function __cdbEx_cusTpm() {
+    var dev = _fs.promises.stat(__cdbEx_TPM_DEV).then(function (st) {
+      return _fs.promises.access(__cdbEx_TPM_DEV, _fs.constants.R_OK | _fs.constants.W_OK).then(function () {
+        return { state: "ok", st: st };
+      }, function (e) {
+        var c = e && e.code;
+        return { state: c === "EACCES" || c === "EPERM" ? "denied" : "error", code: c || __cdbEx_cusErr(e), st: st };
+      });
+    }, function (e) {
+      return e && e.code === "ENOENT" ? { state: "absent" } : { state: "error", code: __cdbEx_cusErr(e) };
+    });
+    var link = _fs.promises.lstat(__cdbEx_TPM_LINK).then(function (st) {
+      if (st.isSymbolicLink()) {
+        return _fs.promises.readlink(__cdbEx_TPM_LINK).then(function (raw) {
+          if (!__cdbEx_cusKnownRule(raw)) return { state: "foreign", target: raw };
+          return _fs.promises.stat(__cdbEx_TPM_LINK).then(function () { return { state: "ours", target: raw }; },
+            function (e) {
+              return e && e.code === "ENOENT" ? { state: "stale", target: raw } : { state: "error", code: __cdbEx_cusErr(e) };
+            });
+        });
+      }
+      return st.isFile() ? { state: "file" } : { state: "foreign", target: null };
+    }).then(null, function (e) {
+      return e && e.code === "ENOENT" ? { state: "absent" } : { state: "error", code: __cdbEx_cusErr(e) };
+    });
+    return Promise.all([dev, link, __cdbEx_cusIdNames(__cdbEx_CUS_PASSWD), __cdbEx_cusIdNames(__cdbEx_CUS_GROUP)]).then(function (a) {
+      var d = a[0];
+      if (d.st) {
+        d.owner = a[2][String(d.st.uid)] || String(d.st.uid);
+        d.group = a[3][String(d.st.gid)] || String(d.st.gid);
+        d.mode = (d.st.mode & 4095).toString(8);
+        delete d.st;
+      }
+      return { dev: d, link: a[1] };
+    });
+  }
+
+  // The helper may be run as root only when it is installed at a known rule
+  // directory (the helper refuses anywhere else, exit 5) and nobody but root
+  // can have changed it: a regular executable file, and it and every directory
+  // above it owned by root and not group/world-writable. The one exception is
+  // /nix/store (root-owned, sticky, group nixbld): only the Nix daemon adds
+  // entries there.
+  function __cdbEx_cusHelperCheck() {
+    var p = __cdbEx_cusHelper();
+    if (!p) return Promise.resolve({ path: "", safe: false, why: "no resources path" });
+    function trusted(st) { return __cdbEx_CUS_TRUSTED_UIDS.indexOf(st.uid) >= 0; }
+    return _fs.promises.realpath(p).then(function (real) {
+      return _fs.promises.lstat(real).then(function (st) {
+        if (!st.isFile()) return { path: real, safe: false, why: real + " is not a regular file" };
+        if (!trusted(st)) return { path: real, safe: false, why: real + " is not owned by root" };
+        if (st.mode & 18) return { path: real, safe: false, why: real + " is group- or world-writable" };
+        if (!(st.mode & 73)) return { path: real, safe: false, why: real + " is not executable" };
+        var dir = _path.dirname(real);
+        if (!__cdbEx_cusKnownRule(dir + "/" + __cdbEx_TPM_RULE)) {
+          return { path: real, safe: false, why: dir + " is not an installed claude-desktop-extra location" };
+        }
+        function up() {
+          return _fs.promises.lstat(dir).then(function (ds) {
+            if (!ds.isDirectory() || !trusted(ds)) return { path: real, safe: false, why: dir + " is not owned by root" };
+            if ((ds.mode & 18) && !((ds.mode & 512) && __cdbEx_CUS_STICKY_DIRS.indexOf(dir) >= 0)) {
+              return { path: real, safe: false, why: dir + " is group- or world-writable" };
+            }
+            var parent = _path.dirname(dir);
+            if (parent === dir) return { path: real, safe: true, why: null };
+            dir = parent;
+            return up();
+          });
+        }
+        return up();
+      });
+    }).then(null, function (e) {
+      return { path: p, safe: false, missing: !!(e && e.code === "ENOENT"), why: p + ": " + __cdbEx_cusErr(e) };
+    });
+  }
+
+  // pkexec from the fixed list only: the first candidate whose real path is a
+  // regular root-owned file with the setuid bit. "" = unavailable (the panel
+  // then shows the command instead of a button).
+  function __cdbEx_cusPkexec() {
+    var i = 0;
+    function next() {
+      if (i >= __cdbEx_CUS_PKEXEC.length) return Promise.resolve("");
+      var c = __cdbEx_CUS_PKEXEC[i++];
+      return _fs.promises.realpath(c).then(function (real) {
+        return _fs.promises.lstat(real).then(function (st) {
+          if (!st.isFile() || __cdbEx_CUS_TRUSTED_UIDS.indexOf(st.uid) < 0) return "";
+          return (st.mode & 2048) && (st.mode & 73) ? real : "";
+        });
+      }).then(null, function () { return ""; }).then(function (p) { return p || next(); });
+    }
+    return next();
+  }
+
+  // Where Enable/Disable can run as a button, and what to show instead.
+  function __cdbEx_cusGate() {
+    return Promise.all([
+      __cdbEx_cusExists(__cdbEx_CUS_NIXOS),
+      Promise.all(__cdbEx_CUS_CONTAINER.map(__cdbEx_cusExists)),
+      _fs.promises.stat(__cdbEx_CUS_UDEV_SOCK).then(function (st) { return st.isSocket(); }, function () { return false; }),
+      __cdbEx_cusPkexec(),
+      __cdbEx_cusHelperCheck()
+    ]).then(function (a) {
+      var g = {
+        appimage: !!process.env.CLAUDE_APPIMAGE_PATH,
+        nixos: a[0],
+        container: a[1].some(Boolean),
+        udev: a[2],
+        pkexec: a[3],
+        helper: a[4]
+      };
+      g.button = !!(g.pkexec && g.helper.safe && g.udev && !g.appimage && !g.nixos && !g.container);
+      return g;
+    });
+  }
+
+  function __cdbEx_cusTee(stale) {
+    var link = __cdbEx_cusQuote(__cdbEx_TPM_LINK);
+    var lines = __cdbEx_TPM_RULE_TEXT.replace(/\n$/, "").split("\n").map(__cdbEx_cusQuote).join(" ");
+    return (stale ? "sudo rm -f " + link + "\n" : "") +
+      "printf '%s\\n' " + lines + " | sudo tee " + link + " >/dev/null\n" +
+      "sudo udevadm control --reload\n" +
+      "sudo udevadm trigger --action=change --subsystem-match=tpmrm";
+  }
+  function __cdbEx_cusRm() {
+    return "sudo rm -f " + __cdbEx_cusQuote(__cdbEx_TPM_LINK) + "\nsudo udevadm control --reload";
+  }
+  function __cdbEx_cusHelperCmd(g, verb) {
+    return "sudo " + __cdbEx_cusQuote(g.helper.path) + " " + verb;
+  }
+
+  function __cdbEx_cusEnableAct(g, link) {
+    var stale = link.state === "stale";
+    if (g.nixos) return { kind: "nixos", text: __cdbEx_TPM_NIXOS_OPT };
+    if (g.container || !g.udev) return { kind: "command", text: __cdbEx_cusTee(stale), where: "host" };
+    if (g.appimage) return { kind: "command", text: __cdbEx_cusTee(stale), where: "here" };
+    if (g.button) return { kind: "pkexec" };
+    if (g.helper.safe) return { kind: "command", text: __cdbEx_cusHelperCmd(g, "enable"), where: "here" };
+    return { kind: "command", text: __cdbEx_cusTee(stale), where: "here" };
+  }
+  function __cdbEx_cusDisableAct(g, link) {
+    if (link.state === "ours" || link.state === "stale") {
+      if (g.container || !g.udev) return { kind: "command", text: __cdbEx_cusRm(), where: "host" };
+      if (g.button) return { kind: "pkexec" };
+      if (g.helper.safe) return { kind: "command", text: __cdbEx_cusHelperCmd(g, "disable"), where: "here" };
+      return { kind: "command", text: __cdbEx_cusRm(), where: "here" };
+    }
+    // The AppImage's own copy of the rule: a regular file the user wrote.
+    if (link.state === "file" && g.appimage) {
+      return { kind: "command", text: __cdbEx_cusRm(), where: g.container ? "host" : "here" };
+    }
+    return null;
+  }
+
+  // The TPM row plus what it offers. at = __cdbTpmAtStart (undefined = unknown).
+  function __cdbEx_cusTpmRow(t, g) {
+    var d = t.dev;
+    var link = t.link;
+    var at = globalThis.__cdbTpmAtStart;
+    var atState = at && typeof at === "object" ? at.state : undefined;
+    var out = { row: null, enable: null, disable: null, restart: false, tss: null, state: d.state };
+    if (g) out.disable = __cdbEx_cusDisableAct(g, link);
+    if (d.state === "absent") {
+      out.row = __cdbEx_cusRow("na", "no TPM 2.0 resource manager", "tpm");
+      return out;
+    }
+    if (d.state === "error") {
+      out.row = __cdbEx_cusRow("unknown", __cdbEx_TPM_DEV + ": " + d.code, "tpm");
+      return out;
+    }
+    if (d.state === "ok") {
+      if (atState !== undefined && atState !== "ok") {
+        out.row = __cdbEx_cusRow("action", "accessible now - restart Claude to use it", "tpm");
+        out.restart = true;
+        out.state = "restart";
+      } else {
+        out.row = __cdbEx_cusRow("ok", __cdbEx_TPM_DEV + " accessible", "tpm");
+      }
+      return out;
+    }
+    // denied
+    var who = "(" + d.owner + ":" + d.group + " " + d.mode + ")";
+    var grp = /^[a-z_][a-z0-9_-]*$/.test(d.group) ? d.group : "tss";
+    if (link.state === "stale") {
+      out.row = __cdbEx_cusRow("action", "rule link points at a removed install", "tpm");
+      if (g) out.enable = __cdbEx_cusEnableAct(g, link);
+    } else if (link.state === "ours" || link.state === "file") {
+      out.row = __cdbEx_cusRow("action", "rule enabled, but this session got no access", "tpm");
+      out.tss = "sudo usermod -aG " + grp + " \"$USER\"";
+    } else if (link.state === "foreign") {
+      out.row = __cdbEx_cusRow("action", "present, no access for this user " + who +
+        " - another file is installed at " + __cdbEx_TPM_LINK, "tpm");
+      out.tss = "sudo usermod -aG " + grp + " \"$USER\"";
+    } else {
+      out.row = __cdbEx_cusRow("action", "present, no access for this user " + who, "tpm");
+      if (g) out.enable = __cdbEx_cusEnableAct(g, link);
+    }
+    return out;
+  }
+
+  function __cdbEx_cusTs(line) {
+    var m = __cdbEx_CUS_TS_RE.exec(line);
+    if (!m) return null;
+    return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime();
+  }
+
+  // This run's remote-device lines: the last connect frame and the last tool
+  // announce at or after this process started (2 s slack, local timestamps).
+  function __cdbEx_cusLog() {
+    var file = _path.join(_app.getPath("userData"), "logs", "main.log");
+    var start = Date.now() - process.uptime() * 1000 - __cdbEx_CUS_LOG_SLACK_MS;
+    return _fs.promises.open(file, "r").then(function (fh) {
+      return fh.stat().then(function (st) {
+        var len = Math.min(st.size, __cdbEx_CUS_LOG_TAIL);
+        var off = st.size - len;
+        var buf = Buffer.alloc(len);
+        return fh.read(buf, 0, len, off).then(function (r) {
+          var text = buf.slice(0, r.bytesRead).toString("utf8");
+          var lines = text.split("\n");
+          if (off > 0) lines.shift();
+          var out = { file: file, frame: null, announce: null, rotated: false };
+          var firstTs = null;
+          for (var i = 0; i < lines.length; i++) {
+            var ts = __cdbEx_cusTs(lines[i]);
+            if (ts === null) continue;
+            if (firstTs === null) firstTs = ts;
+            if (ts < start) continue;
+            var m = __cdbEx_CUS_FRAME_RE.exec(lines[i]);
+            if (m) out.frame = { kind: m[1], reason: m[2] || null };
+            else if (__cdbEx_CUS_DO_RE.test(lines[i])) out.announce = { computer: /\bcomputer_screenshot\b/.test(lines[i]) };
+          }
+          // The whole file starts after this run began: it was rotated mid-run.
+          out.rotated = off === 0 && firstTs !== null && firstTs > start + 2 * __cdbEx_CUS_LOG_SLACK_MS;
+          return out;
+        });
+      }).then(function (v) { return fh.close().then(function () { return v; }, function () { return v; }); },
+        function (e) { return fh.close().then(function () { throw e; }, function () { throw e; }); });
+    }).then(null, function (e) {
+      return { file: file, error: e && e.code === "ENOENT" ? "main.log not found" : "main.log: " + __cdbEx_cusErr(e) };
+    });
+  }
+
+  function __cdbEx_cusCloudRow(log, tpm, d) {
+    if (log.error) return __cdbEx_cusRow("unknown", log.error, "cloud");
+    var f = log.frame;
+    if (!f) {
+      return __cdbEx_cusRow("unknown", log.rotated ? "not reported in this run (main.log was rotated since the app started)"
+        : "not reported yet in this run (signed out, remote tools off, or log format moved)", "cloud");
+    }
+    if (f.kind !== "keyed") {
+      var why = f.kind === "none" ? "no device id" : (f.reason || "no reason given");
+      if (tpm.state === "absent") return __cdbEx_cusRow("na", "device keyless (" + why + ") - this computer has no TPM 2.0", "cloud");
+      if (tpm.state === "ok") {
+        return __cdbEx_cusRow("action", "device keyless (" + why + ") although the TPM is accessible - run claude-desktop --diagnose", "cloud");
+      }
+      return __cdbEx_cusRow("action", "device keyless (" + why + ") - TPM not accessible, see above", "cloud");
+    }
+    if (!log.announce) return __cdbEx_cusRow("unknown", "device keyed, but this run logged no tool announce", "cloud");
+    if (log.announce.computer) return __cdbEx_cusRow("ok", "device keyed, computer tools offered", "cloud");
+    if (d && d.wayland === true && d.announceWayland !== true) {
+      return __cdbEx_cusRow("na", "computer tools not offered: no first-party bridge usable on this Wayland session", "cloud");
+    }
+    return __cdbEx_cusRow("na", "computer tools withheld by the app (Computer use switch, organization policy or rollout)", "cloud");
+  }
+
+  function __cdbEx_cusSession(d) {
+    var de = String(process.env.XDG_CURRENT_DESKTOP || "").split(":")[0];
+    return (de ? de + " " : "") + (d.wayland ? "Wayland" : "X11");
+  }
+
+  function __cdbEx_cusBridgeFail() {
+    var f = globalThis.__cuBridgeFail;
+    if (!f || typeof f !== "object") return null;
+    for (var i = 0; i < __cdbEx_CUS_BRIDGES.length; i++) {
+      var e = f[__cdbEx_CUS_BRIDGES[i]];
+      if (e && e.cause) return { name: __cdbEx_CUS_BRIDGES[i], cause: e.cause, hint: e.hint || "" };
+    }
+    return null;
+  }
+
+  // The desktop row. withDoctor=false (summary): the decision only, no child.
+  // Answers {row, doctor} - doctor is the parsed contract-1 doctor or null.
+  function __cdbEx_cusDesktop(withDoctor) {
+    var d = __cdbEx_cusDecision();
+    if (!d) return Promise.resolve({ row: __cdbEx_cusRow("unknown", "Computer Use reported no backend decision in this run", "desktop"), doctor: null });
+    var t = d.target;
+    var isBridge = __cdbEx_CUS_BRIDGES.indexOf(d.backend) >= 0 && typeof d.bin === "string" && d.bin.charAt(0) === "/";
+    if (t && typeof t === "object" && typeof t.invalid === "string") {
+      return Promise.resolve({ row: __cdbEx_cusRow("action", "background display on but unusable: " + t.invalid, "desktop"), doctor: null });
+    }
+    if (t && typeof t === "object" && (t.kind === "x11" || t.kind === "wlroots")) {
+      return Promise.resolve({ row: isBridge
+        ? __cdbEx_cusRow("ok", "background display " + t.kind + " " + t.display + " (details on its Set up page)", "desktop")
+        : __cdbEx_cusRow("action", "background display " + t.kind + " " + t.display + ": its bridge cannot run", "desktop"), doctor: null });
+    }
+    if (!isBridge) {
+      var fail = __cdbEx_cusBridgeFail();
+      if (fail) {
+        return Promise.resolve({ row: __cdbEx_cusRow("action", fail.name + " cannot run: " + fail.cause + (fail.hint ? " - " + fail.hint : ""), "desktop"), doctor: null });
+      }
+      return Promise.resolve({ row: d.backend === "fallback"
+        ? __cdbEx_cusRow("na", "no first-party bridge for this desktop (fallback route): Code sessions only", "desktop")
+        : __cdbEx_cusRow("na", "no Computer Use backend for this desktop", "desktop"), doctor: null });
+    }
+    var ovr = d.override ? " (override " + d.override + ")" : "";
+    if (!withDoctor) {
+      return Promise.resolve({ row: __cdbEx_cusRow("unknown", __cdbEx_cusSession(d) + " - " + d.backend + ovr + " (not checked)", "desktop"), doctor: null });
+    }
+    return __cdbEx_cubgExec(d.bin, ["doctor"], process.env, 1024 * 1024, __cdbEx_CUS_DOCTOR_MS).then(function (r) {
+      var pre = d.backend + " doctor gave no status";
+      if (!r.ok) {
+        if (r.timedOut) return { row: __cdbEx_cusRow("unknown", pre + " (timeout)", "desktop"), doctor: null };
+        if (r.exitCode === 2) return { row: __cdbEx_cusRow("unknown", pre + " (contract 0)", "desktop"), doctor: null };
+        return { row: __cdbEx_cusRow("unknown", pre + " (" + r.error + ")", "desktop"), doctor: null };
+      }
+      var doc;
+      try { doc = JSON.parse(r.stdout); } catch (e) { doc = undefined; }
+      if (!doc || typeof doc !== "object" || Array.isArray(doc)) return { row: __cdbEx_cusRow("unknown", pre + " (not JSON)", "desktop"), doctor: null };
+      if (typeof doc.contract !== "number" || doc.contract < 1) return { row: __cdbEx_cusRow("unknown", pre + " (contract 0)", "desktop"), doctor: null };
+      if (doc.backend_reachable !== true) {
+        return { row: __cdbEx_cusRow("action", "backend unreachable: " + (doc.backend_error || "no reason given") + ovr, "desktop"), doctor: doc };
+      }
+      if (doc.session_match !== true) {
+        return { row: __cdbEx_cusRow("action", d.backend + " does not serve this session (session_match false)" + ovr, "desktop"), doctor: doc };
+      }
+      var v = typeof doc.version === "string" && doc.version ? " " + doc.version : "";
+      var perm = doc.session_supported === true && doc.restore_token_present === true ? " - screen-sharing permission remembered" : "";
+      return { row: __cdbEx_cusRow("ok", __cdbEx_cusSession(d) + " - " + d.backend + v + " ready" + perm + ovr, "desktop"), doctor: doc };
+    });
+  }
+
+  function __cdbEx_cusState(withDoctor) {
+    return Promise.all([__cdbEx_cusDesktop(withDoctor), __cdbEx_cusTpm(), __cdbEx_cusLog(),
+      withDoctor ? __cdbEx_cusGate() : Promise.resolve(null)]).then(function (a) {
+      var d = __cdbEx_cusDecision();
+      var tpm = __cdbEx_cusTpmRow(a[1], a[3]);
+      var cloud = __cdbEx_cusCloudRow(a[2], tpm, d);
+      return { desktop: a[0], tpm: tpm, cloud: cloud, link: a[1].link, gate: a[3], decision: d };
+    });
+  }
+
+  function __cdbEx_cusSummaryLine(s) {
+    var d = s.decision;
+    var here = !d ? "unknown" : __cdbEx_CUS_BRIDGES.indexOf(d.backend) >= 0 && d.bin ? d.backend
+      : d.backend === "fallback" ? "fallback route" : "no backend";
+    if (d && __cdbEx_CUS_BRIDGES.indexOf(d.backend) < 0 && __cdbEx_cusBridgeFail()) here = __cdbEx_cusBridgeFail().name + " cannot run";
+    var c = s.cloud;
+    var cloud;
+    if (c.status === "ok") cloud = "ready";
+    else if (s.tpm.state === "restart") cloud = "restart Claude to use the TPM";
+    else if (c.status === "action" && /TPM not accessible/.test(c.fact)) cloud = "needs TPM access";
+    else if (c.status === "action") cloud = "device keyless, see Details";
+    else if (/no TPM 2\.0/.test(c.fact)) cloud = "no TPM 2.0 on this computer";
+    else if (/Wayland session/.test(c.fact)) cloud = "not offered on this Wayland session";
+    else if (/withheld/.test(c.fact)) cloud = "withheld by the app";
+    else cloud = "not reported yet";
+    return "This desktop: " + here + " - Cloud Cowork and Dispatch: " + cloud;
+  }
+
+  var __cdbEx_cusReadP = null;
+  var __cdbEx_cusTpmBusy = false;
+  // Date.now() before which Enable is refused (0 = no cooldown).
+  var __cdbEx_cusEnableHoldUntil = 0;
+  var __cdbEx_cusResetBusy = false;
+
+  function __cdbEx_cusRead() {
+    if (__cdbEx_cusReadP) return __cdbEx_cusReadP;
+    var p = __cdbEx_cusState(true).then(function (s) {
+      var actions = {
+        tpmEnable: s.tpm.enable,
+        tpmDisable: s.tpm.disable,
+        restart: s.tpm.restart,
+        resetScreenSharing: !!(s.desktop.doctor && s.desktop.doctor.session_supported === true && process.env.CLAUDE_LAUNCHER),
+        tssCommand: s.tpm.tss
+      };
+      return { ok: true, rows: { desktop: s.desktop.row, tpm: s.tpm.row, cloud: s.cloud }, actions: actions };
+    });
+    __cdbEx_cusReadP = p;
+    function done() { if (__cdbEx_cusReadP === p) __cdbEx_cusReadP = null; }
+    p.then(done, done);
+    return p;
+  }
+
+  // Main's own consent for Enable: the page (remote code) can ask, only this
+  // dialog decides. Resolves true only for the "Enable TPM access" button;
+  // Cancel, Escape, closing it or any error is false.
+  function __cdbEx_cusConfirmEnable(sender) {
+    var dlg = _electron.dialog;
+    if (!dlg || typeof dlg.showMessageBox !== "function") return Promise.resolve(false);
+    var win;
+    try {
+      var BW = _electron.BrowserWindow;
+      win = (BW && sender && typeof BW.fromWebContents === "function" && BW.fromWebContents(sender)) || undefined;
+    } catch (e) { win = undefined; }
+    var opts = {
+      type: "warning",
+      title: "Enable TPM access",
+      message: "Let Claude Desktop use this computer's TPM for its device identity key?",
+      detail: __cdbEx_CUS_TPM_RISK,
+      buttons: ["Cancel", "Enable TPM access"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    };
+    return Promise.resolve().then(function () {
+      return win ? dlg.showMessageBox(win, opts) : dlg.showMessageBox(opts);
+    }).then(function (r) { return !!(r && r.response === 1); }, function (e) {
+      __cdbEx_log("cu-status: confirmation dialog failed: " + __cdbEx_cusErr(e));
+      return false;
+    });
+  }
+
+  // pkexec <helper> enable|disable, only where the read offers that button.
+  // Enable runs only after main's confirmation dialog; a declined, cancelled
+  // or failed Enable holds further Enable requests for the cooldown.
+  function __cdbEx_cusTpmAction(verb, sender) {
+    if (__cdbEx_cusTpmBusy) return Promise.resolve({ ok: false, code: "busy", error: "a TPM access change is already running", command: null });
+    if (verb === "enable" && Date.now() < __cdbEx_cusEnableHoldUntil) {
+      var left = Math.max(1, Math.ceil((__cdbEx_cusEnableHoldUntil - Date.now()) / 1000));
+      return Promise.resolve({ ok: false, code: "cooldown", error: "the last Enable was declined or failed - try again in " + left + " s", command: null });
+    }
+    __cdbEx_cusTpmBusy = true;
+    function release(v) {
+      __cdbEx_cusTpmBusy = false;
+      if (verb === "enable" && v && v.ok === false && v.code !== "not-allowed") {
+        __cdbEx_cusEnableHoldUntil = Date.now() + __cdbEx_CUS_ENABLE_COOLDOWN_MS;
+      }
+      return v;
+    }
+    return Promise.all([__cdbEx_cusTpm(), __cdbEx_cusGate()]).then(function (a) {
+      var t = a[0];
+      var g = a[1];
+      var tpm = __cdbEx_cusTpmRow(t, g);
+      var act = verb === "enable" ? tpm.enable : tpm.disable;
+      var fallback = g.helper.safe ? __cdbEx_cusHelperCmd(g, verb)
+        : (verb === "enable" ? __cdbEx_cusTee(t.link.state === "stale") : __cdbEx_cusRm());
+      if (!act || act.kind !== "pkexec") {
+        return { ok: false, code: "not-allowed", error: "TPM access cannot be " + verb + "d from here in this state",
+          command: act && act.text ? act.text : null };
+      }
+      var asked = verb === "enable" ? __cdbEx_cusConfirmEnable(sender) : Promise.resolve(true);
+      return asked.then(function (yes) {
+        if (!yes) {
+          __cdbEx_log("cu-status: tpm enable -> declined in the confirmation dialog");
+          return { ok: false, code: "declined", error: "Enable was not confirmed", command: null };
+        }
+        return __cdbEx_cusPkexecRun(g, verb, fallback);
+      });
+    }).then(release, function (e) {
+      return release({ ok: false, code: "error", error: __cdbEx_cusErr(e), command: null });
+    });
+  }
+  function __cdbEx_cusPkexecRun(g, verb, fallback) {
+    __cdbEx_log("cu-status: pkexec " + g.helper.path + " " + verb);
+    return new Promise(function (resolve) {
+      try {
+        __cdbEx_cubgCp().execFile(g.pkexec, [g.helper.path, verb], {
+          timeout: __cdbEx_CUS_PKEXEC_MS, encoding: "utf8", maxBuffer: 64 * 1024, windowsHide: true
+        }, function (err, stdout, stderr) {
+          var out = String(stdout || "").split("\n").map(function (l) { return l.trim(); }).filter(Boolean)[0] || "";
+          var errLine = String(stderr || "").split("\n").map(function (l) { return l.trim(); }).filter(Boolean)[0] || "";
+          if (!err) {
+            resolve({ ok: true, changed: /^cdb-tpm-access: (enabled|re-pointed|disabled)\b/.test(out),
+              message: out || "cdb-tpm-access: finished without a status line" });
+            return;
+          }
+          var code;
+          if (err.killed) code = "timeout";
+          else if (err.code === 126) code = "cancelled";
+          else if (err.code === 127) code = "no-agent";
+          else if (err.code >= 1 && err.code <= 5) code = "helper-" + err.code;
+          else code = "error";
+          var msg = code === "timeout" ? "no answer within " + (__cdbEx_CUS_PKEXEC_MS / 1000) + " s"
+            : code === "cancelled" ? "authentication was cancelled"
+            : code === "no-agent" ? (errLine || "no polkit authentication agent answered")
+            : (errLine || err.message || String(err));
+          resolve({ ok: false, code: code, error: String(msg).slice(0, 400), command: code === "cancelled" ? null : fallback });
+        });
+      } catch (e) {
+        resolve({ ok: false, code: "error", error: __cdbEx_cusErr(e), command: fallback });
+      }
+    }).then(function (r) {
+      __cdbEx_log("cu-status: tpm " + verb + " -> " + (r.ok ? r.message : r.code + " (" + r.error + ")"));
+      return r;
+    });
+  }
+  function __cdbEx_cusReset() {
+    var launcher = String(process.env.CLAUDE_LAUNCHER || "");
+    if (!launcher || /[\n\r\0]/.test(launcher)) return Promise.resolve({ ok: false, error: "CLAUDE_LAUNCHER is not set - run claude-desktop --reset-screen-sharing in a terminal" });
+    if (__cdbEx_cusResetBusy) return Promise.resolve({ ok: false, error: "a reset is already running" });
+    __cdbEx_cusResetBusy = true;
+    return new Promise(function (resolve) {
+      try {
+        __cdbEx_cubgCp().execFile(launcher, ["--reset-screen-sharing"], {
+          timeout: __cdbEx_CUS_RESET_MS, encoding: "utf8", maxBuffer: 256 * 1024, windowsHide: true
+        }, function (err, stdout, stderr) {
+          var lines = (String(stdout || "") + "\n" + String(stderr || "")).split("\n")
+            .map(function (l) { return l.replace(/\s+$/, ""); }).filter(Boolean).slice(0, 20);
+          if (!err) { resolve({ ok: true, lines: lines.length ? lines : ["claude-desktop --reset-screen-sharing finished"] }); return; }
+          var why = err.killed ? "no answer within " + (__cdbEx_CUS_RESET_MS / 1000) + " s" : (typeof err.code === "number" ? "exit " + err.code : err.message);
+          resolve({ ok: false, error: "reset screen sharing failed (" + why + ")" + (lines.length ? ": " + lines.join(" / ") : "") });
+        });
+      } catch (e) {
+        resolve({ ok: false, error: __cdbEx_cusErr(e) });
+      }
+    }).then(function (r) {
+      __cdbEx_cusResetBusy = false;
+      __cdbEx_log("cu-status: reset screen sharing -> " + (r.ok ? r.lines.join(" / ") : r.error));
+      return r;
+    });
   }
 
   // --- handlers ------------------------------------------------------------
@@ -2656,6 +3287,23 @@
         function (e) { return { ok: false, error: (e && e.message) || String(e) }; });
     },
 
+    // Computer Use status. No channel takes an argument (see the section above).
+    "cdb-cu-status:summary": function () {
+      return __cdbEx_cusState(false).then(function (st) {
+        return { ok: true, line: __cdbEx_cusSummaryLine(st) };
+      }).then(null, function (e) { return { ok: false, error: (e && e.message) || String(e) }; });
+    },
+    "cdb-cu-status:read": function () {
+      return __cdbEx_cusRead().then(null, function (e) { return { ok: false, error: (e && e.message) || String(e) }; });
+    },
+    // These two get the sender (see __cdbEx_withSender): Enable parents its
+    // confirmation dialog on the sender's window. Page arguments are dropped.
+    "cdb-cu-status:tpm-enable": __cdbEx_withSender(function (ev) { return __cdbEx_cusTpmAction("enable", ev && ev.sender); }),
+    "cdb-cu-status:tpm-disable": __cdbEx_withSender(function () { return __cdbEx_cusTpmAction("disable"); }),
+    "cdb-cu-status:reset-screen-sharing": function () {
+      return __cdbEx_cusReset().then(null, function (e) { return { ok: false, error: (e && e.message) || String(e) }; });
+    },
+
     // Open one of OUR files in the desktop's default handler, or show it in the
     // file manager. `name` is a fixed location name, never a path (see
     // __cdbEx_revealTarget); "folder" is used automatically for anything that
@@ -2753,6 +3401,8 @@
     Object.keys(__cdbEx_handlers).forEach(function (ch) {
       if (ch.indexOf("cdb-cubg:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use on a background display is Linux only" }; };
+      } else if (ch.indexOf("cdb-cu-status:") === 0) {
+        __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use status is Linux only" }; };
       } else if (ch.indexOf("cdb-cu-ax:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use app controls are Linux only" }; };
       } else if (ch.indexOf("cdb-tray:") === 0) {

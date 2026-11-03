@@ -7,6 +7,80 @@ await (async function(){
 // fd 2 (reaches a terminal launch) plus a tee into userData/logs/
 // claude-patches.log (profile/3p-aware, 2 MiB rotation). Never throws.
 if(!globalThis.__cdbDiag){globalThis.__cdbDiag=function(){var s="";try{var i,a=[];for(i=0;i<arguments.length;i++){var x=arguments[i];if(typeof x==="string")a.push(x);else{try{a.push(JSON.stringify(x))}catch(e1){a.push(String(x))}}}s=a.join(" ")}catch(e2){}if(!s)return;try{require("fs").writeSync(2,s+"\n")}catch(e3){}try{var p=require("path"),fs=require("fs");if(!globalThis.__cdbDiagDir){globalThis.__cdbDiagDir=p.join(require("electron").app.getPath("userData"),"logs");fs.mkdirSync(globalThis.__cdbDiagDir,{recursive:!0})}var f=p.join(globalThis.__cdbDiagDir,"claude-patches.log");try{if(fs.statSync(f).size>2097152)fs.renameSync(f,f+".old")}catch(e4){}fs.appendFileSync(f,new Date().toISOString()+" "+s+"\n")}catch(e5){}};}
+// Bound once: the TPM probe below settles after this preamble returned.
+var _cdbLog=globalThis.__cdbDiag;
+// ── remote-device decision (sub-patch 4g + Settings -> Extra status panel) ──
+// Cloud Cowork and Dispatch reach this screen through the remote-tools device,
+// whose announce upstream drops the computer tools from on every Wayland
+// session. Sub-patch 4g lifts that term on Linux exactly when this decision
+// says a first-party bridge is usable here (announceWayland). Pure function of
+// the inputs the preamble collected below; one table, tested by
+// scripts/tests/linux/test-cu-wayland-announce.mjs. Input:
+//   {env, mode, target: null | {kind,display} | {invalid},
+//    bins: {kwin, x11, wlroots, gnome} (path when `--version` ran, else ""),
+//    wlrootsSession, gnomeSession}
+// A bridge counts only when the executor would use THAT binary: the executors
+// take a *_BRIDGE_BIN env value first even when it is not executable, so a set
+// override that did not resolve to itself makes the bridge unusable.
+// `wayland` is upstream's own rule (XDG_SESSION_TYPE when set, else
+// WAYLAND_DISPLAY): it is the session check 4g's term replaces.
+globalThis.__cdbCuDecide=function(i){
+  i=i||{};
+  var env=i.env||{},b=i.bins||{},t=i.target||null,st=env.XDG_SESSION_TYPE;
+  var wayland=st?st==="wayland":!!env.WAYLAND_DISPLAY;
+  var est=String(st||"").toLowerCase(),execWayland=est==="wayland"?!0:est==="x11"?!1:!!env.WAYLAND_DISPLAY;
+  var VAR={"kwin-portal-bridge":"KWIN_PORTAL_BRIDGE_BIN","wlroots-bridge":"WLROOTS_BRIDGE_BIN","gnome-portal-bridge":"GNOME_PORTAL_BRIDGE_BIN","x11-bridge":"X11_BRIDGE_BIN"};
+  function use(name,p){var v=env[VAR[name]];p=typeof p==="string"?p:"";return v?(p===v?p:""):p}
+  var backend="none",bin="",tg=null;
+  if(t&&typeof t.kind!=="string")tg={invalid:String(t.invalid!=null?t.invalid:"invalid setting")};
+  else if(t){
+    tg={kind:t.kind,display:String(t.display)};
+    var tn=t.kind==="x11"?"x11-bridge":t.kind==="wlroots"?"wlroots-bridge":"",tb=tn?use(tn,t.kind==="x11"?b.x11:b.wlroots):"";
+    if(tb){backend=tn;bin=tb}
+  }
+  else if(i.mode==="kwin-wayland"){var kb=use("kwin-portal-bridge",b.kwin);if(kb){backend="kwin-portal-bridge";bin=kb}}
+  else{
+    var wb=i.wlrootsSession?use("wlroots-bridge",b.wlroots):"",gb=i.gnomeSession?use("gnome-portal-bridge",b.gnome):"",xb=use("x11-bridge",b.x11);
+    if(wb){backend="wlroots-bridge";bin=wb}
+    else if(gb){backend="gnome-portal-bridge";bin=gb}
+    else if(!execWayland){if(xb){backend="x11-bridge";bin=xb}}
+    // Wayland without a usable first-party bridge: XWayland x11-bridge,
+    // ydotool or spectacle - Code sessions only. A covered session (wlroots,
+    // GNOME) has no third-party cascade, so without XWayland nothing is left.
+    else backend=xb||!(i.wlrootsSession||i.gnomeSession)?"fallback":"none";
+  }
+  var ov=bin&&env[VAR[backend]]===bin?VAR[backend]:null;
+  // x11-bridge counts only for a background display (its own X server): on the
+  // desktop it reaches XWayland windows only.
+  var ann=wayland&&!!bin&&(backend!=="x11-bridge"||!!(tg&&tg.kind));
+  return Object.freeze({v:1,mode:i.mode==="kwin-wayland"?"kwin-wayland":"regular",wayland:wayland,backend:backend,bin:bin||null,override:ov,target:tg?Object.freeze(tg):null,announceWayland:ann});
+};
+// Set once per process, never re-assigned; on a Wayland session one log line
+// says whether the computer tools are announced.
+function _cdbSetDecision(d){
+  if(globalThis.__cdbCuDecision!==void 0)return;
+  globalThis.__cdbCuDecision=d;
+  globalThis.__cdbCuWaylandAnnounce=d.announceWayland===!0;
+  if(d.wayland)_cdbLog(d.announceWayland?"[claude-cu] remote device: computer tools announced on Wayland ("+d.backend+")":"[claude-cu] remote device: computer tools not announced on Wayland (no first-party bridge usable on this session)");
+}
+// ── device key (TPM) at start ────────────────────────────────────────────────
+// The remote-tools device is keyed only when the app can open /dev/tpmrm0.
+// One access(2) check (honours ACLs), started here and never awaited, so the
+// status panel can tell "accessible now" from "accessible since start".
+// __cdbTpmAtStart stays undefined until it settles.
+try{
+  var _tfs=require("fs"),_tc=_tfs.constants||{};
+  _tfs.promises.access("/dev/tpmrm0",(_tc.R_OK||4)|(_tc.W_OK||2)).then(function(){
+    globalThis.__cdbTpmAtStart=Object.freeze({state:"ok",code:null});
+    _cdbLog("[claude-cu] device key: /dev/tpmrm0 ok");
+  },function(e){
+    var c=e&&e.code?String(e.code):"UNKNOWN";
+    var s=c==="ENOENT"?"absent":c==="EACCES"||c==="EPERM"?"denied":"error";
+    globalThis.__cdbTpmAtStart=Object.freeze({state:s,code:s==="absent"?null:c});
+    _cdbLog(s==="absent"?"[claude-cu] device key: /dev/tpmrm0 absent":"[claude-cu] device key: /dev/tpmrm0 not accessible ("+c+")");
+  });
+}catch(te0){globalThis.__cdbTpmAtStart=Object.freeze({state:"error",code:te0&&te0.code?String(te0.code):"UNKNOWN"})}
+try{
 // ── bundled-bridge resolver ──────────────────────────────────────────────────
 // All four bridges ship at a FIXED location inside the package - the same
 // resources/ dir where upstream keeps its own bundled binaries
@@ -223,8 +297,12 @@ if(!globalThis.__cdbDiag){globalThis.__cdbDiag=function(){var s="";try{var i,a=[
   }
   // The regular-executor bridges are probed in parallel with the kwin checks;
   // their result is only used when kwin mode is not selected.
-  var _x11P=_sessionCouldNeedX11?_runnable("x11-bridge","X11_BRIDGE_BIN","X11 input/screenshot + XWayland fallback unavailable"):_none;
-  var _wlrP=_isWlroots?_runnable("wlroots-bridge","WLROOTS_BRIDGE_BIN","wlroots-Wayland CU input/screenshot unavailable"):_none;
+  // A valid background display's bridge is probed too (its own display, any
+  // session): the remote-device decision needs to know it runs, and a failure
+  // lands in __cuBridgeFail, which the executor's target resolver honours.
+  var _tgtKind=_cuTgt&&!_cuTgt.invalid?_cuTgt.kind:"";
+  var _x11P=_sessionCouldNeedX11||_tgtKind==="x11"?_runnable("x11-bridge","X11_BRIDGE_BIN","X11 input/screenshot + XWayland fallback unavailable"):_none;
+  var _wlrP=_isWlroots||_tgtKind==="wlroots"?_runnable("wlroots-bridge","WLROOTS_BRIDGE_BIN","wlroots-Wayland CU input/screenshot unavailable"):_none;
   var _gnP=_isGnome?_runnable("gnome-portal-bridge","GNOME_PORTAL_BRIDGE_BIN","GNOME-Wayland CU input/screenshot unavailable"):_none;
   var _res=await Promise.all([_kwinVerP,_kwinP,_x11P,_wlrP,_gnP]);
   var _m=_res[0].match(/(\d+)\.(\d+)(?:\.(\d+))?/);
@@ -268,4 +346,11 @@ if(!globalThis.__cdbDiag){globalThis.__cdbDiag=function(){var s="";try{var i,a=[
   else if(_isKdeWayland&&!_kwinOk)_reason=" (auto: cross-distro fallback; KWin "+(_kwinVer||"unknown")+" < 6.6)";
   else _reason=" (auto: cross-distro fallback)";
   globalThis.__cdbDiag("[claude-cu] mode="+_mode+_reason);
+  _cdbSetDecision(globalThis.__cdbCuDecide({env:process.env,mode:_mode,target:_cuTgt,bins:{kwin:_resolvedBin,x11:_res[2],wlroots:_res[3],gnome:_res[4]},wlrootsSession:_isWlroots,gnomeSession:_isGnome}));
+}catch(_cdbE){
+  // The decision 4g reads must exist even when the preamble fails: nothing is
+  // announced on Wayland. The error still reaches upstream's ready handler.
+  try{var _cst=process.env.XDG_SESSION_TYPE;_cdbSetDecision(Object.freeze({v:1,mode:globalThis.__cuKwinMode===!0?"kwin-wayland":"regular",wayland:_cst?_cst==="wayland":!!process.env.WAYLAND_DISPLAY,backend:"none",bin:null,override:null,target:null,announceWayland:!1}))}catch(_cdbE2){}
+  throw _cdbE;
+}
 })();

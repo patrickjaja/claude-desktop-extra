@@ -1957,6 +1957,141 @@ _diag_bridges() {
     fi
 }
 
+# Device identity key (cloud Cowork / Dispatch Computer Use). The app's native
+# code keeps the key in the TPM through /dev/tpmrm0 only; without read+write on
+# it the device connects keyless and cloud sessions get no computer tools.
+# `[[ -r && -w ]]` is access(2), so an ACL from the uaccess rule counts.
+# Sets _diag_tpm = ok | denied | absent.
+_diag_tpm_state() {
+    local dev="$1" om
+    _diag_tpm=''
+    if [[ ! -e "$dev" ]]; then
+        _diag_tpm=absent
+        echo 'device key (TPM) = absent (no TPM 2.0 resource manager)'
+    elif [[ -r "$dev" && -w "$dev" ]]; then
+        _diag_tpm=ok
+        echo "device key (TPM) = ok ($dev rw)"
+    else
+        _diag_tpm=denied
+        om="$(stat -c '%U:%G %a' -- "$dev" 2>/dev/null || true)"
+        if [[ "$om" =~ ^([^ ]+)\ ([0-7]+)$ ]]; then
+            om="${BASH_REMATCH[1]} $(printf '%04d' "${BASH_REMATCH[2]}")"
+        else
+            om='owner unknown'
+        fi
+        echo "device key (TPM) = NOT ACCESSIBLE ($om)"
+    fi
+}
+
+# Is <raw link target> one of OUR rule paths? Exactly cdb-tpm-access's
+# known_src() (and __cdbEx_cusKnownRule in js/extra_settings_main.js): the
+# deb/rpm/pacman path, or /nix/store/<32 nix-base32>-<name>/lib/claude-desktop/
+# resources/linux-udev/<rule>. Nothing else - not this run's resources dir (an
+# AppImage mount or build tree goes away, and whoever recreates the path then
+# writes a rule udevd runs as root). The three are pinned to one case list,
+# scripts/tests/fixtures/tpm-rule-paths.tsv.
+_cdb_tpm_rule_ours() {
+    local t="$1" name=70-claude-desktop-extra-tpm.rules rest seg hash nm LC_ALL=C
+    [[ "$t" == "/usr/lib/claude-desktop/resources/linux-udev/$name" ]] && return 0
+    [[ "$t" == /nix/store/* ]] || return 1
+    rest="${t#/nix/store/}"
+    seg="${rest%%/*}"
+    [[ "$rest" == "$seg/lib/claude-desktop/resources/linux-udev/$name" ]] || return 1
+    hash="${seg%%-*}"
+    nm="${seg#*-}"
+    [[ "$hash" != "$seg" && ${#hash} -eq 32 && -n "$nm" ]] || return 1
+    [[ "$hash" =~ ^[0123456789abcdfghijklmnpqrsvwxyz]+$ && "$nm" =~ ^[A-Za-z0-9+._?=-]+$ ]]
+}
+
+# The opt-in rule's link in udev's admin dir (cdb-tpm-access enable|disable).
+# <link>. Sets _diag_tpm_link = ours | stale | file | masked | unsafe | none.
+# Any other symlink there is "unsafe": udevd reads whatever it points at as
+# root, and the helper and the panel leave it alone, so only an admin removes it.
+_diag_tpm_rule() {
+    local link="$1" t
+    _diag_tpm_link=''
+    if [[ -L "$link" ]]; then
+        t="$(readlink -- "$link" 2>/dev/null || true)"
+        if _cdb_tpm_rule_ours "$t"; then
+            if [[ -e "$link" ]]; then
+                _diag_tpm_link=ours
+                echo "TPM access rule = enabled (link -> $t)"
+            else
+                _diag_tpm_link=stale
+                echo "TPM access rule = stale link (-> $t, missing)"
+            fi
+        elif [[ "$t" == /dev/null ]]; then
+            _diag_tpm_link=masked
+            echo 'TPM access rule = masked (link -> /dev/null)'
+        else
+            _diag_tpm_link=unsafe
+            echo "TPM access rule = unsafe link (-> $t, not an installed claude-desktop-extra rule - remove it)"
+        fi
+    elif [[ -e "$link" ]]; then
+        _diag_tpm_link='file'
+        echo 'TPM access rule = enabled (file, not managed by claude-desktop-extra)'
+    else
+        _diag_tpm_link=none
+        echo 'TPM access rule = not enabled'
+    fi
+}
+
+# Last remote-tools device connect in <main.log>: keyed = the TPM key signed it.
+# The regex is the one js/extra_settings_main.js uses; both harnesses read
+# scripts/tests/fixtures/main-log-device.txt, so an upstream wording change
+# breaks both together. Sets _diag_connect = keyed | keyless | none | '' and
+# _diag_connect_reason.
+_diag_last_connect() {
+    local log="$1" line ts re='connect frame sent: device_id (keyed|keyless|none)( \((.*)\))?$'
+    _diag_connect=''
+    _diag_connect_reason=''
+    if [[ -f "$log" && -r "$log" ]]; then
+        line="$(tail -c 524288 -- "$log" 2>/dev/null | grep -a 'connect frame sent: device_id ' | tail -n 1 || true)"
+    else
+        line=''
+    fi
+    if [[ -z "$line" || ! "$line" =~ $re ]]; then
+        echo 'last remote-device connect = not seen'
+        return 0
+    fi
+    _diag_connect="${BASH_REMATCH[1]}"
+    _diag_connect_reason="${BASH_REMATCH[3]}"
+    ts='time unknown'
+    [[ "$line" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}) ]] && ts="${BASH_REMATCH[1]}"
+    case "$_diag_connect" in
+        keyless) echo "last remote-device connect = keyless${_diag_connect_reason:+ ($_diag_connect_reason)} ($ts)" ;;
+        *)       echo "last remote-device connect = $_diag_connect ($ts)" ;;
+    esac
+}
+
+# The three device-key lines of --- Computer Use --- and their Problems.
+# <tpm device> <rule link> <resources dir> <main.log>
+_diag_device_key() {
+    local dev="$1" link="$2" res="$3" log="$4" helper fix
+    helper="$res/linux-udev/cdb-tpm-access"
+    _diag_tpm_state "$dev"
+    _diag_tpm_rule "$link"
+    _diag_last_connect "$log"
+    fix="sudo $helper enable"
+    if [[ -e /etc/NIXOS ]]; then
+        fix='programs.claude-desktop-extra.tpmAccess.enable = true; in the NixOS configuration'
+    elif [[ -n "${CLAUDE_APPIMAGE_PATH:-}" ]]; then
+        # The image's helper refuses (its rule is not root-owned and the mount
+        # goes away): copy the rule instead.
+        fix="sudo install -m 0644 $res/linux-udev/70-claude-desktop-extra-tpm.rules $link && sudo udevadm control --reload && sudo udevadm trigger --action=change --subsystem-match=tpmrm"
+    fi
+    if [[ "$_diag_tpm" == denied ]]; then
+        _diag_problems+=("cloud Cowork and Dispatch get no Computer Use: the device key needs $dev - Settings -> Extra -> Community -> Computer Use status, or $fix; without logind: sudo usermod -aG tss \$USER and log in again")
+    elif [[ "$_diag_tpm" == ok && "$_diag_connect" == keyless ]]; then
+        _diag_problems+=("device registered keyless${_diag_connect_reason:+ ($_diag_connect_reason)} although $dev is accessible: restart Claude; if it stays keyless, attach this report to an issue")
+    fi
+    if [[ "$_diag_tpm_link" == stale ]]; then
+        _diag_problems+=("TPM access rule link points at a removed install: sudo $helper enable")
+    elif [[ "$_diag_tpm_link" == unsafe ]]; then
+        _diag_problems+=("TPM access rule link points outside an installed claude-desktop-extra rule (udev reads it as root), remove it: sudo rm -f $link && sudo udevadm control --reload")
+    fi
+}
+
 _diagnose() {
     local -a _diag_problems=()
     echo '=== claude-desktop --diagnose ==='
@@ -2291,6 +2426,14 @@ _diagnose() {
         # and the first thing to hang when the bridge cannot talk to Mutter,
         # issue #232) runs in the bridge section below.
     fi
+    # Device key for cloud Cowork / Dispatch: TPM access, the opt-in rule, and
+    # what the app's last remote-device connect used. main.log of the userData
+    # the app writes to: the default one or upstream's 3p relocation, whichever
+    # was written last.
+    local _cu_log="$config_dir/logs/main.log"
+    [[ -f "${config_dir}-3p/logs/main.log" && ( ! -f "$_cu_log" || "${config_dir}-3p/logs/main.log" -nt "$_cu_log" ) ]] \
+        && _cu_log="${config_dir}-3p/logs/main.log"
+    _diag_device_key /dev/tpmrm0 /etc/udev/rules.d/70-claude-desktop-extra-tpm.rules "$_cu_res" "$_cu_log"
     echo
     echo '--- Computer Use bridges (CLI contract) ---'
     # doctor + screens per bridge; neither opens a portal session (contract).

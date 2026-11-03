@@ -731,6 +731,9 @@
   pointer-events: none;
 }
 
+/* Multi-line toasts (Reset screen sharing prints the launcher's lines). */
+.cdbx-toast { white-space: pre-line; }
+
 .cdbx-toast.cdbx-toast-on {
   opacity: 1;
 }
@@ -853,3 +856,33 @@
   user-select: text;
 }
 .cdbx-cubg-code .cdbx-cubg-copy { flex: 0 0 auto; margin-top: 0; }
+
+/* --- Computer Use status ------------------------------------------------- *
+ * The Details page behind the first Computer Use row: three status rows, each
+ * a word pill, a fact line and an explanation, with only the actions that
+ * apply. Commands wrap instead of widening the panel (.cdbx-cubg-code).
+ */
+.cdbx-cus-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.cdbx-cus .cdbx-row { flex-wrap: wrap; }
+.cdbx-cus .cdbx-row-aside { flex-wrap: wrap; }
+.cdbx-cus .cdbx-btn:disabled { opacity: 0.5; cursor: default; }
+.cdbx-cus-fact { margin-top: 2px; font-size: 12px; overflow-wrap: anywhere; }
+.cdbx-cus-st {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 0 6px;
+  vertical-align: 1px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+}
+.cdbx-cus-ok { color: color-mix(in srgb, #30a46c 75%, currentColor); border-color: color-mix(in srgb, #30a46c 45%, transparent); background: color-mix(in srgb, #30a46c 12%, transparent); }
+.cdbx-cus-action { color: color-mix(in srgb, #e0a030 70%, currentColor); border-color: color-mix(in srgb, #e0a030 45%, transparent); background: color-mix(in srgb, #e0a030 12%, transparent); }
+.cdbx-cus-na, .cdbx-cus-unknown { opacity: 0.75; }
+.cdbx-cus-sec { margin-top: 6px; }
+.cdbx-cus-cmd { margin-top: 6px; }
+.cdbx-cus-fail { margin-top: 6px; }
+.cdbx-cus-foot { margin-top: 12px; }

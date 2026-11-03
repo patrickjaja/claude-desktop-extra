@@ -1,0 +1,33 @@
+2026-11-03 11:58:10 [info] Starting app {
+  appVersion: '4.4212.0',
+  isPackaged: true,
+  platform: 'linux',
+  arch: 'x64',
+  nodeVersion: '24.21.0'
+}
+2026-11-03 11:58:12 [info] [remote-tools-device] init: shrimp=on
+2026-11-03 11:58:12 [info] [remote-tools-device] connecting DO bridge with: get_device_info, device_list_dir, device_bash, computer_resolve_access, computer_request_access, computer_release_lock, computer_screenshot, computer_zoom, computer_left_click, computer_type, computer_key, computer_batch
+2026-11-03 11:58:12 [info] [remote-tools-device] connecting wss://bridge.claudeusercontent.com
+2026-11-03 11:58:13 [info] [remote-tools-device] connect frame sent: device_id keyed
+2026-11-03 11:58:13 [info] [remote-tools-device] authenticated
+2026-11-03 12:19:40 [info] [remote-tools-device] close
+2026-11-03 12:20:55 [info] Starting app {
+  appVersion: '4.4212.0',
+  isPackaged: true,
+  platform: 'linux',
+  arch: 'x64',
+  nodeVersion: '24.21.0'
+}
+2026-11-03 12:20:55 [info] [CCD] Initialized with version 2.1.299
+2026-11-03 12:20:56 [info] [remote-tools-device] init: shrimp=on
+2026-11-03 12:20:57 [info] [remote-tools-device] connecting DO bridge with: get_device_info, device_list_dir, device_stage_files, device_commit_files, list_artifacts, create_artifact, update_artifact, device_bash
+2026-11-03 12:20:57 [info] [remote-tools-device] connecting wss://bridge.claudeusercontent.com
+2026-11-03 12:20:58 [info] [remote-tools-device] connect frame sent: device_id keyless (row_pk_no_row)
+2026-11-03 12:20:58 [info] [remote-tools-device] authenticated
+2026-11-03 12:21:02 [info] [remote-tools-device] close
+2026-11-03 12:21:02 [info] [remote-tools-device] init: shrimp=on
+2026-11-03 12:21:02 [info] [remote-tools-device] connecting DO bridge with: get_device_info, device_list_dir, device_stage_files, device_commit_files, list_artifacts, create_artifact, update_artifact, list_legacy_live_artifacts, device_request_folder_access, device_request_delete_permission, device_bash, computer_resolve_access, computer_request_access, computer_release_lock, computer_screenshot, computer_zoom, computer_left_click, computer_double_click, computer_type, computer_key, computer_scroll, computer_batch
+2026-11-03 12:21:02 [info] [remote-tools-device] connecting wss://bridge.claudeusercontent.com
+2026-11-03 12:21:03 [info] [remote-tools-device] connect frame sent: device_id keyed
+2026-11-03 12:21:03 [info] [remote-tools-device] authenticated
+2026-11-03 12:21:04 [info] [remote-tools-device] device registered - refreshing row PK

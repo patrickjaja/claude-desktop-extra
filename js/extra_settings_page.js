@@ -1456,6 +1456,9 @@
     var row = renderToggleRow(panel, {
       section: "Computer Use",
       title: "Computer Use on a background display",
+      // Under the Computer Use status row's heading; its own when that row is
+      // not there (older preload).
+      sharedSection: cuStatusApiOk(),
       badge: "Experimental",
       note: cubgNote(null),
       ariaLabel: "let Computer Use work on a background display instead of your desktop",
@@ -1497,6 +1500,253 @@
     setup.addEventListener("click", function () { renderCuBackground(panel); });
     if (aside) aside.insertBefore(setup, aside.firstChild);
     return row;
+  }
+
+  // --- Computer Use status (cloud Cowork / Dispatch) ------------------------
+  // The first row of the Computer Use section: a one-line verdict from a cheap
+  // main-side read (no child processes), and Details, a page in this same panel
+  // with three rows - this desktop, the device key (TPM), cloud Cowork and
+  // Dispatch - and only the actions that apply. Re-check, the page opening and
+  // the end of each action are the only reads; nothing here polls.
+  // Main side: cdb-cu-status:* in js/extra_settings_main.js. No call takes an
+  // argument; the main side decides every path it runs.
+  var CUS_API = ["cuStatusSummary", "cuStatusRead", "cuStatusTpmEnable", "cuStatusTpmDisable", "cuStatusResetScreenSharing"];
+  var CUS_WORD = { ok: "OK", action: "Needs action", na: "Not available", unknown: "Unknown" };
+  var CUS_TITLES = { desktop: "This desktop", tpm: "Device key (TPM)", cloud: "Cloud Cowork and Dispatch" };
+  // CUS_RISK is the same text main's confirmation dialog shows before it runs
+  // pkexec (__cdbEx_CUS_TPM_RISK, pinned equal by test-cu-status-main.mjs). That
+  // dialog is the consent; the page shows the text and only calls the channel.
+  var CUS_RISK = "This applies to every account that logs in at this computer's screen (the active local seat), and only to /dev/tpmrm0, never /dev/tpm0. Any program such an account runs can then use the TPM, including clearing it (which destroys TPM-sealed keys such as LUKS/systemd-cryptenroll or BitLocker keys), triggering its dictionary-attack lockout, or setting its owner or lockout password. If the TPM's lockout or owner authorization is empty, set one first: tpm2_changeauth -c lockout and tpm2_changeauth -c owner.";
+  var CUS_SECURITY = CUS_RISK + " Details: docs/computer-use.md in the claude-desktop-extra repository.";
+
+  function cuStatusApiOk() {
+    return !!api && CUS_API.every(function (n) { return typeof api[n] === "function"; });
+  }
+
+  function renderCuStatusRow(panel) {
+    if (!cuStatusApiOk()) return;
+    var spec = {
+      section: "Computer Use",
+      title: "Computer Use status",
+      note: "Whether Computer Use works on this desktop and in cloud Cowork and Dispatch tasks, why not, " +
+        "and the fix this package can make. Details runs the checks."
+    };
+    var head = el("div", "cdbx-sec-h");
+    head.appendChild(el("span", "cdbx-sec-t", spec.section));
+    panel.appendChild(head);
+    var host = el("div", "cdbx-list");
+    var node = el("div", "cdbx-row cdbx-cus-summary");
+    var main = el("div", "cdbx-row-main");
+    main.appendChild(el("div", "cdbx-id", spec.title));
+    main.appendChild(el("div", "cdbx-note", spec.note));
+    var stateLine = el("div", "cdbx-state", "Loading...");
+    main.appendChild(stateLine);
+    node.appendChild(main);
+    var aside = el("div", "cdbx-row-aside");
+    var details = el("button", "cdbx-btn", "Details");
+    details.type = "button";
+    details.title = "Check this desktop, the device key and cloud Cowork / Dispatch";
+    details.addEventListener("click", function () { renderCuStatus(panel); });
+    aside.appendChild(details);
+    node.appendChild(aside);
+    host.appendChild(node);
+    panel.appendChild(host);
+    api.cuStatusSummary().then(function (res) {
+      // The downstream Windows build answers "Linux only": no row there.
+      if (failed(res) && /Linux only/.test(reason(res))) { head.remove(); host.remove(); return; }
+      stateLine.textContent = failed(res) ? "Unavailable: " + reason(res) : String(res.line || "");
+    }, function (err) {
+      stateLine.textContent = "Unavailable: " + (err && err.message ? err.message : String(err));
+    });
+    return { head: head, host: host, spec: spec };
+  }
+
+  // One status row: the word, the fact line, the explanation, its actions.
+  function cusRow(host, key, row) {
+    var r = row && typeof row === "object" ? row : { status: "unknown", fact: "no answer for this row", note: "" };
+    var status = CUS_WORD[r.status] ? r.status : "unknown";
+    var node = el("div", "cdbx-row cdbx-cus-row");
+    node.setAttribute("data-cus", key);
+    var main = el("div", "cdbx-row-main");
+    var title = el("div", "cdbx-id", CUS_TITLES[key]);
+    var word = el("span", "cdbx-cus-st cdbx-cus-" + status, CUS_WORD[status]);
+    title.appendChild(word);
+    main.appendChild(title);
+    main.appendChild(el("div", "cdbx-cus-fact", r.fact));
+    if (r.note) main.appendChild(el("div", "cdbx-note", r.note));
+    node.appendChild(main);
+    var aside = el("div", "cdbx-row-aside");
+    node.appendChild(aside);
+    host.appendChild(node);
+    return { node: node, main: main, aside: aside };
+  }
+
+  function cusButton(text, title) {
+    var b = el("button", "cdbx-btn", text);
+    b.type = "button";
+    if (title) b.title = title;
+    return b;
+  }
+
+  // A copyable command with one line saying where it runs.
+  function cusCommand(host, lead, text) {
+    var box = el("div", "cdbx-cus-cmd");
+    box.appendChild(el("div", "cdbx-note", lead));
+    box.appendChild(codeBlock(text));
+    host.appendChild(box);
+  }
+  function cusWhere(act) {
+    return act.where === "host"
+      ? "Run this on the host, not inside this container or sandbox:"
+      : "Run this in a terminal:";
+  }
+
+  function renderCuStatus(panel) {
+    clear(panel);
+    var back = el("button", "cdbx-btn cdbx-cubg-back", "Back to Community Features");
+    back.type = "button";
+    back.addEventListener("click", function () { renderFeatures(panel); });
+    panel.appendChild(back);
+    var top = el("div", "cdbx-cus-top");
+    top.appendChild(el("div", "cdbx-h1", "Computer Use status"));
+    var recheck = cusButton("Re-check", "Run the checks again");
+    top.appendChild(recheck);
+    panel.appendChild(top);
+    panel.appendChild(el("div", "cdbx-sub",
+      "Code sessions use Computer Use on this desktop. Cloud Cowork and Dispatch tasks reach it only when this " +
+      "computer connects as a device with a key kept in its TPM, and offers the computer tools."));
+    if (!cuStatusApiOk()) {
+      panel.appendChild(el("div", "cdbx-error",
+        "This build's preload does not expose the Computer Use status bridge - reinstall to pick it up."));
+      return;
+    }
+    var page = el("div", "cdbx-cus");
+    panel.appendChild(page);
+    panel.appendChild(el("div", "cdbx-note cdbx-cus-foot",
+      "Full report for an issue: run claude-desktop --diagnose in a terminal."));
+
+    var running = false;
+    function setBusy(on) {
+      running = on;
+      Array.prototype.forEach.call(panel.querySelectorAll(".cdbx-cus .cdbx-btn, .cdbx-cus-top .cdbx-btn"), function (b) {
+        if (!b.classList.contains("cdbx-cubg-copy")) b.disabled = on;
+      });
+    }
+
+    // failure: the last Enable/Disable that did not change anything, shown
+    // under the TPM row until the next Re-check.
+    function load(failure) {
+      clear(page);
+      page.appendChild(el("div", "cdbx-empty", "Checking..."));
+      recheck.disabled = true;
+      api.cuStatusRead().then(function (st) {
+        recheck.disabled = false;
+        clear(page);
+        if (failed(st)) {
+          page.appendChild(el("div", "cdbx-error", "The status is unavailable: " + reason(st)));
+          return;
+        }
+        draw(st, failure);
+      }, function (err) {
+        recheck.disabled = false;
+        clear(page);
+        page.appendChild(el("div", "cdbx-error", "The status is unavailable: " + (err && err.message ? err.message : String(err))));
+      });
+    }
+
+    function tpmAction(which) {
+      if (running) return;
+      setBusy(true);
+      var call = which === "enable" ? api.cuStatusTpmEnable : api.cuStatusTpmDisable;
+      call().then(function (r) {
+        setBusy(false);
+        if (!failed(r)) {
+          toast(r.changed ? "Done: " + r.message : "No change needed: " + r.message);
+          load(null);
+          return;
+        }
+        // cancelled (polkit), declined (main's dialog), cooldown (main refused
+        // a quick retry): a toast only, no command block under the row.
+        var quiet = r && (r.code === "cancelled" || r.code === "declined" || r.code === "cooldown");
+        if (r && r.code === "cancelled") toast("Not changed: authentication was cancelled", true);
+        else if (r && r.code === "declined") toast("Not changed: Enable TPM access was not confirmed", true);
+        else toast("Not changed: " + reason(r), true);
+        load(quiet ? null : r);
+      }, function (err) {
+        setBusy(false);
+        toast("Not changed: " + (err && err.message ? err.message : String(err)), true);
+        load(null);
+      });
+    }
+
+    function draw(st, failure) {
+      var rows = st.rows || {};
+      var acts = st.actions || {};
+      var restartOk = acts.restart === true && typeof api.appRelaunch === "function";
+
+      var desk = cusRow(page, "desktop", rows.desktop);
+      if (acts.resetScreenSharing === true) {
+        var reset = cusButton("Reset screen sharing", "Forget the remembered screen-sharing choice; the next Computer Use task asks again");
+        reset.addEventListener("click", function () {
+          if (running) return;
+          setBusy(true);
+          api.cuStatusResetScreenSharing().then(function (r) {
+            setBusy(false);
+            if (failed(r)) toast("Could not reset screen sharing: " + reason(r), true);
+            else toast((r.lines || []).join("\n") || "Screen sharing reset");
+            load(null);
+          }, function (err) {
+            setBusy(false);
+            toast("Could not reset screen sharing: " + (err && err.message ? err.message : String(err)), true);
+            load(null);
+          });
+        });
+        desk.aside.appendChild(reset);
+      }
+
+      var tpm = cusRow(page, "tpm", rows.tpm);
+      var en = acts.tpmEnable;
+      if (en && typeof en === "object") {
+        tpm.main.appendChild(el("div", "cdbx-note cdbx-cus-sec", CUS_SECURITY));
+        if (en.kind === "pkexec") {
+          var enable = cusButton("Enable TPM access", "Asks you to confirm, then for an administrator password, then lets this session use the TPM");
+          enable.addEventListener("click", function () { tpmAction("enable"); });
+          tpm.aside.appendChild(enable);
+        } else if (en.kind === "nixos") {
+          cusCommand(tpm.main, "Add this to your NixOS configuration, then rebuild and restart Claude:", String(en.text || ""));
+        } else if (en.kind === "command") {
+          cusCommand(tpm.main, cusWhere(en), String(en.text || ""));
+        }
+      }
+      var dis = acts.tpmDisable;
+      if (dis && typeof dis === "object") {
+        if (dis.kind === "pkexec") {
+          var disable = cusButton("Disable TPM access", "Removes this package's TPM rule link; access already granted lasts until you log out");
+          disable.addEventListener("click", function () { tpmAction("disable"); });
+          tpm.aside.appendChild(disable);
+        } else if (dis.kind === "command") {
+          cusCommand(tpm.main, "To turn TPM access off again - " + cusWhere(dis).charAt(0).toLowerCase() + cusWhere(dis).slice(1),
+            String(dis.text || ""));
+        }
+      }
+      if (typeof acts.tssCommand === "string" && acts.tssCommand) {
+        cusCommand(tpm.main, "This session did not get access from the rule (not the active local seat, or no logind). " +
+          "Add yourself to the TPM group instead, then log out and back in:", acts.tssCommand);
+      }
+      if (restartOk) tpm.aside.appendChild(restartButton());
+      if (failure) {
+        tpm.main.appendChild(el("div", "cdbx-error cdbx-cus-fail", "Not changed: " + reason(failure)));
+        if (typeof failure.command === "string" && failure.command) {
+          cusCommand(tpm.main, "Run this in a terminal instead:", failure.command);
+        }
+      }
+
+      var cloud = cusRow(page, "cloud", rows.cloud);
+      if (restartOk) cloud.aside.appendChild(restartButton());
+    }
+
+    recheck.addEventListener("click", function () { if (!running) load(null); });
+    load(null);
   }
 
   // A copyable command block. There is no other copy button on these pages;
@@ -2830,6 +3080,7 @@
     renderTrayIconRow,
     renderThemePickerRow,
     renderDevToolsRow,
+    renderCuStatusRow,
     renderCuBackgroundRow,
     renderCuAxRow
   ];

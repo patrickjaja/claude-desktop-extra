@@ -18,6 +18,31 @@ See [CLAUDE_BUILT_IN_MCP.md](../baseline/CLAUDE_BUILT_IN_MCP.md#17-computer-use)
 
 **Debugging:** Computer Use patches emit `[claude-cu] diagnostics:` lines showing the detected session, available/missing tools, and screenshot cascade. Find them in `~/.config/Claude/logs/claude-patches.log` (also printed to stderr on terminal launches) and share that file when reporting Computer Use issues. See also [Debugging](../README.md#debugging).
 
+## Computer Use in cloud Cowork and Dispatch
+
+Cowork and Dispatch tasks that run in the cloud reach this computer's Computer Use only when the desktop has registered with a TPM-backed device key. Without read and write access to `/dev/tpmrm0` (the TPM 2.0 resource manager) the desktop registers keyless, and those sessions get no computer tools ("No matching tools found"). Code tab sessions use Computer Use locally and are not affected. A computer without a TPM 2.0 cannot offer Computer Use to cloud Cowork or Dispatch; Code sessions still work there.
+
+On Wayland, with one of the bundled bridges (KWin, GNOME or wlroots) in use, the computer tools are offered to cloud sessions as well. Sessions that fall back to ydotool or spectacle are not offered.
+
+**Check.** Any of:
+
+- Settings -> Extra -> Community -> Computer Use status -> Details (three rows: this desktop, device key (TPM), cloud Cowork and Dispatch).
+- `claude-desktop --diagnose`: the `device key (TPM)`, `TPM access rule` and `last remote-device connect` lines in the Computer Use section.
+- `~/.config/Claude/logs/main.log`: `connect frame sent: device_id keyed` (works) or `keyless` (no computer tools).
+
+**Fix.**
+
+| Install | Action |
+|---|---|
+| `.deb`, `.rpm`, pacman | Computer Use status -> **Enable TPM access** (asks you to confirm, then for an administrator password) |
+| AppImage, or no logind session | Run the command the panel shows |
+| NixOS | `programs.claude-desktop-extra.tpmAccess.enable = true;` with `imports = [ claude-desktop-extra.nixosModules.default ];`, then rebuild |
+| Any | Alternative: `sudo usermod -aG tss $USER`, then log out and back in |
+
+Then restart Claude and start a **new** Cowork task; a running task keeps the tools it started with.
+
+**Security.** The rule gives read/write access to `/dev/tpmrm0` (the resource manager, never `/dev/tpm0`) to every account that logs in at this computer's screen (the active local seat), not only yours. Any program such an account runs can then use the TPM, including clearing it (which destroys TPM-sealed keys such as LUKS/`systemd-cryptenroll` or BitLocker keys), triggering its dictionary-attack lockout, or setting its owner or lockout password. If the TPM's lockout or owner authorization is empty, set one first: `tpm2_changeauth -c lockout` and `tpm2_changeauth -c owner`. Enable shows this in a confirmation dialog before the administrator prompt. Turn it off with **Disable TPM access** in the same panel (or the command it shows); access already granted lasts until you log out. Uninstalling the package leaves the link in `/etc/udev/rules.d/` (it stops working once the package is gone), and reinstalling makes TPM access active again; to remove it for good, use **Disable TPM access** before uninstalling, or delete `/etc/udev/rules.d/70-claude-desktop-extra-tpm.rules`.
+
 ## Read app controls through accessibility (experimental)
 
 Settings -> Extra -> Community Features -> **Computer Use: read app controls (accessibility)** (off by default) gives Claude the app-scoped tools `app_list_windows`, `app_ax_find`, `app_click` and `app_type`. `app_ax_find` lists a window's controls (role, name, states, position) from the desktop accessibility bus (AT-SPI), and `app_click` / `app_type` press a control or set a text field by its `[N]` index, so Claude finds controls by name instead of by screenshot coordinates. With the switch off the tools do not exist and nothing touches the accessibility bus.

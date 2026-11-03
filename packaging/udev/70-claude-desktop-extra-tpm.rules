@@ -1,0 +1,4 @@
+# claude-desktop-extra: TPM access for the active seat user (see cdb-tpm-access)
+# Claude Desktop keeps its device identity key in the TPM. Give the user at the
+# active local seat an ACL on the kernel resource manager node only (not tpm0).
+SUBSYSTEM=="tpmrm", KERNEL=="tpmrm[0-9]*", ACTION!="remove", TAG+="uaccess"

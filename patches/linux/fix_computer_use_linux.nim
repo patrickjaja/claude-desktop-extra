@@ -9,7 +9,7 @@
 # embeds them via staticRead at compile time; Python reads them at runtime.
 # No codegen — the .js files are the single source of truth.
 #
-# All 43 sub-patches use std/nre (PCRE) because many require backreferences.
+# All 44 sub-patches use std/nre (PCRE) because many require backreferences.
 # Sub-patches 15a-15d add the Linux accessibility tools (issue #306,
 # js/cu_ax_tools.js, injected with the executors by Patch 1): upstream's tool
 # builder, its tools/list cache key, the teach-mode read-only set and upstream's
@@ -24,6 +24,9 @@
 # only): js/cu_session_check.js (injected by Patch 1 before both executors)
 # polls it while a portal session is up for a cloud Cowork holder and ends the
 # session when the server reports the turn ended (issue #293).
+# Sub-patch 4g lets the remote-tools device announce the computer tools to
+# cloud Cowork and Dispatch on a Wayland session when js/cu_mode_preamble.js
+# decided a first-party bridge is usable (globalThis.__cdbCuWaylandAnnounce).
 #
 # Idempotency is a MARKER SET (endStateMarkers below): one positive end-state
 # pattern per sub-patch, each with its exact expected count. All present =
@@ -270,6 +273,10 @@ proc endStateMarkers(): seq[EndStateMarker] =
       "4f session check accessor",
       """refresh:[\w$]+\.refreshRemoteChromeSessionMode\}\}process\.platform==="linux"&&\(globalThis\.__cdbRemoteSessionMode=[\w$]+\);""",
     ),
+    rx(
+      "4g remote announce Wayland",
+      """function [\w$]+\(\)\{return [\w$]+\(\)\|\|!\([\w$]+\(\)\|\|process\.platform==="linux"&&globalThis\.__cdbCuWaylandAnnounce===!0\)\|\|![\w$]+\(["'`]4293378213["'`]\)\?!1:""",
+    ),
     lit(
       "5 ensureOsPermissions",
       "ensureOsPermissions:process.platform===\"linux\"?async()=>({granted:!0}):",
@@ -418,7 +425,7 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 43
+  const EXPECTED_PATCHES = 44
 
   let gateSet = cuPlatformSetName(content)
   if gateSet == "":
@@ -854,6 +861,67 @@ proc apply*(input: string): string =
           inc patchesApplied
         else:
           echo "  [FAIL] 4f session check accessor: replacement did not apply"
+
+  # ── Patch 4g: remote-tools device announces Computer Use on Wayland ────
+  # Upstream builds the remote-tools device announce (what cloud Cowork and
+  # Dispatch sessions can call on this desktop) through one gate (4.4212.0:
+  # `yFr` in index.chunk-CvhJZ02X.js; callers: the device bridge build,
+  # cu_gate_reconcile and cu_preference_change):
+  #   function yFr(){return sx()||!UPr()||!jx("4293378213")?!1:QK()?!0:...}
+  #   function UPr(){return!MO()}
+  #   var MO=()=>{let e=AO().XDG_SESSION_TYPE;return e?e==="wayland":
+  #     !!AO().WAYLAND_DISPLAY}
+  # so every computer_* tool is left out of the announce on a Wayland session.
+  # Our bridges drive Wayland, so on Linux the term also passes when
+  # js/cu_mode_preamble.js decided that a first-party bridge is usable on this
+  # session (globalThis.__cdbCuWaylandAnnounce === true, set once per process
+  # before the device connects; fallback routes leave it false). The HIPAA term
+  # (sx()) and the GrowthBook gate 4293378213 stay ahead of ours, unchanged.
+  #
+  # Anchor: the function whose body starts `return A()||!B()||!C("4293378213")?!1:`,
+  # exactly once. Pre-asserts: B is defined once as `function B(){return!M()}`,
+  # and M is the XDG_SESSION_TYPE Wayland check, defined once.
+  block:
+    let pat =
+      re"""(function [\w$]+\(\)\{return [\w$]+\(\)\|\|)!([\w$]+)\(\)(\|\|![\w$]+\(["'`]4293378213["'`]\)\?!1:)"""
+    let hits = countMatches(content, pat)
+    if hits != 1:
+      echo &"  [FAIL] 4g remote announce Wayland: {hits} gate matches, expected 1"
+    else:
+      let c2 = content.find(pat).get().captures[1]
+      let c2Def = re("function " & escapeRe(c2) & """\(\)\{return!([\w$]+)\(\)\}""")
+      let c2Hits = countMatches(content, c2Def)
+      if c2Hits != 1:
+        echo &"  [FAIL] 4g remote announce Wayland: {c2} defined as `return!M()` {c2Hits} times, expected 1 - re-audit"
+      else:
+        let mo = content.find(c2Def).get().captures[0]
+        let moEsc = escapeRe(mo)
+        let envAcc = """(?:[\w$]+\(\)|process\.env)"""
+        let moBody =
+          """\{let ([\w$]+)=""" & envAcc &
+          """\.XDG_SESSION_TYPE;return \1\?\1===["'`]wayland["'`]:!!""" & envAcc &
+          """\.WAYLAND_DISPLAY\}"""
+        let moDef = re(
+          "(?:(?<![\\w$.])" & moEsc & "=\\(\\)=>|function " & moEsc & "\\(\\))" & moBody
+        )
+        let moHits = countMatches(content, moDef)
+        if moHits != 1:
+          echo &"  [FAIL] 4g remote announce Wayland: {mo} is not the XDG_SESSION_TYPE Wayland check ({moHits} definitions matched, expected 1) - re-audit"
+        else:
+          let n = replaceFirst(
+            content,
+            pat,
+            proc(m: RegexMatch): string =
+              m.captures[0] & "!(" & m.captures[1] &
+                "()||process.platform===\"linux\"&&globalThis.__cdbCuWaylandAnnounce===!0)" &
+                m.captures[2],
+          )
+          if n == 1:
+            echo &"  [OK] 4g remote announce Wayland: !{c2}() passes on Linux when a first-party bridge is usable ({c2} = !{mo}, 1 match)"
+            inc changes, n
+            inc patchesApplied
+          else:
+            echo "  [FAIL] 4g remote announce Wayland: replacement did not apply"
 
   # ── Patch 5: ensureOsPermissions → skip TCC on Linux ───────────────────
   block:

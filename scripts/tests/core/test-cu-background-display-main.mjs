@@ -233,7 +233,7 @@ section("source: async only");
   ok(cubg.length > 1000 && !/Sync\(/.test(cubg) && !/__cdbEx_readFileKey\(/.test(cubg),
     "no sync call (readFileSync, statSync, accessSync, ...) in the background-display helpers and handlers",
     (cubg.match(/\w*Sync\(|__cdbEx_readFileKey\(/g) || []).join(","));
-  ok(/execFile\(/.test(src) && /timeout: __cdbEx_CUBG_TIMEOUT_MS/.test(src) && /__cdbEx_CUBG_TIMEOUT_MS = 5000;/.test(src),
+  ok(/execFile\(/.test(src) && /var tmo = timeoutMs \|\| __cdbEx_CUBG_TIMEOUT_MS;/.test(src) && /timeout: tmo, killSignal: "SIGKILL"/.test(src) && /__cdbEx_CUBG_TIMEOUT_MS = 5000;/.test(src),
     "children are async execFile with a 5 s timeout");
 }
 

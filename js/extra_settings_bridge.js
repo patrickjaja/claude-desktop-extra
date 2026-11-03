@@ -343,6 +343,25 @@
       return ipcRenderer.invoke("cdb-cubg:tools");
     },
 
+    // Computer Use status (Community -> Computer Use -> Details). No channel
+    // takes an argument: the helper path, the launcher and the bridge are all
+    // decided on the main side, so the page can only name one of these actions.
+    cuStatusSummary: function () {
+      return ipcRenderer.invoke("cdb-cu-status:summary");
+    },
+    cuStatusRead: function () {
+      return ipcRenderer.invoke("cdb-cu-status:read");
+    },
+    cuStatusTpmEnable: function () {
+      return ipcRenderer.invoke("cdb-cu-status:tpm-enable");
+    },
+    cuStatusTpmDisable: function () {
+      return ipcRenderer.invoke("cdb-cu-status:tpm-disable");
+    },
+    cuStatusResetScreenSharing: function () {
+      return ipcRenderer.invoke("cdb-cu-status:reset-screen-sharing");
+    },
+
     // Open one of the files this package writes, or show it in the file manager.
     // The first argument is a fixed LOCATION NAME the main side resolves to a
     // path itself - a page-supplied path would be a way to have the desktop open

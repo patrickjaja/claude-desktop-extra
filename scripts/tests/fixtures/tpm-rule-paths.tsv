@@ -1,0 +1,28 @@
+# Shared case list for the TPM rule-path predicate: cdb-tpm-access known_src(),
+# __cdbEx_cusKnownRule (js/extra_settings_main.js) and _cdb_tpm_rule_ours (launcher).
+# verdict<TAB>raw link target or rule path<TAB>what it is. Read by test-cu-status-main.mjs.
+yes	/usr/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	the deb/rpm/pacman path
+yes	/nix/store/0123456789abcdfghijklmnpqrsvwxyz-claude-desktop-extra-4.4212.0/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	a Nix store install (hash-name segment)
+yes	/nix/store/0000000000000000000000000000000z-cdb-gone/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	a dangling Nix store link target (only the shape counts)
+yes	/nix/store/0123456789abcdfghijklmnpqrsvwxyz-a+b._?=-c/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	a store name with every allowed punctuation character
+no		empty
+no	70-claude-desktop-extra-tpm.rules	a bare file name (relative)
+no	/tmp/cdb-tree/resources/linux-udev/70-claude-desktop-extra-tpm.rules	a build tree under /tmp
+no	/tmp/.mount_ClaudeAb12Cd/usr/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	an AppImage mount
+no	/opt/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	another install prefix
+no	/usr/lib/claude-desktop/resources/linux-udev/../linux-udev/70-claude-desktop-extra-tpm.rules	the packaged path with a .. segment
+no	/usr/lib/claude-desktop/resources/linux-udev//70-claude-desktop-extra-tpm.rules	the packaged path with a doubled slash
+no	/usr/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules.bak	the packaged path with a suffix
+no	/nix/store/cdb-gone/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	a store segment without a hash
+no	/nix/store/0123456789abcdfghijklmnpqrsvwxyz/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	a hash without a name
+no	/nix/store/0123456789abcdfghijklmnpqrsvwxyz-/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	a hash with an empty name
+no	/nix/store/0123456789abcdfghijklmnpqrsvwxyze-x/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	a 33-char hash
+no	/nix/store/0123456789abcdfghijklmnpqrsvwxy-x/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	a 31-char hash
+no	/nix/store/0123456789abcdfghijklmnpqrsvwxye-x/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	a hash with a letter outside nix base32 (e)
+no	/nix/store/0123456789abcdfghijklmnpqrsvwxyA-x/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	a hash with an upper-case letter
+no	/nix/store/0123456789abcdfghijklmnpqrsvwxyz-x/y/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	two store segments
+no	/nix/store/0123456789abcdfghijklmnpqrsvwxyz-a b/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	a store name with a space
+no	/nix/store/0123456789abcdfghijklmnpqrsvwxyz-café/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	a store name with a non-ASCII letter
+no	/nix/store/../usr/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules	/nix/store/..
+no	/nix/store/0123456789abcdfghijklmnpqrsvwxyz-x/lib/claude-desktop/resources/linux-udev/other.rules	a store path to another rule
+no	/dev/null	/dev/null (a mask, not our rule)

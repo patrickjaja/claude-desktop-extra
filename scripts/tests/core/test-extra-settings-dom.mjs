@@ -812,12 +812,14 @@ async function featuresPanel(featuresItem) {
   // Transparent window is both: its switch needs a restart, its slider is live,
   // and its note has to say each.
   const MIXED_ROWS = ["Transparent window"];
+  // The Computer Use status row has no switch: it reports, it does not apply.
+  const INFO_ROWS = ["Computer Use status"];
   const rowNotes = Array.from(panel.querySelectorAll(".cdbx-row")).map(function (r) {
     return {
       title: r.querySelector(".cdbx-id").textContent,
       note: r.querySelector(".cdbx-note").textContent.toLowerCase()
     };
-  });
+  }).filter(function (r) { return INFO_ROWS.indexOf(r.title) < 0; });
   const mixedRows = rowNotes.filter(function (r) { return MIXED_ROWS.indexOf(r.title) >= 0; });
   const liveRows = rowNotes.filter(function (r) {
     return RESTART_ROWS.indexOf(r.title) < 0 && MIXED_ROWS.indexOf(r.title) < 0;
@@ -1046,9 +1048,13 @@ async function cubgPanel(featuresItem) {
      "an older preload without the whole cuBackground* bridge gets no row");
   window.cdbExtra.cuBackgroundProbe = savedProbe;
 
-  // The downstream Windows build: the main side answers "Linux only".
+  // The downstream Windows build: the main side answers "Linux only" (for the
+  // status row too, so the section has no row left to carry its heading).
   window.__cubgState = { ok: false, error: "Computer Use on a background display is Linux only" };
+  const savedSummary = window.__cusSummary;
+  window.__cusSummary = { ok: false, error: "Computer Use status is Linux only" };
   panel = await remount();
+  window.__cusSummary = savedSummary;
   ok(!panel.querySelector(SW) && !/background display/.test(panel.textContent) &&
      !/Computer Use$/m.test(Array.prototype.map.call(panel.querySelectorAll(".cdbx-sec-t"), function (n) { return n.textContent; }).join("\n")),
      "a 'Linux only' read hides the row and its section heading");
@@ -1197,6 +1203,206 @@ async function cubgPanel(featuresItem) {
   document.querySelector(".cdbx-cubg-back").click();
   await sleep(40);
   ok(!!document.querySelector(".cdbx-panel " + SW), "Back returns to the feature list");
+}
+
+// Computer Use status: the first row of the Computer Use section and its
+// Details page. Pinned here: the row is a verdict line plus Details (no
+// switch), every row word comes from the read and an unknown status never
+// shows as OK, each action appears only when the read offers it, the actions
+// call their channel with no argument and re-read afterwards, and a failed
+// Enable shows the command to run instead.
+async function cusPanel(featuresItem) {
+  async function remount() {
+    document.getElementById("row-account").click();
+    await sleep(20);
+    featuresItem.click();
+    await sleep(50);
+    return document.querySelector(".cdbx-panel");
+  }
+  function statusRow(panel) {
+    return Array.prototype.filter.call(panel.querySelectorAll(".cdbx-row"), function (r) {
+      const t = r.querySelector(".cdbx-id");
+      return t && t.textContent === "Computer Use status";
+    })[0] || null;
+  }
+  function btn(root, text) {
+    return Array.prototype.filter.call(root.querySelectorAll(".cdbx-btn"), function (b) { return b.textContent === text; })[0] || null;
+  }
+  function row(key) { return document.querySelector('.cdbx-panel .cdbx-cus-row[data-cus="' + key + '"]'); }
+  function word(key) { const r = row(key); const w = r && r.querySelector(".cdbx-cus-st"); return w ? w.textContent : ""; }
+  function toastText() { const t = document.querySelector(".cdbx-toast"); return t ? t.textContent : ""; }
+  async function openDetails() {
+    const panel = await remount();
+    const r = statusRow(panel);
+    const d = r && btn(r, "Details");
+    if (!d) return null;
+    d.click();
+    await sleep(60);
+    return document.querySelector(".cdbx-panel");
+  }
+  function setState(rows, actions) {
+    window.__cusState = { ok: true, rows: rows, actions: Object.assign({ tpmEnable: null, tpmDisable: null, restart: false,
+      resetScreenSharing: false, tssCommand: null }, actions || {}) };
+  }
+  const okRows = window.__cusRows(
+    { status: "ok", fact: "/dev/tpmrm0 accessible", note: "n" },
+    { status: "ok", fact: "device keyed, computer tools offered", note: "n" });
+
+  // --- the row on the Community page
+  window.__cusCalls = { summary: 0, read: 0, enable: 0, disable: 0, reset: 0 };
+  let panel = await remount();
+  const sr = statusRow(panel);
+  ok(!!sr, "renders the Computer Use status row");
+  if (!sr) return;
+  ok(!sr.querySelector(".cdbx-switch") && !!btn(sr, "Details"), "the status row has a Details button and no switch");
+  ok(sr.querySelector(".cdbx-state").textContent === window.__cusSummary.line,
+     "its state line is the main side's summary: " + sr.querySelector(".cdbx-state").textContent);
+  ok(window.__cusCalls.summary === 1 && window.__cusCalls.read === 0,
+     "the Community page asks for the summary only, never the full read: " + JSON.stringify(window.__cusCalls));
+  const secs = Array.prototype.filter.call(panel.querySelectorAll(".cdbx-sec-t"), function (n) { return n.textContent === "Computer Use"; });
+  ok(secs.length === 1, "one Computer Use heading for the section (" + secs.length + ")");
+  const bgSw = panel.querySelector('.cdbx-switch[aria-label="let Computer Use work on a background display instead of your desktop"]');
+  ok(!!bgSw && !!(sr.compareDocumentPosition(bgSw) & Node.DOCUMENT_POSITION_FOLLOWING),
+     "the status row comes before the background display row");
+  ok(!!secs[0] && !!(secs[0].compareDocumentPosition(sr) & Node.DOCUMENT_POSITION_FOLLOWING),
+     "and sits under the Computer Use heading");
+
+  // --- Details: needs TPM access, the pkexec button offered
+  window.__cusState = { ok: true, rows: window.__cusRows(), actions: { tpmEnable: { kind: "pkexec" }, tpmDisable: null,
+    restart: false, resetScreenSharing: false, tssCommand: null } };
+  panel = await openDetails();
+  ok(!!panel && !!panel.querySelector(".cdbx-cus"), "Details opens the status page in the same panel");
+  if (!panel || !panel.querySelector(".cdbx-cus")) return;
+  ok(panel.querySelector(".cdbx-h1").textContent === "Computer Use status", "titled Computer Use status");
+  ok(!!btn(panel, "Back to Community Features") && !!btn(panel, "Re-check"), "it has Back and Re-check");
+  ok(window.__cusCalls.read === 1, "opening it reads the status once (" + window.__cusCalls.read + ")");
+  ok(["desktop", "tpm", "cloud"].every(function (k) { return !!row(k); }), "three rows: desktop, TPM, cloud");
+  ok(row("desktop").querySelector(".cdbx-id").firstChild.textContent === "This desktop" &&
+     row("tpm").querySelector(".cdbx-id").firstChild.textContent === "Device key (TPM)" &&
+     row("cloud").querySelector(".cdbx-id").firstChild.textContent === "Cloud Cowork and Dispatch", "with their titles");
+  ok(word("desktop") === "OK" && word("tpm") === "Needs action" && word("cloud") === "Needs action",
+     "status words from the read: " + [word("desktop"), word("tpm"), word("cloud")].join("|"));
+  ok(row("tpm").querySelector(".cdbx-cus-fact").textContent === "present, no access for this user (root:tss 660)",
+     "the fact line is the main side's");
+  const sec = row("tpm").querySelector(".cdbx-cus-sec");
+  const enable = btn(row("tpm"), "Enable TPM access");
+  ok(!!enable && !!sec && /active local seat/.test(sec.textContent) && /docs\/computer-use\.md/.test(sec.textContent),
+     "Enable TPM access is offered with the security sentence and the docs reference");
+  ok(!btn(panel, "Disable TPM access") && !btn(panel, "Restart now") && !btn(panel, "Reset screen sharing") &&
+     !panel.querySelector(".cdbx-cus .cdbx-cubg-code"), "and nothing the read did not offer");
+  ok(/claude-desktop --diagnose/.test(panel.querySelector(".cdbx-cus-foot").textContent), "the footer names claude-desktop --diagnose");
+
+  window.__cusEnable = { ok: true, changed: true, message: "cdb-tpm-access: enabled (a -> b)" };
+  enable.click();
+  await sleep(60);
+  ok(window.__cusCalls.enable === 1, "Enable calls cuStatusTpmEnable once, with no argument (" + window.__cusCalls.enable + ")");
+  ok(window.__cusCalls.read === 2, "and re-reads afterwards (" + window.__cusCalls.read + ")");
+  ok(/cdb-tpm-access: enabled/.test(toastText()), "the toast carries the helper's line: " + toastText());
+
+  window.__cusEnable = { ok: false, code: "cancelled", error: "authentication was cancelled", command: null };
+  btn(row("tpm"), "Enable TPM access").click();
+  await sleep(60);
+  ok(toastText() === "Not changed: authentication was cancelled", "cancelled: says nothing changed: " + toastText());
+  ok(!panel.querySelector(".cdbx-cus-fail"), "cancelled: no command block");
+
+  window.__cusEnable = { ok: false, code: "declined", error: "Enable was not confirmed", command: null };
+  btn(row("tpm"), "Enable TPM access").click();
+  await sleep(60);
+  ok(toastText() === "Not changed: Enable TPM access was not confirmed", "declined in main's dialog: says so: " + toastText());
+  ok(!panel.querySelector(".cdbx-cus-fail"), "declined: no command block");
+  window.__cusEnable = { ok: false, code: "cooldown", error: "the last Enable was declined or failed - try again in 28 s", command: null };
+  btn(row("tpm"), "Enable TPM access").click();
+  await sleep(60);
+  ok(toastText() === "Not changed: the last Enable was declined or failed - try again in 28 s", "cooldown: main's reason, verbatim: " + toastText());
+  ok(!panel.querySelector(".cdbx-cus-fail"), "cooldown: no command block");
+
+  window.__cusEnable = { ok: false, code: "no-agent", error: "no polkit authentication agent answered",
+    command: "sudo /usr/lib/claude-desktop/resources/linux-udev/cdb-tpm-access enable" };
+  btn(row("tpm"), "Enable TPM access").click();
+  await sleep(60);
+  const fail = row("tpm").querySelector(".cdbx-cus-fail");
+  const pres = Array.prototype.map.call(row("tpm").querySelectorAll(".cdbx-cubg-pre"), function (p) { return p.textContent; });
+  ok(!!fail && /no polkit authentication agent/.test(fail.textContent) &&
+     pres.indexOf("sudo /usr/lib/claude-desktop/resources/linux-udev/cdb-tpm-access enable") >= 0,
+     "no agent: the error and the command to run instead: " + pres.join("|"));
+  btn(panel, "Re-check").click();
+  await sleep(60);
+  ok(!row("tpm").querySelector(".cdbx-cus-fail"), "Re-check clears the failure block");
+
+  // --- commands instead of the button
+  setState(window.__cusRows(), { tpmEnable: { kind: "command", text: "printf rule | sudo tee /etc/udev/rules.d/x", where: "here" } });
+  panel = await openDetails();
+  ok(!btn(panel, "Enable TPM access") && Array.prototype.some.call(row("tpm").querySelectorAll(".cdbx-cubg-pre"),
+     function (p) { return p.textContent === "printf rule | sudo tee /etc/udev/rules.d/x"; }) &&
+     /in a terminal/.test(row("tpm").querySelector(".cdbx-cus-cmd").textContent) && !!row("tpm").querySelector(".cdbx-cus-sec"),
+     "a command Enable: the command block (with the security sentence), no button");
+  setState(window.__cusRows(), { tpmEnable: { kind: "command", text: "x", where: "host" } });
+  panel = await openDetails();
+  ok(/on the host/.test(row("tpm").querySelector(".cdbx-cus-cmd").textContent), "a container: the command says to run it on the host");
+  setState(window.__cusRows(), { tpmEnable: { kind: "nixos", text: "programs.claude-desktop-extra.tpmAccess.enable = true;" } });
+  panel = await openDetails();
+  ok(/NixOS configuration/.test(row("tpm").querySelector(".cdbx-cus-cmd").textContent) &&
+     row("tpm").querySelector(".cdbx-cubg-pre").textContent === "programs.claude-desktop-extra.tpmAccess.enable = true;" &&
+     !btn(panel, "Enable TPM access"), "NixOS: the module option, no button");
+  setState(window.__cusRows({ status: "action", fact: "rule enabled, but this session got no access", note: "n" }),
+    { tssCommand: "sudo usermod -aG tss \"$USER\"" });
+  panel = await openDetails();
+  ok(row("tpm").querySelector(".cdbx-cubg-pre").textContent === "sudo usermod -aG tss \"$USER\"" && !btn(panel, "Enable TPM access"),
+     "no access through the rule: the tss command");
+
+  // --- everything OK, our link present: Disable
+  window.__cusCalls.disable = 0;
+  setState(okRows, { tpmDisable: { kind: "pkexec" } });
+  panel = await openDetails();
+  ok(word("desktop") === "OK" && word("tpm") === "OK" && word("cloud") === "OK", "all OK when the read says so");
+  const dis = btn(row("tpm"), "Disable TPM access");
+  ok(!!dis && !btn(panel, "Enable TPM access") && !row("tpm").querySelector(".cdbx-cus-sec"),
+     "our link: Disable TPM access, no Enable and no security sentence");
+  if (dis) { dis.click(); await sleep(60); }
+  ok(window.__cusCalls.disable === 1 && toastText() === "Done: cdb-tpm-access: disabled", "Disable calls its channel once: " + toastText());
+  setState(okRows, { tpmDisable: { kind: "command", text: "sudo rm -f /etc/udev/rules.d/x", where: "here" } });
+  panel = await openDetails();
+  ok(!btn(panel, "Disable TPM access") && /turn TPM access off/.test(row("tpm").querySelector(".cdbx-cus-cmd").textContent),
+     "a command Disable: the command block, no button");
+
+  // --- Restart now and Reset screen sharing
+  setState(window.__cusRows({ status: "action", fact: "accessible now - restart Claude to use it", note: "n" }), { restart: true });
+  panel = await openDetails();
+  ok(!!btn(row("tpm"), "Restart now") && !!btn(row("cloud"), "Restart now") && !btn(row("desktop"), "Restart now"),
+     "restart owed: Restart now on the TPM and cloud rows");
+  window.__cusCalls.reset = 0;
+  setState(okRows, { resetScreenSharing: true });
+  panel = await openDetails();
+  const rs = btn(row("desktop"), "Reset screen sharing");
+  ok(!!rs, "a session bridge: Reset screen sharing on the desktop row");
+  if (rs) { rs.click(); await sleep(60); }
+  ok(window.__cusCalls.reset === 1 && toastText() === "KWin screen sharing: forgot the remembered choice.",
+     "Reset runs once and toasts the launcher's lines verbatim: " + toastText());
+
+  // --- never a false OK
+  setState({ desktop: { status: "unknown", fact: "x11-bridge doctor gave no status (timeout)", note: "n" },
+    tpm: { status: "OK", fact: "spoofed", note: "n" } }, {});
+  panel = await openDetails();
+  ok(word("desktop") === "Unknown" && word("tpm") === "Unknown" && word("cloud") === "Unknown",
+     "unknown, unrecognised and missing statuses all render Unknown: " + [word("desktop"), word("tpm"), word("cloud")].join("|"));
+  window.__cusState = { ok: false, error: "main.log: EACCES" };
+  panel = await openDetails();
+  ok(!panel.querySelector(".cdbx-cus-row") && /unavailable: main\.log: EACCES/.test(panel.querySelector(".cdbx-cus .cdbx-error").textContent),
+     "a failed read shows the error and no rows");
+  window.__cusState = { ok: true, rows: window.__cusRows(), actions: { tpmEnable: { kind: "pkexec" } } };
+
+  // --- Back
+  btn(panel, "Back to Community Features").click();
+  await sleep(60);
+  ok(document.querySelector(".cdbx-panel .cdbx-h1").textContent === "Community Features", "Back returns to Community Features");
+
+  // --- an older preload: no status row, the background display row keeps its heading
+  const savedRead = window.cdbExtra.cuStatusRead;
+  delete window.cdbExtra.cuStatusRead;
+  panel = await remount();
+  const secs2 = Array.prototype.filter.call(panel.querySelectorAll(".cdbx-sec-t"), function (n) { return n.textContent === "Computer Use"; });
+  ok(!statusRow(panel) && secs2.length === 1, "an older preload: no status row, and the Computer Use heading stays (" + secs2.length + ")");
+  window.cdbExtra.cuStatusRead = savedRead;
 }
 
 async function modelsPanel(modelsItem) {
@@ -2304,6 +2510,7 @@ async function run() {
       await themesPanel(items[0]);
       await featuresPanel(items[1]);
       await cubgPanel(items[1]);
+      await cusPanel(items[1]);
       await modelsPanel(items[2]);
       await flagsPanel(items[3]);
       await deployPanel(items[4]);
@@ -2641,6 +2848,22 @@ window.__cubgBase = { ok: true, present: false, enabled: false, config: null, va
   lockedByJsonc: null, source: "default", path: "/home/u/.config/Claude/claude-desktop-extra.json", own: { display: ":0", wayland: null } };
 window.__cubgState = Object.assign({}, window.__cubgBase);
 window.__cubgCalls = { set: [], thumb: [], probe: [], test: 0 };
+// Computer Use status: the row's summary, the Details read, and what each
+// action answers. Calls are counted so the page's reads can be pinned.
+window.__cusSummary = { ok: true, line: "This desktop: x11-bridge - Cloud Cowork and Dispatch: needs TPM access" };
+window.__cusRows = function (tpm, cloud) {
+  return {
+    desktop: { status: "ok", fact: "X11 - x11-bridge 0.4.0 ready", note: "Claude's Code sessions see and control your screen through this." },
+    tpm: tpm || { status: "action", fact: "present, no access for this user (root:tss 660)", note: "Claude keeps this computer's device identity key in the TPM." },
+    cloud: cloud || { status: "action", fact: "device keyless (row_pk_no_row) - TPM not accessible, see above", note: "Cloud tasks reach this screen only through a keyed device." }
+  };
+};
+window.__cusState = { ok: true, rows: window.__cusRows(), actions: { tpmEnable: { kind: "pkexec" }, tpmDisable: null,
+  restart: false, resetScreenSharing: false, tssCommand: null } };
+window.__cusCalls = { summary: 0, read: 0, enable: 0, disable: 0, reset: 0 };
+window.__cusEnable = { ok: true, changed: true, message: "cdb-tpm-access: enabled (/etc/udev/rules.d/70-claude-desktop-extra-tpm.rules -> /usr/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules)" };
+window.__cusDisable = { ok: true, changed: true, message: "cdb-tpm-access: disabled" };
+window.__cusReset = { ok: true, lines: ["KWin screen sharing: forgot the remembered choice."] };
 window.__cubgProbe = function (k, d) {
   if (d === ":99") return { ok: true, kind: k, display: d, running: true, supported: true, reason: null,
     screens: [{ id: "screen", width: 1280, height: 800 }], size: { width: 1280, height: 800 }, windows: 2,
@@ -2815,6 +3038,11 @@ window.cdbExtra = {
       xfwm4: "/usr/bin/xfwm4", openbox: null, i3: null, x11vnc: null, wayvnc: null, xclip: "/usr/bin/xclip", xsel: null,
       "wl-copy": null, "wl-paste": null, xprop: "/usr/bin/xprop" } });
   },
+  cuStatusSummary: function () { window.__cusCalls.summary++; return Promise.resolve(window.__cusSummary); },
+  cuStatusRead: function () { window.__cusCalls.read++; return Promise.resolve(window.__cusState); },
+  cuStatusTpmEnable: function () { window.__cusCalls.enable += arguments.length ? 100 : 1; return Promise.resolve(window.__cusEnable); },
+  cuStatusTpmDisable: function () { window.__cusCalls.disable += arguments.length ? 100 : 1; return Promise.resolve(window.__cusDisable); },
+  cuStatusResetScreenSharing: function () { window.__cusCalls.reset += arguments.length ? 100 : 1; return Promise.resolve(window.__cusReset); },
   diag: function (m) { diags.push(String(m)); return Promise.resolve({ ok: true }); }
 };
 </script>

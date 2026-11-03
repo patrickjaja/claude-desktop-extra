@@ -322,7 +322,7 @@ jobs:
         run: |
           echo "=== Running shellcheck on shell scripts ==="
           FAILED=false
-          for f in scripts/*.sh packaging/apt/*.sh packaging/rpm/*.sh packaging/pacman/*.sh .github/scripts/*.sh; do
+          for f in scripts/*.sh packaging/apt/*.sh packaging/rpm/*.sh packaging/pacman/*.sh .github/scripts/*.sh packaging/udev/cdb-tpm-access; do
             [ -f "$f" ] || continue
             echo "Checking $f..."
             if ! shellcheck -S error "$f"; then
@@ -360,6 +360,32 @@ jobs:
             exit 1
           fi
           echo "All .desktop files passed validation"
+
+      - name: Validate TPM access rule, helper and polkit action
+        run: |
+          # packaging/udev/ ships disabled in every package; cdb-tpm-access runs
+          # as root (pkexec or sudo), so it is held to shellcheck's style level.
+          set -euo pipefail
+          D=packaging/udev
+          POLICY="$D/io.github.patrickjaja.claude-desktop-extra.tpm-access.policy"
+          shellcheck -S style "$D/cdb-tpm-access"
+          sudo apt-get install -y libxml2-utils
+          xmllint --noout "$POLICY"
+          grep -qF '<action id="io.github.patrickjaja.claude-desktop-extra.tpm-access">' "$POLICY"
+          grep -qF '<annotate key="org.freedesktop.policykit.exec.path">/usr/lib/claude-desktop/resources/linux-udev/cdb-tpm-access</annotate>' "$POLICY"
+          grep -qF '<allow_active>auth_admin</allow_active>' "$POLICY"
+          udevadm verify "$D/70-claude-desktop-extra-tpm.rules"
+          # The helper links only a rule equal to its embedded RULE_TEXT: one text.
+          sed -n "/^RULE_TEXT='/,/^'\$/p" "$D/cdb-tpm-access" | sed '1s/^RULE_TEXT=.//;$d' \
+            | cmp - "$D/70-claude-desktop-extra-tpm.rules" \
+            || { echo "::error::RULE_TEXT in cdb-tpm-access differs from 70-claude-desktop-extra-tpm.rules"; exit 1; }
+          # Unprivileged: bad usage is 2; a valid action from the source tree is 5
+          # (not at an installed rule path - checked before root).
+          rc=0; "$D/cdb-tpm-access" bogus 2>/dev/null || rc=$?
+          [ "$rc" = 2 ] || { echo "::error::cdb-tpm-access bogus exited $rc, expected 2"; exit 1; }
+          rc=0; out=$("$D/cdb-tpm-access" enable 2>/dev/null) || rc=$?
+          [ "$rc" = 5 ] && [ -z "$out" ] || { echo "::error::cdb-tpm-access enable from the source tree exited $rc (stdout '$out'), expected 5 and no stdout"; exit 1; }
+          echo "TPM access rule, helper and polkit action OK"
 
       - name: Verify Nim patches compile
         run: |
@@ -1354,6 +1380,30 @@ jobs:
 
           bash packaging/debian/build-deb.sh $ARCH_FLAG "$TARBALL" ./dist "$PKGREL"
 
+      - name: Check TPM access files in the .deb (${{ matrix.arch }})
+        run: |
+          # Disabled rule + root helper + polkit action, root-owned with fixed
+          # modes; nothing under /etc/udev or /usr/lib/udev; no maintainer
+          # script references them.
+          set -euo pipefail
+          DEB=$(ls dist/claude-desktop-extra_*_${{ matrix.arch }}.deb)
+          U=usr/lib/claude-desktop/resources/linux-udev
+          P=io.github.patrickjaja.claude-desktop-extra.tpm-access.policy
+          LIST=$(dpkg-deb -c "$DEB" | awk '{print $1, $2, $NF}' | sed 's| \./| |')
+          for want in "-rw-r--r-- root/root $U/70-claude-desktop-extra-tpm.rules" \
+                      "-rwxr-xr-x root/root $U/cdb-tpm-access" \
+                      "-rw-r--r-- root/root $U/$P" \
+                      "-rw-r--r-- root/root usr/share/polkit-1/actions/$P"; do
+            grep -qxF -- "$want" <<<"$LIST" || { echo "::error::.deb lacks '$want'"; exit 1; }
+          done
+          if grep -E ' (etc/udev|usr/lib/udev)/' <<<"$LIST"; then echo "::error::.deb ships udev files outside resources/"; exit 1; fi
+          dpkg-deb --fsys-tarfile "$DEB" | tar -xO "./usr/share/polkit-1/actions/$P" \
+            | grep -qF "<annotate key=\"org.freedesktop.policykit.exec.path\">/$U/cdb-tpm-access</annotate>" \
+            || { echo "::error::polkit exec.path is not /$U/cdb-tpm-access"; exit 1; }
+          CTL=$(mktemp -d); dpkg-deb -e "$DEB" "$CTL"
+          if grep -rlE 'tpm|linux-udev|polkit' "$CTL"; then echo "::error::a maintainer script references the TPM access files"; exit 1; fi
+          echo "TPM access files OK in $(basename "$DEB")"
+
       - name: Test Debian Package (${{ matrix.arch }})
         run: |
           if [ "${{ matrix.arch }}" = "arm64" ]; then
@@ -1505,6 +1555,35 @@ jobs:
               bash /build/packaging/rpm/build-rpm.sh $ARCH_FLAG /build/$TARBALL /output $PKGREL
             "
 
+      - name: Check TPM access files in the .rpm (${{ matrix.arch }})
+        run: |
+          # Same assertions as the .deb: disabled rule + root helper + polkit
+          # action, root-owned with fixed modes, no udev path outside resources/,
+          # no scriptlet reference. rpm reads the package without installing it.
+          docker run --rm \
+            -v "$(pwd)/dist:/dist:ro" \
+            fedora:40 \
+            bash -c '
+              set -euo pipefail
+              dnf install -y -q cpio >/dev/null
+              RPM=$(ls /dist/claude-desktop-extra-*.${{ matrix.arch }}.rpm)
+              U=usr/lib/claude-desktop/resources/linux-udev
+              P=io.github.patrickjaja.claude-desktop-extra.tpm-access.policy
+              LIST=$(rpm -qlvp "$RPM" | awk "{print \$1, \$3\"/\"\$4, \$NF}" | sed "s| /| |")
+              for want in "-rw-r--r-- root/root $U/70-claude-desktop-extra-tpm.rules" \
+                          "-rwxr-xr-x root/root $U/cdb-tpm-access" \
+                          "-rw-r--r-- root/root $U/$P" \
+                          "-rw-r--r-- root/root usr/share/polkit-1/actions/$P"; do
+                grep -qxF -- "$want" <<<"$LIST" || { echo "::error::.rpm lacks $want"; exit 1; }
+              done
+              if grep -E " (etc/udev|usr/lib/udev)/" <<<"$LIST"; then echo "::error::.rpm ships udev files outside resources/"; exit 1; fi
+              rpm2cpio "$RPM" | cpio -i --quiet --to-stdout "./usr/share/polkit-1/actions/$P" \
+                | grep -qF "<annotate key=\"org.freedesktop.policykit.exec.path\">/$U/cdb-tpm-access</annotate>" \
+                || { echo "::error::polkit exec.path is not /$U/cdb-tpm-access"; exit 1; }
+              if rpm -qp --scripts "$RPM" | grep -E "tpm|linux-udev|polkit"; then echo "::error::an rpm scriptlet references the TPM access files"; exit 1; fi
+              echo "TPM access files OK in $(basename "$RPM")"
+            '
+
       - name: Test RPM Package (${{ matrix.arch }})
         run: |
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
@@ -1597,7 +1676,40 @@ jobs:
             !skip' packaging/nix/package.nix > /tmp/package-ci.nix
           mv /tmp/package-ci.nix packaging/nix/package.nix
 
-          NIXPKGS_ALLOW_UNFREE=1 nix build .#claude-desktop --no-link --print-build-logs --impure
+          OUT=$(NIXPKGS_ALLOW_UNFREE=1 nix build .#claude-desktop --no-link --print-build-logs --print-out-paths --impure)
+
+          # Opt-in TPM access: rule + helper in the tree (no polkit action on
+          # Nix), the helper's shebang patched to a store sh, and the NixOS
+          # module installing the rule only when its option is on.
+          U="$OUT/lib/claude-desktop/resources/linux-udev"
+          test "$(stat -c %a "$U/cdb-tpm-access")" = 555 -o "$(stat -c %a "$U/cdb-tpm-access")" = 755 \
+            || { echo "::error::Nix output: $U/cdb-tpm-access is not executable"; exit 1; }
+          test -f "$U/70-claude-desktop-extra-tpm.rules" \
+            || { echo "::error::Nix output lacks $U/70-claude-desktop-extra-tpm.rules"; exit 1; }
+          test ! -e "$U/io.github.patrickjaja.claude-desktop-extra.tpm-access.policy" \
+            || { echo "::error::Nix output ships the polkit action (its exec.path is the /usr/lib install)"; exit 1; }
+          head -1 "$U/cdb-tpm-access" | grep -q '^#!/nix/store/' \
+            || { echo "::error::cdb-tpm-access shebang was not patched to the store"; exit 1; }
+          RULES=$(nix eval --impure --raw --expr '
+            let
+              f = builtins.getFlake (toString ./.);
+              sys = enable: f.inputs.nixpkgs.lib.nixosSystem {
+                modules = [ f.nixosModules.default {
+                  nixpkgs.hostPlatform = "x86_64-linux";
+                  programs.claude-desktop-extra.tpmAccess.enable = enable;
+                  boot.loader.grub.enable = false;
+                  fileSystems."/".device = "none";
+                  system.stateVersion = "25.05";
+                } ];
+              };
+              ours = enable: builtins.filter (p: p.name == "claude-desktop-extra-tpm-udev-rule")
+                (sys enable).config.services.udev.packages;
+            in "on=${toString (builtins.length (ours true))} off=${toString (builtins.length (ours false))} rule=${(builtins.head (ours true)).drvPath}"')
+          echo "NixOS module: $RULES"
+          case "$RULES" in "on=1 off=0 rule=/nix/store/"*.drv) ;; *) echo "::error::nixosModules.default tpmAccess option misbehaves: $RULES"; exit 1 ;; esac
+          RULE_OUT=$(nix build --no-link --print-out-paths "${RULES##* rule=}^out")
+          cmp "$RULE_OUT/lib/udev/rules.d/70-claude-desktop-extra-tpm.rules" packaging/udev/70-claude-desktop-extra-tpm.rules
+          echo "Nix TPM access files + NixOS module OK"
 
   # ================================================================
   # Job 3e: Generate PKGBUILD & .SRCINFO — PARALLEL
@@ -1943,6 +2055,29 @@ jobs:
               cp "$PKG" /output/
               ls -la /output/
             '
+
+      - name: Check TPM access files in the pacman package (${{ matrix.arch }})
+        run: |
+          # Same assertions as the .deb: disabled rule + root helper + polkit
+          # action, root-owned with fixed modes, no udev path outside resources/,
+          # and the .install hook does not reference them.
+          set -euo pipefail
+          PKG=$(ls dist/claude-desktop-extra-*-${{ matrix.arch }}.pkg.tar.zst)
+          U=usr/lib/claude-desktop/resources/linux-udev
+          P=io.github.patrickjaja.claude-desktop-extra.tpm-access.policy
+          LIST=$(tar --zstd -tvf "$PKG" | awk '{print $1, $2, $NF}')
+          for want in "-rw-r--r-- root/root $U/70-claude-desktop-extra-tpm.rules" \
+                      "-rwxr-xr-x root/root $U/cdb-tpm-access" \
+                      "-rw-r--r-- root/root $U/$P" \
+                      "-rw-r--r-- root/root usr/share/polkit-1/actions/$P"; do
+            grep -qxF -- "$want" <<<"$LIST" || { echo "::error::pacman package lacks '$want'"; exit 1; }
+          done
+          if grep -E ' (etc/udev|usr/lib/udev)/' <<<"$LIST"; then echo "::error::pacman package ships udev files outside resources/"; exit 1; fi
+          tar --zstd -xOf "$PKG" "usr/share/polkit-1/actions/$P" \
+            | grep -qF "<annotate key=\"org.freedesktop.policykit.exec.path\">/$U/cdb-tpm-access</annotate>" \
+            || { echo "::error::polkit exec.path is not /$U/cdb-tpm-access"; exit 1; }
+          if tar --zstd -xOf "$PKG" .INSTALL | grep -E 'tpm|linux-udev|polkit'; then echo "::error::the .install hook references the TPM access files"; exit 1; fi
+          echo "TPM access files OK in $(basename "$PKG")"
 
       - name: Upload Arch package (${{ matrix.arch }})
         uses: actions/upload-artifact@v7
