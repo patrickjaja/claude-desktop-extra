@@ -416,6 +416,28 @@ async function featuresPanel(featuresItem) {
        "the state line follows the flip: " + cmRow.querySelector(".cdbx-state").textContent);
   }
 
+  const author = panel.querySelector('#cdbx-autofix-authors');
+  ok(!!author, "renders trusted-author list editor");
+  if (author) {
+    const row = author.closest(".cdbx-row"), save = row.querySelector("button");
+    ok(author.value === "", "additional trust list defaults empty");
+    ok(!!row.querySelector('label[for="cdbx-autofix-authors"]'), "editor has an accessible label");
+    ok(/count as the session's own PRs/.test(row.textContent) && /race checks remain/.test(row.textContent), "editor explains the scope");
+    author.value = "github.com/my-app[bot]\nghe.example/human";
+    save.click(); save.click();
+    await sleep(60);
+    ok(window.__authorCalls.length === 1 && window.__authorCalls[0].join(" ") === "github.com/my-app[bot] ghe.example/human",
+       "list save serializes identities and suppresses duplicate submissions");
+    ok(/2 additional trusted author/.test(row.textContent), "saved status reports exact list size");
+    ok(!restartUp(row), "list applies without restart");
+    author.value = ""; save.click(); await sleep(60);
+    ok(window.__authorCalls[1].length === 0, "empty save revokes additional authors");
+    author.value = "invalid"; save.click(); await sleep(60);
+    ok(/Could not save trusted authors/.test(row.textContent) && author.value === "invalid" && !save.disabled,
+       "failed save retains draft and reports error for retry");
+    author.value = "";
+  }
+
   // --- Load large sessions in full: opt-in, NOT live, numbers shown but not edited
   const tlSel = '.cdbx-switch[aria-label="load large Code sessions in full"]';
   const tl = panel.querySelector(tlSel);
@@ -3132,6 +3154,11 @@ window.cdbExtra = {
   // Load large sessions in full. Without these two the row is silently skipped
   // (renderToggleRow answers nothing when its bridge half is missing), so a
   // harness that omits them would pass while never rendering the row.
+  autoFixAuthorRead: function () { return Promise.resolve({ ok: true, entries: [], lockedByJsonc: false }); },
+  autoFixAuthorSet: function (entries) {
+    (window.__authorCalls || (window.__authorCalls = [])).push(entries);
+    return Promise.resolve(entries.indexOf("invalid") !== -1 ? { ok: false, error: "Invalid host/login" } : { ok: true, entries: entries });
+  },
   transcriptLimitsRead: function () { return Promise.resolve(window.__tlState || { ok: true, enabled: false, lockedByJsonc: false, source: "default", mainMiB: 256, subagentMiB: 192, activeNow: false, activeMainMiB: null, activeSubagentMiB: null, pendingRestart: false }); },
   // Answers pendingRestart the way the main side does: owed while the saved
   // switch differs from what the running app was started with (activeNow).

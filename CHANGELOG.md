@@ -10,6 +10,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - **The .deb now also ships `resources/ion-dist/` with one static "Claude was updated" page** for older versions still running after an upgrade. The app never loads it; the build ships it unchanged and keeps patching only `ion-dist.asar`.
 - **Settings -> Extra -> Deployment follows the new `deploymentMode` policy key** (`any` / `3p` / `1p`): a managed `1p` keeps third-party mode off, `3p` pins it, ahead of `disableDeploymentModeChooser`. The panel lists it and `inferenceGatewayAutoModeServerChecks` (203 keys). A configuration with only a self-hosted server (`selfHostedUrl` / `selfHostedToken`) now counts as third-party there too, as it does in upstream's own mode decision, so the panel no longer refuses to switch it to 3P.
 
+### Auto-fix
+
+- **Trusted Auto-fix PR authors** (thanks @alexx-ftw, #308) in Settings -> Extra -> Community Features recognizes explicitly listed users and GitHub App bots in addition to the authenticated `gh` user. Entries are exact server/login pairs (for example `github.com/my-app[bot]`); the list is empty by default, with no blanket bypass or implicit migration from the earlier local preview. PRs from a listed author are also bound as the session's own PRs (and found on the session's branch), so the switch takes effect end to end. Authentication, origin/age, confirmation, consent and concurrent-write protection stay unchanged. Applies live to future activation attempts; does not enable Auto-fix itself or revoke already-enabled PRs.
+
 ### Faster builds
 
 - **Local builds compress the tarball with pigz when it is installed** (`--reproducible` keeps `gzip -n -9`; CI is unchanged), and the post-patch JavaScript syntax check runs in parallel.
