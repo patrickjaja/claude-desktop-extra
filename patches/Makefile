@@ -46,6 +46,8 @@ linux/fix_computer_use_linux: \
   ../js/cu_handler_injection.js \
   ../js/cu_mode_preamble.js \
   ../js/cu_ax_tools.js \
+  ../js/cu_session_check.js \
+  ../js/cu_display_target.js \
   ../js/executor_linux.js
 
 community/add_feature_dev_tools_toggle: ../js/dev_tools_toggle_main.js

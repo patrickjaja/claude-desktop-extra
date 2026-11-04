@@ -10,6 +10,11 @@
 // boundary (__cuTaskBoundary, called from upstream's releaseRemoteCuLock IPC). The
 // lock stays held; the next command starts a new session through the lazy start.
 //
+// Case [35]: the KWin capture exclusions (windows left out of screenshots) are
+// lifted on every lock release (each upstream turn end), task boundary,
+// upstream's turn-end unhide (__unhideApps, sub-patch 4h) and at app start, and
+// a restore queued at a release always runs before the next prepare-for-action.
+//
 // Run headless: the bridge is a stub, timers are fake (setTimeout/clearTimeout are
 // shadowed inside the loaded module only), no KDE needed.
 import { readFileSync } from "node:fs";
@@ -54,6 +59,11 @@ function load() {
 
   const reply = (sub, cb) => {
     if (sub === "screens") { cb(null, { stdout: SCREENS, stderr: "" }); return; }
+    // A local command (no portal session): never hit by the stop latch.
+    if (sub === "restore-prepare-state") {
+      if (state.restoreFails) { cb(Object.assign(new Error("Command failed"), { stderr: "kwin unreachable", code: 1 }), "", ""); return; }
+      cb(null, { stdout: '{"hidden":[],"activated":null}', stderr: "" }); return;
+    }
     if (sub === "session-end") { state.stopped = false; state.noSession = false; cb(null, { stdout: "", stderr: "" }); return; }
     if (sub === "session-start") {
       if (state.startStopped) { cb(Object.assign(new Error("Command failed"), { stderr: STOPPED_STDERR, code: 5 }), "", ""); return; }
@@ -299,11 +309,13 @@ await runCase("[8] __cuTaskBoundary: alias match acts, mismatch is ignored, unde
   await r.ex.__cuTaskBoundary("session_abc", "renderer", "session_ABC");
   ok(r.count("session-end") === 4 && r.diag.some(l => l.includes("stopped-by-user latch cleared")), "the boundary sends session-end and clears the latch", r.kw.join(" "));
   ok(await r.fails(() => r.ex.key("f")) === "no error", "and the next command works");
-  // Safe without a session: nothing to end, no bridge spawn, no throw.
+  // Safe without a session: nothing to end, no throw; only the capture
+  // exclusions are lifted (a local bridge command, no session started).
   const r2 = load();
   const before = r2.kw.length;
-  ok(await r2.fails(() => r2.ex.__cuTaskBoundary(undefined, "renderer", undefined)) === "no error" && r2.kw.length === before,
-     "no lock, no session: a no-op", r2.kw.join(" "));
+  ok(await r2.fails(() => r2.ex.__cuTaskBoundary(undefined, "renderer", undefined)) === "no error" &&
+     r2.kw.slice(before).join(" ") === "restore-prepare-state",
+     "no lock, no session: only restore-prepare-state", r2.kw.join(" "));
 });
 
 await runCase("[9] the stop latch lifts on idle even with a mouse button held", async () => {
@@ -770,6 +782,75 @@ await checkedCase("[34] diagnostics: per-poll lines only with CDB_CU_DEBUG=1", a
     await r.advance(10000);
     ok(pollLines(r).length === 1 && pollLines(r)[0] === "[claude-cu] session check: cse_X -> ok=false ended=false notFound", "notFound", pollLines(r).join(" / "));
   } finally { delete process.env.CDB_CU_DEBUG; }
+});
+
+await runCase("[35] capture exclusions: lifted on every lock release, task boundary, turn-end unhide and app start", async () => {
+  // Lock release = every upstream turn end (releaseTurnScopedState, the turn
+  // result, leavingRunning, the remote path), regardless of chicagoAutoUnhide.
+  let r = load();
+  await r.ex.__setLockHeld(true); await settle();
+  await r.ex.key("a");
+  let mark = r.kw.length;
+  await r.ex.__setLockHeld(false); await settle();
+  let tail = r.kw.slice(mark);
+  ok(tail.includes("restore-prepare-state") && tail.indexOf("restore-prepare-state") < tail.indexOf("session-end"),
+     "lock release: restore-prepare-state, then session-end", tail.join(" "));
+  ok(r.count("restore-prepare-state") === 1, "exactly one restore per release", r.kw.join(" "));
+  ok(r.diag.includes("[linux-executor] capture exclusions lifted (lock released)"), "the release restore is logged", r.diag.join(" / "));
+
+  // A failing restore is logged and never blocks the release.
+  r = load();
+  await r.ex.__setLockHeld(true); await settle();
+  r.state.restoreFails = true;
+  ok(await r.fails(() => r.ex.__setLockHeld(false)) === "no error", "a failing restore does not reject the release");
+  ok(r.count("session-end") === 1, "session-end still sent", r.kw.join(" "));
+  ok(r.diag.some(l => l.startsWith("[linux-executor] failed to lift capture exclusions (lock released)")), "the failure is logged", r.diag.join(" / "));
+
+  // Order: a restore queued at a release runs before the next lock's
+  // prepare-for-action, even while the restore is still in flight.
+  r = load();
+  await r.ex.__setLockHeld(true); await settle();
+  r.gates.add("restore-prepare-state");
+  const rel = r.ex.__setLockHeld(false);
+  await settle();
+  const prep = r.ex.prepareForAction(["org.kde.dolphin"], undefined);
+  await settle();
+  ok(r.count("restore-prepare-state") === 1 && r.count("prepare-for-action") === 0,
+     "prepare-for-action waits for the in-flight restore", r.kw.join(" "));
+  await r.release("restore-prepare-state");
+  await rel; await prep; await settle();
+  ok(r.kw.indexOf("restore-prepare-state") < r.kw.indexOf("prepare-for-action"), "restore, then prepare-for-action", r.kw.join(" "));
+
+  // Upstream's turn-end unhide (sub-patch 4h) and the task boundary.
+  r = load();
+  ok(typeof r.ex.__unhideApps === "function", "__unhideApps exists on the KWin executor");
+  ok(await r.fails(() => r.ex.__unhideApps(["org.kde.dolphin"])) === "no error" && r.count("restore-prepare-state") === 1,
+     "__unhideApps(ids): one restore-prepare-state", r.kw.join(" "));
+  ok(r.argv.includes("restore-prepare-state"), "no extra arguments (the bridge restores every recorded window)", r.argv.join(" | "));
+  ok(r.diag.includes("[linux-executor] capture exclusions lifted (turn-end unhide)"), "logged", r.diag.join(" / "));
+  ok(r.count("session-start") === 0, "no portal session started for it", r.kw.join(" "));
+  r.state.restoreFails = true;
+  ok(await r.fails(() => r.ex.__unhideApps(["x"])) === "no error", "__unhideApps never rejects");
+  r.state.restoreFails = false;
+  await r.ex.__setLockHeld(true); await settle();
+  await r.ex.key("a");
+  mark = r.count("restore-prepare-state");
+  await r.ex.__cuTaskBoundary("cse_A", "renderer", "cse_A");
+  ok(r.count("restore-prepare-state") === mark + 1, "task boundary lifts them", r.kw.join(" "));
+  mark = r.count("restore-prepare-state");
+  await r.ex.__cuTaskBoundary("cse_A", "renderer", "cse_B");
+  ok(r.count("restore-prepare-state") === mark, "a mismatched (ignored) task boundary does not", r.kw.join(" "));
+
+  // App start (Patch 1 calls it once after creating the executor).
+  r = load();
+  ok(await r.ex.__restoreCaptureExclusions("app start") === true && r.count("restore-prepare-state") === 1,
+     "__restoreCaptureExclusions('app start'): one restore, resolves true", r.kw.join(" "));
+  ok(r.diag.includes("[linux-executor] capture exclusions lifted (app start)"), "logged with its reason", r.diag.join(" / "));
+  r.state.restoreFails = true;
+  ok(await r.ex.__restoreCaptureExclusions("app start") === false, "a failure resolves false");
+  const patchSrc = readFileSync(path.join(ROOT, "patches", "linux", "fix_computer_use_linux.nim"), "utf8");
+  ok(patchSrc.includes('globalThis.__linuxExecutor.__restoreCaptureExclusions(\\"app start\\");'),
+     "Patch 1 calls it right after creating the KWin executor");
 });
 
 delete globalThis.__cuKwinBridgeBin;

@@ -21,8 +21,9 @@
 //      the fallback for no-Exec / Terminal=true / malformed / a missing binary
 //      (spawn error event), each probed on PATH, and all absent is a clear error;
 //   4. TryExec that does not resolve hides the entry;
-//   5. listInstalledApps names a launcher after its real argv0 and never emits a
-//      wrapper name; _resolveApp prefers a name/desktop-id match over a basename.
+//   5. listInstalledApps lists each app under its desktop-file id (the canonical
+//      app id, test-cu-app-ids.mjs), with its real argv0 as an alias row and never
+//      a wrapper name; _resolveApp prefers a name/desktop-id match over a basename.
 //
 // Exit codes follow the repo convention: 0 = PASS, 3 = SKIP, other = FAIL.
 
@@ -317,7 +318,7 @@ async function testResolveOrder() {
 }
 
 async function testListNoWrappers() {
-  console.log("\n[8] listInstalledApps: real argv0, no wrapper bundleIds");
+  console.log("\n[8] listInstalledApps: desktop-file id, real argv0 alias, no wrapper names");
   await withApps({
     "org.gnome.Calculator": HDR + "Name=Calculator\nIcon=org.gnome.Calculator\nExec=flatpak run --branch=stable --arch=x86_64 --command=gnome-calculator org.gnome.Calculator @@u %U @@\n",
     "firefox_firefox": HDR + "Name=Firefox Web Browser\nExec=env BAMF_DESKTOP_FILE_HINT=/var/lib/snapd/desktop/applications/firefox_firefox.desktop @OPT@/snapbin/firefox %u\n",
@@ -331,11 +332,14 @@ async function testListNoWrappers() {
     const ids = apps.map((a) => a.bundleId);
     const WRAP = ["env", "flatpak", "sh", "bash", "gio", "gtk-launch", "snap", "xdg-open"];
     ok(!ids.some((i) => WRAP.includes(i)), "no wrapper name is a bundleId: " + J([...new Set(ids)]));
+    ok(!apps.some((a) => WRAP.includes(a.displayName)), "no wrapper name is an alias row either");
     const find = (id, dn) => apps.find((a) => a.bundleId === id && a.displayName === dn);
     ok(find("org.gnome.Calculator", "Calculator"), "flatpak run ... <app.id> -> bundleId is the app id");
-    ok(find("firefox", "Firefox Web Browser"), "Snap env BAMF ... firefox -> bundleId firefox");
-    ok(find("firefox", "Firefox"), "and its first-word alias hangs off firefox (same alias scheme as before)");
-    ok(find("run", "Quoted Thing"), "env FOO=bar -u BAZ \"/opt/My App/run\" -> bundleId run");
+    ok(find("firefox_firefox", "Firefox Web Browser"), "Snap env BAMF ... firefox -> bundleId firefox_firefox (the desktop-file id)");
+    ok(find("firefox_firefox", "firefox"), "and its real argv0 firefox is an alias row of the same id");
+    const ffRows = apps.filter((a) => a.bundleId === "firefox_firefox");
+    ok(ffRows[ffRows.length - 1].displayName === "Firefox Web Browser", "the Name row comes last (upstream's maps keep the last row): " + J(ffRows));
+    ok(find("envq", "Quoted Thing") && find("envq", "run"), "env FOO=bar -u BAZ \"/opt/My App/run\" -> bundleId envq, alias row run");
     ok(find("shwrap", "Shell Wrapped") && find("gtkl", "Via GtkLaunch") && find("snaprun", "Snap Run"),
       "sh/gtk-launch/snap wrappers fall back to the desktop-file id");
     ok(find("dbus", "Dbus Bare"), "a D-Bus activatable entry without Exec is listed under its desktop-file id");
@@ -385,7 +389,7 @@ Exec=@OPT@/My\ App/run --x
     ct: HDR + "Name=Ctor App\nExec=flatpak run --command=x constructor\n"
   }, BASE_TOOLS, async (r) => {
     const apps = await r.ex.listInstalledApps();
-    ok(apps.some((a) => a.bundleId === "toString" && a.displayName === "ToString App"), "C: argv0 `toString` is a plain name, not a wrapper");
+    ok(apps.some((a) => a.bundleId === "ts" && a.displayName === "toString"), "C: argv0 `toString` is a plain name (an alias row of ts), not a wrapper");
     ok(apps.some((a) => a.bundleId === "ct" && a.displayName === "Ctor App"), "C: `flatpak run --command=x constructor` (no dot) falls back to the desktop-file id");
     ok(!apps.some((a) => a.bundleId === "constructor"), "C: `constructor` never becomes a bundleId");
   });

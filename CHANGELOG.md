@@ -2,6 +2,13 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-04
+
+- Computer Use names an app the same way everywhere (approval, running apps, frontmost window, monitor lookup), using the .desktop id with its WM_CLASS, Exec and Name as aliases, so an approved "Google Chrome" matches its windows.
+- Settings -> Extra -> Computer Use always shows the Enable and Disable TPM access commands; the row warns when TPM access only lasts until logout.
+- Computer Use on several monitors: screenshots now go to the monitor where the approved app's windows are, as on macOS.
+- KDE Plasma (Wayland): windows left out of Computer Use screenshots are always restored when a task ends, also after a crash.
+
 ## 2026-11-03
 
 ### Computer Use in cloud Cowork and Dispatch

@@ -193,8 +193,17 @@ function strip(x){return String(x).trim().replace(/\.desktop$/i,"")}
 // id's last segment.
 function matcherOf(app,grant){
   var id=strip(grant?grant.bundleId:app);
-  if(id.indexOf(".")>=0)return{exact:gk(id)};
-  return{bare:keysOf([app,grant&&grant.bundleId,grant&&grant.displayName])};
+  if(id.indexOf(".")>=0)return{exact:gk(id),id:id};
+  return{bare:keysOf([app,grant&&grant.bundleId,grant&&grant.displayName]),id:id};
+}
+// Regular mode (js/cu_linux_executor.js): the executor's canonical app ids
+// (desktop file id + aliases: StartupWMClass, Exec, flatpak/snap ids, process)
+// also decide - a grant of "org.mozilla.firefox" owns the X11 window of class
+// "firefox". kwin mode keeps the bridge's own ids.
+function idOwns(w,m){
+  var a=globalThis.__cdbCuAppIds;
+  if(globalThis.__cuKwinMode||!a||typeof a.owns!=="function"||!m.id)return!1;
+  try{return a.owns(m.id,w)===!0}catch(e){return!1}
 }
 // Ownership from the app identity only (desktop file, WM_CLASS / app id),
 // never the title: any window can call itself "org.kde.kate". Returns false,
@@ -208,8 +217,12 @@ function owns(w,m){
     if(m.bare[full]){hit=!0;continue}
     if(id.indexOf(".")>=0&&m.bare[gk(seg(id))]){hit=!0;vendor=vendor||id.toLowerCase()}
   }
-  return hit?{vendor:vendor}:!1;
+  if(hit)return{vendor:vendor};
+  return idOwns(w,m)?{vendor:null}:!1;
 }
+// The same grant -> window match for the display auto-target
+// (js/cu_display_target.js): does window w belong to the granted bundle id?
+globalThis.__cdbCuWindowOwns=function(bundleId,w){return typeof bundleId==="string"&&!!bundleId.trim()&&!!w&&!!owns(w,matcherOf(bundleId,null))};
 // The app's windows. A bare name whose last segment names windows of two
 // different reverse-DNS apps is ambiguous: refused, never guessed.
 async function windowsOf(br,m){

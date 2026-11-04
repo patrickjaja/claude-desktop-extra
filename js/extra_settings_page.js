@@ -1634,7 +1634,7 @@
     function setBusy(on) {
       running = on;
       Array.prototype.forEach.call(scope.querySelectorAll(".cdbx-cus .cdbx-btn, .cdbx-cus-top .cdbx-btn"), function (b) {
-        if (!b.classList.contains("cdbx-cubg-copy")) b.disabled = on;
+        if (!b.classList.contains("cdbx-cubg-copy")) b.disabled = on || b.hasAttribute("data-off");
       });
     }
 
@@ -1727,17 +1727,31 @@
       }
 
       var tpm = cusRow(page, "tpm", rows.tpm);
+      // Off-state: the button is greyed with its reason; the command block stays.
+      function offNote(verb, act) {
+        if (typeof act.disabled !== "string" || !act.disabled) return;
+        var n = el("div", "cdbx-note cdbx-cus-off", act.disabled);
+        n.setAttribute("data-verb", verb);
+        tpm.main.appendChild(n);
+      }
+      function offBtn(b, act) {
+        if (typeof act.disabled === "string" && act.disabled) { b.disabled = true; b.setAttribute("data-off", "1"); b.title = act.disabled; }
+      }
       var en = acts.tpmEnable;
       if (en && typeof en === "object") {
         tpm.main.appendChild(el("div", "cdbx-note cdbx-cus-sec", CUS_SECURITY));
         if (en.kind === "pkexec") {
           var enable = cusButton("Enable TPM access", "Asks you to confirm, then for an administrator password, then lets this session use the TPM");
           enable.addEventListener("click", function () { tpmAction("enable"); });
+          offBtn(enable, en);
           tpm.aside.appendChild(enable);
+          offNote("enable", en);
           cusPkexecInfo(tpm.main, "enable", en);
         } else if (en.kind === "nixos") {
+          offNote("enable", en);
           cusCommand(tpm.main, "Add this to your NixOS configuration, then rebuild and restart Claude:", String(en.text || ""));
         } else if (en.kind === "command") {
+          offNote("enable", en);
           cusCommand(tpm.main, cusWhere(en), String(en.text || ""));
         }
       }
@@ -1746,9 +1760,12 @@
         if (dis.kind === "pkexec") {
           var disable = cusButton("Disable TPM access", "Removes this package's TPM rule link; access already granted lasts until you log out");
           disable.addEventListener("click", function () { tpmAction("disable"); });
+          offBtn(disable, dis);
           tpm.aside.appendChild(disable);
+          offNote("disable", dis);
           cusPkexecInfo(tpm.main, "disable", dis);
         } else if (dis.kind === "command") {
+          offNote("disable", dis);
           cusCommand(tpm.main, "To turn TPM access off again - " + cusWhere(dis).charAt(0).toLowerCase() + cusWhere(dis).slice(1),
             String(dis.text || ""));
         }

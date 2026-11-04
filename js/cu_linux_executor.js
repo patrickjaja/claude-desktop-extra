@@ -316,7 +316,7 @@ function _expandExecCodes(argv,e){
   return out;
 }
 var _hasOwn=Object.prototype.hasOwnProperty;
-// -> {name,dfn,file,icon,path,tryExec,terminal,dbus,argv,malformed,base} or null.
+// -> {name,dfn,file,icon,path,tryExec,terminal,dbus,argv,malformed,base,wmClass,noDisplay} or null.
 function _parseDesktopEntry(content,fp,fname){
   var g={},inG=false,seen=false,lines=content.replace(/^\uFEFF/,"").split("\n");
   for(var i=0;i<lines.length;i++){
@@ -333,7 +333,8 @@ function _parseDesktopEntry(content,fp,fname){
   var e={name:_deUnescape(g.Name).trim(),dfn:fname.replace(/\.desktop$/,""),file:fp,
     icon:g.Icon?_deUnescape(g.Icon).trim():"",path:g.Path?_deUnescape(g.Path).trim():"",
     tryExec:g.TryExec?_deUnescape(g.TryExec).trim():"",terminal:(g.Terminal||"").trim()==="true",
-    dbus:(g.DBusActivatable||"").trim()==="true",argv:null,malformed:false,base:""};
+    dbus:(g.DBusActivatable||"").trim()==="true",argv:null,malformed:false,base:"",
+    wmClass:g.StartupWMClass?_deUnescape(g.StartupWMClass).trim():"",noDisplay:(g.NoDisplay||"").trim()==="true"};
   if(!e.name)return null;
   var raw=g.Exec!==void 0?_deUnescape(g.Exec).trim():"";
   if(raw){
@@ -350,9 +351,9 @@ var _FLATPAK_VALUED=_strSet(["--command","--branch","--arch","--runtime","--runt
 // The name a launcher goes by: the real argv0 basename, skipping `env` and its
 // VAR=val tokens; `flatpak run ... <app.id>` -> the app id. Wrapper binaries are
 // never returned (the desktop-file id stands in), so they cannot become aliases.
-function _entryBase(e){
-  var a=e.argv;
-  if(!a)return e.dfn;
+// Index of the real program in an Exec argv: past `env`, its VAR=val tokens
+// and options; -1 when nothing follows them.
+function _entryProgIdx(a){
   var i=0;
   if(_path.basename(a[0])==="env"){
     i=1;
@@ -363,7 +364,13 @@ function _entryBase(e){
       else break;
     }
   }
-  if(i>=a.length)return e.dfn;
+  return i<a.length?i:-1;
+}
+function _entryBase(e){
+  var a=e.argv;
+  if(!a)return e.dfn;
+  var i=_entryProgIdx(a);
+  if(i<0)return e.dfn;
   var b=_path.basename(a[i]);
   if(b==="flatpak"){
     var r=false;
@@ -406,6 +413,224 @@ function _readDesktopEntries(dirs){
   }
   return out;
 }
+// ── App identity: one canonical id per app ──
+// Upstream's Computer Use dispatch compares ONE string, bundleId, across
+// listInstalledApps (request_access name -> id), listRunningApps,
+// getFrontmostApp, appUnderPoint, findWindowDisplays / the display auto-target,
+// resolvePrepareCapture({allowedBundleIds}) and the grants it stores, by exact
+// equality (its grant lookup is keyed on bundleId). So every method of this
+// executor answers with the same id for the same app, on every backend:
+//
+//   canonical id = the .desktop file id (file name without .desktop, case
+//   kept): google-chrome, org.gnome.TextEditor, org.xfce.mousepad,
+//   org.mozilla.firefox (flatpak), firefox_firefox (snap).
+//
+// A window maps to it through the aliases the entries declare, best rank
+// first. Keys are case-insensitive with .desktop stripped. A key claimed by
+// several entries at its best rank goes to a visible entry over a NoDisplay
+// one, then to a plain launcher over one with arguments (Chrome over its
+// web-app shortcuts); still tied = ambiguous = maps to nothing, never guessed.
+//   0 desktop file id                     google-chrome, org.mozilla.firefox
+//   1 StartupWMClass                      Google-chrome, firefox, com.microsoft.VSCode
+//   2 Exec program basename / flatpak id  google-chrome-stable, gnome-text-editor
+//   3 snap name parts / reverse-DNS tail  firefox (firefox_firefox), mousepad (org.xfce.mousepad)
+//   4 Icon name                           org.xfce.terminal
+//   5 Name                                Google Chrome
+// A window's own ids are tried in this order - desktop_file_name (KWin desktop
+// file, _GTK_APPLICATION_ID, Wayland app_id), resource_class (WM_CLASS class),
+// resource_name (WM_CLASS instance) - then its transient parent's, then its
+// process (pid from _NET_WM_PID): /proc/<pid>/exe as a path, its directory and
+// its basename against each entry's resolved Exec program, and for an
+// interpreter (electron, python, java, ...) the script path on its command
+// line. Interpreters, wrappers and shared bin dirs never alias. Claude's own
+// windows (our pid) are the host id. A window no entry claims keeps its first
+// own id (.desktop stripped, case kept) - the string the bridges' frontmost-app
+// and app-under-point print - so unresolved apps still agree everywhere.
+// The index is rebuilt at most every APP_IDX_TTL_MS (an app installed later
+// resolves without a restart). Read-only and portal-free: safe outside the
+// Computer Use lock (enumeration side of the _gnomePortalCmds rule).
+var APP_IDX_TTL_MS=30000;
+var _appIdx=null,_appIdxAt=0;
+var _GENERIC_EXE_RE=/^(?:electron\d*|python[\d.]*m?|pypy[\d.]*|java|node|nodejs|bun|deno|wine(?:64)?(?:-preloader)?|mono|perl[\d.]*|ruby[\d.]*|bwrap|apprun|flatpak-spawn|gjs|qemu-.*|ld-linux.*)$/i;
+function _genericExe(b){return !b||!!_WRAPPER_BINS[b]||_GENERIC_EXE_RE.test(b)}
+function _genericDir(d){
+  if(!d||d==="/"||d.split("/").length<3)return !0;
+  var h=_os.homedir();
+  return /^\/(?:usr\/(?:local\/)?)?s?bin$|^\/usr\/games$|^\/app\/bin$|^\/snap\/bin$|^\/run\/current-system\/sw\/bin$|\/exports\/bin$/.test(d)||d===_path.join(h,".local/bin")||d===_path.join(h,"bin");
+}
+function _akey(s){return typeof s==="string"?s.trim().replace(/\.desktop$/i,"").toLowerCase():""}
+function _araw(s){return typeof s==="string"&&s.trim()?s.trim().replace(/\.desktop$/i,""):""}
+// No arguments past the program (flatpak: past the app id; @@ file-forwarding markers ignored).
+function _aplain(e){
+  var a=e.argv;if(!a)return !0;
+  var i=_entryProgIdx(a);if(i<0)return !0;
+  if(_path.basename(a[i])==="flatpak"){var j=a.indexOf(e.base,i+1);if(j<0)return !1;i=j}
+  for(var k=i+1;k<a.length;k++){if(!/^@@/.test(a[k]))return !1}
+  return !0;
+}
+// Claim key k for record r at rank: better (rank, visible, plain) replaces,
+// worse is ignored, equal from another record makes the key ambiguous.
+function _aclaim(map,k,r,rank){
+  if(!k)return;
+  var c=map[k];
+  if(c&&c.r===r){if(rank<c.rank){c.rank=rank;c.sc[0]=rank}return}
+  var sc=[rank,r.noDisplay?1:0,r.plain?0:1];
+  if(!c){map[k]={r:r,rank:rank,sc:sc,amb:!1};return}
+  for(var i=0;i<3;i++){if(sc[i]<c.sc[i]){map[k]={r:r,rank:rank,sc:sc,amb:!1};return}if(sc[i]>c.sc[i])return}
+  c.amb=!0;
+}
+// fresh=true rebuilds now (listInstalledApps: a TryExec installed mid-session counts at once).
+function _appIndex(fresh){
+  var now=Date.now();
+  if(!fresh&&_appIdx&&now-_appIdxAt<APP_IDX_TTL_MS)return _appIdx;
+  var ents=[];try{ents=_readDesktopEntries(_xdgAppDirs())}catch(e){}
+  var keys=Object.create(null),byId=Object.create(null),list=[];
+  for(var i=0;i<ents.length;i++){
+    var e=ents[i],r={id:e.dfn,name:e.name,file:e.file,e:e,noDisplay:!!e.noDisplay,plain:_aplain(e),cand:[]};
+    if(byId[_akey(e.dfn)])continue;
+    byId[_akey(e.dfn)]=r;list.push(r);
+  }
+  // own(q): the record q's aliases are claimed for (itself, or the visible
+  // entry a NoDisplay duplicate belongs to).
+  function claimAll(own){
+    keys=Object.create(null);
+    for(var j=0;j<list.length;j++){
+      var q=list[j],en=q.e,o=own(q);
+      var add=function(raw,rank){var k=_akey(raw);if(!k)return;var c=raw.trim().replace(/\.desktop$/i,"");if(o.cand.indexOf(c)<0)o.cand.push(c);_aclaim(keys,k,o,rank)};
+      add(en.dfn,0);
+      if(en.wmClass)add(en.wmClass,1);
+      if(en.base&&en.base!==en.dfn&&!_genericExe(en.base))add(en.base,2);
+      var sm=/^([^_.\s]+)_([^_.\s]+)$/.exec(en.dfn);
+      if(sm){add(sm[2],3);if(sm[1]!==sm[2])add(sm[1],3)}
+      var dot=en.dfn.lastIndexOf(".");
+      if(dot>0&&dot<en.dfn.length-1&&!/^\d+$/.test(en.dfn.slice(dot+1)))add(en.dfn.slice(dot+1),3);
+      if(en.icon&&en.icon.indexOf("/")<0)add(en.icon,4);
+      add(en.name,5);
+    }
+  }
+  claimAll(function(q){return q});
+  // A NoDisplay entry that is another launcher of a visible app (Chrome's
+  // com.google.Chrome next to google-chrome, URL handlers): its StartupWMClass
+  // is that app's desktop id / StartupWMClass, or its Exec is the same. It
+  // becomes an alias set of that app, not an app of its own - else a request
+  // for "chrome" could land on the hidden duplicate and never match a window.
+  var merged=0;
+  for(var m=0;m<list.length;m++){
+    var nd=list[m];if(!nd.noDisplay)continue;
+    var t=null,c=nd.e.wmClass?keys[_akey(nd.e.wmClass)]:null;
+    if(c&&!c.amb&&c.rank<=1&&!c.r.noDisplay&&c.r!==nd)t=c.r;
+    if(!t&&nd.e.argv){var sig=nd.e.argv.join("\0");for(var v=0;v<list.length&&!t;v++){var vr=list[v];if(!vr.noDisplay&&vr.e.argv&&vr.e.argv.join("\0")===sig)t=vr}}
+    if(t){nd.mergedInto=t;merged++}
+  }
+  if(merged){
+    for(var z=0;z<list.length;z++)list[z].cand=[];
+    claimAll(function(q){return q.mergedInto||q});
+    for(var y=0;y<list.length;y++){if(list[y].mergedInto)byId[_akey(list[y].id)]=list[y].mergedInto}
+    list=list.filter(function(q){return !q.mergedInto});
+  }
+  _appIdx={keys:keys,byId:byId,list:list,exe:null,words:null};_appIdxAt=now;
+  return _appIdx;
+}
+function _alook(map,k){var c=k?map[k]:null;return c&&!c.amb?c.r:null}
+// Exact canonical id first, then any alias.
+function _arec(idx,raw){var k=_akey(raw);return k?(idx.byId[k]||_alook(idx.keys,k)):null}
+function _aWhich(b){
+  if(b.indexOf("/")>=0)return b.charAt(0)==="/"?b:null;
+  var X=(_fs.constants&&_fs.constants.X_OK)||1,dirs=(process.env.PATH||"").split(":");
+  for(var i=0;i<dirs.length;i++){if(dirs[i].charAt(0)!=="/")continue;var c=_path.join(dirs[i],b);try{_fs.accessSync(c,X);if(!_fs.statSync(c).isDirectory())return c}catch(e){}}
+  return null;
+}
+function _aReal(p){try{return _fs.realpathSync(p)}catch(e){return p}}
+// Lazy: built only when a window needs the process tier.
+function _aExeIndex(idx){
+  if(idx.exe)return idx.exe;
+  var m=Object.create(null);
+  for(var i=0;i<idx.list.length;i++){
+    var r=idx.list[i],a=r.e.argv;if(!a)continue;
+    var pi=_entryProgIdx(a);if(pi<0)continue;
+    var b=_path.basename(a[pi]);if(b==="flatpak"||_WRAPPER_BINS[b])continue;
+    var w=_aWhich(a[pi]);if(!w)continue;
+    var real=_aReal(w),rb=_path.basename(real);
+    if(!_genericExe(b)&&!_genericExe(rb)){
+      _aclaim(m,"exe:"+real,r,2);
+      var dir=_path.dirname(real);if(!_genericDir(dir))_aclaim(m,"dir:"+dir,r,2);
+    }else{
+      for(var k=pi+1;k<a.length;k++){if(a[k].charAt(0)==="/"){_aclaim(m,"arg:"+_aReal(a[k]),r,2);break}if(a[k].charAt(0)!=="-")break}
+    }
+  }
+  idx.exe=m;return m;
+}
+function _aProc(idx,pid){
+  if(typeof pid!=="number"||!(pid>1))return null;
+  var exe;try{exe=String(_fs.readlinkSync("/proc/"+pid+"/exe")).replace(/ \(deleted\)$/,"")}catch(e){return null}
+  if(!exe)return null;
+  var m=_aExeIndex(idx),b=_path.basename(exe),r;
+  if(!_genericExe(b)){
+    r=_alook(m,"exe:"+exe);if(r)return r;
+    var d=_path.dirname(exe);if(!_genericDir(d)){r=_alook(m,"dir:"+d);if(r)return r}
+    return _arec(idx,b);
+  }
+  var cl;try{cl=String(_fs.readFileSync("/proc/"+pid+"/cmdline","utf8")).split("\0")}catch(e){return null}
+  for(var i=1;i<cl.length;i++){if(cl[i].charAt(0)==="/"){r=_alook(m,"arg:"+_aReal(cl[i]));if(r)return r}}
+  return null;
+}
+function _aOwnIds(w){var o=[],c=[w.desktop_file_name,w.resource_class,w.resource_name];for(var i=0;i<c.length;i++){if(typeof c[i]==="string"&&c[i].trim())o.push(c[i])}return o}
+// The id the bridges' frontmost-app / app-under-point print for this window.
+function _aRawFirst(w){var o=_aOwnIds(w);if(o.length)return _araw(o[0]);return w&&w.id!=null&&String(w.id).trim()?String(w.id).trim():""}
+// raw id -> canonical id (unknown: itself, .desktop stripped, case kept).
+function _acanon(raw){var r=_arec(_appIndex(),raw);return r?r.id:_araw(raw)||null}
+// The host: Claude's own desktop id (Electron exports desktopName as CHROME_DESKTOP).
+function _hostId(){return _acanon(String(process.env.CHROME_DESKTOP||"").trim()||"com.anthropic.Claude.desktop")||"com.anthropic.Claude"}
+// Window -> {id, rec, host?} or null.
+function _aWin(w){
+  if(!w||typeof w!=="object")return null;
+  var idx=_appIndex(),i,r;
+  if(w.pid===process.pid){var h=_hostId();return{id:h,rec:idx.byId[_akey(h)]||null,host:!0}}
+  var own=_aOwnIds(w);
+  for(i=0;i<own.length;i++){r=_arec(idx,own[i]);if(r)return{id:r.id,rec:r}}
+  for(var p=w.transient_for,n=0;p&&typeof p==="object"&&n<8;p=p.transient_for,n++){var po=_aOwnIds(p);for(i=0;i<po.length;i++){r=_arec(idx,po[i]);if(r)return{id:r.id,rec:r}}}
+  r=_aProc(idx,w.pid);if(r)return{id:r.id,rec:r};
+  var raw=_aRawFirst(w);
+  return raw?{id:raw,rec:null}:null;
+}
+// request_access name -> {bundleId, displayName, path} or null: a canonical
+// id or any alias, then a word of a multi-word Name ("Chrome" for "Google
+// Chrome", "Visual" for "Visual Studio Code") when no other entry has it.
+function _aResolveName(name){
+  var idx=_appIndex(),r=_arec(idx,name);
+  if(!r){
+    if(!idx.words){
+      var wm=Object.create(null);
+      for(var i=0;i<idx.list.length;i++){var q=idx.list[i],ws=q.name.split(/\s+/).filter(Boolean);if(ws.length>1){_aclaim(wm,_akey(ws[0]),q,0);_aclaim(wm,_akey(ws.slice(1).join(" ")),q,0)}}
+      idx.words=wm;
+    }
+    var k=_akey(name);r=_alook(idx.words,k);
+    if(r&&_alook(idx.keys,k)===null&&idx.keys[k])r=null;
+  }
+  return r?{bundleId:r.id,displayName:r.name,path:r.file}:null;
+}
+// Every alias string that resolves to this canonical id (for policy lists
+// keyed on executable names, e.g. upstream's shell / file-manager sentinels).
+function _aAliases(id){
+  var idx=_appIndex(),r=idx.byId[_akey(id)];if(!r)return[];
+  var out=[],seen={};
+  function put(s){var k=_akey(s);if(k&&!seen[k]&&_arec(idx,s)===r){seen[k]=1;out.push(s)}}
+  for(var i=0;i<r.cand.length;i++)put(r.cand[i]);
+  var a=r.e.argv,pi=a?_entryProgIdx(a):-1;
+  if(pi>=0){var w=_aWhich(a[pi]);if(w){var real=_aReal(w);if(!seen["exe:"+real]){seen["exe:"+real]=1;out.push(real)}}}
+  return out;
+}
+// Grant (a canonical id, an alias, or a raw window id) -> does window w belong
+// to it? Same resolution as the window side; Name words are not used here.
+function _aOwns(grant,w){
+  if(typeof grant!=="string"||!grant.trim()||!w)return !1;
+  var g=_arec(_appIndex(),grant),gid=g?g.id:_araw(grant),wr=_aWin(w);
+  return !!(wr&&wr.id&&_akey(wr.id)===_akey(gid));
+}
+globalThis.__cdbCuAppIds={canon:_acanon,resolveWindow:function(w){var r=_aWin(w);return r?{bundleId:r.id,displayName:r.rec?r.rec.name:null,host:!!r.host}:null},resolveName:_aResolveName,aliasesOf:_aAliases,owns:_aOwns,hostId:_hostId,
+  // Bridge window ids (the `id` field of `windows`, what --keep-window takes)
+  // of the windows that belong to any of the canonical ids, in list order.
+  windowIds:function(bundleIds,wins){var ids=Array.isArray(bundleIds)?bundleIds:[],out=[];(Array.isArray(wins)?wins:[]).forEach(function(w){if(!w||w.id==null)return;for(var i=0;i<ids.length;i++){if(_aOwns(ids[i],w)){out.push(String(w.id));return}}});return out}};
 // Spawn without a shell and wait until the outcome is known. "direct" resolves
 // on the child's spawn event; "tool" (gio, kioclient, ...) on its exit status. An
 // error event (missing binary, bad cwd) or a non-zero tool exit is a failure the
@@ -1725,27 +1950,103 @@ async function _screenshotMon(mon){
 // (wlroots-bridge: foreign-toplevel protocols; gnome-portal-bridge: best-effort
 // GNOME Shell Introspect). The old hyprctl/swaymsg+jq/niri compositor-IPC
 // helpers are gone — those compositors are wlroots, i.e. covered by the bridge.
-// Map an x11-bridge WindowInfo (snake_case) to the {bundleId,displayName} shape
-// the executor's callers expect. Mirrors executor_linux.js normalizeBundleIdFromWindow.
-function _bundleIdFromWindow(w){
-  var cands=[w.desktop_file_name,w.resource_class,w.resource_name,w.id];
-  for(var i=0;i<cands.length;i++){var c=cands[i];if(typeof c==="string"&&c.trim())return c.replace(/\.desktop$/i,"")}
-  return null;
-}
+// Window / command output -> {bundleId, displayName} in the canonical id
+// scheme (see "App identity" above). displayName: the app's Name when its
+// entry is known, else the window title, else the id.
+function _bundleIdFromWindow(w){var r=_aWin(w);return r?r.id:null}
 function _appRefFromWindow(w){
-  if(!w)return null;
-  var bid=_bundleIdFromWindow(w);
-  if(!bid)return null;
-  return{bundleId:bid,displayName:(typeof w.title==="string"&&w.title.trim())?w.title:bid};
+  var r=_aWin(w);
+  if(!r||!r.id)return null;
+  var t=typeof w.title==="string"&&w.title.trim()?w.title:"";
+  return{bundleId:r.id,displayName:r.rec?r.rec.name:(t||r.id)};
 }
-// frontmost-app / app-under-point emit camelCase {bundleId,displayName} directly.
-function _appRefFromCommand(result){
+// frontmost-app / app-under-point print camelCase {bundleId,displayName} with
+// the bridge's raw id (its first window id). A raw id the index knows is
+// mapped directly; an unknown one is looked up in the window list (pick =
+// the windows it could be) so the process tier sees it too, like
+// listRunningApps; nothing there = the raw id, as listRunningApps has it.
+function _appRefFromCommand(result,wins,pick){
   if(!result||typeof result!=="object")return null;
-  if(typeof result.bundleId!=="string"||typeof result.displayName!=="string")return null;
-  return{bundleId:result.bundleId,displayName:result.displayName};
+  if(typeof result.bundleId!=="string"||typeof result.displayName!=="string"||!result.bundleId.trim())return null;
+  var raw=_araw(result.bundleId),r=_arec(_appIndex(),raw);
+  if(r)return{bundleId:r.id,displayName:r.name};
+  if(typeof wins==="function"){
+    var list;try{list=wins()}catch(e){list=null}
+    var best=null;
+    if(Array.isArray(list)){for(var i=0;i<list.length;i++){var w=list[i];if(!w||_aRawFirst(w)!==raw||(pick&&!pick(w)))continue;if(!best||(w.stacking_order||0)>(best.stacking_order||0))best=w}}
+    if(best){var ref=_appRefFromWindow(best);if(ref)return ref}
+  }
+  return{bundleId:raw,displayName:result.displayName};
+}
+// The live backend's app-identity capabilities (capabilitiesNow):
+//   hitTest     native = appUnderPoint asks the window system; none = null
+//   frontmost   native = the window system names the focused window
+//   windowList  full | partial (XWayland: X clients only) | best-effort (GNOME
+//               Introspect, may be []) | none
+//   windowPositions  window rects map to the screenshot's displays
+function _appBackend(){
+  var none={name:"none",hitTest:"none",frontmost:"none",windowList:"none",windowPositions:!1};
+  if(_tgt&&(_tgt.refuse||!_tgt.bin)){none.name="none (background display "+(_tgt.display||"?")+" unavailable)";return none}
+  if(_useWlBridge()){
+    var b=_wlBridge();
+    if(b.name==="wlroots-bridge")return{name:"wlroots-bridge"+(_tgt?" (background display "+_tgt.display+")":""),hitTest:"none",frontmost:"native",windowList:"full",windowPositions:!1};
+    return{name:b.name,hitTest:"none",frontmost:"native",windowList:"best-effort",windowPositions:!1};
+  }
+  if(_wayland&&!_tgt&&_checkYdotool()){none.name="ydotool";return none}
+  if(!_x11BridgeBin())return none;
+  if(_wayland&&!_tgt)return{name:"x11-bridge (XWayland)",hitTest:"none",frontmost:"none",windowList:"partial",windowPositions:!!_x11PxDisplays()};
+  return{name:"x11-bridge"+(_tgt?" (background display "+_tgt.display+")":""),hitTest:"native",frontmost:"native",windowList:"full",windowPositions:!!(_tgt||_x11PxDisplays())};
+}
+// The window list of the live backend (sync, portal-free), or null.
+function _appWins(){
+  if(_useWlBridge())return _wlBridgeCall(["windows"]);
+  if(_wayland&&!_tgt&&_checkYdotool())return null;
+  if(!_x11BridgeBin())return null;
+  return _x11Bridge(["windows"]);
+}
+// ── Display auto-target (js/cu_display_target.js) ──
+// The granted apps' windows and the monitors in ONE coordinate space, or
+// {why} when this session's bridge reports no window positions. Same window
+// source and gating as listRunningApps.
+//   x11-bridge, user's desktop (X11, or Electron on XWayland): window geometry
+//     is X root pixels, so each display is its root-pixel rect (nativeOrigin +
+//     DIP size * scale, the _x11PxDisplays transform the clicks use).
+//   x11-bridge, background display: window geometry and the target's monitors
+//     (its bridge `screens`) are both that X server's root pixels.
+//   wlroots-bridge (foreign-toplevel: no geometry) and gnome-portal-bridge
+//     (Introspect: size only, x/y always 0): no positions - nothing counts.
+//   x11-bridge with Electron on native Wayland: XWayland root coordinates do
+//     not map to Electron's displays reliably - nothing counts.
+async function _dtSource(){
+  if(_useWlBridge())return{why:_wlBridge().name+" reports no window positions"};
+  if(_wayland&&_checkYdotool())return{why:"no window list on this session"};
+  if(_wayland&&!_x11BridgeBin())return{why:"no window list on this session"};
+  var mons;
+  if(_tgt){
+    mons=_getMonitors().map(function(m){return{displayId:m.displayId,label:m.label,isPrimary:m.isPrimary,rect:{x:m.originX||0,y:m.originY||0,width:m.width,height:m.height}}});
+  }else{
+    var px=_x11PxDisplays();
+    if(!px)return{why:"X window positions cannot be mapped to Electron's displays on this session"};
+    var lm=_getMonitors();
+    mons=px.map(function(m){var e=lm[m.i]||{};return{displayId:m.i,label:e.label,isPrimary:!!e.isPrimary,rect:{x:m.ox,y:m.oy,width:Math.round(m.b.width*m.sf),height:Math.round(m.b.height*m.sf)}}});
+  }
+  var raw=await _x11BridgeAsync(["windows"]);
+  return{mons:mons,raw:Array.isArray(raw)?raw:[]};
+}
+async function _dtResolve(bundleIds){
+  var DT=globalThis.__cdbCuDisplayTarget;
+  if(!DT)return{why:"display target helper missing"};
+  var src;try{src=await _dtSource()}catch(e){return{why:"window list failed: "+(e&&e.message||e)}}
+  if(!src.mons)return src;
+  src.wins=DT.normalize(src.raw,bundleIds,function(w){return w.geometry||null},null);
+  return src;
 }
 globalThis.__linuxExecutor={
-  capabilities:{screenshotFiltering:"none",platform:"linux",hostBundleId:"claude-desktop"},
+  // Read by upstream's dispatch on every call (platform, hostBundleId,
+  // screenshotFiltering, hitTest). No hitTest key: it stays as before; the
+  // live per-backend values are capabilitiesNow(). hostBundleId is Claude's
+  // own canonical id (com.anthropic.Claude), the id its windows resolve to.
+  capabilities:{screenshotFiltering:"none",platform:"linux",get hostBundleId(){return _hostId()}},
   // CU lock lifecycle hook, invoked by the upstream lock holder (Patches 4b/4b.2
   // call __linuxExecutor?.__setLockHeld?.(!0/!1) on every Linux lock transition
   // and chain .catch() — so this MUST return a Promise, hence async). On GNOME
@@ -1877,6 +2178,22 @@ globalThis.__linuxExecutor={
     var did=opts&&opts.preferredDisplayId;
     if(did==null){var sdid=await _gnomeSharedDefaultDisplayId();if(sdid!=null)did=sdid}
     var mon=_findMon(did);
+    // Upstream sets autoResolve when the granted apps changed and the model
+    // has not pinned a display (switch_display): capture the display holding
+    // most of their windows, as macOS does. The returned displayId is what
+    // upstream then keeps as the session's display.
+    var apps=opts&&Array.isArray(opts.allowedBundleIds)?opts.allowedBundleIds:[];
+    if(opts&&opts.autoResolve===!0&&apps.length){
+      var DT=globalThis.__cdbCuDisplayTarget,src=await _dtResolve(apps),mons=_getMonitors(),tag="[claude-cu] display auto-target: apps="+apps.join(",");
+      var lbl=function(m){return(m&&m.label)||"?"};
+      if(!src.mons)globalThis.__cdbDiag(tag+" kept "+lbl(mon)+" ("+src.why+")");
+      else{
+        var r=DT.pick(src.wins,src.mons,apps,mon.displayId),pm=null;
+        for(var pi=0;r.displayId!=null&&pi<mons.length;pi++)if(mons[pi].displayId===r.displayId)pm=mons[pi];
+        if(!pm)globalThis.__cdbDiag(tag+" kept "+lbl(mon)+" ("+r.why+")");
+        else{globalThis.__cdbDiag(tag+" -> "+lbl(pm)+" (preferred "+lbl(mon)+(r.why==="tie"?", tie":"")+")");mon=pm}
+      }
+    }
     var shot=await _screenshotMon(mon);
     return{base64:shot.base64,mimeType:shot.mimeType,width:shot.imgW,height:shot.imgH,displayWidth:mon.width,displayHeight:mon.height,displayId:mon.displayId,originX:mon.originX,originY:mon.originY,hidden:[]};
   },
@@ -1890,105 +2207,110 @@ globalThis.__linuxExecutor={
     return cap;
   },
   async prepareForAction(bundleIds,displayId){return[]},
+  // Upstream's Linux unhide (sub-patch 4h routes it here): nothing is hidden
+  // by this executor yet, so there is nothing to restore.
+  async __unhideApps(){},
   async previewHideSet(bundleIds,displayId){return[]},
-  async findWindowDisplays(bundleIds){return[]},
+  // [{bundleId, displayIds}] for request_access's per-app monitor note (upstream
+  // asks only with more than one display); apps without a located window are
+  // left out.
+  async findWindowDisplays(bundleIds){
+    await _tgtPrime();
+    var ids=Array.isArray(bundleIds)?bundleIds:[];
+    if(!ids.length||!globalThis.__cdbCuDisplayTarget)return[];
+    var src=await _dtResolve(ids);
+    return src.mons?globalThis.__cdbCuDisplayTarget.windowDisplays(src.wins,src.mons,ids):[];
+  },
+  // One row per app under its canonical id (the desktop file id; a NoDisplay
+  // duplicate launcher is folded into its app as an alias), its Name LAST: upstream keys maps on bundleId with the last row winning, so the
+  // grant gets the real Name. Before it, one row per alias string that
+  // resolves to this app and only to it (_aResolveName), so request_access
+  // can name an app by its executable, desktop id, snap / reverse-DNS tail,
+  // icon or a distinctive word of its Name. Wrapper names never appear.
   async listInstalledApps(){
     await _tgtPrime();
     var apps=[];
-    var seen={};
-    function _add(bid,dname,p){var k=bid+"|"+dname.toLowerCase();if(!seen[k]){seen[k]=1;apps.push({bundleId:bid,displayName:dname,path:p})}}
     try{
-      var ents=_readDesktopEntries(_xdgAppDirs());
-      for(var i=0;i<ents.length;i++){
-        var en=ents[i],fp=en.file,fullName=en.name,baseName=en.base;
-        var parts=fullName.split(/\s+/);
-        // A wrapper stand-in (the desktop-file id of an `sh -c` entry) is the
-        // only way a wrapper name could get here; it is never an alias.
-        if(!_WRAPPER_BINS[baseName]){
-          _add(baseName,fullName,fp);
-          if(parts.length>1){_add(baseName,parts[0],fp)}
-          _add(baseName,baseName,fp);
+      // NoDisplay entries first: on a shared Name the visible app's row is last.
+      var idx=_appIndex(!0),ord=idx.list.filter(function(q){return q.noDisplay}).concat(idx.list.filter(function(q){return !q.noDisplay}));
+      for(var i=0;i<ord.length;i++){
+        var r=ord[i],en=r.e,seen={},nl=r.name.toLowerCase();
+        seen[nl]=1;
+        var cands=r.cand.slice(),ws=r.name.split(/\s+/).filter(Boolean);
+        if(ws.length>1){cands.push(ws[0]);cands.push(ws.slice(1).join(" "))}
+        for(var c=0;c<cands.length;c++){
+          var s1=cands[c],k=s1.toLowerCase();
+          if(!k||seen[k])continue;seen[k]=1;
+          var hit=_aResolveName(s1);
+          if(hit&&hit.bundleId===r.id)apps.push({bundleId:r.id,displayName:s1,path:en.file});
         }
-        var icon=en.icon;
-        if(icon&&icon.indexOf(".")!==-1){_add(icon,fullName,fp);if(parts.length>1){_add(icon,parts[0],fp)}}
-        if(en.dfn!==baseName){_add(en.dfn,fullName,fp)}
+        apps.push({bundleId:r.id,displayName:r.name,path:en.file});
       }
-    }catch(e){}
+    }catch(e){globalThis.__cdbDiag("[claude-cu] listInstalledApps failed: "+(e&&e.message||e))}
     return apps;
   },
+  // Visible, non-minimized windows -> one {bundleId, displayName} per app.
   async listRunningApps(){
     await _tgtPrime();
-    if(_useWlBridge()){
-      try{
-        var wb=_wlBridge();
-        _logFirstUse("app",wb.name);
-        globalThis.__cdbDiag("[claude-cu] listRunningApps: using "+wb.name+" windows");
-        var wwins=_wlBridgeCall(["windows"]);
-        var wapps=[],wseen={};
-        if(Array.isArray(wwins)){
-          for(var wi=0;wi<wwins.length;wi++){
-            var ww=wwins[wi];
-            if(ww.is_minimized===true)continue;
-            if(ww.is_visible===false)continue;
-            var wref=_appRefFromWindow(ww);
-            if(wref&&!wseen[wref.bundleId]){wseen[wref.bundleId]=true;wapps.push(wref)}
-          }
-        }
-        return wapps;
-      }catch(we){globalThis.__cdbDiag("[claude-cu] bridge windows failed: "+(we.message||we));return[]}
-    }
-    // Exotic (uncovered) Wayland: no enumeration backend (compositor IPC was
-    // wlroots-only and wlroots is covered by the bridge now).
-    if(_wayland&&_checkYdotool()){return[]}
-    if(_wayland&&!_x11BridgeBin()){return[]}
-    // X11 / XWayland: enumerate via x11-bridge windows (EWMH).
+    var be=_appBackend();
+    if(be.windowList==="none")return[];
     try{
-      _logFirstUse("app","x11-bridge");
-      globalThis.__cdbDiag("[claude-cu] listRunningApps: using x11-bridge windows");
-      var wins=_x11Bridge(["windows"]);
-      var apps=[],seen={};
+      _logFirstUse("app",be.name);
+      var wins=_appWins(),apps=[],seen={};
       if(Array.isArray(wins)){
         for(var i=0;i<wins.length;i++){
           var w=wins[i];
-          if(w.is_minimized===true)continue;
-          if(w.is_visible===false)continue;
+          if(!w||w.is_minimized===true||w.is_visible===false)continue;
           var ref=_appRefFromWindow(w);
           if(ref&&!seen[ref.bundleId]){seen[ref.bundleId]=true;apps.push(ref)}
         }
       }
       return apps;
-    }catch(e){globalThis.__cdbDiag("[claude-cu] x11-bridge windows failed: "+(e.message||e));return[]}
+    }catch(e){globalThis.__cdbDiag("[claude-cu] "+be.name+" windows failed: "+(e.message||e));return[]}
   },
+  // The focused window's app: the window list's active window (all bridges
+  // report is_active; wlroots from the foreign-toplevel activated state);
+  // x11-bridge without one falls back to its frontmost-app (GetInputFocus on a
+  // WM without EWMH). null when the backend cannot know: XWayland (a native
+  // Wayland window may have the focus), ydotool, no bridge, no active window
+  // (wlroots-bridge's own frontmost-app would pick the first toplevel).
   async getFrontmostApp(){
     await _tgtPrime();
-    if(_useWlBridge()){
-      try{
-        _logFirstUse("window",_wlBridge().name);
-        return _appRefFromCommand(_wlBridgeCall(["frontmost-app"]));
-      }catch(e){return null}
-    }
-    if(_wayland&&_checkYdotool()){return null}
-    if(_wayland&&!_x11BridgeBin()){return null}
+    var be=_appBackend();
+    if(be.frontmost!=="native")return null;
     try{
-      _logFirstUse("window","x11-bridge");
-      // frontmost-app emits camelCase {bundleId,displayName}.
-      return _appRefFromCommand(_x11Bridge(["frontmost-app"]));
+      _logFirstUse("window",be.name);
+      var wins=_appWins(),act=null;
+      if(Array.isArray(wins)){for(var i=0;i<wins.length;i++){var w=wins[i];if(w&&w.is_active===true&&(!act||(w.stacking_order||0)>(act.stacking_order||0)))act=w}}
+      if(act)return _appRefFromWindow(act);
+      if(_useWlBridge())return null;
+      return _appRefFromCommand(_x11Bridge(["frontmost-app"]),function(){return wins},function(w){return w.is_minimized!==true});
     }catch(e){return null}
   },
+  // The app owning the window at DIP point (x, y): x11-bridge's
+  // app-under-point (X11, or the background display). Every other backend has
+  // no hit test (wlroots: no window geometry; GNOME Introspect: no global
+  // origin; XWayland: native Wayland windows are invisible to X) -> null.
   async appUnderPoint(x,y){
     await _tgtPrime();
-    if(_useWlBridge()){
-      // wlroots-bridge returns null here (no window geometry in the foreign-
-      // toplevel protocols); gnome-portal-bridge is best-effort via Introspect.
-      try{return _appRefFromCommand(_wlBridgeCall(["app-under-point","--x",String(Math.round(x)),"--y",String(Math.round(y))]))}catch(e){return null}
-    }
-    if(_wayland&&_checkYdotool())return null;
-    if(_wayland&&!_x11BridgeBin())return null;
+    if(_appBackend().hitTest!=="native")return null;
     try{
-      var _ap=_x11Px(x,y);
-      return _appRefFromCommand(_x11Bridge(["app-under-point","--x",String(_ap[0]),"--y",String(_ap[1])]));
+      var _ap=_x11Px(x,y),px=_ap[0],py=_ap[1];
+      return _appRefFromCommand(_x11Bridge(["app-under-point","--x",String(px),"--y",String(py)]),function(){return _x11Bridge(["windows"])},function(w){var g=w.geometry;return w.is_minimized!==true&&w.is_visible!==false&&!!g&&px>=g.x&&px<g.x+g.width&&py>=g.y&&py<g.y+g.height});
     }catch(e){return null}
   },
+  // Live app-identity capabilities of the current backend (re-evaluated on
+  // every call: session, background display and bridge availability). The
+  // static `capabilities` above is what upstream reads; this is for our own
+  // callers (tool descriptions, request_access forwarding).
+  capabilitiesNow(){
+    var be=_appBackend();
+    return{screenshotFiltering:"none",platform:"linux",hostBundleId:_hostId(),backend:be.name,hitTest:be.hitTest,frontmost:be.frontmost,windowList:be.windowList,windowPositions:be.windowPositions};
+  },
+  // request_access name -> {bundleId, displayName, path} | null, and the alias
+  // strings of a canonical id (see "App identity").
+  resolveApp(name){return _aResolveName(name)},
+  appAliases(bundleId){return _aAliases(bundleId)},
   async getAppIcon(appPath){return null},
   async openApp(name){
     await _tgtPrime();
@@ -2057,10 +2379,15 @@ globalThis.__linuxExecutor={
     // Rank an existing window against the request. Exact desktop_file_name /
     // resource_class / resource_name match ranks highest (3), title-prefix
     // lowest (1); 0 = no match. Dock/desktop windows are skipped by the caller.
+    // The request naming the window's app by any alias (canonical id scheme,
+    // e.g. "org.mozilla.firefox" for WM_CLASS firefox) is an exact match too.
+    var _rqIds={};
+    function _rqId(nl){if(!_hasOwn.call(_rqIds,nl)){var r=_arec(_appIndex(),nl);_rqIds[nl]=r?r.id:null}return _rqIds[nl]}
     function _matchScore(w,nl){
       if(!nl)return 0;
       var dfn=_norm(w.desktop_file_name),rc=_norm(w.resource_class),rn=_norm(w.resource_name);
       if(dfn===nl||rc===nl||rn===nl)return 3;
+      var rq=_rqId(nl);if(rq){var wr=_aWin(w);if(wr&&wr.id===rq)return 3}
       // partial class/name containment (e.g. request "code", class "Code")
       if((dfn&&dfn.indexOf(nl)>=0)||(rc&&rc.indexOf(nl)>=0)||(rn&&rn.indexOf(nl)>=0))return 2;
       var title=typeof w.title==="string"?w.title.trim().toLowerCase():"";

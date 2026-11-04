@@ -2290,6 +2290,7 @@
         d.owner = a[2][String(d.st.uid)] || String(d.st.uid);
         d.group = a[3][String(d.st.gid)] || String(d.st.gid);
         d.mode = (d.st.mode & 4095).toString(8);
+        d.gid = d.st.gid;
         delete d.st;
       }
       return { dev: d, link: a[1] };
@@ -2431,6 +2432,29 @@
     return null;
   }
 
+  // Is the device's group one of this process's groups (access by membership)?
+  function __cdbEx_cusInGroup(d) {
+    if (typeof d.gid !== "number") return false;
+    var gids = [];
+    try { if (typeof process.getgroups === "function") gids = process.getgroups(); } catch (e) { gids = []; }
+    try { if (typeof process.getegid === "function") gids = gids.concat([process.getegid()]); } catch (e) { /* none */ }
+    return gids.indexOf(d.gid) >= 0;
+  }
+
+  // Both actions, whenever a resource manager is present. An action that can do
+  // nothing right now still carries its command, plus `disabled` (the reason).
+  var __cdbEx_CUS_NOOP_ENABLE = "Already enabled - the rule link is installed";
+  var __cdbEx_CUS_NOOP_DISABLE = "Nothing to remove - no rule link from this package is installed";
+  function __cdbEx_cusActs(g, link) {
+    var en = __cdbEx_cusEnableAct(g, link);
+    if (link.state === "ours" || link.state === "file") en.disabled = __cdbEx_CUS_NOOP_ENABLE;
+    else if (link.state === "foreign") en.disabled = "Another file is installed at " + __cdbEx_TPM_LINK + " - it is not replaced";
+    var live = link.state === "ours" || link.state === "stale" || (link.state === "file" && g.appimage);
+    var dis = __cdbEx_cusDisableAct(g, live ? link : { state: "ours" });
+    if (!live) dis.disabled = __cdbEx_CUS_NOOP_DISABLE;
+    return { enable: en, disable: dis };
+  }
+
   // The TPM row plus what it offers. at = __cdbTpmAtStart (undefined = unknown).
   function __cdbEx_cusTpmRow(t, g) {
     var d = t.dev;
@@ -2438,22 +2462,34 @@
     var at = globalThis.__cdbTpmAtStart;
     var atState = at && typeof at === "object" ? at.state : undefined;
     var out = { row: null, enable: null, disable: null, restart: false, tss: null, state: d.state };
-    if (g) out.disable = __cdbEx_cusDisableAct(g, link);
     if (d.state === "absent") {
       out.row = __cdbEx_cusRow("na", "no TPM 2.0 resource manager", "tpm");
       return out;
+    }
+    if (g) {
+      var acts = __cdbEx_cusActs(g, link);
+      out.enable = acts.enable;
+      out.disable = acts.disable;
     }
     if (d.state === "error") {
       out.row = __cdbEx_cusRow("unknown", __cdbEx_TPM_DEV + ": " + d.code, "tpm");
       return out;
     }
     if (d.state === "ok") {
+      var hasRule = link.state === "ours" || link.state === "file";
+      var world = (parseInt(d.mode, 8) & 6) === 6;
       if (atState !== undefined && atState !== "ok") {
         out.row = __cdbEx_cusRow("action", "accessible now - restart Claude to use it", "tpm");
         out.restart = true;
         out.state = "restart";
-      } else {
+      } else if (hasRule) {
+        out.row = __cdbEx_cusRow("ok", __cdbEx_TPM_DEV + " accessible - rule enabled", "tpm");
+      } else if (__cdbEx_cusInGroup(d)) {
+        out.row = __cdbEx_cusRow("ok", __cdbEx_TPM_DEV + " accessible through the " + d.group + " group", "tpm");
+      } else if (world) {
         out.row = __cdbEx_cusRow("ok", __cdbEx_TPM_DEV + " accessible", "tpm");
+      } else {
+        out.row = __cdbEx_cusRow("action", "accessible for this session - no rule installed, access ends when you log out", "tpm");
       }
       return out;
     }
@@ -2462,7 +2498,6 @@
     var grp = /^[a-z_][a-z0-9_-]*$/.test(d.group) ? d.group : "tss";
     if (link.state === "stale") {
       out.row = __cdbEx_cusRow("action", "rule link points at a removed install", "tpm");
-      if (g) out.enable = __cdbEx_cusEnableAct(g, link);
     } else if (link.state === "ours" || link.state === "file") {
       out.row = __cdbEx_cusRow("action", "rule enabled, but this session got no access", "tpm");
       out.tss = "sudo usermod -aG " + grp + " \"$USER\"";
@@ -2472,7 +2507,6 @@
       out.tss = "sudo usermod -aG " + grp + " \"$USER\"";
     } else {
       out.row = __cdbEx_cusRow("action", "present, no access for this user " + who, "tpm");
-      if (g) out.enable = __cdbEx_cusEnableAct(g, link);
     }
     return out;
   }
@@ -2680,7 +2714,7 @@
     __cdbEx_cusTpmBusy = true;
     function release(v) {
       __cdbEx_cusTpmBusy = false;
-      if (verb === "enable" && v && v.ok === false && v.code !== "not-allowed") {
+      if (verb === "enable" && v && v.ok === false && v.code !== "not-allowed" && v.code !== "nothing-to-do") {
         __cdbEx_cusEnableHoldUntil = Date.now() + __cdbEx_CUS_ENABLE_COOLDOWN_MS;
       }
       return v;
@@ -2690,6 +2724,9 @@
       var g = a[1];
       var tpm = __cdbEx_cusTpmRow(t, g);
       var act = verb === "enable" ? tpm.enable : tpm.disable;
+      if (act && act.disabled) {
+        return { ok: false, code: "nothing-to-do", error: act.disabled, command: null };
+      }
       var fallback = g.helper.safe ? __cdbEx_cusHelperCmd(g, verb)
         : (verb === "enable" ? __cdbEx_cusTee(t.link.state === "stale") : __cdbEx_cusRm());
       if (!act || act.kind !== "pkexec") {

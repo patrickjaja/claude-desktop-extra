@@ -981,6 +981,18 @@ function teachPayloadArg(payload) {
   return ['--payload', JSON.stringify(payload || {})]
 }
 
+// KWin capture exclusions are one shared state in the bridge's exclude-state
+// file: prepare-for-action sets them (after lifting any earlier ones) and
+// restore-prepare-state lifts them. Both commands run one at a time, in call
+// order, so a restore queued at a turn end never lands between a later
+// prepare-for-action and the screenshot that follows it.
+let captureExcludeTail = Promise.resolve()
+function runCaptureExcludeOp(fn) {
+  const run = captureExcludeTail.then(fn, fn)
+  captureExcludeTail = run.catch(() => {})
+  return run
+}
+
 export function createRustLinuxBackend() {
   return {
     async prepareForAction(allowlistBundleIds, hostBundleId, displayId) {
@@ -996,7 +1008,7 @@ export function createRustLinuxBackend() {
         hostBundleId,
         ...bridgeDisplayArg(display),
       ]
-      const result = await execBridgeJson('prepare-for-action', args)
+      const result = await runCaptureExcludeOp(() => execBridgeJson('prepare-for-action', args))
       debugLog('prepare-for-action result', result)
       return {
         hidden: Array.isArray(result?.hidden) ? result.hidden : [],
@@ -1024,33 +1036,44 @@ export function createRustLinuxBackend() {
       return Array.isArray(result) ? result : []
     },
 
-    async findWindowDisplays(bundleIds) {
-      debugLog('findWindowDisplays', { bundleIds })
+    // Display auto-target (js/cu_display_target.js): the granted apps'
+    // windows and the monitors in one space. KWin reports both in its global
+    // logical coordinates (frameGeometry, screen geometry), so the rects
+    // compare directly, XWayland windows included; a window without a usable
+    // frame still counts on the output KWin names for it.
+    async windowDisplayTarget(bundleIds) {
+      const target = globalThis.__cdbCuDisplayTarget
+      if (!target) return { why: 'display target helper missing' }
       const displays = await listDisplaysWithBridgeIds()
       const byBridgeId = displayIdLookup(displays)
       const windows = await listWindows()
-      const displayMap = new Map()
+      const mons = displays.map(display => ({
+        displayId: display.displayId,
+        label: display.label,
+        isPrimary: display.isPrimary,
+        rect: {
+          x: display.originX,
+          y: display.originY,
+          width: display.width,
+          height: display.height,
+        },
+      }))
+      const wins = target.normalize(
+        windows,
+        bundleIds,
+        window => window.geometry || null,
+        window => (typeof window.output === 'string' ? byBridgeId.get(window.output) : null),
+      )
+      return { mons, wins }
+    },
 
-      for (const bundleId of bundleIds) {
-        displayMap.set(bundleId, new Set())
-      }
-
-      for (const window of windows) {
-        const bundleId = normalizeBundleIdFromWindow(window)
-        if (!bundleId || !displayMap.has(bundleId)) continue
-        if (typeof window.output !== 'string') continue
-        const numericDisplayId = byBridgeId.get(window.output)
-        if (typeof numericDisplayId === 'number') {
-          displayMap.get(bundleId).add(numericDisplayId)
-        }
-      }
-
-      const resolved = bundleIds
-        .map(bundleId => ({
-          bundleId,
-          displayIds: [...(displayMap.get(bundleId) || new Set())],
-        }))
-        .filter(item => item.displayIds.length > 0)
+    async findWindowDisplays(bundleIds) {
+      debugLog('findWindowDisplays', { bundleIds })
+      const ids = Array.isArray(bundleIds) ? bundleIds : []
+      if (ids.length === 0) return []
+      const src = await this.windowDisplayTarget(ids)
+      if (!src.mons) return []
+      const resolved = globalThis.__cdbCuDisplayTarget.windowDisplays(src.wins, src.mons, ids)
       debugLog('findWindowDisplays result', resolved)
       return resolved
     },
@@ -1427,9 +1450,12 @@ export function createRustLinuxBackend() {
       await execBridgeJson('open-app', ['--app', bundleId])
     },
 
+    // Lifts every capture exclusion the bridge recorded (ids are not needed:
+    // the exclude-state file names the windows). A local command, no portal
+    // session involved; with nothing recorded it touches no KWin state.
     async unhideApps() {
       debugLog('unhideApps')
-      await execBridgeJson('restore-prepare-state', [])
+      await runCaptureExcludeOp(() => execBridgeJson('restore-prepare-state', []))
     },
   }
 }
@@ -1459,6 +1485,38 @@ async function getDisplaySize(backend, displayId) {
   )
 }
 
+// The display to capture for upstream's autoResolve: the one holding most of
+// the granted apps' windows (js/cu_display_target.js), else the preferred
+// display unchanged. One log line per resolution.
+async function autoTargetDisplay(backend, allowedBundleIds, preferredDisplayId) {
+  const apps = Array.isArray(allowedBundleIds) ? allowedBundleIds : []
+  if (apps.length === 0 || typeof backend.windowDisplayTarget !== 'function') {
+    return preferredDisplayId
+  }
+  const tag = `[claude-cu] display auto-target: apps=${apps.join(',')}`
+  let preferred = null
+  try { preferred = await getDisplaySize(backend, preferredDisplayId) } catch {}
+  const preferredLabel = preferred?.label || String(preferredDisplayId ?? '(default)')
+  let src
+  try {
+    src = await backend.windowDisplayTarget(expandAllowedBundleIds(apps))
+  } catch (error) {
+    src = { why: `window list failed: ${error instanceof Error ? error.message : error}` }
+  }
+  if (!src.mons) {
+    globalThis.__cdbDiag?.(`${tag} kept ${preferredLabel} (${src.why})`)
+    return preferredDisplayId
+  }
+  const target = globalThis.__cdbCuDisplayTarget
+  const picked = target.pick(src.wins, src.mons, expandAllowedBundleIds(apps), preferred?.displayId ?? preferredDisplayId)
+  if (picked.displayId == null) {
+    globalThis.__cdbDiag?.(`${tag} kept ${preferredLabel} (${picked.why})`)
+    return preferredDisplayId
+  }
+  globalThis.__cdbDiag?.(`${tag} -> ${target.label(src.mons, picked.displayId)} (preferred ${preferredLabel}${picked.why === 'tie' ? ', tie' : ''})`)
+  return picked.displayId
+}
+
 export function createLinuxExecutor(opts = {}) {
   const backend = opts.backend || createRustLinuxBackend()
   const hostBundleId = opts.hostBundleId || DEFAULT_HOST_BUNDLE_ID
@@ -1476,6 +1534,23 @@ export function createLinuxExecutor(opts = {}) {
     // Display the session overlay was last actually placed on — the best
     // available signal for "the screen the agent is working on".
     lastDisplayId: null,
+  }
+
+  // Windows left out of screenshots (KWin excludeFromCapture) are invisible
+  // to the user, so they are lifted at every end of Computer Use use, not only
+  // when upstream's "Unhide apps when Claude finishes" setting asks for it:
+  // the CU lock release (every turn end on every upstream path), the task
+  // boundary, upstream's own turn-end unhide (__unhideApps, sub-patch 4h) and
+  // app start (leftovers of a crash). Never rejects.
+  async function restoreCaptureExclusions(reason) {
+    try {
+      await backend.unhideApps()
+      globalThis.__cdbDiag?.(`[linux-executor] capture exclusions lifted (${reason})`)
+      return true
+    } catch (error) {
+      globalThis.__cdbDiag?.(`[linux-executor] failed to lift capture exclusions (${reason})`, error)
+      return false
+    }
   }
 
   reapplySessionOverlay = () => backend.setSessionOverlayDisplay(
@@ -1811,9 +1886,13 @@ export function createLinuxExecutor(opts = {}) {
           await dockClaudeWindow()
         }
       } else {
+        // Queued before any await, so it runs ahead of the next lock's
+        // prepare-for-action (runCaptureExcludeOp keeps call order).
+        const lifted = restoreCaptureExclusions('lock released')
         if (dockControllerState.initialized) {
           await restoreClaudeWindow()
         }
+        await lifted
         await stopBridgeSession()
       }
     },
@@ -1830,6 +1909,7 @@ export function createLinuxExecutor(opts = {}) {
           globalThis.__cdbDiag(`[linux-executor] task boundary (${source}): ignored, ${id} is not the Computer Use lock holder ${holder}`)
           return
         }
+        await restoreCaptureExclusions(`task boundary (${source})`)
         if (!bridgeSessionMayBeUp() && !sessionStopPromise) {
           debugLog('task boundary: no bridge session to end', { source })
           return
@@ -1840,6 +1920,22 @@ export function createLinuxExecutor(opts = {}) {
       } catch (error) {
         globalThis.__cdbDiag('[linux-executor] task boundary failed', error)
       }
+    },
+
+    // Upstream's turn-end unhide (unhideComputerUseApps), routed here by
+    // sub-patch 4h of fix_computer_use_linux.nim instead of upstream's own
+    // Linux executor module. bundleIds = what prepareForAction reported as
+    // hidden this turn; the bridge lifts every exclusion it recorded.
+    // Never rejects.
+    async __unhideApps(bundleIds) {
+      debugLog('__unhideApps', { bundleIds })
+      await restoreCaptureExclusions('turn-end unhide')
+    },
+
+    // Patch 1 calls this once right after the executor is created: lifts
+    // exclusions a crashed or killed previous run left behind. Never rejects.
+    async __restoreCaptureExclusions(reason) {
+      return restoreCaptureExclusions(typeof reason === 'string' && reason ? reason : 'request')
     },
 
     // Accessibility tools (js/cu_ax_tools.js): the user stopped screen sharing
@@ -2022,21 +2118,28 @@ export function createLinuxExecutor(opts = {}) {
       debugLog('resolvePrepareCapture', opts)
       let hidden = []
       let activated = null
+      // Upstream sets autoResolve when the granted apps changed and the model
+      // has not pinned a display: capture the display holding most of their
+      // windows, as macOS does. Otherwise the preferred display, as before.
+      let displayId = opts.preferredDisplayId
+      if (opts.autoResolve === true) {
+        displayId = await autoTargetDisplay(backend, opts.allowedBundleIds, opts.preferredDisplayId)
+      }
 
       if (opts.doHide ?? true) {
         const expandedAllowedBundleIds = expandAllowedBundleIds(opts.allowedBundleIds)
         const result = await backend.prepareForAction(
           expandedAllowedBundleIds,
           hostBundleId,
-          opts.preferredDisplayId,
+          displayId,
         )
         hidden = result.hidden
         activated = result.activated
       }
 
       try {
-        const display = await getDisplaySize(backend, opts.preferredDisplayId)
-        const result = await backend.screenshot(opts.preferredDisplayId)
+        const display = await getDisplaySize(backend, displayId)
+        const result = await backend.screenshot(displayId)
 
         return {
           ...toScreenshotResult(result, display),
@@ -2044,14 +2147,14 @@ export function createLinuxExecutor(opts = {}) {
           activated,
         }
       } catch (error) {
-        const display = await getDisplaySize(backend, opts.preferredDisplayId)
+        const display = await getDisplaySize(backend, displayId)
         return {
           base64: '',
           width: 0,
           height: 0,
           displayWidth: display?.width ?? 0,
           displayHeight: display?.height ?? 0,
-          displayId: display?.displayId ?? opts.preferredDisplayId ?? 0,
+          displayId: display?.displayId ?? displayId ?? 0,
           originX: display?.originX ?? 0,
           originY: display?.originY ?? 0,
           hidden,

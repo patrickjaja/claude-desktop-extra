@@ -37,6 +37,13 @@
 //       4.4212.0: accessor `ner` in index.chunk-CvhJZ02X.js, the status check
 //       in index.chunk-CL5khZ71.js; its result keys are ok / transient /
 //       notFound on failure and ok / ended / coworkRemote / ... on success.
+//   [6] both executors log the lock hook's holder on entry.
+//   [7] sub-patch 4h: upstream's turn-end unhide (unhideComputerUseApps, 4.4212.0
+//       `Z9i` in index.chunk-CvhJZ02X.js) calls the Linux executor's
+//       __unhideApps(ids) when it has one, else upstream's own Linux arm; the
+//       pristine anchor once, the routing once and node --check'ed, refusal of
+//       a bundle missing only 4h and of a moved Linux arm, the patched function
+//       in a vm sandbox per platform, and the upstream turn-end callers pinned.
 // Sections SKIP when the binary or the extract is missing. CDB_CU_PATCH_BIN
 // points at another compiled binary (e.g. master's, to see the harness fail).
 //
@@ -536,6 +543,140 @@ if (patchMissing || !existsSync(stub)) {
       if (kExpr) vm.runInContext(kExpr, ctx);
       check(`held=${held} holder=${holder}: GNOME and KWin log "${want}"`, JSON.stringify(out), JSON.stringify([want, want]));
     }
+
+    // [7] sub-patch 4h: upstream's turn-end unhide reaches the Linux executor.
+    // Upstream's unhideComputerUseApps (4.4212.0: `Z9i` in index.chunk-CvhJZ02X.js)
+    // always loaded its own Linux executor module on Linux, whose unhide only
+    // knows windows upstream's executor hid, so KWin capture exclusions stayed.
+    console.log("\n[7] 4h routes upstream's turn-end unhide to the Linux executor");
+    const UNHIDE_RE =
+      /async function ([\w$]+)\(([\w$]+)\)\{if\(\2\.length!==0\)\{if\(process\.platform===(["`])win32\3\)\{let\{unhideComputerUseAppsWin32:[\w$]+\}=[^{}]{0,300}\}if\(process\.platform===\3linux\3\)\{let\{unhideComputerUseAppsLinux:([\w$]+)\}=[^{}]{0,300}await \4\(\2\);return\}/g;
+    const ROUTE = 'if(typeof globalThis.__linuxExecutor?.__unhideApps==="function"){await globalThis.__linuxExecutor.__unhideApps(';
+    const unhidePristine = [...blob.matchAll(UNHIDE_RE)];
+    check("pristine unhide function present once", unhidePristine.length, 1);
+    const unhideFn = unhidePristine[0]?.[1] || "\u0000";
+    check("pristine: no __unhideApps routing yet", count(blob, "__unhideApps"), 0);
+    check(
+      "pristine: the Linux arm loads unhideComputerUseAppsLinux (once in the bundle)",
+      count(blob, "{unhideComputerUseAppsLinux:"),
+      1
+    );
+    const uIdx = pristine.bodies.findIndex((b) => b.includes("async function " + unhideFn + "("));
+    console.log(`  (unhide function ${unhideFn} in ${pristine.names[uIdx]})`);
+    check(
+      `4h reported [OK] for ${unhideFn}`,
+      new RegExp("\\[OK\\] 4h unhide routing: " + esc(unhideFn) + "'s Linux arm calls the Linux executor's __unhideApps when present \\(1 match\\)").test(r1.out),
+      true
+    );
+    check("routing present once", count(patched, ROUTE), 1);
+    check("routing passes upstream's ids param", count(patched, ROUTE + (unhidePristine[0]?.[2] || "\u0000") + ");return}let{unhideComputerUseAppsLinux:"), 1);
+    const uAfterIdx = after.bodies.findIndex((b) => b.includes(ROUTE));
+    check("routing lands in the unhide function's own chunk", after.names[uAfterIdx], pristine.names[uIdx]);
+    if (uAfterIdx >= 0 && uAfterIdx !== pIdx) {
+      const f = join(scratch, after.names[uAfterIdx]);
+      writeFileSync(f, after.bodies[uAfterIdx]);
+      let ok = true;
+      try {
+        execFileSync("node", ["--check", f], { stdio: "pipe" });
+      } catch {
+        ok = false;
+      }
+      check(`node --check ${after.names[uAfterIdx]}`, ok, true);
+    }
+    // Rule 6: a bundle with everything but 4h's routing is refused.
+    const missing4h = join(scratch, "missing_4h.js");
+    const routeRe = /if\(typeof globalThis\.__linuxExecutor\?\.__unhideApps==="function"\)\{await globalThis\.__linuxExecutor\.__unhideApps\([\w$]+\);return\}/;
+    writeFileSync(missing4h, patched.replace(routeRe, ""));
+    const r4h = spawnSync(PATCH_BIN, [missing4h], { encoding: "utf8" });
+    const out4h = String(r4h.stdout || "") + String(r4h.stderr || "");
+    check("bundle without 4h's routing: exits non-zero", r4h.status !== 0, true);
+    check("bundle without 4h's routing: refused as half-patched, missing 4h", /half-patched input: .*missing: 4h unhide routing/.test(out4h), true);
+    // A pristine bundle whose Linux arm moved (export renamed) fails loud.
+    const moved4h = join(scratch, "unhide_moved.js");
+    writeFileSync(moved4h, blob.replace("{unhideComputerUseAppsLinux:", "{unhideComputerUseAppsLinuxV2:"));
+    const r4m = spawnSync(PATCH_BIN, [moved4h], { encoding: "utf8" });
+    const out4m = String(r4m.stdout || "") + String(r4m.stderr || "");
+    check("moved Linux arm: exits non-zero", r4m.status !== 0, true);
+    check("moved Linux arm: [FAIL] 4h with 0 matches", /\[FAIL\] 4h unhide routing: 0 matches of upstream's unhide function, expected 1/.test(out4m), true);
+    check("moved Linux arm: never reported [PASS]", /\[PASS\]/.test(out4m), false);
+
+    // The patched function in a vm sandbox.
+    const fnSrc = (() => {
+      const start = patched.indexOf("async function " + unhideFn + "(");
+      if (start < 0) return null;
+      let depth = 0;
+      for (let i = patched.indexOf("{", start); i < patched.length; i++) {
+        if (patched[i] === "{") depth++;
+        else if (patched[i] === "}" && --depth === 0) return patched.slice(start, i + 1);
+      }
+      return null;
+    })();
+    check("patched unhide function extracted", !!fnSrc, true);
+    if (fnSrc) {
+      const e3Name = /await\(await ([\w$]+)\(\)\)\.apps\.unhide\(/.exec(fnSrc)?.[1];
+      check("macOS arm (await(await X()).apps.unhide) kept", !!e3Name, true);
+      const runUnhide = async (platform, ids, executor) => {
+        const calls = [];
+        const ctx = {
+          process: { platform },
+          Promise,
+          require: (id) => {
+            calls.push(["require", id]);
+            return {
+              n: {
+                unhideComputerUseAppsLinux: async (x) => calls.push(["upstream-linux", [...x]]),
+                unhideComputerUseAppsWin32: async (x) => calls.push(["upstream-win32", [...x]]),
+              },
+            };
+          },
+        };
+        ctx[e3Name || "e3"] = async () => ({ apps: { unhide: async (x) => calls.push(["upstream-darwin", [...x]]) } });
+        if (executor) ctx.__linuxExecutor = executor(calls);
+        vm.createContext(ctx);
+        let error = null;
+        try {
+          await vm.runInContext("(" + fnSrc + ")", ctx)(ids);
+        } catch (e) {
+          error = e;
+        }
+        return { calls: calls.filter((c) => c[0] !== "require"), required: calls.filter((c) => c[0] === "require").length, error };
+      };
+      const withUnhide = (calls) => ({ __unhideApps: async (x) => calls.push(["executor", [...x]]) });
+      let u = await runUnhide("linux", ["org.kde.dolphin", "firefox"], withUnhide);
+      check("linux + executor with __unhideApps: executor gets the ids", JSON.stringify(u.calls), JSON.stringify([["executor", ["org.kde.dolphin", "firefox"]]]));
+      check("linux + executor with __unhideApps: upstream's Linux module never loaded", u.required, 0);
+      u = await runUnhide("linux", ["firefox"], () => ({}));
+      check("linux + executor without __unhideApps: upstream's own Linux arm runs", JSON.stringify(u.calls), JSON.stringify([["upstream-linux", ["firefox"]]]));
+      u = await runUnhide("linux", ["firefox"], null);
+      check("linux, no executor: upstream's own Linux arm runs", JSON.stringify(u.calls), JSON.stringify([["upstream-linux", ["firefox"]]]));
+      u = await runUnhide("linux", ["firefox"], () => ({ __unhideApps: "not a function" }));
+      check("linux, __unhideApps not a function: upstream's own Linux arm runs", JSON.stringify(u.calls), JSON.stringify([["upstream-linux", ["firefox"]]]));
+      u = await runUnhide("linux", [], withUnhide);
+      check("linux, empty ids: nothing called", JSON.stringify(u.calls), "[]");
+      u = await runUnhide("win32", ["x"], withUnhide);
+      check("win32: upstream's win32 arm, executor untouched", JSON.stringify(u.calls), JSON.stringify([["upstream-win32", ["x"]]]));
+      u = await runUnhide("darwin", ["x"], withUnhide);
+      check("darwin: upstream's native unhide, executor untouched", JSON.stringify(u.calls), JSON.stringify([["upstream-darwin", ["x"]]]));
+      u = await runUnhide("linux", ["x"], () => ({ __unhideApps: async () => { throw new Error("boom"); } }));
+      check("linux, a rejecting __unhideApps propagates to upstream's caller (.catch there)", u.error?.message, "boom");
+    }
+
+    // The upstream callers: every turn-end path still calls the unhide function
+    // behind chicagoAutoUnhide; the KWin executor does not depend on that (it
+    // lifts the exclusions on the lock release, below and test-cu-kwin-idle.mjs).
+    const unhideExport = new RegExp('([\\w$]+):\\(\\)=>' + esc(unhideFn) + '(?![\\w$])').exec(pristine.bodies[uIdx] || "");
+    check("unhide function exported as unhideComputerUseApps", unhideExport?.[1], "unhideComputerUseApps");
+    const callerRe = /\.e9\((["`])chicagoAutoUnhide\1\)(?:&&|\?)[\w$]+\.([\w$]+)\(/g;
+    const callerExports = new Set([...blob.matchAll(callerRe)].map((m) => m[2]));
+    check("turn-end callers (gated on chicagoAutoUnhide) found", [...blob.matchAll(callerRe)].length >= 3, true);
+    check("they all call one exported function", callerExports.size, 1);
+    const exportKey = [...callerExports][0] || "\u0000";
+    const exportGetterRe = new RegExp(
+      'Object\\.defineProperty\\(exports,(["`])' + esc(exportKey) + '\\1,\\{enumerable:!0,get:function\\(\\)\\{return ' + esc(unhideFn) + '\\}\\}\\)'
+    );
+    check(`exports.${exportKey} is ${unhideFn}`, exportGetterRe.test(pristine.bodies[uIdx] || ""), true);
+    const lockReleaseRe = /releaseTurnScopedState\([\w$]+\)\{[^{}]{0,120}\.release\([\w$]+\.sessionId\)/;
+    check("releaseTurnScopedState releases the CU lock (our 4b.2 hook) before its unhide", lockReleaseRe.test(blob), true);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

@@ -1429,6 +1429,60 @@ async function cusPanel(cuItem) {
   ok(!btn(panel, "Disable TPM access") && /turn TPM access off/.test(row("tpm").querySelector(".cdbx-cus-cmd").textContent),
      "a command Disable: the command block, no button");
 
+  // --- both actions always: the one that cannot act is greyed with its reason, its command stays
+  {
+    const OFF_EN = "Already enabled - the rule link is installed";
+    const OFF_DIS = "Nothing to remove - no rule link from this package is installed";
+    const matrix = [
+      { n: "enable live, disable off (pkexec)", en: PK_EN, dis: Object.assign({}, PK_DIS, { disabled: OFF_DIS }), enOff: null, disOff: OFF_DIS, pk: true },
+      { n: "enable off, disable live (pkexec)", en: Object.assign({}, PK_EN, { disabled: OFF_EN }), dis: PK_DIS, enOff: OFF_EN, disOff: null, pk: true },
+      { n: "both off (pkexec, foreign file)", en: Object.assign({}, PK_EN, { disabled: "Another file is installed" }), dis: Object.assign({}, PK_DIS, { disabled: OFF_DIS }),
+        enOff: "Another file is installed", disOff: OFF_DIS, pk: true }
+    ];
+    for (const c of matrix) {
+      setState(okRows, { tpmEnable: c.en, tpmDisable: c.dis });
+      panel = await remount();
+      const be = btn(row("tpm"), "Enable TPM access"), bd = btn(row("tpm"), "Disable TPM access");
+      ok(!!be && !!bd, c.n + ": both buttons present");
+      ok(be && be.disabled === !!c.enOff && bd && bd.disabled === !!c.disOff, c.n + ": only the no-op one is greyed");
+      const notes = Array.prototype.map.call(row("tpm").querySelectorAll(".cdbx-cus-off"), function (x) { return x.getAttribute("data-verb") + ":" + x.textContent; });
+      ok(notes.join("|") === [c.enOff ? "enable:" + c.enOff : null, c.disOff ? "disable:" + c.disOff : null].filter(Boolean).join("|"),
+         c.n + ": one-line reason for each greyed button: " + notes.join("|"));
+      ok(be && bd && (!c.enOff || be.title === c.enOff) && (!c.disOff || bd.title === c.disOff), c.n + ": the reason is also the tooltip");
+      ok(!!row("tpm").querySelector('.cdbx-cus-pk[data-verb="enable"] details.cdbx-cus-what') &&
+         !!row("tpm").querySelector('.cdbx-cus-pk[data-verb="disable"] details.cdbx-cus-what') &&
+         pres(row("tpm")).indexOf(PK_EN.command) >= 0 && pres(row("tpm")).indexOf(PK_DIS.command) >= 0,
+         c.n + ": both command blocks and both What this does stay");
+      window.__cusCalls.enable = 0; window.__cusCalls.disable = 0;
+      if (be && be.disabled) be.click();
+      if (bd && bd.disabled) bd.click();
+      await sleep(40);
+      ok(window.__cusCalls.enable === 0 && window.__cusCalls.disable === 0, c.n + ": a greyed button calls nothing");
+    }
+    // Command variants: reason line plus the command, whatever the environment.
+    const variants = [
+      { n: "command fallback", en: { kind: "command", text: "sudo tee-rule", where: "here", disabled: OFF_EN }, dis: { kind: "command", text: "sudo rm-rule", where: "here" } },
+      { n: "NixOS", en: { kind: "nixos", text: "programs.claude-desktop-extra.tpmAccess.enable = true;", disabled: OFF_EN }, dis: { kind: "command", text: "sudo rm-rule", where: "here", disabled: OFF_DIS } },
+      { n: "AppImage", en: { kind: "command", text: "sudo tee-rule", where: "here" }, dis: { kind: "command", text: "sudo rm-rule", where: "here", disabled: OFF_DIS } }
+    ];
+    for (const v of variants) {
+      setState(okRows, { tpmEnable: v.en, tpmDisable: v.dis });
+      panel = await remount();
+      const ps = pres(row("tpm"));
+      ok(ps.indexOf(v.en.text) >= 0 && ps.indexOf(v.dis.text) >= 0 && !btn(panel, "Enable TPM access") && !btn(panel, "Disable TPM access"),
+         v.n + ": both commands shown, no buttons");
+      const texts = Array.prototype.map.call(row("tpm").querySelectorAll(".cdbx-cus-off"), function (x) { return x.textContent; });
+      ok(texts.join("|") === [v.en.disabled, v.dis.disabled].filter(Boolean).join("|"), v.n + ": reasons shown for the no-op ones: " + texts.join("|"));
+    }
+    // Needs-action row text for the leftover seat ACL stays what main sends.
+    setState(window.__cusRows({ status: "action", fact: "accessible for this session - no rule installed, access ends when you log out", note: "n" }),
+      { tpmEnable: PK_EN, tpmDisable: Object.assign({}, PK_DIS, { disabled: OFF_DIS }) });
+    panel = await remount();
+    ok(word("tpm") === "Needs action" && /access ends when you log out/.test(row("tpm").textContent) &&
+       !btn(row("tpm"), "Enable TPM access").disabled && btn(row("tpm"), "Disable TPM access").disabled,
+       "ACL leftover: Needs action, Enable live, Disable greyed");
+  }
+
   // --- Restart now and Reset screen sharing
   setState(window.__cusRows({ status: "action", fact: "accessible now - restart Claude to use it", note: "n" }), { restart: true });
   panel = await remount();

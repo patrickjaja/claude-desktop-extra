@@ -9,7 +9,7 @@
 # embeds them via staticRead at compile time; Python reads them at runtime.
 # No codegen — the .js files are the single source of truth.
 #
-# All 44 sub-patches use std/nre (PCRE) because many require backreferences.
+# All 45 sub-patches use std/nre (PCRE) because many require backreferences.
 # Sub-patches 15a-15d add the Linux accessibility tools (issue #306,
 # js/cu_ax_tools.js, injected with the executors by Patch 1): upstream's tool
 # builder, its tools/list cache key, the teach-mode read-only set and upstream's
@@ -27,6 +27,10 @@
 # Sub-patch 4g lets the remote-tools device announce the computer tools to
 # cloud Cowork and Dispatch on a Wayland session when js/cu_mode_preamble.js
 # decided a first-party bridge is usable (globalThis.__cdbCuWaylandAnnounce).
+# Sub-patch 4h routes the Linux arm of upstream's unhideComputerUseApps (turn-end
+# auto-unhide) to the active Linux executor's __unhideApps when it has one, so
+# the KWin executor lifts the capture exclusions it set (upstream's own Linux
+# unhide only knows windows its own executor hid).
 #
 # Idempotency is a MARKER SET (endStateMarkers below): one positive end-state
 # pattern per sub-patch, each with its exact expected count. All present =
@@ -43,6 +47,7 @@ const MODE_PREAMBLE_JS = staticRead("../../js/cu_mode_preamble.js")
 const KWIN_EXECUTOR_SOURCE = staticRead("../../js/executor_linux.js")
 const AX_TOOLS_JS = staticRead("../../js/cu_ax_tools.js")
 const SESSION_CHECK_JS = staticRead("../../js/cu_session_check.js")
+const DISPLAY_TARGET_JS = staticRead("../../js/cu_display_target.js")
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -171,7 +176,10 @@ proc buildKwinLinuxExecutorInjection(): string =
   js = js.replace(re"(?m)^export\s+", "")
   result =
     "(function(){\n" & js.strip(leading = false, trailing = true) &
-    "\n\nglobalThis.__linuxExecutor = createLinuxExecutor({ hostBundleId: \"com.anthropic.claude\" });\n})();\n"
+    "\n\nglobalThis.__linuxExecutor = createLinuxExecutor({ hostBundleId: \"com.anthropic.claude\" });\n" &
+    # Capture exclusions a crashed or killed previous run left behind (KWin keeps
+    # excludeFromCapture until the window closes); lifted once at app start.
+    "globalThis.__linuxExecutor.__restoreCaptureExclusions(\"app start\");\n})();\n"
 
 # ─── end-state markers (idempotency + post-condition) ──────────────────────
 
@@ -240,6 +248,11 @@ proc endStateMarkers(): seq[EndStateMarker] =
       """globalThis\.__cdbCuSessionCheck\s*=\s*\{""",
     ),
     rx(
+      # js/cu_display_target.js embedded by Patch 1: its one definition.
+      "1 display target embed",
+      """globalThis\.__cdbCuDisplayTarget=\{pick:""",
+    ),
+    rx(
       "2 CU platform gate",
       "function [\\w$]+\\(\\)\\{if\\(process\\.platform===\"linux\"\\)return!0;" &
         CU_PLATFORM_FN_BODY,
@@ -276,6 +289,10 @@ proc endStateMarkers(): seq[EndStateMarker] =
     rx(
       "4g remote announce Wayland",
       """function [\w$]+\(\)\{return [\w$]+\(\)\|\|!\([\w$]+\(\)\|\|process\.platform==="linux"&&globalThis\.__cdbCuWaylandAnnounce===!0\)\|\|![\w$]+\(["'`]4293378213["'`]\)\?!1:""",
+    ),
+    rx(
+      "4h unhide routing",
+      """if\(process\.platform===["`]linux["`]\)\{if\(typeof globalThis\.__linuxExecutor\?\.__unhideApps==="function"\)\{await globalThis\.__linuxExecutor\.__unhideApps\(([\w$]+)\);return\}let\{unhideComputerUseAppsLinux:([\w$]+)\}=[^{}]{0,300}await \2\(\1\);return\}""",
     ),
     lit(
       "5 ensureOsPermissions",
@@ -425,7 +442,7 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 44
+  const EXPECTED_PATCHES = 45
 
   let gateSet = cuPlatformSetName(content)
   if gateSet == "":
@@ -467,6 +484,11 @@ proc apply*(input: string): string =
     # globalThis.__cdbCuSessionCheck at run time. The newline only keeps the
     # embed and the executor code that follows on separate lines/statements.
     let sessionJs = SESSION_CHECK_JS.strip()
+    # The display auto-target helper (which monitor holds the granted apps'
+    # windows) also goes before both executors: each calls
+    # globalThis.__cdbCuDisplayTarget from resolvePrepareCapture and
+    # findWindowDisplays at run time.
+    let displayTargetJs = DISPLAY_TARGET_JS.strip()
     # v1.26832.0 switched minifier: most string literals became backtick
     # template literals (app.on(`ready`)). Accept either quote style here and
     # everywhere else a literal is part of an anchor.
@@ -480,8 +502,8 @@ proc apply*(input: string): string =
       pat,
       proc(m: RegexMatch): string =
         m.captures[0] & "if(process.platform===\"linux\"){" & MODE_PREAMBLE_JS &
-          sessionJs & "\n" & "if(globalThis.__cuKwinMode){" & kwinJs & "}else{" &
-          regularJs & "}" & axJs & "}",
+          sessionJs & "\n" & displayTargetJs & "\n" & "if(globalThis.__cuKwinMode){" &
+          kwinJs & "}else{" & regularJs & "}" & axJs & "}",
     )
     if n >= 1:
       echo &"  [OK] Linux executor: injected session check + regular + kwin-wayland variants ({n} match)"
@@ -922,6 +944,54 @@ proc apply*(input: string): string =
             inc patchesApplied
           else:
             echo "  [FAIL] 4g remote announce Wayland: replacement did not apply"
+
+  # ── Patch 4h: turn-end unhide → the Linux executor's __unhideApps ──────
+  # Upstream lifts what Computer Use hid during a turn through one function
+  # (4.4212.0: `Z9i`, exported as unhideComputerUseApps, in
+  # index.chunk-CvhJZ02X.js; callers: releaseTurnScopedState, the turn result /
+  # leavingRunning paths and the remote-tools path, each behind the
+  # chicagoAutoUnhide setting):
+  #   async function Z9i(e){if(e.length!==0){if(process.platform==="win32"){
+  #   let{unhideComputerUseAppsWin32:t}=await ...require("./<win chunk>")...;
+  #   await t(e);return}if(process.platform==="linux"){
+  #   let{unhideComputerUseAppsLinux:t}=await ...require("./<linux chunk>")...;
+  #   await t(e);return}await(await e3()).apps.unhide(e)}}
+  # Its Linux arm always loads upstream's own Linux executor module, whose
+  # unhide only knows windows upstream's executor hid, so the KWin executor's
+  # capture exclusions were never lifted through it. We put, at the start of
+  # the Linux arm, a call to the active Linux executor's __unhideApps(ids) when
+  # it has that method (js/executor_linux.js: restore-prepare-state); without
+  # it upstream's own Linux arm runs unchanged. Off Linux nothing changes.
+  # (Every turn end also lifts them on the CU lock release, regardless of
+  # chicagoAutoUnhide: js/executor_linux.js __setLockHeld(false).)
+  #
+  # Anchor: the function whose body is `if(P.length!==0){if(process.platform==="win32")
+  # {let{unhideComputerUseAppsWin32:..}=...}if(process.platform==="linux"){
+  # let{unhideComputerUseAppsLinux:X}=...;await X(P);return}`, exactly once (the
+  # export names are the stable part).
+  block:
+    let pat =
+      re"""(async function ([\w$]+)\(([\w$]+)\)\{if\(\3\.length!==0\)\{if\(process\.platform===(["`])win32\4\)\{let\{unhideComputerUseAppsWin32:[\w$]+\}=[^{}]{0,300}\}if\(process\.platform===\4linux\4\)\{)(let\{unhideComputerUseAppsLinux:([\w$]+)\}=[^{}]{0,300}await \6\(\3\);return\})"""
+    let hits = countMatches(content, pat)
+    if hits != 1:
+      echo &"  [FAIL] 4h unhide routing: {hits} matches of upstream's unhide function, expected 1"
+    else:
+      let fnName = content.find(pat).get().captures[1]
+      let n = replaceFirst(
+        content,
+        pat,
+        proc(m: RegexMatch): string =
+          m.captures[0] &
+            "if(typeof globalThis.__linuxExecutor?.__unhideApps===\"function\"){" &
+            "await globalThis.__linuxExecutor.__unhideApps(" & m.captures[2] &
+            ");return}" & m.captures[4],
+      )
+      if n == 1:
+        echo &"  [OK] 4h unhide routing: {fnName}'s Linux arm calls the Linux executor's __unhideApps when present (1 match)"
+        inc changes, n
+        inc patchesApplied
+      else:
+        echo "  [FAIL] 4h unhide routing: replacement did not apply"
 
   # ── Patch 5: ensureOsPermissions → skip TCC on Linux ───────────────────
   block:

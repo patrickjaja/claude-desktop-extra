@@ -296,12 +296,16 @@ function reset() {
 // changes and how to undo it.
 const RULE_LINE = readFileSync(RULE_FILE, "utf8").split("\n").filter((l) => l && l[0] !== "#").join("\n");
 const APPLY = "udevadm control --reload\nudevadm trigger --action=change --subsystem-match=tpmrm";
-function pkAct(verb) {
+const NOOP_ENABLE = "Already enabled - the rule link is installed";
+const NOOP_DISABLE = "Nothing to remove - no rule link from this package is installed";
+const NOOP_FOREIGN = "Another file is installed at " + LINK + " - it is not replaced";
+function pkAct(verb, off) {
   const a = { kind: "pkexec", command: PKEXEC_FAKE + " " + HELPER_FAKE + " " + verb, link: LINK, apply: APPLY };
   if (verb === "enable") {
     Object.assign(a, { target: SRC, rule: RULE_LINE, undo: PKEXEC_FAKE + " " + HELPER_FAKE + " disable",
       undoManual: "sudo rm -f " + LINK + " && sudo udevadm control --reload" });
   }
+  if (off) a.disabled = off;
   return J(a);
 }
 
@@ -368,14 +372,14 @@ section("TPM row");
 {
   reset(); setDev("absent");
   let r = await read();
-  ok(r.ok && r.rows.tpm.status === "na" && r.rows.tpm.fact === "no TPM 2.0 resource manager" && r.actions.tpmEnable === null,
+  ok(r.ok && r.rows.tpm.status === "na" && r.rows.tpm.fact === "no TPM 2.0 resource manager" && r.actions.tpmEnable === null && r.actions.tpmDisable === null,
     "no device node: Not available, nothing offered", J(r.rows && r.rows.tpm));
   ok(STATUSES.indexOf(r.rows.desktop.status) >= 0 && typeof r.rows.cloud.note === "string" && r.rows.tpm.note.length > 20,
     "rows carry status, fact and note");
 
   reset(); setDev("ok");
   r = await read();
-  ok(r.rows.tpm.status === "ok" && /accessible$/.test(r.rows.tpm.fact) && r.actions.restart === false, "accessible, start unknown: OK, no restart", J(r.rows.tpm));
+  ok(r.rows.tpm.status === "ok" && /accessible through the \S+ group$/.test(r.rows.tpm.fact) && r.actions.restart === false, "accessible (in the device group), start unknown: OK, no restart", J(r.rows.tpm));
   globalThis.__cdbTpmAtStart = Object.freeze({ state: "ok", code: null });
   r = await read();
   ok(r.rows.tpm.status === "ok" && r.actions.restart === false, "accessible now and at start: OK");
@@ -388,16 +392,16 @@ section("TPM row");
   r = await read();
   ok(r.rows.tpm.status === "action" && /^present, no access for this user \(.+:.+ 40\)$/.test(r.rows.tpm.fact),
     "no access, no rule: owner:group mode in the fact line", r.rows.tpm.fact);
-  ok(J(r.actions.tpmEnable) === pkAct("enable") && r.actions.tpmDisable === null && r.actions.tssCommand === null,
-    "every gate holds: Enable by pkexec, with its exact command, link, rule, udev reload and undo; no Disable", J(r.actions));
+  ok(J(r.actions.tpmEnable) === pkAct("enable") && J(r.actions.tpmDisable) === pkAct("disable", NOOP_DISABLE) && r.actions.tssCommand === null,
+    "every gate holds: Enable by pkexec, with its exact command, link, rule, udev reload and undo; Disable shown but disabled", J(r.actions));
   ok(/^SUBSYSTEM=="tpmrm", .*TAG\+="uaccess"$/.test(RULE_LINE) && r.actions.tpmEnable.rule === RULE_LINE,
     "the rule shown is the shipped rule's one active line", J(r.actions.tpmEnable && r.actions.tpmEnable.rule));
 
   setLink("ours");
   r = await read();
-  ok(r.rows.tpm.fact === "rule enabled, but this session got no access" && r.actions.tpmEnable === null &&
+  ok(r.rows.tpm.fact === "rule enabled, but this session got no access" && J(r.actions.tpmEnable) === pkAct("enable", NOOP_ENABLE) &&
     /^sudo usermod -aG \S+ "\$USER"$/.test(r.actions.tssCommand || "") && J(r.actions.tpmDisable) === pkAct("disable"),
-    "our link, still no access: the tss command, and Disable", J(r.actions));
+    "our link, still no access: the tss command, Disable live, Enable shown but disabled", J(r.actions));
   // Only where the package is not installed: on a host that has it, that
   // path exists and the link is not stale (the "ours" case above covers it).
   if (existsSync("/usr/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules")) {
@@ -414,22 +418,74 @@ section("TPM row");
   for (const st of ["nixbad", "tmp"]) {
     setLink(st);
     r = await read();
-    ok(/another file is installed at /.test(r.rows.tpm.fact) && r.actions.tpmEnable === null && r.actions.tpmDisable === null,
-      "a link to " + (st === "tmp" ? "a /tmp tree" : "a /nix/store path without the hash-name shape") + ": foreign, never Enable or Disable", J(r));
+    ok(/another file is installed at /.test(r.rows.tpm.fact) && r.actions.tpmEnable.disabled === NOOP_FOREIGN && r.actions.tpmDisable.disabled === NOOP_DISABLE,
+      "a link to " + (st === "tmp" ? "a /tmp tree" : "a /nix/store path without the hash-name shape") + ": foreign, Enable and Disable shown but both disabled", J(r));
   }
   setLink("foreign");
   r = await read();
   ok(/^present, no access for this user .* - another file is installed at /.test(r.rows.tpm.fact) &&
-    r.actions.tpmEnable === null && r.actions.tpmDisable === null && !!r.actions.tssCommand,
-    "a foreign symlink: never Enable or Disable by button, the tss command instead", J(r.actions));
+    r.actions.tpmEnable.disabled === NOOP_FOREIGN && r.actions.tpmDisable.disabled === NOOP_DISABLE && !!r.actions.tssCommand,
+    "a foreign symlink: both shown but disabled, the tss command too", J(r.actions));
   setLink("file");
   r = await read();
-  ok(r.rows.tpm.fact === "rule enabled, but this session got no access" && r.actions.tpmDisable === null && r.actions.tpmEnable === null,
-    "a regular file at the link path (outside an AppImage): no Disable", J(r.actions));
+  ok(r.rows.tpm.fact === "rule enabled, but this session got no access" && r.actions.tpmDisable.disabled === NOOP_DISABLE && r.actions.tpmEnable.disabled === NOOP_ENABLE,
+    "a regular file at the link path (outside an AppImage): both shown, both disabled", J(r.actions));
   process.env.CLAUDE_APPIMAGE_PATH = "/home/u/Claude.AppImage";
   r = await read();
   ok(r.actions.tpmDisable && r.actions.tpmDisable.kind === "command" && /^sudo rm -f /.test(r.actions.tpmDisable.text) &&
-    r.actions.tpmDisable.text.indexOf(LINK) >= 0, "AppImage with its own copied file: Disable is the sudo rm command", J(r.actions.tpmDisable));
+    r.actions.tpmDisable.text.indexOf(LINK) >= 0 && !r.actions.tpmDisable.disabled, "AppImage with its own copied file: Disable is the sudo rm command, live", J(r.actions.tpmDisable));
+}
+
+section("TPM row matrix: both actions always, a no-op one disabled with its reason");
+{
+  const realGroups = process.getgroups, realEgid = process.getegid;
+  const withGroups = async (gids, fn) => {
+    process.getgroups = () => gids; process.getegid = () => gids[0] === undefined ? -1 : gids[0];
+    try { return await fn(); } finally { process.getgroups = realGroups; process.getegid = realEgid; }
+  };
+  // state -> { dev, link, groups ("in" | "out"), fact regex, status, enOff, disOff }
+  const ACL = /^accessible for this session - no rule installed, access ends when you log out$/;
+  const states = [
+    { n: "denied, no link", dev: "denied", link: "absent", st: "action", fact: /^present, no access for this user/, en: null, dis: NOOP_DISABLE },
+    { n: "ok + link ours", dev: "ok", link: "ours", st: "ok", fact: /accessible - rule enabled$/, en: NOOP_ENABLE, dis: null },
+    { n: "ok + no link + not in group (ACL leftover)", dev: "ok", link: "absent", groups: "out", st: "action", fact: ACL, en: null, dis: NOOP_DISABLE },
+    { n: "ok + no link + in group", dev: "ok", link: "absent", groups: "in", st: "ok", fact: /accessible through the \S+ group$/, en: null, dis: NOOP_DISABLE },
+    { n: "ok + stale link", dev: "ok", link: "stale", groups: "out", st: "action", fact: ACL, en: null, dis: null },
+    { n: "ok + foreign file", dev: "ok", link: "foreign", groups: "out", st: "action", fact: ACL, en: NOOP_FOREIGN, dis: NOOP_DISABLE },
+    { n: "denied + stale link", dev: "denied", link: "stale", st: "action", fact: /^rule link points at a removed install$/, en: null, dis: null },
+    { n: "denied + foreign file", dev: "denied", link: "foreign", st: "action", fact: /another file is installed at /, en: NOOP_FOREIGN, dis: NOOP_DISABLE }
+  ];
+  const envs = [
+    { n: "pkexec button", prep() {}, kinds: ["pkexec", "pkexec"] },
+    { n: "command fallback (untrusted helper)", opts: { trusted: false }, prep() {}, kinds: ["command", "command"] },
+    { n: "NixOS", prep() { writeFileSync(NIXOS, ""); }, kinds: ["nixos", "command"] },
+    { n: "AppImage", prep() { process.env.CLAUDE_APPIMAGE_PATH = "/home/u/Claude.AppImage"; }, kinds: ["command", "command"] }
+  ];
+  for (const e of envs) {
+    const mod = e.opts ? load(e.opts) : m;
+    for (const c of states) {
+      reset(); setDev(c.dev); setLink(c.link); e.prep();
+      const r = await withGroups(c.groups === "in" ? [statSync(DEV).gid] : [4242424], () => mod.call("cdb-cu-status:read"));
+      const t = r.actions, tag = e.n + " / " + c.n + ": ";
+      ok(r.rows.tpm.status === c.st && c.fact.test(r.rows.tpm.fact), tag + "row " + c.st + " / " + r.rows.tpm.fact, J(r.rows.tpm));
+      ok(!!t.tpmEnable && !!t.tpmDisable && t.tpmEnable.kind === e.kinds[0] && t.tpmDisable.kind === e.kinds[1],
+        tag + "both actions present (" + e.kinds.join("+") + ")", J([t.tpmEnable && t.tpmEnable.kind, t.tpmDisable && t.tpmDisable.kind]));
+      const wantEn = c.en;
+      ok((t.tpmEnable.disabled || null) === wantEn, tag + "Enable " + (wantEn ? "disabled: " + wantEn : "active"), J(t.tpmEnable.disabled));
+      ok((t.tpmDisable.disabled || null) === c.dis, tag + "Disable " + (c.dis ? "disabled: " + c.dis : "active"), J(t.tpmDisable.disabled));
+      ok(typeof (t.tpmEnable.command || t.tpmEnable.text) === "string" && typeof (t.tpmDisable.command || t.tpmDisable.text) === "string",
+        tag + "both carry their command text");
+      // Main refuses the no-op without running anything (pkexec env only runs anything at all).
+      clearLog();
+      for (const [verb, off] of [["enable", c.en], ["disable", c.dis]]) {
+        if (!off) continue;
+        const x = await withGroups([4242424], () => mod.call("cdb-cu-status:tpm-" + verb));
+        ok(x.ok === false && x.code === "nothing-to-do" && x.error === off && x.command === null && log() === "" && DIALOG.calls.length === 0,
+          tag + verb + " refused as nothing-to-do, no dialog, no pkexec", J(x));
+      }
+    }
+  }
+  reset();
 }
 
 section("Enable gating: where pkexec is not offered");
@@ -550,15 +606,25 @@ section("Enable / Disable: pkexec and exit mapping");
   for (const st of ["absent", "foreign", "file"]) {
     reset(); setLink(st);
     r = await m.call("cdb-cu-status:tpm-disable");
-    ok(r.ok === false && r.code === "not-allowed" && log() === "", "disable with " + st + " at the link path: refused, nothing runs", J(r));
+    ok(r.ok === false && r.code === "nothing-to-do" && r.error === NOOP_DISABLE && r.command === null && log() === "",
+      "disable with " + st + " at the link path: refused as nothing to do, pkexec never runs", J(r));
   }
   reset(); process.env.CLAUDE_APPIMAGE_PATH = "/x.AppImage";
   r = await m.call("cdb-cu-status:tpm-enable");
   ok(r.ok === false && r.code === "not-allowed" && /sudo tee/.test(r.command || "") && log() === "",
     "enable inside an AppImage: refused with the command, pkexec never runs", J(r));
+  reset(); setDev("ok"); setLink("ours");
+  r = await m.call("cdb-cu-status:tpm-enable");
+  ok(r.ok === false && r.code === "nothing-to-do" && r.error === NOOP_ENABLE && r.command === null && log() === "",
+    "enable with our link installed: refused as nothing to do, pkexec never runs", J(r));
+  r = await m.call("cdb-cu-status:tpm-enable");
+  ok(r.code === "nothing-to-do", "and a repeat is again nothing-to-do, not the cooldown (a no-op never arms it)", J(r));
+  reset(); setDev("ok"); setLink("foreign");
+  r = await m.call("cdb-cu-status:tpm-enable");
+  ok(r.ok === false && r.code === "nothing-to-do" && log() === "", "enable over a foreign file: refused, nothing runs", J(r));
   reset(); setDev("ok");
   r = await m.call("cdb-cu-status:tpm-enable");
-  ok(r.ok === false && r.code === "not-allowed" && log() === "", "enable when the TPM is already accessible: refused", J(r));
+  ok(r.ok === true && /pkexec .* enable/.test(log()), "enable with the TPM accessible but no rule link (seat ACL leftover or group): allowed - it installs the rule", J(r));
 }
 
 section("Enable consent: main's confirmation dialog, then pkexec");
@@ -599,9 +665,9 @@ section("Enable consent: main's confirmation dialog, then pkexec");
   reset(); setLink("ours"); mode("helper", "disabled");
   r = await m.call("cdb-cu-status:tpm-disable");
   ok(r.ok === true && DIALOG.calls.length === 0 && /pkexec .* disable/.test(log()), "Disable: no dialog, pkexec directly", J(r));
-  reset(); setDev("ok");
+  reset(); setDev("ok"); setLink("ours");
   r = await m.call("cdb-cu-status:tpm-enable");
-  ok(r.code === "not-allowed" && DIALOG.calls.length === 0, "a refused state never shows the dialog", J(r));
+  ok(r.code === "nothing-to-do" && DIALOG.calls.length === 0, "a refused state never shows the dialog", J(r));
   reset(); mode("pkexec", "slow");
   const p1 = m.call("cdb-cu-status:tpm-enable");
   const p2 = await m.call("cdb-cu-status:tpm-enable");
@@ -638,11 +704,11 @@ section("Enable rate limit: 30 s after a declined or failed Enable");
   const r3 = await held3.call("cdb-cu-status:tpm-enable");
   ok(r.code === "helper-5" && r3.code === "cooldown", "so does a helper error", J([r, r3]));
   const held4 = load({ cooldownMs: 30000 });
-  reset(); setDev("ok");
+  reset(); setDev("ok"); setLink("ours");
   r = await held4.call("cdb-cu-status:tpm-enable");
   reset();
   const r4 = await held4.call("cdb-cu-status:tpm-enable");
-  ok(r.code === "not-allowed" && r4.ok === true, "a refused state (no prompt shown) does not", J([r, r4]));
+  ok(r.code === "nothing-to-do" && r4.ok === true, "a refused state (no prompt shown) does not", J([r, r4]));
   reset();
   const r5 = await held4.call("cdb-cu-status:tpm-enable");
   ok(r5.ok === true && DIALOG.calls.length === 1, "nor does a successful Enable", J(r5));
