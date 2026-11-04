@@ -92,6 +92,12 @@ ok(calls[1][1][0] === "github.com/my-app[bot]" && calls[2][1] === null, "bridge 
   ok(m.agent === false && m.agentName === "12" && m.agentDescription === "" && m.agentPrompt === "p" && !("extra" in m),
      "model-set forwards the sub-agent fields as strings and a boolean, nothing else");
 }
+{
+  calls.length = 0;
+  api.autoFixMergeReadyRead(); api.autoFixMergeReadySet("yes"); api.autoFixMergeReadySet(true);
+  ok(JSON.stringify(calls) === '[["cdb-autofix-merge-ready:read"],["cdb-autofix-merge-ready:set",false],["cdb-autofix-merge-ready:set",true]]',
+     "the Auto-fix ready-to-merge methods hit their fixed channels with a boolean only: " + JSON.stringify(calls));
+}
 ok(typeof api.invoke !== "function" && typeof api.send !== "function", "no generic passthrough to arbitrary channels");
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -329,6 +329,27 @@
     };
   }
 
+  // --- Auto-fix: wake the session when its PR is ready to merge ------------
+  // Same shape as the tray switch above. The wrapper that
+  // patches/community/add_feature_autofix_merge_ready.nim puts around
+  // AutoFixEngine.checkSession asks globalThis.__cdbAutoFixMergeReadyEnabled()
+  // on every sweep (60 s focused, 5 min unfocused, per Auto-fix PR); only true
+  // runs the readiness check. Off is the default and the absence of the key.
+  // No cache: each call reads the two small settings files, so a flip applies
+  // from the next sweep.
+  var __cdbEx_AFMR_KEY = "autoFixMergeReady";
+  function __cdbEx_afmrPref() {
+    var p = __cdbEx_paths();
+    var jsonc = __cdbEx_readFileKey(p.jsonc, __cdbEx_AFMR_KEY);
+    if (typeof jsonc === "boolean") return { value: jsonc, locked: true };
+    return { value: __cdbEx_readFileKey(p.json, __cdbEx_AFMR_KEY) === true, locked: false };
+  }
+  if (process.platform === "linux") {
+    globalThis.__cdbAutoFixMergeReadyEnabled = function () {
+      try { return __cdbEx_afmrPref().value === true; } catch (e) { return false; }
+    };
+  }
+
   // --- Computer Use: read app controls through AT-SPI (issue #306) ---------
   // Same shape as the tray switch above. The Computer Use patch asks
   // globalThis.__cdbCuAxElements?.() on every call that could involve the
@@ -3082,6 +3103,28 @@
       return { ok: true, enabled: enabled, path: res.path, refreshed: refreshed };
     },
 
+    // Wake Auto-fix sessions when a PR is ready to merge. Pref and reader
+    // above; the sweep wrapper reads it live, so there is nothing to refresh.
+    "cdb-autofix-merge-ready:read": function () {
+      var s = __cdbEx_afmrPref();
+      return { ok: true, enabled: s.value, lockedByJsonc: s.locked ? true : null };
+    },
+
+    "cdb-autofix-merge-ready:set": function (enabled) {
+      if (typeof enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
+      if (__cdbEx_afmrPref().locked) {
+        return { ok: false, lockedByJsonc: true,
+          error: __cdbEx_AFMR_KEY + " is set in claude-desktop-extra.jsonc - edit that file to change it" };
+      }
+      var res = __cdbEx_writeCfg(function (cfg) {
+        if (enabled) cfg[__cdbEx_AFMR_KEY] = true;
+        else delete cfg[__cdbEx_AFMR_KEY];
+        return enabled;
+      });
+      if (!res.ok) return res;
+      return { ok: true, enabled: enabled, path: res.path };
+    },
+
     // Computer Use: read app controls (accessibility). Pref and reader above.
     "cdb-cu-ax:read": function () {
       var s = __cdbEx_cuAxPref();
@@ -3643,6 +3686,7 @@
   // The background-display channels are Linux-only: on the downstream Windows
   // build they answer a plain refusal instead of touching /proc or X sockets.
   // The tray switch too: the glyph it picks is a Linux icon.
+  // And the Auto-fix ready-to-merge wake: its patch only runs on Linux.
   if (process.platform !== "linux") {
     Object.keys(__cdbEx_handlers).forEach(function (ch) {
       if (ch.indexOf("cdb-cubg:") === 0) {
@@ -3657,6 +3701,8 @@
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "the Auto-fix author option is Linux only" }; };
       } else if (ch.indexOf("cdb-tray:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "the tray icon switch is Linux only" }; };
+      } else if (ch.indexOf("cdb-autofix-merge-ready:") === 0) {
+        __cdbEx_handlers[ch] = function () { return { ok: false, error: "the Auto-fix ready-to-merge wake is Linux only" }; };
       }
     });
   }

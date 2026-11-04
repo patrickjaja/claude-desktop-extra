@@ -2893,6 +2893,38 @@
     });
   }
 
+  // --- Code: wake Auto-fix sessions when a PR is ready to merge ------------
+  // Off by default. Main side: cdb-autofix-merge-ready:* in
+  // js/extra_settings_main.js; the sweep wrapper in
+  // patches/community/add_feature_autofix_merge_ready.nim reads it on every
+  // sweep, so it applies live.
+  function renderAutoFixMergeReadyRow(panel) {
+    return renderToggleRow(panel, {
+      section: "Code",
+      title: "Wake Auto-fix sessions when a PR is ready to merge",
+      note: "For a PR with Auto-fix on, the Code session gets a short notice when GitHub reports it " +
+        "ready to merge (open, checks green, reviews done, no conflicts); Claude reports it and waits for " +
+        "you - it never merges or turns on auto-merge. Costs one GitHub read per Auto-fix PR on each " +
+        "Auto-fix sweep (every minute while the app is focused) and one model turn per notice. Applies live.",
+      ariaLabel: "wake Auto-fix sessions when a PR is ready to merge",
+      read: "autoFixMergeReadyRead",
+      write: "autoFixMergeReadySet",
+      lockFile: "claude-desktop-extra.jsonc",
+      // Opt-in: only an explicit true is on.
+      isOn: function (res) { return res.enabled === true; },
+      describe: function (on) {
+        return on ? "on - ready-to-merge notices for Auto-fix PRs" : "off - Auto-fix as shipped";
+      },
+      writeArg: function (next) { return next; },
+      toast: function (next) {
+        return next
+          ? "Auto-fix sessions are told when their PR is ready to merge"
+          : "Auto-fix no longer sends ready-to-merge notices";
+      },
+      errorPrefix: "Could not change the setting: "
+    });
+  }
+
   // --- Computer Use: ask before controlling an app --------------------------
   // On by default (main answers enabled unless the key is false). Main side:
   // cdb-cu-ask:* in js/extra_settings_main.js; the tool side js/cu_consent.js.
@@ -3287,6 +3319,7 @@
     renderAllowNonAnthropicModelsRow,
     renderAutoFixAuthorRow,
     renderTranscriptLimitsRow,
+    renderAutoFixMergeReadyRow,
     renderWindowControlsRow,
     renderNativeTitlebarRow,
     renderWindowTransparencyRow,

@@ -478,6 +478,33 @@ async function featuresPanel(featuresItem) {
        "...and so does its toast, from the main side's pendingRestart: " + tlToast());
   }
 
+  // --- Wake Auto-fix sessions when a PR is ready to merge: opt-in, live, says its cost
+  {
+    const afSel = '.cdbx-switch[aria-label="wake Auto-fix sessions when a PR is ready to merge"]';
+    const af = panel.querySelector(afSel);
+    ok(!!af, "renders the Auto-fix ready-to-merge switch");
+    if (af) {
+      const afRow = af.closest(".cdbx-row");
+      const afNote = afRow.querySelector(".cdbx-note").textContent;
+      ok(afRow.querySelector(".cdbx-id").textContent === "Wake Auto-fix sessions when a PR is ready to merge",
+         "titled Wake Auto-fix sessions when a PR is ready to merge");
+      ok(afRow.previousElementSibling === null && afRow.parentElement.previousElementSibling.textContent === "Code",
+         "under its own Code heading");
+      ok(af.getAttribute("aria-checked") === "false" && !af.disabled, "off by default (opt-in), not locked");
+      ok(/one GitHub read per Auto-fix PR/.test(afNote) && /one model turn per notice/.test(afNote),
+         "the note says what it costs: " + afNote);
+      ok(/never merges/.test(afNote) && /Applies live/.test(afNote), "the note says it never merges and applies live");
+      af.click();
+      await sleep(60);
+      ok((window.__afmrCalls || []).length === 1 && window.__afmrCalls[0] === true,
+         "clicking it calls autoFixMergeReadySet(true) exactly once: " + JSON.stringify(window.__afmrCalls));
+      ok(af.getAttribute("aria-checked") === "true", "the switch reflects the write");
+      af.click();
+      await sleep(60);
+      ok(af.getAttribute("aria-checked") === "false", "and flips back");
+    }
+  }
+
   // --- non-Anthropic gateway models: read at startup, so the same per-row
   // Restart now as every other restart row, shown exactly while the switch and
   // the running app (activeNow) disagree.
@@ -3190,6 +3217,9 @@ window.cdbExtra = {
     window.__diffViewsCalls.push(enabled);
     return Promise.resolve({ ok: true, enabled: enabled, path: "/tmp/diff-views.json", nudged: true });
   },
+  // Wake Auto-fix sessions when a PR is ready to merge: opt-in, live.
+  autoFixMergeReadyRead: function () { return Promise.resolve(window.__afmrState || { ok: true, enabled: false, lockedByJsonc: null }); },
+  autoFixMergeReadySet: function (enabled) { window.__afmrCalls = (window.__afmrCalls || []).concat([enabled]); return Promise.resolve({ ok: true, enabled: enabled, path: "/tmp/afmr.json" }); },
   pickerRead: function () { return Promise.resolve(window.__pickerState); },
   pickerSet: function (enabled) {
     window.__pickerCalls.push(enabled);

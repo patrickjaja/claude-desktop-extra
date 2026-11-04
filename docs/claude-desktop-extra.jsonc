@@ -63,6 +63,15 @@
   // "transcriptLimitsMainMiB": 512,
   // "transcriptLimitsSubagentMiB": 384,
 
+  // autoFixMergeReady: for a PR with Auto-fix on, wake its Code session with a
+  // short notice when GitHub reports the PR ready to merge (open, not draft, clean,
+  // checks green, reviews done). Informational only: Claude reports it and waits;
+  // nothing is merged and auto-merge is never turned on. Costs one GitHub read per
+  // Auto-fix PR per Auto-fix sweep and one model turn per notice. Off by default;
+  // applies live. Settings -> Extra -> Community Features has a switch for this; a
+  // value set HERE wins, so that switch shows itself as locked.
+  // "autoFixMergeReady": true,
+
   // allowNonAnthropicModels: keep a 3P gateway's non-Anthropic models (DeepSeek, Qwen,
   // GLM, ...) in the model list instead of dropping them. Per mode - set it in the
   // 3P config dir (~/.config/Claude-3p). Needs a restart.
