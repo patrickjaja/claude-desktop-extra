@@ -96,10 +96,13 @@
       return ipcRenderer.invoke("cdb-tray:set", enabled === true);
     },
 
-    sessionStartPermissionRead: function () {
+    sessionStartAlwaysAllowRead: function () {
       return ipcRenderer.invoke("cdb-session-start:read");
     },
-    sessionStartPermissionRevoke: function () {
+    sessionStartAlwaysAllowSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-session-start:set", enabled === true);
+    },
+    sessionStartAlwaysAllowForget: function () {
       return ipcRenderer.invoke("cdb-session-start:revoke");
     },
 

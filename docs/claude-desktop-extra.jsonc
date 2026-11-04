@@ -72,6 +72,15 @@
   // value set HERE wins, so that switch shows itself as locked.
   // "autoFixMergeReady": true,
 
+  // sessionStartAlwaysAllow: when Claude asks to start another Code session, ask in
+  // a native dialog (Deny / Allow once / Allow always) instead of the in-chat card.
+  // Allow always is remembered for that project and its default destination only;
+  // nothing inside the new session is approved by it. Off by default (= the in-chat
+  // card); turning it off in Settings also forgets the remembered approvals. Applies
+  // live. Settings -> Extra -> Community Features has a switch for this; a value set
+  // HERE wins, so that switch shows itself as locked.
+  // "sessionStartAlwaysAllow": true,
+
   // allowNonAnthropicModels: keep a 3P gateway's non-Anthropic models (DeepSeek, Qwen,
   // GLM, ...) in the model list instead of dropping them. Per mode - set it in the
   // 3P config dir (~/.config/Claude-3p). Needs a restart.

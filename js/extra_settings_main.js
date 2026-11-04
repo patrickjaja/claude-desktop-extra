@@ -91,25 +91,77 @@
     return out;
   }
 
-  // This capability is granted only by the main-process native approval dialog.
-  // The remote settings page may read or revoke it, never grant it.
-  var __cdbEx_startRevision = 0;
-  if (process.platform === "linux") globalThis.__cdbSessionStartPermission = {
-    get revision() { return __cdbEx_startRevision; },
-    read: function () {
-      return __cdbEx_readFileKey(__cdbEx_paths().json, "alwaysAllowSessionStarts") === true;
-    },
-    grant: function () {
-      var result = __cdbEx_writeCfg(function (cfg) { cfg.alwaysAllowSessionStarts = true; });
-      if (result.ok) __cdbEx_startRevision++;
-      return result;
-    },
-    revoke: function () {
-      var result = __cdbEx_writeCfg(function (cfg) { delete cfg.alwaysAllowSessionStarts; });
-      if (result.ok) __cdbEx_startRevision++;
-      return result;
-    }
-  };
+  // --- Native dialog with "Allow always" for starting other sessions -----
+  // Opt-in (sessionStartAlwaysAllow, off by default, .jsonc wins and locks it
+  // like the switches below). patches/community/add_feature_session_start_always_allow.nim
+  // asks globalThis.__cdbSessionStartDialogEnabled() on every eligible
+  // start_session ask; false leaves upstream's in-chat card alone.
+  // Remembered approvals ("Allow always") live under sessionStartGrants in the
+  // .json only: { "<project folder>": { grantedAt } }, capped. Only the
+  // main-process dialog adds one; the remote settings page can read the count,
+  // forget them all, or flip the switch (off also forgets them). A stored grant
+  // is ignored while the switch is off.
+  var __cdbEx_SSA_KEY = "sessionStartAlwaysAllow";
+  var __cdbEx_SSA_GRANTS = "sessionStartGrants";
+  var __cdbEx_SSA_MAX = 50;
+  var __cdbEx_ssaRevision = 0;
+  function __cdbEx_ssaPref() {
+    var p = __cdbEx_paths();
+    var jsonc = __cdbEx_readFileKey(p.jsonc, __cdbEx_SSA_KEY);
+    if (typeof jsonc === "boolean") return { value: jsonc, locked: true };
+    return { value: __cdbEx_readFileKey(p.json, __cdbEx_SSA_KEY) === true, locked: false };
+  }
+  function __cdbEx_ssaEnabled() {
+    try { return __cdbEx_ssaPref().value === true; } catch (e) { return false; }
+  }
+  // Valid entries only: an absolute project folder -> { grantedAt: number }.
+  function __cdbEx_ssaClean(raw) {
+    var out = {};
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+    Object.keys(raw).forEach(function (k) {
+      var v = raw[k];
+      if (typeof k === "string" && k.charAt(0) === "/" && k.length <= 4096 && v && typeof v === "object" &&
+          !Array.isArray(v) && typeof v.grantedAt === "number" && isFinite(v.grantedAt)) {
+        out[k] = { grantedAt: v.grantedAt };
+      }
+    });
+    return out;
+  }
+  function __cdbEx_ssaGrants() {
+    try { return __cdbEx_ssaClean(__cdbEx_readFileKey(__cdbEx_paths().json, __cdbEx_SSA_GRANTS)); } catch (e) { return {}; }
+  }
+  function __cdbEx_ssaForget() {
+    var res = __cdbEx_writeCfg(function (cfg) { delete cfg[__cdbEx_SSA_GRANTS]; });
+    __cdbEx_ssaRevision++;
+    return res;
+  }
+  if (process.platform === "linux") {
+    globalThis.__cdbSessionStartDialogEnabled = __cdbEx_ssaEnabled;
+    globalThis.__cdbSessionStartPermission = {
+      get revision() { return __cdbEx_ssaRevision; },
+      has: function (key) {
+        if (typeof key !== "string" || !__cdbEx_ssaEnabled()) return false;
+        return Object.prototype.hasOwnProperty.call(__cdbEx_ssaGrants(), key);
+      },
+      count: function () { return Object.keys(__cdbEx_ssaGrants()).length; },
+      grant: function (key) {
+        if (typeof key !== "string" || key.charAt(0) !== "/" || key.length > 4096) return { ok: false, error: "invalid project key" };
+        if (!__cdbEx_ssaEnabled()) return { ok: false, error: __cdbEx_SSA_KEY + " is off" };
+        var res = __cdbEx_writeCfg(function (cfg) {
+          var grants = __cdbEx_ssaClean(cfg[__cdbEx_SSA_GRANTS]);
+          grants[key] = { grantedAt: Date.now() };
+          var keys = Object.keys(grants).sort(function (a, b) { return grants[b].grantedAt - grants[a].grantedAt; });
+          var kept = {};
+          keys.slice(0, __cdbEx_SSA_MAX).forEach(function (k) { kept[k] = grants[k]; });
+          if (!Object.prototype.hasOwnProperty.call(kept, key)) kept[key] = grants[key];
+          cfg[__cdbEx_SSA_GRANTS] = kept;
+        });
+        if (res.ok) __cdbEx_ssaRevision++;
+        return res;
+      },
+      forget: __cdbEx_ssaForget
+    };
+  }
 
   // --- theme swatches -------------------------------------------------------
   // Five tokens per variant, each with fallbacks, reduced to CSS colors here so
@@ -3043,15 +3095,33 @@
       return { ok: true, paths: __cdbEx_paths() };
     },
 
+    // Native dialog with "Allow always" for starting other sessions. Pref,
+    // grants and the predicate above; the broker hook reads them live.
     "cdb-session-start:read": function () {
-      var store = globalThis.__cdbSessionStartPermission;
-      return store ? { ok: true, enabled: store.read() } : { ok: false, error: "Session-start permissions are Linux only" };
+      var s = __cdbEx_ssaPref();
+      return { ok: true, enabled: s.value, lockedByJsonc: s.locked ? true : null,
+        grants: Object.keys(__cdbEx_ssaGrants()).length };
+    },
+    "cdb-session-start:set": function (enabled) {
+      if (typeof enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
+      if (__cdbEx_ssaPref().locked) {
+        return { ok: false, lockedByJsonc: true,
+          error: __cdbEx_SSA_KEY + " is set in claude-desktop-extra.jsonc - edit that file to change it" };
+      }
+      // Off forgets every remembered approval in the same write.
+      var res = __cdbEx_writeCfg(function (cfg) {
+        if (enabled) cfg[__cdbEx_SSA_KEY] = true;
+        else { delete cfg[__cdbEx_SSA_KEY]; delete cfg[__cdbEx_SSA_GRANTS]; }
+      });
+      __cdbEx_ssaRevision++;
+      if (!res.ok) return res;
+      return { ok: true, enabled: enabled, path: res.path, grants: Object.keys(__cdbEx_ssaGrants()).length };
     },
     "cdb-session-start:revoke": function () {
-      var store = globalThis.__cdbSessionStartPermission;
-      if (!store) return { ok: false, error: "Session-start permissions are Linux only" };
-      var result = store.revoke();
-      return result.ok ? { ok: true, enabled: false } : result;
+      var res = __cdbEx_ssaForget();
+      if (!res.ok) return res;
+      var s = __cdbEx_ssaPref();
+      return { ok: true, enabled: s.value, lockedByJsonc: s.locked ? true : null, grants: 0 };
     },
 
     // Theme picker (Ctrl+Shift+T). The window and the hotkey live in
@@ -3717,7 +3787,8 @@
   // The background-display channels are Linux-only: on the downstream Windows
   // build they answer a plain refusal instead of touching /proc or X sockets.
   // The tray switch too: the glyph it picks is a Linux icon.
-  // And the Auto-fix ready-to-merge wake: its patch only runs on Linux.
+  // And the Auto-fix ready-to-merge wake and the session-start dialog: their
+  // patches only run on Linux.
   if (process.platform !== "linux") {
     Object.keys(__cdbEx_handlers).forEach(function (ch) {
       if (ch.indexOf("cdb-cubg:") === 0) {
@@ -3734,6 +3805,8 @@
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "the tray icon switch is Linux only" }; };
       } else if (ch.indexOf("cdb-autofix-merge-ready:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "the Auto-fix ready-to-merge wake is Linux only" }; };
+      } else if (ch.indexOf("cdb-session-start:") === 0) {
+        __cdbEx_handlers[ch] = function () { return { ok: false, error: "the session-start dialog is Linux only" }; };
       }
     });
   }

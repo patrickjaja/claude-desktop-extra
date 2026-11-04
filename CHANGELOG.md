@@ -2,11 +2,14 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-05
+
+### A native dialog with "Allow always" for starting other sessions (thanks @alexx-ftw, #312)
+
+- **New switch Settings -> Extra -> Community Features -> "Native dialog with 'Allow always' for starting other sessions"** (off by default = upstream's in-chat card, applies live). When Claude asks to start another Code session, a dialog on the app window offers Deny (the default), Allow once and Allow always, and shows the session title, project, destination, permission mode, model and the start of the prompt Claude wrote.
+- **Allow always is remembered for that project and its default destination only**: another folder, host, environment, preset, the cloud or a higher permission mode still asks, and nothing inside the new session is approved by it. The row shows how many projects are remembered and forgets them; switching it off forgets them too. [Details](docs/session-start-permission.md)
+
 ## 2026-11-04
-
-### Remember session-start approval
-
-- **Ordinary Code session-start approvals offer Deny, Allow once and Allow always in a native dialog.** Always allow is saved for the current Desktop profile and revocable live under Settings → Extra → Community → Starting other sessions. It grants no authority inside new sessions and does not override host, organization, explicit ask/hook, destination or native count checks; those retain the original approval card. [Details](docs/session-start-permission.md).
 
 ### Auto-fix wakes the session when its PR is ready to merge (thanks @alexx-ftw, #309)
 
