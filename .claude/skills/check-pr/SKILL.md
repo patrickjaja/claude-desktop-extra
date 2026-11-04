@@ -104,4 +104,5 @@ Before reporting done, update **this file**. Fold lessons into the phase they be
 
 - 2026-11-04 (#308): a PR's harness can be green with the feature unreachable. Always trace the gates *before* the patched site in the pristine bundle, and read the fixtures' starting state.
 - 2026-11-04 (#309): a contributor may put a new feature in `patches/core/` because the infrastructure patches live there; the category question is the first thing the maintainer asks.
+- 2026-11-05 (#312): when two PRs append a `{ ... }` block at the same spot of a harness, git keeps the shared closing braces as common text and a keep-both resolution leaves the first block unclosed; `node --check` still passes when the block lives inside a driver string. Re-run the harness after every merge resolution and gate the commit on it.
 - 2026-11-04: `run-feature-tests.sh` prints its Summary on the second-to-last line (a `===` rule follows); gate on `tail -2 | grep ' 0 failed'`, not `tail -1`.
