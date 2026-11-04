@@ -4,6 +4,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-04
 
+### Merged-PR auto-archive grace
+
+- **Settings -> Extra -> Community Features -> Auto-archive delay after merge** adds immediate/5/15/30/60-minute presets and custom whole minutes (1–10080), without enabling or changing the native auto-archive preference. Only the merged-PR rule waits; CLOSED-without-merge and inactivity keep native behavior. Grace survives restart, follows binding changes and cancellation, and uses the existing sweep and archive safety checks. Default: immediate. Details: [docs/auto-archive-grace.md](docs/auto-archive-grace.md).
+
 ### Auto-fix wakes the session when its PR is ready to merge (thanks @alexx-ftw, #309)
 
 - **New switch Settings -> Extra -> Community Features -> "Wake Auto-fix sessions when a PR is ready to merge"** (off by default, applies live). For a PR with Auto-fix on, the Code session gets a short informational notice once GitHub reports the PR open, not draft, clean, mergeable, reviewed and with its checks green (a skipped check that GitHub marks as not required does not block), seen on two consecutive Auto-fix sweeps at the same head. It never merges, enables auto-merge or deploys; Claude reports readiness and waits for you. A notice you delete or stop is not sent again for that head.

@@ -103,6 +103,9 @@
       return ipcRenderer.invoke("cdb-autofix-author:set", Array.isArray(entries) ? entries.slice(0, 51) : null);
     },
 
+    autoArchiveGraceRead: function () { return ipcRenderer.invoke("cdb-archive-grace:read"); },
+    autoArchiveGraceSet: function (minutes) { return ipcRenderer.invoke("cdb-archive-grace:set", minutes); },
+
     // Wake Auto-fix sessions when a PR is ready to merge. Fixed channels,
     // boolean only; the main side re-validates the type.
     autoFixMergeReadyRead: function () {

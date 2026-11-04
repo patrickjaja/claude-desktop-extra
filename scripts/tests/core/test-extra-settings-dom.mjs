@@ -505,6 +505,32 @@ async function featuresPanel(featuresItem) {
     }
   }
 
+  // --- Native merged-PR auto-archive grace: presets/custom and validation.
+  {
+    const preset = panel.querySelector('#cdbx-archive-grace-preset');
+    const custom = panel.querySelector('#cdbx-archive-grace-custom');
+    ok(!!preset && !!custom, "archive grace renders labeled preset/custom controls");
+    if (preset && custom) {
+      const row = preset.closest('.cdbx-row');
+      const save = row.querySelector('button');
+      ok(preset.value === '0' && custom.hidden, "archive delay defaults to native immediate behavior");
+      ok(preset.labels.length === 1 && custom.labels.length === 1, "both grace fields have accessible labels");
+      ok([...preset.options].map(o => o.value).join(',') === '0,5,15,30,60,custom', "conventional presets and custom are available");
+      preset.value = '15'; preset.dispatchEvent(new Event('change')); save.click(); await sleep(60);
+      ok(window.__archiveGraceCalls.join(',') === '15', "preset saves minutes once");
+      preset.value = 'custom'; preset.dispatchEvent(new Event('change'));
+      ok(!custom.hidden && !custom.disabled, "custom field is shown and enabled");
+      custom.value = '1.5'; save.click(); await sleep(30);
+      ok(window.__archiveGraceCalls.length === 1 && /whole number/.test(row.querySelector('.cdbx-state').textContent), "fractional minutes rejected without IPC");
+      custom.value = '10081'; save.click(); await sleep(30);
+      ok(window.__archiveGraceCalls.length === 1, "custom bound enforced");
+      custom.value = '42'; save.click(); await sleep(60);
+      ok(window.__archiveGraceCalls.join(',') === '15,42' && preset.value === 'custom' && custom.value === '42', "custom minutes save and remain visible");
+      preset.value = '0'; preset.dispatchEvent(new Event('change')); save.click(); await sleep(60);
+      ok(window.__archiveGraceCalls.join(',') === '15,42,0' && custom.hidden, "immediate preset clears delay");
+    }
+  }
+
   // --- non-Anthropic gateway models: read at startup, so the same per-row
   // Restart now as every other restart row, shown exactly while the switch and
   // the running app (activeNow) disagree.
@@ -3219,6 +3245,8 @@ window.cdbExtra = {
     window.__diffViewsCalls.push(enabled);
     return Promise.resolve({ ok: true, enabled: enabled, path: "/tmp/diff-views.json", nudged: true });
   },
+  autoArchiveGraceRead: function () { return Promise.resolve({ ok: true, minutes: 0, lockedByJsonc: null }); },
+  autoArchiveGraceSet: function (minutes) { window.__archiveGraceCalls = (window.__archiveGraceCalls || []).concat([minutes]); return Promise.resolve({ ok: true, minutes: minutes }); },
   // Wake Auto-fix sessions when a PR is ready to merge: opt-in, live.
   autoFixMergeReadyRead: function () { return Promise.resolve(window.__afmrState || { ok: true, enabled: false, lockedByJsonc: null }); },
   autoFixMergeReadySet: function (enabled) { window.__afmrCalls = (window.__afmrCalls || []).concat([enabled]); return Promise.resolve({ ok: true, enabled: enabled, path: "/tmp/afmr.json" }); },
