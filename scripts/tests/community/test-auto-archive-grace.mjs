@@ -57,10 +57,29 @@ await test("CLOSED gets a full persisted grace, then reopen cancels and re-close
   assert.equal(await h.wait("open"), false); assert.deepEqual(h.state(), {});
   h.tick(60000); assert.equal(await h.wait("closed"), true); assert.equal(h.state().s.since, 1960000);
 });
-await test("open and unknown answers discard prior deadline without delaying", async () => {
-  for (const state of ["open", null]) {
-    const h = harness(); await h.wait(); assert.equal(await h.wait(state), false); assert.deepEqual(h.state(), {});
+await test("only a positive OPEN answer discards a prior deadline", async () => {
+  const h = harness(); await h.wait(); assert.equal(await h.wait("open"), false); assert.deepEqual(h.state(), {});
+  for (const state of [null, "no_pr_found", "unconfirmed_close"]) {
+    const k = harness(); await k.wait(); const before = k.state().s;
+    assert.equal(await k.wait(state), false); assert.deepEqual(k.state().s, before, String(state) + " is not an answer");
   }
+});
+await test("a null answer between two sweeps does not move the deadline", async () => {
+  const h = harness(); await h.wait(); const since = h.state().s.since;
+  h.tick(5 * 60000); await h.wait(null); await h.api.reconcileAll(); assert.equal(h.state().s.since, since);
+  h.tick(10 * 60000); assert.equal(await h.wait(), false, "expires 15 minutes after the first confirmation");
+});
+await test("immediate with no ledger: reconcile never lists sessions; the delay is read once per sweep", async () => {
+  const h = harness(); h.minutes(0); let listed = 0;
+  h.engine.sessionManager.getAllSessions = async () => { listed++; return [h.session]; };
+  await h.api.reconcileAll(); assert.equal(listed, 0); assert.equal(h.disk.size, 0);
+  const g = harness(); let reads = 0;
+  const context = { require: id => id === "node:fs" ? { readFileSync() { throw Object.assign(Error(), { code: "ENOENT" }); },
+    mkdirSync() {}, writeFileSync() {}, renameSync() {} } : id === "node:path" ? path : { app: { getPath: () => "/profile" } },
+    Date, globalThis: { __cdbAutoArchiveMergeDelayMinutes: () => { reads++; return 15; } } };
+  const api = vm.runInNewContext(source, context)(g.engine, () => true);
+  api.begin(); await api.wait(g.session, "merged"); await api.wait(g.session, null); api.pending(g.session); await api.reconcileAll();
+  assert.equal(reads, 1);
 });
 await test("binding change starts new grace; old in-flight snapshot cannot archive", async () => {
   const h = harness(); await h.wait(); const old = structuredClone(h.session);
@@ -112,25 +131,27 @@ await test("clock rollback and invalid delay cannot shorten a grace", async () =
   for (const invalid of [-1, 1.1, 10081, "15", NaN]) { h.minutes(invalid); assert.equal(await h.wait(), true); }
 });
 
-const binary = path.join(ROOT, "patches/core/add_auto_archive_grace");
+const binary = path.join(ROOT, "patches/community/add_feature_auto_archive_grace");
 fs.accessSync(binary, fs.constants.X_OK);
-// Mirrors the stable native method shapes, including the comma-expression
-// terminal check. Dollar identifiers deliberately exercise the minifier contract.
-const fixture = `const e$={drt:()=>true},n$={s:s=>s==='merged'||s==='closed'},i$={inspectSessionWorktree:async()=>null};
+// Mirrors upstream's AutoArchiveEngine shapes on 4.16336.0: the try-block
+// locals, the lookup, the comma-expression terminal check, the block-scoped
+// `let s` (readsGitHub), the reopenSeen return, the takesShare/GitHub block and
+// the worktree inspection. Dollar identifiers exercise the minifier contract.
+const fixture = `const e$={drt:()=>true},n$={s:s=>s==='merged'||s==='closed'},i$={inspectSessionWorktree:async()=>null},o$=36e5,E$=b=>JSON.stringify(b);
 class Engine {
-constructor(manager){this.sessionManager=manager;this.calls=[];this.reopenSeen=new Map}
+constructor(manager){this.sessionManager=manager;this.calls=[];this.reopenSeen=new Map;this.prCheckedAt=new Map;this.noPrAnswer=new Map;this.sweeping=!1;this.reads=!0}
 answered(){}
 freshReopen(t$,u$){if(this.calls.push('fresh'),u$.length>0)return this.answered(t$.sessionId,"close"),this.reopenSeen.set(t$.sessionId,{})}
 async sweep(k$=!1){this.calls.push('sweep')}
 ownPrBindings(prs){return(prs||[]).filter(p=>!p.inherited)}
-terminalVerdict(id,prs){return{terminal:prs.length>0&&prs.every(p=>p.state==='MERGED'||p.state==='CLOSED'),merged:prs.length>0&&prs.every(p=>p.state==='MERGED')}}
+terminalVerdict(id,prs){return this.verdict??{terminal:!1,merged:!1}}
 holdReason(){return null}
-async checkAndArchive(r$,a$,s$,c$){let l$=s$?'inactive':'pr';let d$=this.state;
-if(!s$){if(this.calls.push('lookup'),!n$.s(d$))return;let h$=this.holdReason(r$,l$);}
-let v$=await i$.inspectSessionWorktree(null,r$);
-if(l$==='pr'&&(this.sessionManager.sessionAutoArchiveOnPrClose(r$.sessionId)??e$.drt("ccAutoArchiveOnPrClose")===!0)===!1)return;
-let g$=this.held;let S$=this.holdReason(r$,l$);if(g$&&(!S$||false))return;
-this.calls.push('archive');}
+readsGitHub(){return this.reads}
+takesShare(){this.calls.push('share');return!0}
+async waitsOnRememberedClose(){this.calls.push('remembered');return!1}
+async waitsOnUnrecordedPr(){return!1}
+async lookupPrState(){this.calls.push('lookup');return this.state}
+async checkAndArchive(r$,a$,s$,c$){let l$=s$?"inactive":"pr";try{let u$=this.ownPrBindings(r$.prs),d$=null,m$=!1,g$=!1,_$;if(!s$){let t$=u$.filter(e=>!n$.s(e.state.toLowerCase()));if(t$.length>1){this.prCheckedAt.set(r$.sessionId,a$);return}if(d$=u$.length>0&&t$.length===0?u$[u$.length-1]?.state?.toLowerCase()??null:null,n$.s(d$)||(d$=await this.lookupPrState(r$,a$),d$==="unconfirmed_close"&&(_$=u$[0],d$="closed")),!n$.s(d$))return;let h$=this.holdReason(r$,l$);let s$=!g$&&this.readsGitHub(r$,u$,_$),c$=this.reopenSeen.get(r$.sessionId);if(s$&&c$?.bindings===E$(u$)&&a$-c$.at<o$)return;if(s$){if(!this.takesShare(r$.sessionId))return;let e=await this.waitsOnRememberedClose(r$,u$,a$,_$);if(await this.waitsOnUnrecordedPr(r$,a$)||e)return;this.noPrAnswer.delete(r$.sessionId)}}let v$=await i$.inspectSessionWorktree(null,r$);this.calls.push('inspect');if(l$==="pr"&&(this.sessionManager.sessionAutoArchiveOnPrClose(r$.sessionId)??e$.drt("ccAutoArchiveOnPrClose")===!0)===!1)return;this.calls.push('archive')}catch(e){throw e}}
 }globalThis.Engine=Engine;`;
 await test("compiled patch applies, preserves syntax, exact idempotence and fails closed on changed anchors", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-grace-patch-")), file = path.join(dir, "fixture.js");
@@ -139,30 +160,72 @@ await test("compiled patch applies, preserves syntax, exact idempotence and fail
     const patched = fs.readFileSync(file, "utf8"); execFileSync(process.execPath, ["--check", file]);
     execFileSync(binary, [file]); assert.equal(fs.readFileSync(file, "utf8"), patched);
     for (const text of [fixture + fixture, fixture.replace("checkAndArchive", "changed"),
-      fixture.replace("async sweep", "async changed"), patched.replace(".reconcileAll()", ".wrong()"),
+      fixture.replace("async sweep", "async changed"), fixture.replace("this.takesShare(", "this.share("),
+      fixture.replace("this.prCheckedAt.set(", "this.checkedAt.set("),
+      fixture.replace("}}let v$=await", "}};let v$=await"),
+      patched.replace(".reconcileAll()", ".wrong()"),
       patched.replace("await this.__cdbGrace().wait", "await this.wrong().wait"),
+      patched.replace(".pending(", ".wrong("), patched.replace('&&_$&&await', '&&await'),
       patched.replace("this.__cdbGrace().cancel(", "this.__cdbGrace().broken(")]) {
       fs.writeFileSync(file, text); assert.notEqual(spawnSync(binary, [file]).status, 0);
     }
-    // Run the actual injected methods, not just the helper.
-    const h = harness(); let clock = 1000000;
-    const context = { Date: { now: () => clock }, require: id => id === "node:fs" ? { readFileSync() { throw Object.assign(Error(), { code: "ENOENT" }); },
-      mkdirSync() {}, writeFileSync() {}, renameSync() {} } : id === "node:path" ? path : { app: { getPath: () => "/profile" } },
-      process: { platform: "linux" }, globalThis: { __cdbAutoArchiveMergeDelayMinutes: () => 15 } };
-    vm.runInNewContext(patched, context);
-    const manager = { ...h.engine.sessionManager, sessionAutoArchiveOnPrClose: () => true };
-    const engine = new context.globalThis.Engine(manager); engine.state = "merged";
-    await engine.checkAndArchive(h.session, Date.now(), false, false); assert.equal(engine.calls.includes("archive"), false);
-    clock += 14 * 60000; engine.freshReopen(h.session, [{}]);
-    engine.state = "closed"; await engine.checkAndArchive(h.session, Date.now(), false, false);
-    clock += 2 * 60000; await engine.checkAndArchive(h.session, Date.now(), false, false);
-    assert.equal(engine.calls.includes("archive"), false, "confirmed native reopen cancels the old clock and CLOSED gets a new grace");
-    engine.calls.length = 0; engine.state = "merged"; await engine.checkAndArchive(h.session, Date.now(), true, false);
-    assert.equal(engine.calls.includes("archive"), true, "inactivity is unchanged");
-    await engine.sweep(); assert.equal(engine.calls.includes("sweep"), true);
-    context.process.platform = "win32"; engine.calls.length = 0;
-    await engine.checkAndArchive(h.session, Date.now(), false, false); assert.equal(engine.calls.includes("archive"), true);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// Run the actual injected methods against the fixture, not just the helper.
+function patchedEngine(minutes = 15) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-grace-run-")), file = path.join(dir, "fixture.js");
+  fs.writeFileSync(file, fixture); execFileSync(binary, [file]);
+  const patched = fs.readFileSync(file, "utf8"); fs.rmSync(dir, { recursive: true, force: true });
+  const h = harness(); const clock = { now: 1000000 };
+  const context = { Date: { now: () => clock.now }, JSON, require: id => id === "node:fs" ? { readFileSync() { throw Object.assign(Error(), { code: "ENOENT" }); },
+    mkdirSync() {}, writeFileSync() {}, renameSync() {} } : id === "node:path" ? path : { app: { getPath: () => "/profile" } },
+    process: { platform: "linux" }, globalThis: { __cdbAutoArchiveMergeDelayMinutes: () => minutes } };
+  vm.runInNewContext(patched, context);
+  const manager = { ...h.engine.sessionManager, sessionAutoArchiveOnPrClose: () => true };
+  const engine = new context.globalThis.Engine(manager);
+  const check = async (inactive = false) => { engine.calls.length = 0; await engine.checkAndArchive(h.session, clock.now, inactive, false); return engine.calls.join(","); };
+  return { h, engine, clock, context, check };
+}
+await test("injected gate holds a confirmed MERGED/CLOSED before any pre-archive work, all of it runs after expiry", async () => {
+  for (const state of ["MERGED", "CLOSED"]) {
+    const { h, clock, check } = patchedEngine(); h.session.prs[0].state = state;
+    assert.equal(await check(), "", "no takesShare, GitHub re-read, worktree inspection or archive during the grace");
+    clock.now += 14 * 60000; assert.equal(await check(), "");
+    clock.now += 60000; assert.equal(await check(), "share,remembered,inspect,archive", "after expiry every upstream check runs");
+  }
+});
+await test("injected lookup short-circuit: no lookupPrState while a known terminal verdict is in its grace", async () => {
+  const { h, engine, clock, check } = patchedEngine(); h.session.prs[0].state = "OPEN"; engine.state = "merged";
+  assert.equal(await check(), "lookup", "first confirmation reads the PR and starts the grace");
+  engine.verdict = { terminal: true, merged: true };
+  clock.now += 5 * 60000; assert.equal(await check(), "", "the next sweep does not read it again");
+  clock.now += 10 * 60000; assert.equal(await check(), "lookup,share,remembered,inspect,archive", "after expiry upstream re-reads and archives");
+});
+await test("injected gate: an unconfirmed close is confirmed by upstream first, then held", async () => {
+  const { h, engine, clock, check } = patchedEngine(); h.session.prs[0].state = "OPEN"; engine.state = "unconfirmed_close";
+  assert.equal(await check(), "lookup,share,remembered", "upstream's own confirmation runs, the late gate holds before inspection");
+  clock.now += 15 * 60000; assert.equal(await check(), "lookup,share,remembered,inspect,archive");
+});
+await test("injected: a null lookup between sweeps keeps the deadline, OPEN clears it", async () => {
+  const { h, engine, clock, check } = patchedEngine(); h.session.prs[0].state = "OPEN"; engine.state = "merged";
+  await check(); clock.now += 5 * 60000; engine.state = null; assert.equal(await check(), "lookup");
+  clock.now += 10 * 60000; engine.state = "merged";
+  assert.equal(await check(), "lookup,share,remembered,inspect,archive", "the original deadline still expired on time");
+  const b = patchedEngine(); b.h.session.prs[0].state = "OPEN"; b.engine.state = "merged"; await b.check();
+  b.clock.now += 10 * 60000; b.engine.state = "open"; await b.check();
+  b.clock.now += 10 * 60000; b.engine.state = "merged"; assert.equal(await b.check(), "lookup", "after OPEN a re-merge starts a fresh grace");
+});
+await test("injected: confirmed reopen cancels the old clock and a stale CLOSED gets a fresh grace; inactivity, win32, immediate unchanged", async () => {
+  const { h, engine, clock, context, check } = patchedEngine();
+  assert.equal(await check(), "");
+  clock.now += 14 * 60000; engine.freshReopen(h.session, [{}]); h.session.prs[0].state = "CLOSED";
+  assert.equal(await check(), ""); clock.now += 2 * 60000;
+  assert.equal(await check(), "", "the CLOSED binding got its own new grace");
+  assert.equal(await check(true), "inspect,archive", "inactivity is unchanged");
+  await engine.sweep(); assert.equal(engine.calls.includes("sweep"), true);
+  context.process.platform = "win32"; assert.equal(await check(), "share,remembered,inspect,archive");
+  const zero = patchedEngine(0); assert.equal(await zero.check(), "share,remembered,inspect,archive", "immediate is upstream");
 });
 
 await test("settings IPC: default, persistence, jsonc lock, validation and untouched unrelated preferences", async () => {
@@ -196,8 +259,15 @@ await test("settings IPC: default, persistence, jsonc lock, validation and untou
       fs.writeFileSync(jsonc, '{// comment\n"autoArchiveMergeDelayMinutes": 30,}');
       assert.equal((await call("read")).lockedByJsonc, true); assert.equal((await call("set", 5)).ok, false);
       assert.equal(globalThis.__cdbAutoArchiveMergeDelayMinutes(), 30);
-      fs.writeFileSync(jsonc, '{"autoArchiveMergeDelayMinutes": "bad"}');
-      assert.equal((await call("read")).lockedByJsonc, true); assert.equal(globalThis.__cdbAutoArchiveMergeDelayMinutes(), 0);
+      for (const bad of ['"bad"', "-1", "1.5", "10081"]) {
+        fs.writeFileSync(jsonc, '{"autoArchiveMergeDelayMinutes": ' + bad + '}');
+        const res = await call("read");
+        assert.equal(res.lockedByJsonc, null, "an invalid .jsonc value does not lock: " + bad);
+        assert.match(res.warning, /Ignoring autoArchiveMergeDelayMinutes/);
+        assert.equal(globalThis.__cdbAutoArchiveMergeDelayMinutes(), 0);
+      }
+      assert.equal((await call("set", 15)).ok, true, "the row stays in charge past an invalid .jsonc value");
+      assert.equal(globalThis.__cdbAutoArchiveMergeDelayMinutes(), 15);
     } finally { fs.rmSync(dir, { recursive: true, force: true }); delete globalThis.__cdbAutoArchiveMergeDelayMinutes; }
   }
 });

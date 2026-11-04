@@ -51,7 +51,7 @@ linux/fix_computer_use_linux: \
   ../js/cu_consent.js \
   ../js/executor_linux.js
 
-core/add_auto_archive_grace: ../js/auto_archive_grace.js
+community/add_feature_auto_archive_grace: ../js/auto_archive_grace.js
 
 community/add_feature_autofix_merge_ready: ../js/autofix_merge_ready.js
 

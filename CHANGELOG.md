@@ -2,11 +2,14 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-05
+
+### Auto-archive delay after a PR merges or closes (thanks @alexx-ftw, #311)
+
+- **New row Settings -> Extra -> Community Features -> "Auto-archive delay after a PR merges or closes"**: Immediately (the default, upstream's behavior), 5, 15, 30 or 60 minutes, or a custom 1-10080 minutes. After upstream confirms a session's PR merged or closed, its auto-archive waits that long. The deadline survives restarts, and a confirmed reopen cancels it. It does not turn auto-archive on, and the inactivity rule is unchanged.
+- Expiry is checked on upstream's 5-minute archive sweep, so the archive lands within about 5 minutes of the deadline. During the delay the session skips upstream's GitHub re-reads and worktree checks (a close upstream could not confirm yet is still confirmed first); when it ends, every upstream check and hold still applies. Details: [docs/auto-archive-grace.md](docs/auto-archive-grace.md).
+
 ## 2026-11-04
-
-### PR auto-archive grace
-
-- **Settings -> Extra -> Community Features -> Auto-archive delay after PR merge or close** adds immediate/5/15/30/60-minute presets and custom whole minutes (1–10080), without enabling or changing the native auto-archive preference. Both MERGED and CLOSED-without-merge wait; inactivity keeps native behavior. Grace survives restart, follows binding changes and cancellation, and uses the existing sweep and archive safety checks. Default: immediate. Details: [docs/auto-archive-grace.md](docs/auto-archive-grace.md).
 
 ### Auto-fix wakes the session when its PR is ready to merge (thanks @alexx-ftw, #309)
 

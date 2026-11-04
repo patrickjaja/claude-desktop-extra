@@ -2898,7 +2898,7 @@
   function renderAutoArchiveGraceRow(panel) {
     var api = window.cdbExtra;
     if (!api || typeof api.autoArchiveGraceRead !== "function" || typeof api.autoArchiveGraceSet !== "function") return;
-    var spec = { section: "Code", title: "Auto-archive delay after PR merge or close",
+    var spec = { section: "Code", title: "Auto-archive delay after a PR merges or closes",
       note: "Only applies when native PR auto-archive is enabled. The grace starts when the app first confirms " +
         "the merged or closed PR and persists across restarts. Archives on the next native sweep after it expires " +
         "(normally within 5 minutes), once all safety checks pass. The separate inactivity rule is unchanged. " +
@@ -2913,7 +2913,7 @@
       ["60", "1 hour"], ["custom", "Custom minutes"]].forEach(function (pair) {
       var option = el("option", "", pair[1]); option.value = pair[0]; select.appendChild(option);
     });
-    var customLabel = el("label", "cdbx-note", "Custom delay (1–10080 whole minutes)");
+    var customLabel = el("label", "cdbx-note", "Custom delay (1-10080 whole minutes)");
     customLabel.htmlFor = "cdbx-archive-grace-custom";
     var custom = el("input", "cdbx-input"); custom.id = customLabel.htmlFor;
     custom.type = "number"; custom.min = "1"; custom.max = "10080"; custom.step = "1";
@@ -2930,8 +2930,9 @@
       locked = !!res.lockedByJsonc;
       select.value = [0, 5, 15, 30, 60].indexOf(res.minutes) >= 0 ? String(res.minutes) : "custom";
       custom.value = String(res.minutes || 1); controls();
-      state.textContent = (res.minutes ? res.minutes + " minutes after confirmation" : "Immediate (native behavior)") +
-        (locked ? " — set in claude-desktop-extra.jsonc; edit that file to change this" : " — applies live");
+      state.textContent = (res.warning ? res.warning + ". " : "") +
+        (res.minutes ? res.minutes + " minutes after confirmation" : "Immediate (native behavior)") +
+        (locked ? " - set in claude-desktop-extra.jsonc; edit that file to change this" : " - applies live");
     }
     select.addEventListener("change", controls);
     save.addEventListener("click", function () {

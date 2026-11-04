@@ -350,7 +350,13 @@
     };
   }
 
-  // --- Code: terminal-PR auto-archive grace (native opt-in is unchanged) ---
+  // --- Code: auto-archive delay after a PR merges or closes -----------------
+  // patches/community/add_feature_auto_archive_grace.nim asks
+  // globalThis.__cdbAutoArchiveMergeDelayMinutes() once per auto-archive sweep
+  // (every 5 min plus upstream's kicks). 0 = immediate = upstream, the default
+  // and the absence of the key. Same shape as the tray switch above: a valid
+  // value in the .jsonc locks the row; an invalid one is reported as a warning
+  // and ignored, so the row and claude-desktop-extra.json stay in charge.
   var __cdbEx_AAG_KEY = "autoArchiveMergeDelayMinutes";
   function __cdbEx_aagValid(value) {
     return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 10080;
@@ -358,9 +364,11 @@
   function __cdbEx_aagPref() {
     var p = __cdbEx_paths();
     var jsonc = __cdbEx_readFileKey(p.jsonc, __cdbEx_AAG_KEY);
-    if (jsonc !== undefined) return { value: __cdbEx_aagValid(jsonc) ? jsonc : 0, locked: true };
+    if (__cdbEx_aagValid(jsonc)) return { value: jsonc, locked: true };
+    var warning = jsonc === undefined ? null :
+      "Ignoring " + __cdbEx_AAG_KEY + " in claude-desktop-extra.jsonc: expected a whole number from 0 to 10080";
     var value = __cdbEx_readFileKey(p.json, __cdbEx_AAG_KEY);
-    return { value: __cdbEx_aagValid(value) ? value : 0, locked: false };
+    return { value: __cdbEx_aagValid(value) ? value : 0, locked: false, warning: warning };
   }
   if (process.platform === "linux") {
     globalThis.__cdbAutoArchiveMergeDelayMinutes = function () { return __cdbEx_aagPref().value; };
@@ -3143,7 +3151,7 @@
 
     "cdb-archive-grace:read": function () {
       var s = __cdbEx_aagPref();
-      return { ok: true, minutes: s.value, lockedByJsonc: s.locked ? true : null };
+      return { ok: true, minutes: s.value, lockedByJsonc: s.locked ? true : null, warning: s.warning || null };
     },
     "cdb-archive-grace:set": function (minutes) {
       if (!__cdbEx_aagValid(minutes)) return { ok: false, error: "minutes must be a whole number from 0 to 10080" };
@@ -3154,7 +3162,7 @@
         else cfg[__cdbEx_AAG_KEY] = minutes;
         return minutes;
       });
-      return res.ok ? { ok: true, minutes: minutes, path: res.path } : res;
+      return res.ok ? { ok: true, minutes: minutes, path: res.path, warning: __cdbEx_aagPref().warning || null } : res;
     },
 
     // Computer Use: read app controls (accessibility). Pref and reader above.
