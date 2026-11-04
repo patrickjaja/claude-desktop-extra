@@ -47,10 +47,11 @@ Panel tabs and Files quick open depend on DOM anchors in remote claude.ai code; 
 
 ## Core infrastructure
 
-**7 patches**, always on. These are what the rest is built on: the Extra settings pages, the theme engine behind them, the local feature-flag override mechanism, and the plumbing that keeps multiple profiles apart.
+**8 patches**, always on. These are what the rest is built on: the Extra settings pages, the theme engine behind them, the local feature-flag override mechanism, and the plumbing that keeps multiple profiles apart.
 
 | Patch | What it does & why it exists |
 |-------|------------------------------|
+| [`add_autofix_post_merge.nim`](../patches/core/add_autofix_post_merge.nim) | Keeps delivering new post-merge comments as informational notices to the active owning Auto-fix session through the existing sweep. Archived sessions do not poll or wake; no autoarchive preferences change. [Delivery and safety semantics](autofix-post-merge.md) |
 | [`add_feature_custom_themes.nim`](../patches/core/add_feature_custom_themes.nim) | The theme engine: 97 bundled light/dark palettes, each with its own loading spinner, applied live to every open window. Upstream has no theming beyond the light/dark toggle |
 | [`add_feature_extra_settings.nim`](../patches/core/add_feature_extra_settings.nim) | The **Extra** group in the app's own Settings dialog - Themes, Community Features, Computer Use (its status, TPM access and switches), Models (the custom models editor), Anthropic Features and [Deployment](../README.md#third-party--enterprise-inference) - and the main-process half that reads and writes what those panels show. Also captures the app's own relaunch primitive, so the restart these panels ask for runs the full quit-cleanup pass instead of killing the process |
 | [`add_feature_extra_settings_bridge.nim`](../patches/core/add_feature_extra_settings_bridge.nim) | The narrow preload bridge the Extra panels talk through: one fixed channel per call, because the Settings dialog is remote code |
