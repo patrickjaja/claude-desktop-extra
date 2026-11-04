@@ -4,7 +4,9 @@ On Linux, a PR watched by the app's existing **Auto-fix** sweep can wake its own
 
 ## Turning it on
 
-Settings -> Extra -> Community Features -> **Wake Auto-fix sessions when a PR is ready to merge**. Off by default; the switch applies live (the next Auto-fix sweep reads it, no restart). The setting is the `autoFixMergeReady` key in `<userData>/claude-desktop-extra.json`; a boolean for the same key in the hand-owned `claude-desktop-extra.jsonc` wins and locks the switch.
+Settings -> Extra -> Community Features -> **Auto-fix notices: ready to merge, comments after merge**. Off by default; the switch applies live (the next Auto-fix sweep reads it, no restart). The setting is the `autoFixMergeReady` key in `<userData>/claude-desktop-extra.json`; a boolean for the same key in the hand-owned `claude-desktop-extra.jsonc` wins and locks the switch.
+
+The same switch also covers comments that arrive after a PR is merged: new comments from the repository's owners, members, collaborators and bots are forwarded to the Code session as quoted informational notices for up to 7 days after the merge. That half is a separate patch (`add_feature_autofix_post_merge.nim`) with its own reads and ledger; see [Auto-fix comments after merge](autofix-post-merge.md).
 
 The notice is only sent for PRs whose own **Auto-fix** switch is on; PRs that are only bound to a session are left alone. The patch adds no timer, CLI poller or auto-merge action.
 

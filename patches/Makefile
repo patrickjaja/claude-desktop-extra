@@ -53,6 +53,8 @@ linux/fix_computer_use_linux: \
 
 community/add_feature_autofix_merge_ready: ../js/autofix_merge_ready.js
 
+community/add_feature_autofix_post_merge: ../js/autofix_post_merge.js
+
 community/add_feature_dev_tools_toggle: ../js/dev_tools_toggle_main.js
 
 linux/fix_cowork_font: ../js/fix_cowork_font.js

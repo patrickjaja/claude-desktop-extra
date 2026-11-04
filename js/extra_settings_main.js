@@ -329,12 +329,13 @@
     };
   }
 
-  // --- Auto-fix: wake the session when its PR is ready to merge ------------
-  // Same shape as the tray switch above. The wrapper that
-  // patches/community/add_feature_autofix_merge_ready.nim puts around
-  // AutoFixEngine.checkSession asks globalThis.__cdbAutoFixMergeReadyEnabled()
-  // on every sweep (60 s focused, 5 min unfocused, per Auto-fix PR); only true
-  // runs the readiness check. Off is the default and the absence of the key.
+  // --- Auto-fix notices: ready to merge, comments after merge --------------
+  // Same shape as the tray switch above. One switch for two patches: the
+  // wrapper patches/community/add_feature_autofix_merge_ready.nim puts around
+  // AutoFixEngine.checkSession and the one add_feature_autofix_post_merge.nim
+  // puts around AutoFixEngine.sweep both ask
+  // globalThis.__cdbAutoFixMergeReadyEnabled() on every sweep (60 s focused,
+  // 5 min unfocused); only true runs the readiness check / post-merge reads. Off is the default and the absence of the key.
   // No cache: each call reads the two small settings files, so a flip applies
   // from the next sweep.
   var __cdbEx_AFMR_KEY = "autoFixMergeReady";
@@ -3103,8 +3104,8 @@
       return { ok: true, enabled: enabled, path: res.path, refreshed: refreshed };
     },
 
-    // Wake Auto-fix sessions when a PR is ready to merge. Pref and reader
-    // above; the sweep wrapper reads it live, so there is nothing to refresh.
+    // Auto-fix notices (ready to merge, comments after merge). Pref and reader
+    // above; both sweep wrappers read it live, so there is nothing to refresh.
     "cdb-autofix-merge-ready:read": function () {
       var s = __cdbEx_afmrPref();
       return { ok: true, enabled: s.value, lockedByJsonc: s.locked ? true : null };
