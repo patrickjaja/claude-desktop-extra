@@ -259,6 +259,22 @@
     return undefined;
   }
 
+  // Author mismatch is the ONLY gate relaxed by this opt-in. Read at each
+  // activation, so disabling it takes effect without restarting. No gh identity
+  // or PR state is supplied by the settings page.
+  var __cdbEx_AUTOFIX_KEY = "autoFixAllowDifferentAuthor";
+  function __cdbEx_autoFixAuthorPref() {
+    var p = __cdbEx_paths();
+    var jsonc = __cdbEx_readFileKey(p.jsonc, __cdbEx_AUTOFIX_KEY);
+    if (typeof jsonc === "boolean") return { value: jsonc, locked: true };
+    return { value: __cdbEx_readFileKey(p.json, __cdbEx_AUTOFIX_KEY) === true, locked: false };
+  }
+  if (process.platform === "linux") {
+    globalThis.__cdbAutoFixAllowDifferentAuthor = function () {
+      try { return __cdbEx_autoFixAuthorPref().value === true; } catch (e) { return false; }
+    };
+  }
+
   // --- tray glyph: "Always use the white tray icon" (issue #305) -------------
   // patches/linux/fix_tray_icon_theme.nim makes upstream's tray-icon selector
   // ask globalThis.__cdbTrayAlwaysWhite() first: true picks the white glyph on
@@ -3079,6 +3095,25 @@
       return { ok: true, enabled: enabled, path: res.path };
     },
 
+    "cdb-autofix-author:read": function () {
+      var s = __cdbEx_autoFixAuthorPref();
+      return { ok: true, enabled: s.value, lockedByJsonc: s.locked ? true : null };
+    },
+
+    "cdb-autofix-author:set": function (enabled) {
+      if (typeof enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
+      if (__cdbEx_autoFixAuthorPref().locked) {
+        return { ok: false, error: __cdbEx_AUTOFIX_KEY + " is set in claude-desktop-extra.jsonc - edit that file to change it" };
+      }
+      var res = __cdbEx_writeCfg(function (cfg) {
+        if (enabled) cfg[__cdbEx_AUTOFIX_KEY] = true;
+        else delete cfg[__cdbEx_AUTOFIX_KEY];
+        return enabled;
+      });
+      if (!res.ok) return res;
+      return { ok: true, enabled: enabled, path: res.path };
+    },
+
     "cdb-flags:catalog": function () {
       var catalog = __cdbEx_catalog();
       if (!catalog) {
@@ -3584,6 +3619,8 @@
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use app approval is Linux only" }; };
       } else if (ch.indexOf("cdb-cu-ax:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use app controls are Linux only" }; };
+      } else if (ch.indexOf("cdb-autofix-author:") === 0) {
+        __cdbEx_handlers[ch] = function () { return { ok: false, error: "the Auto-fix author option is Linux only" }; };
       } else if (ch.indexOf("cdb-tray:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "the tray icon switch is Linux only" }; };
       }

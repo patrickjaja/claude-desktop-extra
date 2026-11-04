@@ -96,6 +96,13 @@
       return ipcRenderer.invoke("cdb-tray:set", enabled === true);
     },
 
+    autoFixAuthorRead: function () {
+      return ipcRenderer.invoke("cdb-autofix-author:read");
+    },
+    autoFixAuthorSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-autofix-author:set", enabled === true);
+    },
+
     // Computer Use: read app controls (accessibility). Fixed channels, boolean only.
     cuAxRead: function () {
       return ipcRenderer.invoke("cdb-cu-ax:read");

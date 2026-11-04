@@ -2316,6 +2316,28 @@
     });
   }
 
+  // --- Code: narrow opt-in for GitHub App / other-account PR authors --------
+  function renderAutoFixAuthorRow(panel) {
+    return renderToggleRow(panel, {
+      section: "Code",
+      title: "Allow Auto-fix with a different PR author",
+      note: "Off by default. Allows automatic and model-requested Auto-fix activation when a PR " +
+        "was authored by a GitHub App or another account instead of your authenticated gh user. " +
+        "This removes only the author-match check: authentication, session ownership, PR scope, " +
+        "consent and all other eligibility checks still apply. It does not enable Auto-fix by itself " +
+        "or change your GitHub identity. Applies live to future activation attempts.",
+      ariaLabel: "allow Auto-fix activation with a different PR author",
+      read: "autoFixAuthorRead",
+      write: "autoFixAuthorSet",
+      lockFile: "claude-desktop-extra.jsonc",
+      isOn: function (res) { return res.enabled === true; },
+      describe: function (on) { return on ? "on - PR author may differ from gh user" : "off - PR author must match gh user"; },
+      writeArg: function (next) { return next; },
+      toast: function (next) { return next ? "Auto-fix author mismatch allowed" : "Auto-fix author match required"; },
+      errorPrefix: "Could not change the Auto-fix author setting: "
+    });
+  }
+
   // --- sessions: how much of a big Code session the app loads ---------------
   // Ours, opt-in, and the other kind of row from Files quick open: NOT live. The
   // limits are handed to Anthropic's session manager when it is constructed at
@@ -3216,6 +3238,7 @@
     renderFilesQuickOpenRow,
     renderCustomModelsRow,
     renderAllowNonAnthropicModelsRow,
+    renderAutoFixAuthorRow,
     renderTranscriptLimitsRow,
     renderWindowControlsRow,
     renderNativeTitlebarRow,

@@ -31,6 +31,11 @@ vm.runInNewContext(readFileSync(join(ROOT, "js/extra_settings_bridge.js"), "utf8
 ok(exposed && exposed.name === "cdbExtra", "the bridge exposes cdbExtra");
 const api = exposed.api;
 
+calls.length = 0;
+api.autoFixAuthorRead(); api.autoFixAuthorSet(true); api.autoFixAuthorSet("true");
+ok(calls.map(c => c[0]).join(" ") === "cdb-autofix-author:read cdb-autofix-author:set cdb-autofix-author:set", "Auto-fix author option uses fixed channels");
+ok(calls[1][1] === true && calls[2][1] === false, "only boolean true opts into author mismatch");
+
 // --- custom models: every field the panel sends must reach the channel ---------
 {
   calls.length = 0;
