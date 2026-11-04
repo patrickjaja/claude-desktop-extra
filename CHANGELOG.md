@@ -6,7 +6,7 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ### Auto-fix wakes the session when its PR is ready to merge (thanks @alexx-ftw, #309)
 
-- **New switch Settings -> Extra -> Community Features -> "Wake Auto-fix sessions when a PR is ready to merge"** (off by default, applies live). For a PR with Auto-fix on, the Code session gets a short informational notice once GitHub reports the PR open, not draft, clean, mergeable, reviewed and with all checks green, seen on two consecutive Auto-fix sweeps at the same head. It never merges, enables auto-merge or deploys; Claude reports readiness and waits for you. A notice you delete or stop is not sent again for that head.
+- **New switch Settings -> Extra -> Community Features -> "Wake Auto-fix sessions when a PR is ready to merge"** (off by default, applies live). For a PR with Auto-fix on, the Code session gets a short informational notice once GitHub reports the PR open, not draft, clean, mergeable, reviewed and with its checks green (a skipped check that GitHub marks as not required does not block), seen on two consecutive Auto-fix sweeps at the same head. It never merges, enables auto-merge or deploys; Claude reports readiness and waits for you. A notice you delete or stop is not sent again for that head.
 - Cost: one GitHub read per Auto-fix PR per sweep, a notified PR re-read at most every 10 minutes, no read while the app's GraphQL budget is low or rate-limited, failed sends back off; one model turn per notice. Details: [docs/autofix-merge-ready.md](docs/autofix-merge-ready.md).
 
 ### Upstream 4.16336.0

@@ -87,6 +87,28 @@ for (const overrides of [{ state: "CLOSED" }, { state: "MERGED" }, { state: unde
 for (const conclusion of ["FAILURE", "CANCELLED", "SKIPPED", "NEUTRAL", "TIMED_OUT", "ACTION_REQUIRED", "STALE", null, undefined]) {
   await test(`reject check ${conclusion}`, async () => { const h = harness(), p = good(); p.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[0].conclusion = conclusion; h.set(p); await h.sweep(2); assert.equal(h.sent.length, 0); });
 }
+for (const isRequired of [true, false, undefined]) {
+  await test(`skipped requirement ${isRequired} is explicit`, async () => {
+    const h = harness(), p = good(); p.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[0] = { __typename: "CheckRun", status: "COMPLETED", conclusion: "SKIPPED", isRequired };
+    h.set(p); await h.sweep(2); assert.equal(h.sent.length, isRequired === false ? 1 : 0);
+  });
+}
+for (const conclusion of ["CANCELLED", "FAILURE", "NEUTRAL"]) {
+  await test(`optional ${conclusion} still blocks after optional skipped check`, async () => {
+    const h = harness(), p = good(); p.commits.nodes[0].commit.statusCheckRollup.contexts.nodes = [
+      { __typename: "CheckRun", status: "COMPLETED", conclusion: "SKIPPED", isRequired: false },
+      { __typename: "CheckRun", status: "COMPLETED", conclusion, isRequired: false }
+    ]; h.set(p); await h.sweep(2); assert.equal(h.sent.length, 0);
+  });
+}
+await test("optional skip still requires CLEAN and successful rollup", async () => {
+  for (const mergeStateStatus of ["UNSTABLE", "UNKNOWN", "CLEAN"]) {
+    const h = harness(), p = good(); p.mergeStateStatus = mergeStateStatus;
+    p.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[0] = { __typename: "CheckRun", status: "COMPLETED", conclusion: "SKIPPED", isRequired: false };
+    p.commits.nodes[0].commit.statusCheckRollup.state = "PENDING";
+    h.set(p); await h.sweep(2); assert.equal(h.sent.length, 0);
+  }
+});
 for (const status of ["QUEUED", "IN_PROGRESS", "WAITING", "PENDING"]) {
   await test(`reject pending ${status}`, async () => { const h = harness(), p = good(); p.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[0].status = status; h.set(p); await h.sweep(2); assert.equal(h.sent.length, 0); });
 }
