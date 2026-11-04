@@ -54,17 +54,25 @@
       for (const session of sessions) {
         if (session.isArchived || !enabled(session)) continue;
         const own = engine.ownPrBindings(session.prs);
-        if (!engine.terminalVerdict(session.sessionId, own, Date.now()).merged) continue;
+        if (!engine.terminalVerdict(session.sessionId, own, Date.now()).terminal) continue;
         if (!Object.hasOwn(next, session.sessionId)) {
           next[session.sessionId] = { binding: identity(session), since: Date.now() };
           changed = true;
-          log(session.sessionId + ": merged PR grace started (" + minutes + " minutes)");
+          log(session.sessionId + ": terminal PR grace started (" + minutes + " minutes)");
         }
       }
     }
     if (changed) commit(next);
   }
   return {
+    cancel(id) {
+      try {
+        load();
+        // Invalidate memory before persisting too: a failed cancellation write
+        // must not let a re-close consume the previous deadline in this run.
+        if (Object.hasOwn(records, id)) { delete records[id]; commit({ ...records }); }
+      } catch (error) { log(id + ": cannot persist reopened-PR cancellation: " + String(error)); }
+    },
     async reconcileAll() {
       try { reconcile(await engine.sessionManager.getAllSessions()); }
       catch (error) { log("cannot reconcile state: " + String(error)); }
@@ -85,21 +93,21 @@
         if (!latest || latest.isArchived || !enabled(latest) || identity(latest) !== identity(session)) {
           forget(session.sessionId); return true;
         }
-        if (state !== "merged") { forget(session.sessionId); return false; }
+        if (state !== "merged" && state !== "closed") { forget(session.sessionId); return false; }
         if (!Number.isInteger(minutes) || minutes < 0 || minutes > 10080)
-          throw new Error("invalid merge delay; expected 0..10080 minutes");
+          throw new Error("invalid PR archive delay; expected 0..10080 minutes");
         const binding = identity(latest), now = Date.now();
         let entry = records[session.sessionId];
         if (!entry || entry.binding !== binding) {
           entry = { binding, since: now };
           commit({ ...records, [session.sessionId]: entry });
-          log(session.sessionId + ": merged PR grace started (" + minutes + " minutes)");
+          log(session.sessionId + ": terminal PR grace started (" + minutes + " minutes)");
         }
         // Clock rollback cannot make a grace period expire early.
         return now < entry.since + minutes * 60000;
       } catch (error) {
-        log(session.sessionId + ": holding merged archive; " + String(error));
-        return state === "merged";
+        log(session.sessionId + ": holding PR archive;" + String(error));
+        return state === "merged" || state === "closed";
       }
     }
   };

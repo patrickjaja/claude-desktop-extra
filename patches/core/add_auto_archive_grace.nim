@@ -1,7 +1,7 @@
 # @patch-target: app.asar.contents/.vite/build/index.js
 # @patch-type: nim
-# Keep the native archive sweep, safety gates and cleanup pipeline. Only the
-# merged-PR rule gets a persisted grace period; CLOSED/inactivity are unchanged.
+# Keep the native archive sweep, safety gates and cleanup pipeline. Both MERGED
+# and CLOSED PR archives get a persisted grace; inactivity remains unchanged.
 import std/[os, strutils]
 import regex
 
@@ -68,13 +68,22 @@ proc apply*(input: string): string =
     kicked &
     ")}finally{if(process.platform===\"linux\")await this.__cdbGrace().reconcileAll()}}async __cdbOriginalArchiveSweep(" &
     kicked & "=!1){"
+  let reopenTail =
+    re2"""this\.answered\(([\w$]+)\.sessionId,"close"\),this\.reopenSeen\.set\("""
+  let reopens = input.findAll(reopenTail)
+  if reopens.len != 1:
+    raise newException(ValueError, "archive-grace confirmed-reopen anchor moved")
+  let cancel =
+    "process.platform===\"linux\"&&this.__cdbGrace().cancel(" &
+    input[reopens[0].group(0)] & ".sessionId),"
   if "__cdbArchiveGrace" in input:
     if input.count(methodText) != 1 or input.count(guard) != 1 or
-        input.count(observe) != 1 or input.count(sweepWrapper) != 1:
+        input.count(observe) != 1 or input.count(sweepWrapper) != 1 or
+        input.count(cancel) != 1:
       raise newException(ValueError, "archive-grace injection incomplete or stale")
     echo "  [OK] archive-grace factory, reconciliation and guarded archive already present"
     return
-  const EXPECTED_PATCHES = 4
+  const EXPECTED_PATCHES = 5
   var patchesApplied = 0
   result = once(
     result,
@@ -102,6 +111,13 @@ proc apply*(input: string): string =
     re2"let ([\w$]+)=this\.holdReason\(([\w$]+),([\w$]+)\);if\(([\w$]+)&&",
     proc(m: RegexMatch2, s: string): string =
       guard & s[m.boundaries],
+  )
+  inc patchesApplied
+  result = once(
+    result,
+    re2"""[\w$]+\.length>0\)return this\.answered\([\w$]+\.sessionId,"close"\),this\.reopenSeen\.set\(""",
+    proc(m: RegexMatch2, s: string): string =
+      s[m.boundaries].replace("return ", "return " & cancel),
   )
   inc patchesApplied
   if patchesApplied != EXPECTED_PATCHES:

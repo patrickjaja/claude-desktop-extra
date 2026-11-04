@@ -72,10 +72,10 @@
   // value set HERE wins, so that switch shows itself as locked.
   // "autoFixMergeReady": true,
 
-  // autoArchiveMergeDelayMinutes: delay native PR auto-archive after MERGED
+  // autoArchiveMergeDelayMinutes: delay native PR auto-archive after MERGED/CLOSED
   // confirmation, in whole minutes (0..10080; default 0 = immediate). Presets and
   // custom minutes live in Extra -> Community Features. Does not enable the
-  // native auto-archive switch or delay CLOSED/inactivity. State survives restart;
+  // native auto-archive switch or delay inactivity. State survives restart;
   // archives on a native sweep after expiry, subject to native safety holds.
   // A value here locks the UI; hand edits apply live.
   // "autoArchiveMergeDelayMinutes": 15,

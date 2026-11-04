@@ -350,7 +350,7 @@
     };
   }
 
-  // --- Code: merged-PR auto-archive grace (native opt-in is unchanged) -----
+  // --- Code: terminal-PR auto-archive grace (native opt-in is unchanged) ---
   var __cdbEx_AAG_KEY = "autoArchiveMergeDelayMinutes";
   function __cdbEx_aagValid(value) {
     return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 10080;
@@ -3734,7 +3734,7 @@
       } else if (ch.indexOf("cdb-tray:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "the tray icon switch is Linux only" }; };
       } else if (ch.indexOf("cdb-archive-grace:") === 0) {
-        __cdbEx_handlers[ch] = function () { return { ok: false, error: "the merged-PR archive delay is Linux only" }; };
+        __cdbEx_handlers[ch] = function () { return { ok: false, error: "the PR archive delay is Linux only" }; };
       } else if (ch.indexOf("cdb-autofix-merge-ready:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "the Auto-fix ready-to-merge wake is Linux only" }; };
       }

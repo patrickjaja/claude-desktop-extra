@@ -26,7 +26,7 @@ function harness(disk = new Map()) {
   const engine = {
     sessionManager: { getSession: async () => session, getAllSessions: async () => [session] },
     ownPrBindings: prs => (prs || []).filter(p => !p.inherited),
-    terminalVerdict: (_id, prs) => ({ merged: prs.length > 0 && prs.every(p => p.state === "MERGED") })
+    terminalVerdict: (_id, prs) => ({ terminal: prs.length > 0 && prs.every(p => ["MERGED", "CLOSED"].includes(p.state)), merged: prs.length > 0 && prs.every(p => p.state === "MERGED") })
   };
   const context = { require: id => id === "node:fs" ? fakeFs : id === "node:path" ? path : { app: { getPath: () => "/profile" } },
     Date: { now: () => clock }, globalThis: { __cdbDiag: text => logs.push(text), __cdbAutoArchiveMergeDelayMinutes: () => minutes } };
@@ -49,8 +49,16 @@ await test("live delay changes retain original start, immediate cancels", async 
   const h = harness(); await h.wait(); h.tick(5 * 60000); h.minutes(30); assert.equal(await h.wait(), true);
   h.minutes(5); assert.equal(await h.wait(), false); h.minutes(0); await h.wait(); assert.deepEqual(h.state(), {});
 });
-await test("closed and open discard prior deadline without delaying", async () => {
-  for (const state of ["closed", "open", null]) {
+await test("CLOSED gets a full persisted grace, then reopen cancels and re-close restarts", async () => {
+  const h = harness(); h.session.prs[0].state = "CLOSED";
+  await h.api.reconcileAll(); assert.ok(h.state().s, "native terminal verdict starts closed grace while held");
+  h.tick(14 * 60000); assert.equal(await h.restart().wait(h.session, "closed"), true);
+  h.tick(60000); assert.equal(await h.wait("closed"), false);
+  assert.equal(await h.wait("open"), false); assert.deepEqual(h.state(), {});
+  h.tick(60000); assert.equal(await h.wait("closed"), true); assert.equal(h.state().s.since, 1960000);
+});
+await test("open and unknown answers discard prior deadline without delaying", async () => {
+  for (const state of ["open", null]) {
     const h = harness(); await h.wait(); assert.equal(await h.wait(state), false); assert.deepEqual(h.state(), {});
   }
 });
@@ -83,11 +91,15 @@ await test("binding identity is order-independent and host-specific", async () =
   const before = h.state().s; h.tick(60000); h.session.prs.reverse(); await h.wait(); assert.deepEqual(h.state().s, before);
   h.session.prs[0].host = "enterprise.example"; await h.api.reconcileAll(); assert.notEqual(h.state().s.binding, before.binding);
 });
-await test("disk/corrupt state failures hold merged but not closed archives", async () => {
+await test("disk/corrupt state failures hold MERGED and CLOSED archives", async () => {
   const h = harness(); h.fail(); assert.equal(await h.wait(), true); assert.match(h.logs.join(), /disk full/);
-  assert.equal(await h.wait("closed"), false);
-  const bad = harness(new Map([[h.file, "not json"]])); assert.equal(await bad.wait(), true); assert.equal(await bad.wait("closed"), false);
+  assert.equal(await h.wait("closed"), true);
+  const bad = harness(new Map([[h.file, "not json"]])); assert.equal(await bad.wait(), true); assert.equal(await bad.wait("closed"), true);
   bad.minutes(0); assert.equal(await bad.wait(), false, "immediate restores native behavior even with corrupt leftover state");
+});
+await test("failed reopen cancellation cannot consume an old deadline in memory", async () => {
+  const h = harness(); await h.wait("closed"); h.fail(); h.api.cancel(h.session.sessionId);
+  h.tick(20 * 60000); assert.equal(await h.wait("closed"), true, "fresh grace write fails closed instead of consuming expired old deadline");
 });
 await test("clock rollback and invalid delay cannot shorten a grace", async () => {
   const h = harness(); await h.wait(); h.tick(-100000); assert.equal(await h.wait(), true);
@@ -100,10 +112,12 @@ fs.accessSync(binary, fs.constants.X_OK);
 // terminal check. Dollar identifiers deliberately exercise the minifier contract.
 const fixture = `const e$={drt:()=>true},n$={s:s=>s==='merged'||s==='closed'},i$={inspectSessionWorktree:async()=>null};
 class Engine {
-constructor(manager){this.sessionManager=manager;this.calls=[]}
+constructor(manager){this.sessionManager=manager;this.calls=[];this.reopenSeen=new Map}
+answered(){}
+freshReopen(t$,u$){if(this.calls.push('fresh'),u$.length>0)return this.answered(t$.sessionId,"close"),this.reopenSeen.set(t$.sessionId,{})}
 async sweep(k$=!1){this.calls.push('sweep')}
 ownPrBindings(prs){return(prs||[]).filter(p=>!p.inherited)}
-terminalVerdict(id,prs){return{merged:prs.length>0&&prs.every(p=>p.state==='MERGED')}}
+terminalVerdict(id,prs){return{terminal:prs.length>0&&prs.every(p=>p.state==='MERGED'||p.state==='CLOSED'),merged:prs.length>0&&prs.every(p=>p.state==='MERGED')}}
 holdReason(){return null}
 async checkAndArchive(r$,a$,s$,c$){let l$=s$?'inactive':'pr';let d$=this.state;
 if(!s$){if(this.calls.push('lookup'),!n$.s(d$))return;let h$=this.holdReason(r$,l$);}
@@ -120,19 +134,23 @@ await test("compiled patch applies, preserves syntax, exact idempotence and fail
     execFileSync(binary, [file]); assert.equal(fs.readFileSync(file, "utf8"), patched);
     for (const text of [fixture + fixture, fixture.replace("checkAndArchive", "changed"),
       fixture.replace("async sweep", "async changed"), patched.replace(".reconcileAll()", ".wrong()"),
-      patched.replace("await this.__cdbGrace().wait", "await this.wrong().wait")]) {
+      patched.replace("await this.__cdbGrace().wait", "await this.wrong().wait"),
+      patched.replace("this.__cdbGrace().cancel(", "this.__cdbGrace().broken(")]) {
       fs.writeFileSync(file, text); assert.notEqual(spawnSync(binary, [file]).status, 0);
     }
     // Run the actual injected methods, not just the helper.
-    const h = harness();
-    const context = { require: id => id === "node:fs" ? { readFileSync() { throw Object.assign(Error(), { code: "ENOENT" }); },
+    const h = harness(); let clock = 1000000;
+    const context = { Date: { now: () => clock }, require: id => id === "node:fs" ? { readFileSync() { throw Object.assign(Error(), { code: "ENOENT" }); },
       mkdirSync() {}, writeFileSync() {}, renameSync() {} } : id === "node:path" ? path : { app: { getPath: () => "/profile" } },
       process: { platform: "linux" }, globalThis: { __cdbAutoArchiveMergeDelayMinutes: () => 15 } };
     vm.runInNewContext(patched, context);
     const manager = { ...h.engine.sessionManager, sessionAutoArchiveOnPrClose: () => true };
     const engine = new context.globalThis.Engine(manager); engine.state = "merged";
     await engine.checkAndArchive(h.session, Date.now(), false, false); assert.equal(engine.calls.includes("archive"), false);
-    engine.state = "closed"; await engine.checkAndArchive(h.session, Date.now(), false, false); assert.equal(engine.calls.includes("archive"), true);
+    clock += 14 * 60000; engine.freshReopen(h.session, [{}]);
+    engine.state = "closed"; await engine.checkAndArchive(h.session, Date.now(), false, false);
+    clock += 2 * 60000; await engine.checkAndArchive(h.session, Date.now(), false, false);
+    assert.equal(engine.calls.includes("archive"), false, "confirmed native reopen cancels the old clock and CLOSED gets a new grace");
     engine.calls.length = 0; engine.state = "merged"; await engine.checkAndArchive(h.session, Date.now(), true, false);
     assert.equal(engine.calls.includes("archive"), true, "inactivity is unchanged");
     await engine.sweep(); assert.equal(engine.calls.includes("sweep"), true);

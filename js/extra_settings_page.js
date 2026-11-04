@@ -2898,15 +2898,15 @@
   function renderAutoArchiveGraceRow(panel) {
     var api = window.cdbExtra;
     if (!api || typeof api.autoArchiveGraceRead !== "function" || typeof api.autoArchiveGraceSet !== "function") return;
-    var spec = { section: "Code", title: "Auto-archive delay after merge",
+    var spec = { section: "Code", title: "Auto-archive delay after PR merge or close",
       note: "Only applies when native PR auto-archive is enabled. The grace starts when the app first confirms " +
-        "the merged PR and persists across restarts. Archives on the next native sweep after it expires " +
-        "(normally within 5 minutes), once all safety checks pass. Closed-without-merge and inactivity rules are unchanged. " +
+        "the merged or closed PR and persists across restarts. Archives on the next native sweep after it expires " +
+        "(normally within 5 minutes), once all safety checks pass. The separate inactivity rule is unchanged. " +
         "Changing the delay recalculates from the same start; disabling PR auto-archive cancels it. Applies live." };
     var head = el("div", "cdbx-sec-h"); head.appendChild(el("span", "cdbx-sec-t", spec.section));
     var host = el("div", "cdbx-list"), row = el("div", "cdbx-row"), main = el("div", "cdbx-row-main");
     main.appendChild(el("div", "cdbx-id", spec.title)); main.appendChild(el("div", "cdbx-note", spec.note));
-    var label = el("label", "cdbx-note", "Delay after merged PR confirmation");
+    var label = el("label", "cdbx-note", "Delay after merged or closed PR confirmation");
     label.htmlFor = "cdbx-archive-grace-preset";
     var select = el("select", "cdbx-select"); select.id = label.htmlFor;
     [["0", "Immediately (default)"], ["5", "5 minutes"], ["15", "15 minutes"], ["30", "30 minutes"],
