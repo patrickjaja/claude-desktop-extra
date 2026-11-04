@@ -379,9 +379,16 @@
   //
   // 3P is then chosen unless the persisted "deploymentMode" key in
   // <3pDir>/claude_desktop_config.json is "1p" - the escape hatch upstream's own
-  // 3P Setup writes and this page exposes. A managed config with
+  // 3P Setup writes and this page exposes. The policy overrides that switch
+  // (v4.16336.0): authentication.deploymentMode (flat: deploymentMode, "any" |
+  // "3p" | "1p") pins the mode, and without it
   // authentication.disableClaudeAiSignIn (flat: disableDeploymentModeChooser)
-  // overrides even that, which is why this page never writes that key.
+  // pins 3P. "1p" means no 3P at all, even with a provider stored. This page
+  // never writes either policy key. Upstream (v4.16336.0):
+  //   function Gae(e){let t=e.authentication?.deploymentMode;
+  //     return t==="3p"||t==="1p"?t:Hae(e)?"3p":"any"}
+  //   function Kae(e){let t=Gae(e);return t==="1p"||!k2(e)?null:
+  //     t==="3p"?"chooser-disabled":Wae()==="1p"?null:_6(e)?"hybrid-pointer":"persisted"}
   //
   // So everything here is user-level and userData-relative: no root, no patch to
   // the bootstrap, and the files are the ones upstream already reads. Both live
@@ -391,6 +398,25 @@
   var __cdbEx_ETC_DIR = "/etc/claude-desktop";
   var __cdbEx_ETC_FILE = __cdbEx_ETC_DIR + "/managed-settings.json";
   var __cdbEx_MODE_KEY = "deploymentMode";
+
+  // The policy's mode: "1p" | "3p" | "any" (upstream's Gae).
+  function __cdbEx_policyMode(cfg) {
+    var t = cfg && cfg.deploymentMode;
+    if (t === "1p" || t === "3p") return t;
+    return cfg && cfg.disableDeploymentModeChooser === true ? "3p" : "any";
+  }
+
+  // The mode the next start boots (upstream's Kae, non-null = 3P).
+  // selects3p: the active source carries a provider or bootstrap URL (k2);
+  // persisted: the "deploymentMode" switch in claude_desktop_config.json.
+  function __cdbEx_decideMode(selects3p, policyMode, persisted) {
+    if (policyMode === "1p" || !selects3p) return "1p";
+    if (policyMode === "3p") return "3p";
+    return persisted === "1p" ? "1p" : "3p";
+  }
+  // Pure, read-only: exposed so the harness can check the decision table
+  // without a root-owned /etc policy file.
+  globalThis.__cdbExDecideMode = __cdbEx_decideMode;
   // Anything the page never gets to see and never has to send back: a secret it
   // echoes unchanged means "keep the stored value".
   var __cdbEx_KEEP = "__cdb_unchanged__";
@@ -421,7 +447,7 @@
     };
   }
 
-  // The managed-config key catalog of Claude Desktop v4.4212.0 (201 keys), read out of the
+  // The managed-config key catalog of Claude Desktop v4.16336.0 (203 keys), read out of the
   // bundle's own schema (flat key, zod leaf type, scopes, title). Upstream drives
   // its 3P Setup wizard from that schema; we cannot reach it from here (it is
   // module-scoped in index.pre.js), so this is a PINNED COPY and is therefore
@@ -498,6 +524,8 @@
     { key: "inferenceGatewayManagedClaudeCode", kind: "bool", group: "connection", scope: "3p", only: "gateway",
       label: "Gateway-managed Claude Code",
       note: "Runs Claude Code in its gateway mode (CLAUDE_CODE_USE_GATEWAY) in Cowork, Chat and Code sessions for users signed in through the gateway's own sign-in; off by default." },
+    { key: "inferenceGatewayAutoModeServerChecks", kind: "bool", group: "connection", scope: "3p",
+      label: "Server-side Auto mode checks" },
 
     { key: "inferenceVertexProjectId", kind: "text", group: "connection", scope: "3p", only: "vertex",
       label: "GCP project ID" },
@@ -805,6 +833,10 @@
     { key: "disableDeploymentModeChooser", kind: "bool", group: "sandbox", scope: "3p",
       label: "Disable claude.ai sign-in",
       lock: "this is the key that locks a machine into 3P - it overrides the switch above, so this page never writes it" },
+    { key: "deploymentMode", kind: "enum", group: "sandbox", scope: "both",
+      label: "Deployment mode", options: ["any", "3p", "1p"],
+      note: "any = Let people choose, 3p = Third-party only, 1p = Claude.ai only.",
+      lock: "this policy key pins the mode (3p locks a machine into 3P, 1p turns 3P off) and overrides the switch above, so this page never writes it" },
 
     // --- connectors, MCP & extensions --------------------------------------
     { key: "managedMcpServers", kind: "json", group: "connectors", scope: "3p",
@@ -1027,7 +1059,8 @@
   // is valid it disables the local source completely. Its ownership rules are
   // upstream's, mirrored here so the page can say WHY it is being ignored.
   function __cdbEx_managedState() {
-    var out = { present: false, usable: false, keys: [], provider: null, locksSignIn: false, error: "" };
+    var out = { present: false, usable: false, keys: [], provider: null, locksSignIn: false,
+      policyMode: "any", error: "" };
     var st;
     try {
       st = _fs.lstatSync(__cdbEx_ETC_FILE);
@@ -1066,7 +1099,10 @@
     }
     out.usable = true;
     out.provider = typeof cfg.inferenceProvider === "string" ? cfg.inferenceProvider : null;
-    out.locksSignIn = cfg.disableDeploymentModeChooser === true;
+    out.policyMode = __cdbEx_policyMode(cfg);
+    // "1P cannot be selected": the policy pins 3P (deploymentMode "3p", or
+    // disableDeploymentModeChooser without a deploymentMode).
+    out.locksSignIn = out.policyMode === "3p";
     return out;
   }
 
@@ -1111,11 +1147,15 @@
     return { values: out, unknown: unknown };
   }
 
-  // Does this config select 3P at all? Upstream's own test: an inference block
-  // (i.e. a provider) or an enabled bootstrap URL.
+  // Does this config select 3P at all? Upstream's own test (k2, v4.16336.0):
+  // an inference block (i.e. a provider), an enabled bootstrap URL, or a
+  // selfHosted block (flat: selfHostedUrl / selfHostedToken).
+  //   function k2(e){return O2??=[...y2.values()].flatMap((e=>e.activatesThirdPartyMode??[])),
+  //     O2.some((t=>t(e,!1)))||TZ(e)||HG(e).length>0}   TZ(e): e.selfHosted!==void 0
   function __cdbEx_selects3p(cfg) {
     if (!cfg) return false;
     if (typeof cfg.inferenceProvider === "string" && cfg.inferenceProvider) return true;
+    if (cfg.selfHostedUrl !== undefined || cfg.selfHostedToken !== undefined) return true;
     return typeof cfg.bootstrapUrl === "string" && !!cfg.bootstrapUrl && cfg.bootstrapEnabled !== false;
   }
 
@@ -1163,9 +1203,11 @@
     // Same decision the bootstrap makes, in the same order.
     var source = managed.usable && managed.keys.length ? "managed" : (local.present ? "local" : "none");
     var active = source === "managed"
-      ? { provider: managed.provider, selects3p: !!managed.provider, locksSignIn: managed.locksSignIn }
-      : { provider: local.values.inferenceProvider || null, selects3p: !!local.selects3p, locksSignIn: false };
-    var expected = active.selects3p && (active.locksSignIn || persisted !== "1p") ? "3p" : "1p";
+      ? { provider: managed.provider, selects3p: !!managed.provider, locksSignIn: managed.locksSignIn,
+          policyMode: managed.policyMode }
+      : { provider: local.values.inferenceProvider || null, selects3p: !!local.selects3p, locksSignIn: false,
+          policyMode: "any" };
+    var expected = __cdbEx_decideMode(active.selects3p, active.policyMode, persisted);
     return {
       paths: paths,
       managed: managed,
@@ -1175,7 +1217,8 @@
       expected: expected,
       running: __cdbEx_runningMode(expected),
       editable: source !== "managed",
-      locksSignIn: active.locksSignIn
+      locksSignIn: active.locksSignIn,
+      policyMode: active.policyMode
     };
   }
 
@@ -3107,6 +3150,7 @@
         source: s.source,
         editable: s.editable,
         locksSignIn: s.locksSignIn,
+        policyMode: s.policyMode,
         paths: s.paths,
         managed: s.managed,
         local: s.local,
@@ -3139,15 +3183,19 @@
         var cleared = __cdbEx_deployState();
         return { ok: true, mode: null, expected: cleared.expected, path: s.paths.modeFile };
       }
-      if (mode === "1p" && s.locksSignIn) {
+      if (mode === "1p" && s.policyMode === "3p") {
         return { ok: false, error: "the managed policy in " + __cdbEx_ETC_FILE +
-          " sets disableDeploymentModeChooser, which overrides the deploymentMode key - 1P cannot be selected here" };
+          " pins third-party mode (deploymentMode \"3p\" or disableDeploymentModeChooser), which overrides this switch - 1P cannot be selected here" };
+      }
+      if (mode === "3p" && s.policyMode === "1p") {
+        return { ok: false, error: "the managed policy in " + __cdbEx_ETC_FILE +
+          " sets deploymentMode \"1p\" (Claude.ai only), which overrides this switch - 3P cannot be selected here" };
       }
       if (mode === "3p" && s.source === "none") {
         return { ok: false, error: "no third-party configuration is stored yet - pick a provider below first, then switch" };
       }
       if (mode === "3p" && s.source === "local" && !s.local.selects3p) {
-        return { ok: false, error: "the stored configuration has no inference provider and no bootstrap URL, so it would still boot 1P - set a provider below first" };
+        return { ok: false, error: "the stored configuration has no inference provider, bootstrap URL or self-hosted server, so it would still boot 1P - set a provider below first" };
       }
       var read = __cdbEx_readJson(s.paths.modeFile);
       if (read.error) return { ok: false, error: s.paths.modeFile + ": " + read.error };

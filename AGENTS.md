@@ -28,6 +28,7 @@ The full distro, session-type, input/screenshot backend and per-bridge glibc tab
 ./scripts/build-ubuntu-local.sh               # Ubuntu/Debian
 ./scripts/build-fedora-local.sh               # Fedora/RHEL
 # local builds skip the Electron smoke test; opt in with --smoke-test (or SKIP_SMOKE_TEST=0). CI always runs it.
+# local builds compress with pigz when installed (faster); --reproducible keeps byte-reproducible gzip -n -9, which CI always uses.
 
 cd patches && make -j"$(nproc)" && cd ..      # compile all Nim patches
 python3 scripts/check-upstream-absorbed.py tmp/app.asar.contents \

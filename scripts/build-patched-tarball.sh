@@ -418,12 +418,36 @@ log_info "desktopName is upstream com.anthropic.Claude.desktop (no pin)"
 # see the same tree; an asar is extracted into the work dir (never the shipped
 # tree) and repacked to its upstream path after patching. Neither form present
 # is a hard failure: silently skipping would ship the SPA unpatched.
+#
+# Since v4.16336.0 the .deb ALSO ships resources/ion-dist/ holding one static
+# index.html ("Claude was updated - quit and reopen"): a page for a pre-4.29.0
+# process still running after the upgrade, which resolves the old directory
+# path. Its own comment says "This version never loads it"; the main bundle
+# still serves only ion-dist.asar when packaged. We ship it verbatim and leave
+# it unpatched (no script, nothing of the SPA in it). Exactly that shape is
+# accepted next to the asar, plus a tripwire that the bundle's packaged path
+# is still ion-dist.asar; any other dir next to the asar fails the build.
 ION_ASAR="$TREE_DIR/resources/ion-dist.asar"
 ION_UPSTREAM_DIR="$TREE_DIR/resources/ion-dist"
 if [ -e "$ION_ASAR" ] && [ -e "$ION_UPSTREAM_DIR" ]; then
-    log_error "upstream ships BOTH resources/ion-dist.asar and resources/ion-dist/ - re-audit which one the main bundle serves before patching either"
-    exit 1
-elif [ -e "$ION_ASAR" ]; then
+    ION_STUB_ENTRIES="$(find "$ION_UPSTREAM_DIR" -mindepth 1 | LC_ALL=C sort)"
+    if [ -L "$ION_UPSTREAM_DIR" ] || [ ! -d "$ION_UPSTREAM_DIR" ] ||
+        [ "$ION_STUB_ENTRIES" != "$ION_UPSTREAM_DIR/index.html" ] ||
+        [ -L "$ION_UPSTREAM_DIR/index.html" ] || [ ! -f "$ION_UPSTREAM_DIR/index.html" ]; then
+        log_error "upstream ships BOTH resources/ion-dist.asar and a resources/ion-dist/ that is not the lone index.html placeholder - re-audit which one the main bundle serves before patching either"
+        exit 1
+    fi
+    if grep -qiE '<script|assets/' "$ION_UPSTREAM_DIR/index.html"; then
+        log_error "resources/ion-dist/index.html next to ion-dist.asar now loads scripts or assets - it is no longer the static placeholder; re-audit whether the ion-dist patches must cover it"
+        exit 1
+    fi
+    if ! grep -aqE 'isPackaged\?["`]ion-dist\.asar["`]:["`]ion-dist["`]' "$APP_DIR/app.asar.contents/.vite/build/"index*.js; then
+        log_error "the main bundle no longer resolves ion-dist to ion-dist.asar when packaged - re-audit which of resources/ion-dist.asar and resources/ion-dist/ it serves"
+        exit 1
+    fi
+    log_info "resources/ion-dist/ is upstream's static index.html placeholder for pre-4.29.0 processes (shipped verbatim, not patched)"
+fi
+if [ -e "$ION_ASAR" ]; then
     if [ -L "$ION_ASAR" ] || [ ! -f "$ION_ASAR" ]; then
         log_error "resources/ion-dist.asar is not a regular file (upstream lstat-checks it) - the .deb layout moved"
         exit 1
@@ -484,22 +508,16 @@ if grep -qsF 'await using ' "$APP_DIR/app.asar.contents/.vite/build/"*.js &&
     log_error "node $(node --version) cannot parse this bundle: it uses \`await using\`, which needs Node 24 or newer"
     exit 1
 fi
-SYNTAX_FAILED=false
-for js_file in "$APP_DIR/app.asar.contents/.vite/build/"*.js; do
-    [ -f "$js_file" ] || continue
-    if ! node --check "$js_file" 2>/dev/null; then
-        log_error "Syntax error in $(basename "$js_file")"
-        SYNTAX_FAILED=true
-    fi
-done
-for js_file in "$APP_DIR/app.asar.contents/.vite/renderer/"*"/assets/"*.js; do
-    [ -f "$js_file" ] || continue
-    if ! node --check "$js_file" 2>/dev/null; then
-        log_error "Syntax error in $(basename "$js_file")"
-        SYNTAX_FAILED=true
-    fi
-done
-if [ "$SYNTAX_FAILED" = true ]; then
+# Fan the checks out over all cores (529 files: ~14 s serial, ~1.5 s parallel).
+# Same file set as before: .vite/build/*.js and .vite/renderer/*/assets/*.js.
+# xargs exits 123 when any worker failed, which the `if !` turns into the error.
+if ! {
+    for js_file in "$APP_DIR/app.asar.contents/.vite/build/"*.js \
+        "$APP_DIR/app.asar.contents/.vite/renderer/"*"/assets/"*.js; do
+        if [ -f "$js_file" ]; then printf '%s\0' "$js_file"; fi
+    done
+} | xargs -0 -r -P"$(nproc)" -n1 sh -c \
+    'node --check "$1" 2>/dev/null || { echo "[ERROR] Syntax error in $(basename "$1")" >&2; exit 1; }' _; then
     log_error "JavaScript syntax validation FAILED - patched files have syntax errors"
     exit 1
 fi
@@ -880,7 +898,7 @@ log_info "SOURCE_DATE_EPOCH: $SOURCE_DATE_EPOCH"
 # speed on local builds.
 if [ "${CLAUDE_ALLOW_PIGZ:-0}" = "1" ] && command -v pigz &>/dev/null; then
     GZIP_PROG="pigz"
-    log_warn "Using pigz (CLAUDE_ALLOW_PIGZ=1) — output is NOT byte-reproducible"
+    log_warn "Using pigz (CLAUDE_ALLOW_PIGZ=1) - output is NOT byte-reproducible"
 else
     GZIP_PROG="gzip"
 fi

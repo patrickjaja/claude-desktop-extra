@@ -30,22 +30,25 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 # Parse arguments
 INSTALL_AFTER_BUILD=false
 SKIP_SMOKE_TEST="${SKIP_SMOKE_TEST:-1}"
+REPRODUCIBLE=false
 DEB_PATH=""
 DEB_VERSION=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --install|-i) INSTALL_AFTER_BUILD=true; shift ;;
         --smoke-test) SKIP_SMOKE_TEST=0; shift ;;
+        --reproducible) REPRODUCIBLE=true; shift ;;
         --deb)        DEB_PATH="$2"; shift 2 ;;
         --version)    DEB_VERSION="$2"; shift 2 ;;
         --help|-h)
-            echo "Usage: $0 [--deb PATH | --version X] [--install] [--smoke-test]"
+            echo "Usage: $0 [--deb PATH | --version X] [--install] [--smoke-test] [--reproducible]"
             echo ""
             echo "Options:"
             echo "  --deb <PATH>     Use a local official .deb instead of downloading"
             echo "  --version <X>    Download a specific version from the apt repo"
             echo "  --install, -i    Install the RPM after building"
             echo "  --smoke-test     Run Electron smoke test (skipped by default)"
+            echo "  --reproducible   Compress with gzip -n -9 (byte-reproducible, slower) instead of pigz"
             echo "  --help, -h       Show this help message"
             echo ""
             echo "This script:"
@@ -92,6 +95,17 @@ elif [ -n "$DEB_VERSION" ]; then
     DEB_ARG="$APT_PACKAGES_URL"
 else
     DEB_ARG="$APT_PACKAGES_URL"
+fi
+
+# Compress with pigz when available (about 5x faster than gzip -9). CI calls
+# build-patched-tarball.sh directly without this and keeps byte-reproducible
+# gzip; --reproducible keeps gzip for local builds too.
+if [ "$REPRODUCIBLE" = true ]; then
+    unset CLAUDE_ALLOW_PIGZ
+elif command -v pigz &> /dev/null; then
+    export CLAUDE_ALLOW_PIGZ=1
+else
+    log_info "Install pigz for a faster local build (using gzip)"
 fi
 
 # Build the patched tarball (shared with all distros)

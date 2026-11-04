@@ -234,17 +234,37 @@ const FIXTURE = {
 
 // --- vm rigs ----------------------------------------------------------------------
 // The builder chunk's only chunk dependency is the core chunk; a stub stands in
-// for it (grant normalization helpers, constants), node builtins are real.
+// for it (grant normalization helpers, constants), node builtins are real. The
+// core chunk's export names change every release, so bindCoreNames() reads
+// them from the builder chunk's own call sites before any chunk is loaded.
+const CORE = {};
+const CORE_SITES = {
+  // let o=e.jI(n),s=t=>{let n=e.EI(t.bundleId,t.displayName);
+  deniedFactory: [/let [\w$]+=([\w$]+)\.([\w$]+)\([\w$]+\),[\w$]+=[\w$]+=>\{let [\w$]+=\1\.[\w$]+\([\w$]+\.bundleId,[\w$]+\.displayName\)/, 2, () => () => false],
+  tierFor: [/let [\w$]+=([\w$]+)\.[\w$]+\([\w$]+\),[\w$]+=[\w$]+=>\{let [\w$]+=\1\.([\w$]+)\([\w$]+\.bundleId,[\w$]+\.displayName\)/, 2, () => "full"],
+  // ||e.AI(t.bundleId,t.displayName)))
+  policyDenied: [/\|\|([\w$]+)\.([\w$]+)\([\w$]+\.bundleId,[\w$]+\.displayName\)\)\)/, 2, () => false],
+  // {...e.MI,...r.getGrantFlags()}
+  defaultFlags: [/\{\.\.\.([\w$]+)\.([\w$]+),\.\.\.[\w$]+\.getGrantFlags\(\)\}/, 2, {}],
+  // deniedBundleIds:[...e.CI,
+  deniedIds: [/deniedBundleIds:\[\.\.\.([\w$]+)\.([\w$]+),/, 2, []],
+  // scale:{type:"number",description:e.TI}
+  scaleDesc: [/scale:\{type:"number",description:([\w$]+)\.([\w$]+)\}/, 2, "Scale factor."],
+};
+function bindCoreNames(src) {
+  const missing = [];
+  for (const [what, [re, g, value]] of Object.entries(CORE_SITES)) {
+    const m = re.exec(src);
+    if (m) CORE[m[g]] = value;
+    else missing.push(what);
+  }
+  return missing;
+}
 const coreStub = new Proxy(
   {},
   {
     get(_, k) {
-      if (k === "XN") return () => () => false;
-      if (k === "YN") return () => false;
-      if (k === "GN") return () => "full";
-      if (k === "ZN") return {};
-      if (k === "HN") return [];
-      if (k === "TN") return "Scale factor.";
+      if (typeof k === "string" && Object.hasOwn(CORE, k)) return CORE[k];
       if (k === "__esModule") return true;
       if (typeof k === "symbol") return undefined;
       return () => undefined;
@@ -364,6 +384,8 @@ if (patchMissing || !existsSync(stubPath)) {
     const roChunk = [...pristine.keys()].find((k) => /===(["`])computer_batch\1\)\{let [\w$]+=[\w$]+\.input\?\.actions;/.test(pristine.get(k)));
     const handlerChunk = [...pristine.keys()].find((k) => /handleToolCall:async\([\w$]+,[\w$]+,[\w$]+,[\w$]+\)=>\{let [\w$]+=[\w$]+\([\w$]+\);if\([\w$]+\([\w$]+\.sessionId,[\w$]+\.sessionType\)/.test(pristine.get(k)));
     const bsrc = builderChunk ? pristine.get(builderChunk) : "";
+    const coreMissing = bindCoreNames(bsrc);
+    check("core-chunk helpers located in the builder chunk", coreMissing.join(","), "");
     const builderFn = (/function ([\w$]+)\(([\w$]+),[\w$]+,[\w$]+\)\{let [\w$]+=\2\.hitTest===/.exec(bsrc) || [])[1];
     const bindFn = (/function ([\w$]+)\([\w$]+,[\w$]+,[\w$]+\)\{let\{logger:[\w$]+,serverName:[\w$]+\}=[\w$]+,[\w$]+,[\w$]+=[\w$]+\.skipFirstRequestWarnings/.exec(bsrc) || [])[1];
     const BKEY = builderFn && exportKeyFor(bsrc, builderFn);
@@ -453,22 +475,25 @@ if (patchMissing || !existsSync(stubPath)) {
 
     // ---------------------------------------------------------------- [3]
     console.log("\n[3] upstream's tools/list cache key");
+    // Cross-chunk export names (`t.wP()`, `t.zP`, ...) change every release:
+    // capture them instead of pinning them.
     const VA_RE =
-      /function ([\w$]+)\(\)\{let ([\w$]+)=`\$\{([\w$]+)\(\)\}:\$\{([\w$]+)\.sM\(\)\}:\$\{\4\.oM\(\)\.adaptiveResolution\}(?:\$\{process\.platform==="linux"&&\(globalThis\.__cdbAxKey\?\.\(\)\|\|""\)\+\(globalThis\.__cdbCuConsent\?\.key\?\.\(\)\|\|""\)\|\|""\})?`;\2!==([\w$]+)&&\(([\w$]+)=void 0,([\w$]+)=!1,\5=\2\)\}/;
+      /function (?<va>[\w$]+)\(\)\{let (?<loc>[\w$]+)=`\$\{(?<fa>[\w$]+)\(\)\}:\$\{(?<ns>[\w$]+)\.(?<teach>[\w$]+)\(\)\}:\$\{\k<ns>\.(?<adapt>[\w$]+)\(\)\.adaptiveResolution\}(?:\$\{process\.platform==="linux"&&\(globalThis\.__cdbAxKey\?\.\(\)\|\|""\)\+\(globalThis\.__cdbCuConsent\?\.key\?\.\(\)\|\|""\)\|\|""\})?`;\k<loc>!==(?<key>[\w$]+)&&\((?<ma>[\w$]+)=void 0,(?<ga>[\w$]+)=!1,\k<key>=\k<loc>\)\}/;
     const PA_RE =
-      /function ([\w$]+)\(([\w$]+)\)\{return ([\w$]+)=([\w$]+)\(\),([\w$]+)\.s\(\{\.\.\.([\w$]+)\.SM,teachMode:\6\.sM\(\),adaptiveResolution:\6\.oM\(\)\.adaptiveResolution,appScoped:\3\?\{supportsRawInput:!0\}:void 0\},\6\.nM\(\),\2\)\.map\(\(\2=>\(\{name:\2\.name,description:\2\.description\?\?"",inputSchema:\2\.inputSchema\}\)\)\)\}/;
+      /function (?<pa>[\w$]+)\((?<arg>[\w$]+)\)\{return (?<ha>[\w$]+)=[\w$]+\(\),(?<bns>[\w$]+)\.s\(\{\.\.\.(?<ns>[\w$]+)\.(?<caps>[\w$]+),teachMode:\k<ns>\.(?<teach>[\w$]+)\(\),adaptiveResolution:\k<ns>\.(?<adapt>[\w$]+)\(\)\.adaptiveResolution,appScoped:\k<ha>\?\{supportsRawInput:!0\}:void 0\},\k<ns>\.(?<mode>[\w$]+)\(\),\k<arg>\)\.map\(\(\k<arg>=>\(\{name:\k<arg>\.name,description:\k<arg>\.description\?\?"",inputSchema:\k<arg>\.inputSchema\}\)\)\)\}/;
     const keyRig = (src, ctx, builder) => {
       const va = VA_RE.exec(src);
       const pa = PA_RE.exec(src);
       if (!va || !pa) return null;
-      const [vaSrc, vaName, , fa, ns, keyVar, maVar, gaVar] = va;
-      const [paSrc, paName, , haVar, , bns] = pa;
+      const g = va.groups;
+      const h = pa.groups;
+      if (g.ns !== h.ns || g.teach !== h.teach || g.adapt !== h.adapt) return null;
       ctx.__keyBuilder = builder;
       return vm.runInContext(
-        `(function(){var ${keyVar},${maVar},${gaVar},${haVar};function ${fa}(){return!1}` +
-          `var ${ns}={sM:function(){return!1},oM:function(){return{adaptiveResolution:!0}},SM:${JSON.stringify(LINUX_CAPS)},nM:function(){return"pixels"}};` +
-          `var ${bns}={s:function(){return __keyBuilder.apply(null,arguments)}};${vaSrc}${paSrc}` +
-          `return{va:${vaName},pa:${paName},key:function(){return ${keyVar}},cached:function(){return ${maVar}},cache:function(v){${maVar}=v}}})()`,
+        `(function(){var ${g.key},${g.ma},${g.ga},${h.ha};function ${g.fa}(){return!1}` +
+          `var ${g.ns}={${g.teach}:function(){return!1},${g.adapt}:function(){return{adaptiveResolution:!0}},${h.caps}:${JSON.stringify(LINUX_CAPS)},${h.mode}:function(){return"pixels"}};` +
+          `var ${h.bns}={s:function(){return __keyBuilder.apply(null,arguments)}};${va[0]}${pa[0]}` +
+          `return{va:${g.va},pa:${h.pa},key:function(){return ${g.key}},cached:function(){return ${g.ma}},cache:function(v){${g.ma}=v}}})()`,
         ctx
       );
     };

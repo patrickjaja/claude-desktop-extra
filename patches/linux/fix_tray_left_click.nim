@@ -42,8 +42,9 @@
 # Every name is captured from the bundle, never hardcoded: the Electron
 # namespace and the tray variable from the constructor site, the handler from
 # the "Show App" item (anchored on its stable i18n message, not its minified
-# name), and the main-window variable from that handler's first statement. The
-# menu builder and the tray setup live in the same chunk, so all are in scope.
+# name), and the main-window variable from the first `let` of that handler (or
+# of the restore routine it wraps). The menu builder and the tray setup live in
+# the same chunk, so all are in scope.
 #
 # Hosts that open the menu on left-click instead of calling Activate (an item
 # with ItemIsMenu=true, which Electron does not set) are unaffected.
@@ -58,9 +59,11 @@ const MARKER = "/*__cdb_tray_click_v2__*/"
 const EXPECTED_PATCHES = 1
 
 # "Show App" item of the tray context menu: `{label:X().formatMessage(
-# {defaultMessage:"Show App",id:"..."}),click:UJ}`. Group 0 = handler name.
+# {defaultMessage:"Show App",id:"..."}),click:UJ}`, since v4.16336.0
+# `click:()=>zyi()`. Group 0 = handler name (bare form), group 1 = handler
+# name (arrow form); exactly one of them matches.
 let showAppRe = re2(
-  """\{label:[\w$]+\(\)\.formatMessage\(\{defaultMessage:["`]Show App["`],id:["`][^"`]+["`]\}\),click:([\w$]+)\}"""
+  """\{label:[\w$]+\(\)\.formatMessage\(\{defaultMessage:["`]Show App["`],id:["`][^"`]+["`]\}\),click:(?:([\w$]+)|\(\)=>([\w$]+)\(\))\}"""
 )
 # Tray construction inside the comma expression of the tray-update function:
 # `Y9=new a.Tray(a.nativeImage.createFromPath(r)),`. Group 0 = tray variable,
@@ -72,10 +75,17 @@ let doneRe = re2(
   """([\w$]+)=new [\w$]+\.Tray\([\w$]+\.nativeImage\.createFromPath\([\w$]+\)\),/\*__cdb_tray_click_v2__\*/process\.platform==="linux"&&\(globalThis\.__cdbTrayBlurHook\|\|\(globalThis\.__cdbTrayBlurHook=1,[\w$]+\.app\.on\("browser-window-blur",\(e,w\)=>\{w\.__cdbTrayBlurAt=Date\.now\(\)\}\)\),([\w$]+)\.on\("click",\(\)=>\{let w=[\w$]+;[^}]*\?w\.close\(\):[\w$]+\(\)\}\)\),"""
 )
 
-# The "Show App" handler's first statement reads the main window:
-# `function UJ(){let e=jo;`. Group 0 = main-window variable.
+# The restore routine's first `let` reads the main window:
+# `function UJ(){let e=jo;`, since v4.16336.0 after one call statement
+# (`function aX(){fL();let e=V;`). Group 0 = main-window variable.
 proc showFnRe(showFn: string): Regex2 =
-  re2("function " & escapeRe(showFn) & """\(\)\{let [\w$]+=([\w$]+);""")
+  re2("function " & escapeRe(showFn) & """\(\)\{(?:[\w$]+\(\);)?let [\w$]+=([\w$]+);""")
+
+# Since v4.16336.0 the "Show App" handler is a wrapper that runs an updater
+# hook first and the restore routine last: `function zyi(){zvi(),aX()}`.
+# Group 0 = the last callee (the restore routine).
+proc showWrapperRe(showFn: string): Regex2 =
+  re2("function " & escapeRe(showFn) & """\(\)\{(?:[\w$]+\(\),)+([\w$]+)\(\)\}""")
 
 proc allMatches(s: string, r: Regex2): seq[RegexMatch2] =
   for m in findAll(s, r):
@@ -112,12 +122,25 @@ proc apply*(input: string): string =
     echo &"  [FAIL] `<v>=new <ns>.Tray(<ns>.nativeImage.createFromPath(<p>)),`: {trayMs.len} matches (want 1)"
     raise newException(ValueError, "fix_tray_left_click: Tray constructor anchor moved")
 
-  let showFn = input[showMs[0].group(0)]
+  let showGroup =
+    if showMs[0].group(0).a >= 0:
+      showMs[0].group(0)
+    else:
+      showMs[0].group(1)
+  let showFn = input[showGroup]
   let trayVar = input[trayMs[0].group(0)]
   let ns = input[trayMs[0].group(1)]
-  let winMs = allMatches(input, showFnRe(showFn))
+  # The main window is read by the handler itself or, when the handler is a
+  # wrapper, by the restore routine it calls last.
+  var restoreFn = showFn
+  var winMs = allMatches(input, showFnRe(restoreFn))
+  if winMs.len == 0:
+    let wrapMs = allMatches(input, showWrapperRe(showFn))
+    if wrapMs.len == 1:
+      restoreFn = input[wrapMs[0].group(0)]
+      winMs = allMatches(input, showFnRe(restoreFn))
   if winMs.len != 1:
-    echo &"  [FAIL] `function {showFn}(){{let <e>=<win>;`: {winMs.len} matches (want 1)"
+    echo &"  [FAIL] `function {restoreFn}(){{[<call>();]let <e>=<win>;`: {winMs.len} matches (want 1)"
     raise newException(ValueError, "fix_tray_left_click: Show App handler shape moved")
   let winVar = input[winMs[0].group(0)]
 

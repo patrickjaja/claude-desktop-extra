@@ -27,6 +27,10 @@
 # states), and the poll opens `let e=a.app.getVersion(),t=async()=>{` and, before
 # the apt check, asks upstream's release API only to emit a
 # desktop_update_available telemetry event (it never sets the button state).
+# v4.16336.0 reorders the init tail to `...,TICK(),await WAIT(),POLL()}` (WAIT
+# settles the managed-settings overlay first) and the poll returns to idle
+# early when a self-hosted updates host is configured; the shapes A and B
+# rewrite are unchanged.
 #
 # where `a` is require("electron"). So the button shows whenever Anthropic's
 # apt has a newer claude-desktop than app.getVersion(). Our users update from
@@ -272,41 +276,62 @@ proc apply*(input: string): string =
   let initPrefix =
     """[\w$]+\.info\(["`]\[updater\] Linux: in-app updater off \(updates via apt\)["`]\),""" &
     """[\w$]+\(["`]desktop_update_disabled["`],\{reason:["`]managed_by_package_manager["`]\}\),"""
-  # v3.6556.2 starts a second ticker after the poll (`...,POLL(),TICK()}`), so
-  # the poll call is matched up to `,` or `}` and that tail is left in place.
-  let initRe = re2("(" & initPrefix & """)([\w$]+)\(\)(?=[,}])""")
-  let initDoneRe = re2(
-    "(" & initPrefix &
-      """)globalThis\.__cdbUpdateOwn\.hookLinks\(([\w$]+)\),([\w$]+)\(\)(?=[,}])"""
-  )
+  # The init ends in a comma list of argument-less calls after the telemetry
+  # call: `...,POLL(),TICK()}` in v3.6556.2, `...,TICK(),await WAIT(),POLL()}`
+  # since v4.16336.0. The list is captured whole (group 0 = prefix, 1 = list)
+  # and split here; exactly one element must be the poll (checked below), and
+  # the patched list carries `globalThis.__cdbUpdateOwn.hookLinks(<electron>)`
+  # right before it.
+  let initRe = re2("(" & initPrefix & """)([^{}]*)\}""")
+  let callRe = re2"""(?:await )?([\w$]+)\(\)"""
+  let hookRe = re2"""globalThis\.__cdbUpdateOwn\.hookLinks\(([\w$]+)\)"""
   let inits = allMatches(result, initRe)
-  let initsDone = allMatches(result, initDoneRe)
-  var cPending = false
-  var pollFn: string
-  if initsDone.len == 1 and inits.len == 0:
-    pollFn = result[initsDone[0].group(2)]
-    if result[initsDone[0].group(1)] != electron:
-      fail(
-        "C: patched updater init hooks a different electron alias than the fetcher's"
-      )
-  elif initsDone.len == 0 and inits.len == 1:
-    pollFn = result[inits[0].group(1)]
-    cPending = true
-  else:
-    fail(
-      &"C: Linux updater init found {inits.len} time(s), patched init {initsDone.len} " &
-        "time(s); expected exactly one of them once; re-audit"
-    )
+  if inits.len != 1:
+    fail(&"C: Linux updater init found {inits.len} time(s), expected 1; re-audit")
+  let initM = inits[0]
+  let calls = result[initM.group(1)].split(',')
+  var hookAt = -1
+  var callees: seq[string]
+  for i, c in calls:
+    var cm = RegexMatch2()
+    if c.match(hookRe, cm):
+      if hookAt >= 0:
+        fail("C: patched updater init hooks the update link twice; re-audit")
+      if c[cm.group(0)] != electron:
+        fail(
+          "C: patched updater init hooks a different electron alias than the fetcher's"
+        )
+      hookAt = i
+      callees.add ""
+    elif c.match(callRe, cm):
+      callees.add c[cm.group(0)]
+    else:
+      fail(&"C: updater init tail `{c}` is not an argument-less call; re-audit")
   # The function the init starts must be the poll that owns B's compare.
-  let pollRe = re2(
-    "function " & rxEscape(pollFn) & """\(\)\{let [\w$]+=""" & rxEscape(electron) &
-      """\.app\.getVersion\(\)[;,]"""
-  )
-  let polls = allMatches(result, pollRe)
-  if polls.len != 1:
-    fail(
-      &"C: the updater init starts {pollFn}, which is not the poll (found {polls.len} time(s))"
+  proc pollReFor(fn: string): Regex2 =
+    re2(
+      "function " & rxEscape(fn) & """\(\)\{let [\w$]+=""" & rxEscape(electron) &
+        """\.app\.getVersion\(\)[;,]"""
     )
+
+  var pollAt = -1
+  for i, fn in callees:
+    if fn.len > 0 and allMatches(result, pollReFor(fn)).len == 1:
+      if pollAt >= 0:
+        fail("C: the updater init starts two poll-shaped functions; re-audit")
+      pollAt = i
+  if pollAt < 0:
+    fail(
+      &"C: none of the updater init calls `{result[initM.group(1)]}` is the poll; re-audit"
+    )
+  let pollFn = callees[pollAt]
+  var cPending = false
+  if hookAt < 0:
+    cPending = true
+  elif hookAt != pollAt - 1:
+    fail("C: patched updater init hooks the update link, but not right before the poll")
+  # The function the init starts must be the poll that owns B's compare.
+  let polls = allMatches(result, pollReFor(pollFn))
   if polls[0].boundaries.b >= cmpMatch.boundaries.a or
       "function " in result[polls[0].boundaries.b + 1 ..< cmpMatch.boundaries.a]:
     fail(&"C: the compare B rewrites is not inside {pollFn}; re-audit")
@@ -320,19 +345,16 @@ proc apply*(input: string): string =
       fetchAt = fetchMatches[0].boundaries.a
     else:
       fetchAt = fetchDone[0].boundaries.a
-    if cPending:
-      initAt = inits[0].boundaries.a
-    else:
-      initAt = initsDone[0].boundaries.a
+    initAt = initM.boundaries.a
     if not (cmpMatch.boundaries.a < fetchAt and fetchAt < initAt):
       fail("internal: expected poll < fetcher < updater init in the bundle; re-audit")
 
   if cPending:
-    let m = inits[0]
-    let injected =
-      result[m.group(0)] & "globalThis.__cdbUpdateOwn.hookLinks(" & electron & ")," &
-      pollFn & "()"
-    result = result[0 ..< m.boundaries.a] & injected & result[m.boundaries.b + 1 .. ^1]
+    var tail = calls
+    tail.insert("globalThis.__cdbUpdateOwn.hookLinks(" & electron & ")", pollAt)
+    let injected = result[initM.group(0)] & tail.join(",") & "}"
+    result =
+      result[0 ..< initM.boundaries.a] & injected & result[initM.boundaries.b + 1 .. ^1]
     echo &"  [OK] C: updater init now hooks the update link before starting the poll {pollFn}"
     patchesApplied += 1
   else:
@@ -380,7 +402,11 @@ proc apply*(input: string): string =
     fail("A: end state missing (patched fetcher, helper or " & MARKER & ")")
   if allMatches(result, cmpDoneRe).len != 1 or allMatches(result, cmpRe).len != 0:
     fail("B: end state missing (patched compare)")
-  if allMatches(result, initDoneRe).len != 1 or allMatches(result, initRe).len != 0:
+  let initsOut = allMatches(result, initRe)
+  let hookedPoll =
+    "globalThis.__cdbUpdateOwn.hookLinks(" & electron & ")," & pollFn & "()"
+  if initsOut.len != 1 or
+      ("," & result[initsOut[0].group(1)] & ",").count("," & hookedPoll & ",") != 1:
     fail("C: end state missing (hookLinks call in the updater init)")
 
   if patchesApplied < EXPECTED_PATCHES:

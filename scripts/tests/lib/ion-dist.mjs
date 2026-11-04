@@ -5,6 +5,9 @@
 // v4.29.0 it ships packed as resources/ion-dist.asar (no .unpacked sibling).
 // openIonDist() accepts the install tree and returns whichever form is there,
 // behind one interface, so a harness never extracts 190 MB to read a few files.
+// The asar wins when both exist, like upstream's packaged path: since v4.16336.0
+// the .deb also ships resources/ion-dist/ with only a static placeholder
+// index.html for pre-4.29.0 processes, which the app never loads.
 //
 // The asar reader is the minimal subset of @electron/asar's format: an 8-byte
 // size pickle (uint32 payload size = 4, uint32 header size), then the header
@@ -41,14 +44,6 @@ function asarNode(root, rel) {
 export function openIonDist(tree) {
   const dir = join(tree, "resources", "ion-dist");
   const asar = join(tree, "resources", "ion-dist.asar");
-  if (existsSync(dir) && statSync(dir).isDirectory()) {
-    return {
-      kind: "dir",
-      path: dir,
-      list: (rel) => readdirSync(join(dir, rel)),
-      read: (rel) => readFileSync(join(dir, rel)),
-    };
-  }
   if (existsSync(asar) && statSync(asar).isFile()) {
     const fd = openSync(asar, "r");
     let parsed;
@@ -79,6 +74,14 @@ export function openIonDist(tree) {
         }
         return buf;
       },
+    };
+  }
+  if (existsSync(dir) && statSync(dir).isDirectory()) {
+    return {
+      kind: "dir",
+      path: dir,
+      list: (rel) => readdirSync(join(dir, rel)),
+      read: (rel) => readFileSync(join(dir, rel)),
     };
   }
   return null;

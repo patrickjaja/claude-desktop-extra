@@ -4570,8 +4570,10 @@
         state.paths.etcFile + " is valid and replaces the local configuration entirely" +
         (managed.provider ? " (provider: " + managed.provider + ")" : "") + ". " +
         (managed.locksSignIn
-          ? "It also disables claude.ai sign-in, so this machine cannot be switched to 1P."
-          : "You can still switch to 1P above; the values below are read-only while it is in place.")));
+          ? "It also pins third-party mode, so this machine cannot be switched to 1P."
+          : managed.policyMode === "1p"
+            ? "It also sets Claude.ai only, so third-party mode stays off; the values below are read-only while it is in place."
+            : "You can still switch to 1P above; the values below are read-only while it is in place.")));
       panel.appendChild(box);
     } else if (managed.present) {
       var warn = el("div", "cdbx-notice");

@@ -220,16 +220,21 @@ for patch_file in "${PATCH_FILES[@]}"; do
         # Since v4.29.0 the .deb packs resources/ion-dist as ion-dist.asar:
         # a "<target>.asar" file is extracted once into $WORK_DIR and that
         # extract is the pristine directory every patch on the target stages
-        # from (the shipped tree is never touched).
+        # from (the shipped tree is never touched). The asar wins over a
+        # same-named directory, like upstream's packaged path: since v4.16336.0
+        # the .deb also ships resources/ion-dist/ holding only a static
+        # placeholder index.html that the app never loads.
         if [ -z "$actual_target" ] || [ ! -d "$actual_target" ]; then
             sibling_tree="$(dirname "$APP_CONTENTS")/extract/usr/lib/claude-desktop"
             for tree in "$DEB_TREE" "$sibling_tree"; do
                 [ -n "$tree" ] || continue
-                if [ -d "$tree/$target" ]; then
-                    actual_target="$tree/$target"
-                    break
+                if [ ! -f "$tree/$target.asar" ]; then
+                    if [ -d "$tree/$target" ]; then
+                        actual_target="$tree/$target"
+                        break
+                    fi
+                    continue
                 fi
-                [ -f "$tree/$target.asar" ] || continue
                 if [ -z "${ASAR_EXTRACT[$tree/$target.asar]:-}" ]; then
                     if ! command -v asar >/dev/null 2>&1; then
                         echo "  Status: FAIL (asar CLI not found; needed to extract $tree/$target.asar)"

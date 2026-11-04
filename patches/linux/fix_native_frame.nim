@@ -243,6 +243,7 @@ proc apply*(input: string): string =
   # style for main and popout windows. Since v3.1623.0 it hoists the color into
   # one declarator chain:
   #   o=e==="main"&&pQn()||RI(),s=n?<dark>?"#f9f8f4":"#141412":r?e0n(o):o;
+  # (since v4.16336.0 without the `e==="main"&&` guard: `a=AXn()||oF(),...`).
   # `o` is the plain window background, `e0n(o)` upstream's alpha-blend that
   # has painted as a grey strip on Linux Wayland. Gate the blend off in Linux
   # integrated mode: `r?e0n(o):o` -> `!(LINUX_INTEGRATED)&&r?e0n(o):o`, which
@@ -255,7 +256,7 @@ proc apply*(input: string): string =
   n = 0
   var mismatch = ""
   result = result.replace(
-    re2"""(([\w$]+)=[\w$]+===["`]main["`]&&[\w$]+\(\)\|\|[\w$]+\(\),([\w$]+)=[\w$]+\?[\w$]+\.nativeTheme\.shouldUseDarkColors\?["`]#[0-9a-fA-F]+["`]:["`]#[0-9a-fA-F]+["`]:)([\w$]+\?[\w$]+\(([\w$]+)\):([\w$]+);return [\w$]+\.nativeTheme\.shouldUseDarkColors\?\{color:([\w$]+),)""",
+    re2"""(([\w$]+)=(?:[\w$]+===["`]main["`]&&)?[\w$]+\(\)\|\|[\w$]+\(\),([\w$]+)=[\w$]+\?[\w$]+\.nativeTheme\.shouldUseDarkColors\?["`]#[0-9a-fA-F]+["`]:["`]#[0-9a-fA-F]+["`]:)([\w$]+\?[\w$]+\(([\w$]+)\):([\w$]+);return [\w$]+\.nativeTheme\.shouldUseDarkColors\?\{color:([\w$]+),)""",
     proc(m: RegexMatch2, s: string): string =
       inc n
       let bg = s[m.group(1)]

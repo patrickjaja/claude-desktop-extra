@@ -4,6 +4,18 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-04
 
+### Upstream 4.16336.0
+
+- **Re-fitted to the new release** (Electron 44.9.3): the native-frame overlay color gate, the tray left-click toggle (the "Show App" item now calls a wrapper), the hidden-launch show hook for tray-less desktops, the "Update available" link hook (the updater init now waits for the managed settings first) and the profile window title (upstream keeps the main window's OS title at "Claude" and shows the conversation title in its own title bar; named profiles still get `Claude (work)`). No patch removed.
+- **The .deb now also ships `resources/ion-dist/` with one static "Claude was updated" page** for older versions still running after an upgrade. The app never loads it; the build ships it unchanged and keeps patching only `ion-dist.asar`.
+- **Settings -> Extra -> Deployment follows the new `deploymentMode` policy key** (`any` / `3p` / `1p`): a managed `1p` keeps third-party mode off, `3p` pins it, ahead of `disableDeploymentModeChooser`. The panel lists it and `inferenceGatewayAutoModeServerChecks` (203 keys). A configuration with only a self-hosted server (`selfHostedUrl` / `selfHostedToken`) now counts as third-party there too, as it does in upstream's own mode decision, so the panel no longer refuses to switch it to 3P.
+
+### Faster builds
+
+- **Local builds compress the tarball with pigz when it is installed** (`--reproducible` keeps `gzip -n -9`; CI is unchanged), and the post-patch JavaScript syntax check runs in parallel.
+
+### Computer Use
+
 - **Computer Use asks before it controls an app.** New switch Settings -> Extra -> Computer Use -> "Ask before Computer Use controls an app" (on by default). Code sessions show the approval card for the apps Claude names; approved apps get full control (clicks and typing). Clipboard access and system key combos need their checkbox in the card; clicks and typing on other apps are refused where the session can tell which app is under the pointer or in front (X11, Sway, Hyprland: both; GNOME, niri, river: the app in front only). Turn it off to get the old behavior in Code sessions (every app accessible without asking); cloud Cowork, Dispatch and teach mode keep upstream's own approval either way. Details: [docs/computer-use.md](docs/computer-use.md#approving-apps).
 - **Screenshots show only approved apps where the session allows it** (X11, X11 background display, Sway / Hyprland; there popup menus and panels can still show); on GNOME Wayland, niri, river and other sessions without window filtering they show the whole screen and Claude is told so. A screenshot is refused rather than taken unmasked when masking fails. The Computer Use page shows which case applies to your session.
 - Computer Use names an app the same way everywhere (approval, running apps, frontmost window, monitor lookup), using the .desktop id with its WM_CLASS, Exec and Name as aliases, so an approved "Google Chrome" matches its windows.

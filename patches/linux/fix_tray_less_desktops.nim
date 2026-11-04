@@ -58,9 +58,15 @@ let settingRe = re2(
   """if\((?:[\w$]+(?:\.[\w$]+)*\([^()]*\),)*!([\w$]+)\(["`]menuBarEnabled["`]\)\)\{[\w$]+\.info\(["`]Quitting app on main window close since tray is disabled["`]\)"""
 )
 let showOptRe = re2"""show:([\w$]+)&&![\w$]+,backgroundColor:"""
-let showMainRe = re2"""[\w$]+\([\w$]+,\{showMainWindow:([\w$]+)\}\)"""
+# `koo(c,{showMainWindow:aX,reopen:()=>u.app.emit("activate",{},!0)})` since
+# v4.16336.0 (before: `{showMainWindow:<fn>}` alone). Further members are
+# `key:<ident>` or `key:()=><call>(<args without parens>)`.
+const EXTRA_MEMBERS = """(?:,[\w$]+:(?:[\w$]+|\(\)=>[\w$]+(?:\.[\w$]+)*\([^()]*\)))*"""
+let showMainRe =
+  re2("""[\w$]+\([\w$]+,\{showMainWindow:([\w$]+)""" & EXTRA_MEMBERS & """\}\)""")
 let startupDoneRe = re2(
-  """\{showMainWindow:[\w$]+\}\),/\*__cdb_tray_host_v1__\*/\(\(\(\) =>[\s\S]*?\)\(\)\)\.startup\([\w$]+,[\w$]+,\(\)=>[\w$]+\("menuBarEnabled"\)\)"""
+  """\{showMainWindow:[\w$]+""" & EXTRA_MEMBERS &
+    """\}\),/\*__cdb_tray_host_v1__\*/\(\(\(\) =>[\s\S]*?\)\(\)\)\.startup\([\w$]+,[\w$]+,\(\)=>[\w$]+\("menuBarEnabled"\)\)"""
 )
 
 proc allMatches(s: string, r: Regex2): seq[RegexMatch2] =

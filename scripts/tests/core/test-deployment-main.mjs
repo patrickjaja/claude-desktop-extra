@@ -186,6 +186,36 @@ section("[2] the key catalog");
   ok(r.keepToken === KEEP, "the page is told which placeholder means \"keep the stored secret\"");
 }
 
+// --- [2b] the mode decision, v4.16336.0 (upstream's Gae + Kae) -------------
+section("[2b] the 1P/3P decision follows upstream's policy order");
+{
+  const p = install();
+  const keys = p.call("cdb-deploy:read").keys;
+  const dm = keys.find((k) => k.key === "deploymentMode");
+  ok(!!dm && dm.kind === "enum" && dm.options.join(",") === "any,3p,1p" && !!dm.lock,
+     "the deploymentMode policy key is listed, read-only, with its three values");
+  ok(keys.some((k) => k.key === "inferenceGatewayAutoModeServerChecks" && k.kind === "bool"),
+     "the catalog has inferenceGatewayAutoModeServerChecks");
+  const d = globalThis.__cdbExDecideMode;
+  ok(typeof d === "function", "the decision is exposed for this table");
+  if (typeof d === "function") {
+    const rows = [
+      // selects3p, policyMode, persisted -> expected
+      [false, "any", null, "1p"],
+      [false, "3p", null, "1p"],
+      [true, "any", null, "3p"],
+      [true, "any", "3p", "3p"],
+      [true, "any", "1p", "1p"],
+      [true, "3p", "1p", "3p"],
+      [true, "1p", null, "1p"],
+      [true, "1p", "3p", "1p"],
+    ];
+    for (const [sel, pol, per, want] of rows) {
+      ok(d(sel, pol, per) === want, `provider=${sel} policy=${pol} saved=${per} -> ${want}`);
+    }
+  }
+}
+
 // --- [3] switching to 3P is refused while nothing is configured ------------
 section("[3] the mode switch says why, instead of writing a mode that cannot work");
 {
@@ -195,6 +225,15 @@ section("[3] the mode switch says why, instead of writing a mode that cannot wor
      "3P with no stored configuration is refused", bad.error);
   ok(!existsSync(p.modeFile), "and nothing was written");
   ok(p.call("cdb-deploy:mode", "2p").ok === false, "an invalid mode is refused");
+}
+{
+  // Upstream's k2 also activates 3P on a selfHosted block alone (flat key
+  // selfHostedUrl), without a provider.
+  const p = install();
+  const set = p.call("cdb-deploy:set", "selfHostedUrl", "https://claude.example.internal");
+  ok(set.ok === true, "setting only selfHostedUrl succeeds", set.error || set.path);
+  const sw = p.call("cdb-deploy:mode", "3p");
+  ok(sw.ok === true, "a selfHosted-only configuration can switch to 3P", sw.error);
 }
 
 // --- [4] the first write creates upstream's own library layout -------------

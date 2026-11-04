@@ -666,7 +666,9 @@ if (patchMissing || !existsSync(stub)) {
     // lifts the exclusions on the lock release, below and test-cu-kwin-idle.mjs).
     const unhideExport = new RegExp('([\\w$]+):\\(\\)=>' + esc(unhideFn) + '(?![\\w$])').exec(pristine.bodies[uIdx] || "");
     check("unhide function exported as unhideComputerUseApps", unhideExport?.[1], "unhideComputerUseApps");
-    const callerRe = /\.e9\((["`])chicagoAutoUnhide\1\)(?:&&|\?)[\w$]+\.([\w$]+)\(/g;
+    // The settings getter (`.e9(` in 4.4212.0, `.drt(` in 4.16336.0) is a
+    // cross-chunk export name that changes every release.
+    const callerRe = /\.[\w$]+\((["`])chicagoAutoUnhide\1\)(?:&&|\?)[\w$]+\.([\w$]+)\(/g;
     const callerExports = new Set([...blob.matchAll(callerRe)].map((m) => m[2]));
     check("turn-end callers (gated on chicagoAutoUnhide) found", [...blob.matchAll(callerRe)].length >= 3, true);
     check("they all call one exported function", callerExports.size, 1);

@@ -32,6 +32,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 # Parse arguments
 INSTALL_AFTER_BUILD=false
 SKIP_SMOKE_TEST="${SKIP_SMOKE_TEST:-1}"
+REPRODUCIBLE=false
 PKGREL=""
 DEB_PATH=""
 DEB_VERSION=""
@@ -43,6 +44,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --smoke-test)
             SKIP_SMOKE_TEST=0
+            shift
+            ;;
+        --reproducible)
+            REPRODUCIBLE=true
             shift
             ;;
         --pkgrel|-r)
@@ -65,6 +70,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --version <X>         Download a specific version from the apt repo"
             echo "  --install, -i         Install the package after building"
             echo "  --smoke-test          Run Electron smoke test (skipped by default)"
+            echo "  --reproducible        Compress with gzip -n -9 (byte-reproducible, slower) instead of pigz"
             echo "  --pkgrel, -r <REL>    Override package release number (default: 1)"
             echo "  --help, -h            Show this help message"
             echo ""
@@ -77,7 +83,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--deb PATH | --version X] [--install] [--pkgrel <REL>] [--smoke-test]"
+            echo "Usage: $0 [--deb PATH | --version X] [--install] [--pkgrel <REL>] [--smoke-test] [--reproducible]"
             exit 1
             ;;
     esac
@@ -160,6 +166,17 @@ KWIN_PORTAL_BRIDGE_REL="$PROJECT_DIR/../computer-use/kwin-portal-bridge/target/r
 if [ -z "${KWIN_PORTAL_BRIDGE_BIN:-}" ] && [ -f "$KWIN_PORTAL_BRIDGE_REL" ]; then
     export KWIN_PORTAL_BRIDGE_BIN="$KWIN_PORTAL_BRIDGE_REL"
     log_info "Using pre-built kwin-portal-bridge: $KWIN_PORTAL_BRIDGE_BIN"
+fi
+
+# Compress with pigz when available (about 5x faster than gzip -9). CI calls
+# build-patched-tarball.sh directly without this and keeps byte-reproducible
+# gzip; --reproducible keeps gzip for local builds too.
+if [ "$REPRODUCIBLE" = true ]; then
+    unset CLAUDE_ALLOW_PIGZ
+elif command -v pigz &> /dev/null; then
+    export CLAUDE_ALLOW_PIGZ=1
+else
+    log_info "Install pigz for a faster local build (using gzip)"
 fi
 
 # Build the patched tarball (ingest the .deb)
