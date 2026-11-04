@@ -166,6 +166,13 @@ try {
     assert.equal(spawnSync(binary, [file]).status, 0); assert.equal(fs.readFileSync(file, 'utf8'), patched);
     assert.equal(spawnSync(process.execPath, ['--check', file]).status, 0);
     const E = vm.runInNewContext(`${patched};Engine`, { process: { platform: 'win32' }, globalThis: {} }); const engine = new E(); await engine.sweep(); assert.equal(engine.original, true);
+    const readiness = path.join(root, 'patches/community/add_feature_autofix_merge_ready');
+    fs.writeFileSync(file, fixtureSource.replace('class Engine{', 'class Engine{async checkSession(s,p){return true}'));
+    assert.equal(spawnSync(binary, [file]).status, 0);
+    assert.equal(spawnSync(readiness, [file]).status, 0);
+    const combined = fs.readFileSync(file, 'utf8');
+    assert.equal(spawnSync(binary, [file]).status, 0); assert.equal(fs.readFileSync(file, 'utf8'), combined);
+    assert.equal(spawnSync(readiness, [file]).status, 0); assert.equal(fs.readFileSync(file, 'utf8'), combined);
     fs.writeFileSync(file, fixtureSource.replace('async sweep()', 'async changed()')); assert.notEqual(spawnSync(binary, [file]).status, 0);
     fs.writeFileSync(file, patched.replace('this.__cdbPostMerge?.completed(', 'this.broken(')); assert.notEqual(spawnSync(binary, [file]).status, 0);
   });

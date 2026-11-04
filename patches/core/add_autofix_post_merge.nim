@@ -52,7 +52,10 @@ proc apply*(input: string): string =
       else:
         dropped(result[m.group(0)], result[m.group(1)], result[m.group(2)])
     if done:
-      if result.count(injected) != 1:
+      # Other patches may prepend their own contained callback. Assert our
+      # exact body independently of that prefix, with these method arguments.
+      let body = injected[injected.find('{') + 1 .. ^1]
+      if result.count(body) != 1:
         raise
           newException(ValueError, "post-merge callback end-state differs; re-audit")
     else:
