@@ -33,12 +33,13 @@
 {
   // "activeTheme": "mario",
 
-  // autoFixAllowDifferentAuthor: opt-in for PRs authored by a GitHub App or another
-  // account. Only skips the author/gh-login comparison for automatic and model-requested
-  // Auto-fix activation; authentication, session ownership, origin/age, confirmation,
-  // consent and race checks remain. Does not enable Auto-fix by itself. Default false.
-  // Applies to future activation attempts immediately. A boolean here locks the UI switch.
-  // "autoFixAllowDifferentAuthor": false,
+  // autoFixTrustedAuthors: additional exact host/login identities for automatic and
+  // model-requested Auto-fix activation. Empty by default; the authenticated gh user
+  // is always recognized. No URLs/wildcards; at most 50 entries. Applies live.
+  // Only extends author recognition: authentication, ownership, PR scope, origin/age,
+  // confirmation, consent and race checks remain. Does not enable Auto-fix itself.
+  // A value here locks the Settings editor. Invalid lists grant no additional trust.
+  // "autoFixTrustedAuthors": ["github.com/my-app[bot]", "ghe.example/username"],
 
   // transcriptLimits: for long Code sessions, especially ones with many browser
   // screenshots. The app only loads the last 50 MiB of a session's transcript, plus

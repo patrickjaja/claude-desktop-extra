@@ -416,22 +416,26 @@ async function featuresPanel(featuresItem) {
        "the state line follows the flip: " + cmRow.querySelector(".cdbx-state").textContent);
   }
 
-  const author = panel.querySelector('.cdbx-switch[aria-label="allow Auto-fix activation with a different PR author"]');
-  ok(!!author, "renders the Auto-fix author opt-in switch");
+  const author = panel.querySelector('#cdbx-autofix-authors');
+  ok(!!author, "renders trusted-author list editor");
   if (author) {
-    const row = author.closest(".cdbx-row");
-    ok(author.getAttribute("aria-checked") === "false", "author bypass is off by default");
-    ok(/only the author-match check/.test(row.textContent), "author row explains the narrow scope");
-    author.click();
-    author.click();
+    const row = author.closest(".cdbx-row"), save = row.querySelector("button");
+    ok(author.value === "", "additional trust list defaults empty");
+    ok(!!row.querySelector('label[for="cdbx-autofix-authors"]'), "editor has an accessible label");
+    ok(/only the author check/.test(row.textContent), "editor explains narrow scope");
+    author.value = "github.com/my-app[bot]\nghe.example/human";
+    save.click(); save.click();
     await sleep(60);
-    ok(window.__authorCalls.length === 1 && window.__authorCalls[0] === true,
-       "author switch suppresses duplicate submissions");
-    ok(author.getAttribute("aria-checked") === "true", "author switch reflects opt-in");
-    ok(!restartUp(row), "author setting applies without restart");
-    author.click();
-    await sleep(60);
-    ok(author.getAttribute("aria-checked") === "false", "author opt-in can be disabled");
+    ok(window.__authorCalls.length === 1 && window.__authorCalls[0].join(" ") === "github.com/my-app[bot] ghe.example/human",
+       "list save serializes identities and suppresses duplicate submissions");
+    ok(/2 additional trusted author/.test(row.textContent), "saved status reports exact list size");
+    ok(!restartUp(row), "list applies without restart");
+    author.value = ""; save.click(); await sleep(60);
+    ok(window.__authorCalls[1].length === 0, "empty save revokes additional authors");
+    author.value = "invalid"; save.click(); await sleep(60);
+    ok(/Could not save trusted authors/.test(row.textContent) && author.value === "invalid" && !save.disabled,
+       "failed save retains draft and reports error for retry");
+    author.value = "";
   }
 
   // --- Load large sessions in full: opt-in, NOT live, numbers shown but not edited
@@ -3150,10 +3154,10 @@ window.cdbExtra = {
   // Load large sessions in full. Without these two the row is silently skipped
   // (renderToggleRow answers nothing when its bridge half is missing), so a
   // harness that omits them would pass while never rendering the row.
-  autoFixAuthorRead: function () { return Promise.resolve({ ok: true, enabled: false, lockedByJsonc: false }); },
-  autoFixAuthorSet: function (enabled) {
-    (window.__authorCalls || (window.__authorCalls = [])).push(enabled);
-    return Promise.resolve({ ok: true, enabled: enabled });
+  autoFixAuthorRead: function () { return Promise.resolve({ ok: true, entries: [], lockedByJsonc: false }); },
+  autoFixAuthorSet: function (entries) {
+    (window.__authorCalls || (window.__authorCalls = [])).push(entries);
+    return Promise.resolve(entries.indexOf("invalid") !== -1 ? { ok: false, error: "Invalid host/login" } : { ok: true, entries: entries });
   },
   transcriptLimitsRead: function () { return Promise.resolve(window.__tlState || { ok: true, enabled: false, lockedByJsonc: false, source: "default", mainMiB: 256, subagentMiB: 192, activeNow: false, activeMainMiB: null, activeSubagentMiB: null, pendingRestart: false }); },
   // Answers pendingRestart the way the main side does: owed while the saved

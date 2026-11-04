@@ -21,7 +21,7 @@ function patch(source, name = "fixture.js") {
   writeFileSync(path, source);
   execFileSync(bin, [path], { stdio: "pipe" });
   const result = readFileSync(path, "utf8");
-  assert.equal(result.replaceAll("!(globalThis.__cdbAutoFixAllowDifferentAuthor?.()===true)&&", ""), source,
+  assert.equal(result.replace(/!\(globalThis\.__cdbAutoFixAuthorAllowed\?\.\([\w$]+\.author,[\w$]+(?:\.host)?\?\?"github\.com"\)===true\)&&/g, ""), source,
     "the patch changes only the author comparison conditions");
   execFileSync(bin, [path], { stdio: "pipe" });
   assert.equal(readFileSync(path, "utf8"), result, "patch is byte-idempotent");
@@ -46,41 +46,62 @@ try {
   const { ctx, handlers } = loadSettings();
   const read = () => handlers["cdb-autofix-author:read"](sender);
   const set = value => handlers["cdb-autofix-author:set"](sender, value);
-  const key = "autoFixAllowDifferentAuthor";
+  const key = "autoFixTrustedAuthors";
+  const pair = "github.com/project-app[bot]";
+  const allowed = (login = "project-app[bot]", host = "github.com") => ctx.__cdbAutoFixAuthorAllowed(login, host);
   const json = join(dir, "claude-desktop-extra.json"), jsonc = join(dir, "claude-desktop-extra.jsonc");
-  assert.equal(ctx.__cdbAutoFixAllowDifferentAuthor(), false);
-  assert.equal((await read()).enabled, false);
-  assert.equal((await set("true")).ok, false);
-  writeFileSync(json, '{"activeTheme":"nord"}');
-  assert.equal((await set(true)).ok, true);
-  assert.deepEqual(JSON.parse(readFileSync(json)), { activeTheme: "nord", [key]: true });
-  assert.equal(ctx.__cdbAutoFixAllowDifferentAuthor(), true);
-  assert.equal(loadSettings().ctx.__cdbAutoFixAllowDifferentAuthor(), true, "persists across restart");
-  assert.equal(loadSettings(join(dir, "other-profile")).ctx.__cdbAutoFixAllowDifferentAuthor(), false, "profiles do not share opt-in");
-  writeFileSync(jsonc, `{"${key}":true}`);
-  assert.equal(ctx.__cdbAutoFixAllowDifferentAuthor(), true);
-  assert.equal((await set(false)).ok, false, "JSONC true also locks the UI");
-  writeFileSync(jsonc, `{// human override\n"${key}":false,}`);
-  assert.equal(ctx.__cdbAutoFixAllowDifferentAuthor(), false);
+  assert.equal(allowed(), false);
+  assert.equal((await read()).entries.length, 0);
+  writeFileSync(json, '{"activeTheme":"nord","autoFixAllowDifferentAuthor":true}');
+  assert.equal(allowed(), false, "legacy bypass never becomes implicit trust");
+  assert.equal((await set([" GITHUB.COM/Project-App[bot] ", pair, "ghe.example/human"])).ok, true);
+  assert.deepEqual(JSON.parse(readFileSync(json)), { activeTheme: "nord", [key]: [pair, "ghe.example/human"] });
+  assert.equal(allowed(), true);
+  assert.equal(allowed("PROJECT-APP[bot]", "GITHUB.COM"), true);
+  assert.equal(allowed("other-app[bot]"), false);
+  assert.equal(allowed("project-app[bot]", "ghe.example"), false, "same login on another server is not trusted");
+  assert.equal(allowed("human", "ghe.example"), true, "explicit enterprise identity works");
+  assert.equal(allowed("human", "github.com"), false);
+  assert.equal(loadSettings().ctx.__cdbAutoFixAuthorAllowed("project-app[bot]", "github.com"), true, "persists across restart");
+  assert.equal(loadSettings(join(dir, "other-profile")).ctx.__cdbAutoFixAuthorAllowed("project-app[bot]", "github.com"), false);
+  for (const invalid of [true, null, {}, "github.com/user", [1], ["*/*"], ["github.com/*"],
+    ["https://github.com/user"], ["github.com:443/user"], ["github.com/user/repo"], [".github.com/user"],
+    ["github.com/user@example.com"], ["github.com/user name"], Array(51).fill(pair), [pair, "broken"]]) {
+    assert.equal((await set(invalid)).ok, false, "malformed or oversized list rejected atomically: " + JSON.stringify(invalid));
+    assert.equal(allowed(), true, "rejected save does not modify existing trust");
+  }
+  writeFileSync(jsonc, `{// human override\n"${key}":[],}`);
+  assert.equal(allowed(), false, "empty JSONC list overrides populated JSON");
   assert.equal((await read()).lockedByJsonc, true);
-  assert.equal((await set(true)).ok, false);
+  assert.equal((await set([pair])).ok, false);
+  writeFileSync(jsonc, JSON.stringify({ [key]: [pair] }));
+  assert.equal(allowed(), true);
+  assert.equal((await set([])).ok, false);
+  writeFileSync(jsonc, JSON.stringify({ [key]: [pair, "invalid"] }));
+  assert.equal(allowed(), false, "invalid JSONC list denies all, not a partial allowlist or JSON fallback");
+  assert.equal((await read()).lockedByJsonc, true);
+  assert.ok((await read()).warning);
+  writeFileSync(jsonc, "broken JSONC");
+  assert.equal(allowed(), false, "unreadable human override cannot fall back to permissive JSON");
+  assert.equal((await set([pair])).ok, false);
   rmSync(jsonc);
-  assert.equal((await set(false)).ok, true);
+  assert.equal((await set([])).ok, true);
+  assert.equal(allowed(), false, "revocation applies live");
   assert.deepEqual(JSON.parse(readFileSync(json)), { activeTheme: "nord" });
-  for (const value of ["true", 1, {}, null, false]) {
+  for (const value of [true, "true", 1, {}, null, false, [pair, "invalid"]]) {
     writeFileSync(json, JSON.stringify({ [key]: value }));
-    assert.equal(ctx.__cdbAutoFixAllowDifferentAuthor(), false, "only boolean true opts in");
+    assert.equal(allowed(), false, "invalid config denies all");
   }
   writeFileSync(json, "broken JSON");
-  assert.equal(ctx.__cdbAutoFixAllowDifferentAuthor(), false);
-  assert.equal((await set(true)).ok, false, "do not overwrite malformed config");
+  assert.equal(allowed(), false);
+  assert.equal((await set([pair])).ok, false, "do not overwrite malformed config");
   const hostile = { ...sender, sender: { ...sender.sender, getURL: () => "https://claude.ai.evil.test/settings" } };
-  assert.equal((await handlers["cdb-autofix-author:set"](hostile, true)).ok, false);
-  assert.equal((await handlers["cdb-autofix-author:set"]({ ...sender, senderFrame: { parent: {} } }, true)).ok, false);
+  assert.equal((await handlers["cdb-autofix-author:set"](hostile, [pair])).ok, false);
+  assert.equal((await handlers["cdb-autofix-author:set"]({ ...sender, senderFrame: { parent: {} } }, [pair])).ok, false);
   const win = loadSettings(dir, "win32");
-  assert.equal(win.ctx.__cdbAutoFixAllowDifferentAuthor, undefined);
-  assert.equal((await win.handlers["cdb-autofix-author:set"](sender, true)).ok, false);
-  console.log("PASS settings: default, persistence, disable, JSONC lock, validation, sender guards, Linux-only");
+  assert.equal(win.ctx.__cdbAutoFixAuthorAllowed, undefined);
+  assert.equal((await win.handlers["cdb-autofix-author:set"](sender, [pair])).ok, false);
+  console.log("PASS settings: exact host/login allowlist, defaults, persistence, legacy bypass ignored, validation, JSONC lock, sender guards");
 
   async function exercise(source, label, armSource) {
     const patched = patch(source, label + ".js");
@@ -96,18 +117,23 @@ try {
     const binding = { host: "github.com", repo: "org/repo" };
     const judge = (p = pr, l = login, o = origins, b = binding) => ctx.judge(p, l, o, b, Date.now(), Date.now() - 60000);
     assert.equal(judge(), "not_author", "missing helper remains safe");
-    ctx.__cdbAutoFixAllowDifferentAuthor = () => enabled;
+    ctx.__cdbAutoFixAuthorAllowed = (author, host) => enabled && author.toLowerCase() === "project-app[bot]" && host.toLowerCase() === "github.com";
     assert.equal(judge(), "not_author");
     assert.equal(judge({ ...pr, author: "HUMAN" }), "armed");
     enabled = true;
-    assert.equal(judge(), "armed", "GitHub App author allowed only after opt-in");
+    assert.equal(judge(), "armed", "only listed GitHub App author is allowed");
+    assert.equal(judge(pr, login, origins, { repo: binding.repo }), "armed", "omitted host defaults to github.com");
+    assert.equal(judge({ ...pr, author: "other-app[bot]" }), "not_author");
+    assert.equal(judge({ ...pr, author: "" }), "not_author");
+    assert.equal(judge(pr, login, [{ ...origins[0], hostname: "ghe.example" }], { ...binding, host: "ghe.example" }), "not_author");
     assert.equal(judge(pr, { login: null, failed: false }), "no_login");
     assert.equal(judge(pr, { login: null, failed: true }), "unreadable");
     assert.equal(judge({ success: false }), "unreadable");
     assert.equal(judge({ ...pr, createdAt: "2000-01-01" }), "older_pr");
     assert.equal(judge(pr, login, []), "no_origin");
     assert.equal(judge(pr, login, origins, { ...binding, repo: "other/repo" }), "other_repo");
-    assert.equal(judge(pr, login, origins, { ...binding, host: "other.host" }), "other_repo");
+    assert.equal(judge(pr, login, origins, { ...binding, host: "other.host" }), "not_author");
+    assert.equal(judge({ ...pr, author: "human" }, login, origins, { ...binding, host: "other.host" }), "other_repo");
     enabled = false;
     assert.equal(judge(), "not_author", "disabling takes effect immediately");
     enabled = true;
@@ -128,6 +154,11 @@ try {
     }
     enabled = false; await run("not_author");
     enabled = true; await run(undefined);
+    pr.author = "unlisted-app[bot]"; await run("not_author");
+    pr.author = "project-app[bot]";
+    writes = [];
+    assert.equal(await m.enableAutoFixForModel("session", "org/repo", 42, "ghe.example"), "not_author");
+    assert.equal(writes.length, 0, "model path scopes additional trust to the actual PR host");
     for (const reason of ["not_own", "unconfirmed"]) { refusal = reason; await run(reason); }
     refusal = undefined;
     m.config.claudeCodeRunsHere = () => false; await run("runs_elsewhere");

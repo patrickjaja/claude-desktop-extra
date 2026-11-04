@@ -2316,26 +2316,73 @@
     });
   }
 
-  // --- Code: narrow opt-in for GitHub App / other-account PR authors --------
+  // --- Code: explicit additional authors, scoped to a GitHub server ---------
   function renderAutoFixAuthorRow(panel) {
-    return renderToggleRow(panel, {
-      section: "Code",
-      title: "Allow Auto-fix with a different PR author",
-      note: "Off by default. Allows automatic and model-requested Auto-fix activation when a PR " +
-        "was authored by a GitHub App or another account instead of your authenticated gh user. " +
-        "This removes only the author-match check: authentication, session ownership, PR scope, " +
-        "consent and all other eligibility checks still apply. It does not enable Auto-fix by itself " +
-        "or change your GitHub identity. Applies live to future activation attempts.",
-      ariaLabel: "allow Auto-fix activation with a different PR author",
-      read: "autoFixAuthorRead",
-      write: "autoFixAuthorSet",
-      lockFile: "claude-desktop-extra.jsonc",
-      isOn: function (res) { return res.enabled === true; },
-      describe: function (on) { return on ? "on - PR author may differ from gh user" : "off - PR author must match gh user"; },
-      writeArg: function (next) { return next; },
-      toast: function (next) { return next ? "Auto-fix author mismatch allowed" : "Auto-fix author match required"; },
-      errorPrefix: "Could not change the Auto-fix author setting: "
+    var api = window.cdbExtra;
+    if (!api || typeof api.autoFixAuthorRead !== "function" || typeof api.autoFixAuthorSet !== "function") return;
+    var spec = {
+      section: "Code", title: "Trusted Auto-fix PR authors",
+      note: "Empty by default: the authenticated gh user is always recognized. Add exact host/login " +
+        "pairs, one per line (for example github.com/my-app[bot]), to also recognize selected users " +
+        "or GitHub App bots. No URLs or wildcards. This extends only the author check for automatic " +
+        "and model-requested activation: authentication, session ownership, PR scope, consent and " +
+        "race checks remain. It does not enable Auto-fix itself. Applies live to future attempts."
+    };
+    var head = el("div", "cdbx-section", spec.section);
+    var host = el("div", "cdbx-list");
+    var row = el("div", "cdbx-row");
+    var main = el("div", "cdbx-row-main");
+    main.appendChild(el("div", "cdbx-id", spec.title));
+    main.appendChild(el("div", "cdbx-note", spec.note));
+    var label = el("label", "cdbx-note", "Additional trusted authors (one host/login per line)");
+    label.htmlFor = "cdbx-autofix-authors";
+    var area = el("textarea", "cdbx-area");
+    var editor = el("div", "cdbx-areawrap");
+    editor.appendChild(area);
+    area.id = label.htmlFor;
+    area.rows = 4;
+    area.maxLength = 18000;
+    area.spellcheck = false;
+    area.placeholder = "github.com/my-app[bot]";
+    area.disabled = true;
+    var save = el("button", "cdbx-btn", "Save trusted authors");
+    save.type = "button";
+    save.disabled = true;
+    var state = el("div", "cdbx-state", "Loading...");
+    state.setAttribute("role", "status");
+    state.setAttribute("aria-live", "polite");
+    main.appendChild(label); main.appendChild(editor); main.appendChild(save); main.appendChild(state);
+    row.appendChild(main); host.appendChild(row); panel.appendChild(head); panel.appendChild(host);
+    var busy = false, locked = true;
+    function show(res) {
+      if (failed(res) || !Array.isArray(res.entries)) {
+        state.textContent = "Unavailable: " + reason(res); return;
+      }
+      locked = !!res.lockedByJsonc;
+      area.value = res.entries.join("\n");
+      area.disabled = locked; save.disabled = locked;
+      state.textContent = (res.warning || (res.entries.length + " additional trusted author(s)")) +
+        (locked ? " - set in claude-desktop-extra.jsonc; edit that file to change this" : " - applies live");
+    }
+    api.autoFixAuthorRead().then(show, function (e) { state.textContent = "Unavailable: " + String(e); });
+    save.addEventListener("click", function () {
+      if (busy || locked) return;
+      var entries = area.value.split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean);
+      busy = true; save.disabled = true; area.disabled = true; state.textContent = "Saving...";
+      api.autoFixAuthorSet(entries).then(function (res) {
+        busy = false;
+        if (failed(res)) {
+          area.disabled = locked; save.disabled = locked;
+          state.textContent = "Could not save trusted authors: " + reason(res); return;
+        }
+        show(res);
+        toast("Trusted Auto-fix authors saved");
+      }, function (e) {
+        busy = false; area.disabled = locked; save.disabled = locked;
+        state.textContent = "Could not save trusted authors: " + String(e);
+      });
     });
+    return { head: head, host: host, spec: spec };
   }
 
   // --- sessions: how much of a big Code session the app loads ---------------
