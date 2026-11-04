@@ -2,11 +2,14 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-05
+
+### Auto-fix forwards comments that arrive after a merge (thanks @alexx-ftw, #310)
+
+- **After an Auto-fix PR is merged, new comments, inline review comments and reviews from the repository's owners, members, collaborators and bots reach its Code session as quoted informational notices for 7 days after the merge** (mentions defanged, each text capped at 1200 characters; upstream stops reading a PR once it is merged). Claude reports them and waits for you: it never changes code, replies on GitHub or merges. Archived sessions are not read or woken. Same switch as the ready-to-merge notice, now titled Settings -> Extra -> Community Features -> "Auto-fix notices: ready to merge, comments after merge" (off by default, applies live).
+- Cost: per Auto-fix PR inside its window, one round of ETag-conditional GitHub REST reads per sweep (the PR and its three comment lists), none while fewer than 1000 REST requests remain or a rate-limit window is open; one model turn per notice. Details: [docs/autofix-post-merge.md](docs/autofix-post-merge.md).
+
 ## 2026-11-04
-
-### Comments after merge
-
-- Auto-fix keeps forwarding new comments after a PR merges while its owning session remains active. These are informational notices only, never authorization to change or push code, reply on GitHub, merge or deploy. Archived sessions do not poll GitHub or wake; autoarchive preferences stay unchanged. Delivery is persisted per account/profile, deduplicated across restarts and independent of HEAD changes. Existing history is not replayed on first activation. [Details](docs/autofix-post-merge.md).
 
 ### Auto-fix wakes the session when its PR is ready to merge (thanks @alexx-ftw, #309)
 

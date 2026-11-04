@@ -382,7 +382,8 @@ await test("settings: bridge methods and the Community page row", async () => {
   const page = readFileSync(join(ROOT, "js/extra_settings_page.js"), "utf8");
   const row = /function renderAutoFixMergeReadyRow\(panel\) \{[\s\S]*?\n {2}\}\n/.exec(page);
   assert.ok(row);
-  assert.match(row[0], /section: "Code",\s*title: "Wake Auto-fix sessions when a PR is ready to merge"/);
+  assert.match(row[0], /section: "Code",\s*title: "Auto-fix notices: ready to merge, comments after merge"/);
+  assert.match(row[0], /After the PR is merged/); assert.match(row[0], /up to 7 days/); assert.match(row[0], /never merges/);
   assert.match(row[0], /read: "autoFixMergeReadyRead",\s*write: "autoFixMergeReadySet"/);
   assert.match(row[0], /one GitHub read per Auto-fix PR/); assert.match(row[0], /one model turn per notice/); assert.match(row[0], /Applies live/);
   assert.equal(row[0].includes(String.fromCharCode(0x2014)), false);

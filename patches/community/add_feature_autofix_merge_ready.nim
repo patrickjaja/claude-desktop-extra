@@ -2,9 +2,10 @@
 # @patch-type: nim
 #
 # Opt-in (default OFF): wake an Auto-fix session when its PR is ready to merge.
-# Switch: Settings -> Extra -> Community Features -> "Wake Auto-fix sessions
-# when a PR is ready to merge" (key `autoFixMergeReady`, read live through
-# globalThis.__cdbAutoFixMergeReadyEnabled(), defined by js/extra_settings_main.js).
+# Switch: Settings -> Extra -> Community Features -> "Auto-fix notices: ready
+# to merge, comments after merge" (key `autoFixMergeReady`, read live through
+# globalThis.__cdbAutoFixMergeReadyEnabled(), defined by js/extra_settings_main.js;
+# shared with add_feature_autofix_post_merge.nim).
 #
 # Reuses AutoFixEngine's own sweep and its sendMessage CI wake; no timer, no
 # merge authority. Three sub-patches, each anchor must match exactly once:
@@ -14,7 +15,9 @@
 #   B  handleTurnCompleted(s,m){try{ -> prepends a contained completion callback.
 #   C  handleSendsDroppedUnsent(s,m,r){try{ -> prepends a contained drop
 #      callback that passes the reason ("cancelled" = dismissed, not retried).
-# Idempotency asserts the exact injected end states (gate, try/catch, helper).
+# Idempotency asserts the exact injected end states (gate, try/catch, helper);
+# each callback body must sit exactly once in its method's prefix chain, since
+# add_feature_autofix_post_merge prepends its own contained callback after us.
 import std/[os, strutils]
 import regex
 
@@ -66,13 +69,50 @@ proc assertPresent(s: string, pattern: Regex2, expected: proc(m: RegexMatch2): s
       ValueError, "merge-ready injection differs from this build; re-audit"
     )
 
+# A callback's injected body (everything after the signature's `{`) must be
+# present exactly once, and inside that method's chain of contained callback
+# prefixes: other patches (add_feature_autofix_post_merge, applied after this
+# one in basename order) may prepend their own `try{...}catch(...){...}` block.
+proc assertCallback(
+    s: string, signature: Regex2, chain: Regex2, expected: proc(m: RegexMatch2): string
+) =
+  let heads = s.findAll(signature)
+  if heads.len != 1:
+    raise newException(
+      ValueError, "merge-ready callback signature count " & $heads.len & "; re-audit"
+    )
+  let full = expected(heads[0])
+  let body = full[full.find('{') + 1 .. ^1]
+  if s.count(body) != 1:
+    raise newException(
+      ValueError, "merge-ready callback body count " & $s.count(body) & "; re-audit"
+    )
+  let links = s.findAll(chain)
+  if links.len != 1 or links[0].boundaries.a != heads[0].boundaries.a:
+    raise newException(ValueError, "merge-ready callback chain differs; re-audit")
+  let marker = body[0 ..< body.find('(') + 1]
+  let at = links[0].boundaries.b + 1 - marker.len
+  if at < 0 or s.find(body, at) != at:
+    raise newException(
+      ValueError, "merge-ready callback outside its method prefix; re-audit"
+    )
+
 const
   wrapperHead =
     re2"""async checkSession\(([\w$]+),([\w$]+)\)\{let __cdbAfmrR=await this\.__cdbOriginalCheckSession\("""
-  completedHead =
-    re2"""handleTurnCompleted\(([\w$]+),([\w$]+)\)\{try\{this\.__cdbMergeReady\?\.completed\("""
-  droppedHead =
-    re2"""handleSendsDroppedUnsent\(([\w$]+),([\w$]+),([\w$]+)\)\{try\{this\.__cdbMergeReady\?\.dropped\("""
+  # One contained callback another patch prepended: try{this.__cdbX?.m(a,b)}catch(e){globalThis.__cdbDiag?.("[x] "+String(e))}
+  prefixLink =
+    """(?:try\{this\.__cdb[\w$]+\?\.(?:completed|dropped)\([\w$,]*\)\}catch\([\w$]+\)\{globalThis\.__cdbDiag\?\.\("\[[\w-]+\] "\+String\([\w$]+\)\)\})*"""
+  completedSig = re2"""handleTurnCompleted\(([\w$]+),([\w$]+)\)\{"""
+  droppedSig = re2"""handleSendsDroppedUnsent\(([\w$]+),([\w$]+),([\w$]+)\)\{"""
+  completedChain = re2(
+    """handleTurnCompleted\([\w$]+,[\w$]+\)\{""" & prefixLink &
+      """try\{this\.__cdbMergeReady\?\.completed\("""
+  )
+  droppedChain = re2(
+    """handleSendsDroppedUnsent\([\w$]+,[\w$]+,[\w$]+\)\{""" & prefixLink &
+      """try\{this\.__cdbMergeReady\?\.dropped\("""
+  )
 
 proc apply*(input: string): string =
   result = input
@@ -93,15 +133,17 @@ proc apply*(input: string): string =
       proc(m: RegexMatch2): string =
         wrapperFor(s[m.group(0)], s[m.group(1)]),
     )
-    assertPresent(
+    assertCallback(
       s,
-      completedHead,
+      completedSig,
+      completedChain,
       proc(m: RegexMatch2): string =
         completedFor(s[m.group(0)], s[m.group(1)]),
     )
-    assertPresent(
+    assertCallback(
       s,
-      droppedHead,
+      droppedSig,
+      droppedChain,
       proc(m: RegexMatch2): string =
         droppedFor(s[m.group(0)], s[m.group(1)], s[m.group(2)]),
     )

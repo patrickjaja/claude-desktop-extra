@@ -478,22 +478,25 @@ async function featuresPanel(featuresItem) {
        "...and so does its toast, from the main side's pendingRestart: " + tlToast());
   }
 
-  // --- Wake Auto-fix sessions when a PR is ready to merge: opt-in, live, says its cost
+  // --- Auto-fix notices (ready to merge, comments after merge): opt-in, live, says its cost
   {
-    const afSel = '.cdbx-switch[aria-label="wake Auto-fix sessions when a PR is ready to merge"]';
+    const afSel = '.cdbx-switch[aria-label="Auto-fix notices: ready to merge, comments after merge"]';
     const af = panel.querySelector(afSel);
-    ok(!!af, "renders the Auto-fix ready-to-merge switch");
+    ok(!!af, "renders the Auto-fix notices switch");
     if (af) {
       const afRow = af.closest(".cdbx-row");
       const afNote = afRow.querySelector(".cdbx-note").textContent;
-      ok(afRow.querySelector(".cdbx-id").textContent === "Wake Auto-fix sessions when a PR is ready to merge",
-         "titled Wake Auto-fix sessions when a PR is ready to merge");
+      ok(afRow.querySelector(".cdbx-id").textContent === "Auto-fix notices: ready to merge, comments after merge",
+         "titled Auto-fix notices: ready to merge, comments after merge");
       ok(afRow.previousElementSibling === null && afRow.parentElement.previousElementSibling.textContent === "Code",
          "under its own Code heading");
       ok(af.getAttribute("aria-checked") === "false" && !af.disabled, "off by default (opt-in), not locked");
       ok(/one GitHub read per Auto-fix PR/.test(afNote) && /one model turn per notice/.test(afNote),
          "the note says what it costs: " + afNote);
       ok(/never merges/.test(afNote) && /Applies live/.test(afNote), "the note says it never merges and applies live");
+      ok(/After the PR is merged/.test(afNote) && /owners, members, collaborators and bots/.test(afNote) &&
+         /up to 7 days/.test(afNote) && /replies on GitHub/.test(afNote),
+         "the note covers post-merge comments, who is trusted, the 7-day window and no GitHub replies: " + afNote);
       af.click();
       await sleep(60);
       ok((window.__afmrCalls || []).length === 1 && window.__afmrCalls[0] === true,

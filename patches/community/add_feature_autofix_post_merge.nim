@@ -1,14 +1,26 @@
 # @patch-target: app.asar.contents/.vite/build/index.js
 # @patch-type: nim
-# Post-merge comments remain informational; only active Auto-fix bindings.
-# Audited on pristine 4.16336.0. Three exact injections, no new timer.
+#
+# Opt-in (default OFF): forward comments that arrive on a MERGED Auto-fix PR
+# into its Code session as quoted informational notices (js/autofix_post_merge.js).
+# Shares the switch of add_feature_autofix_merge_ready.nim: Settings -> Extra ->
+# Community Features -> "Auto-fix notices: ready to merge, comments after merge"
+# (key `autoFixMergeReady`, read live through
+# globalThis.__cdbAutoFixMergeReadyEnabled(), defined by js/extra_settings_main.js).
+#
+# Audited on pristine 4.16336.0. Three sub-patches, no new timer:
+#   A  async sweep(){if(!this.sweeping){ -> runs the original sweep, then (switch
+#      on, Linux) the helper inside a try/catch.
+#   B  handleTurnCompleted(s,m){ -> prepends a contained completion callback.
+#   C  handleSendsDroppedUnsent(s,m,r){ -> prepends a contained drop callback.
+# Idempotency asserts the exact injected end states (gate, try/catch, helper).
 import std/[os, strutils]
 import regex
 
 const helper = staticRead("../../js/autofix_post_merge.js")
 const diag = "globalThis.__cdbDiag?.(\"[post-merge] \"+String(__cdbPmError))"
 const sweep =
-  "async sweep(){if(this.sweeping)return;await this.__cdbOriginalPostMergeSweep();if(process.platform===\"linux\"){try{this.__cdbPostMerge??=" &
+  "async sweep(){if(this.sweeping)return;await this.__cdbOriginalPostMergeSweep();if(process.platform===\"linux\"&&globalThis.__cdbAutoFixMergeReadyEnabled?.()===true){try{this.__cdbPostMerge??=" &
   helper & "(this);await this.__cdbPostMerge.sweep()}catch(__cdbPmError){" & diag &
   "}}}async __cdbOriginalPostMergeSweep(){"
 
@@ -69,6 +81,6 @@ proc apply*(input: string): string =
 
 when isMainModule:
   if paramCount() != 1:
-    quit("Usage: add_autofix_post_merge <bundle.js>", 1)
+    quit("Usage: add_feature_autofix_post_merge <bundle.js>", 1)
   let file = paramStr(1)
   writeFile(file, apply(readFile(file)))

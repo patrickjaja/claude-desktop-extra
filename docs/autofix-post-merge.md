@@ -1,25 +1,55 @@
-# Comments after merge
+# Auto-fix comments after merge
 
-Auto-fix continues forwarding new comments on a **MERGED** GitHub PR to its owning Code session while that session remains active and its Auto-fix binding is enabled. It uses `AutoFixEngine.sweep` and the existing `ci-monitor` send queue; it adds no timer, cron job or parallel poller. Linux only; no display-server or architecture-specific paths.
+On Linux, Auto-fix can forward new comments on a **merged** GitHub PR to its owning Code session as quoted informational notices. Upstream's Auto-fix sweep stops reading a PR once it is merged, so feedback that lands after the merge (a late review, a bot's post-merge report) is otherwise never seen by the session. The patch runs from `AutoFixEngine.sweep` and the existing `ci-monitor` send queue; it adds no timer, cron job or parallel poller.
+
+## Turning it on
+
+Settings -> Extra -> Community Features -> **Auto-fix notices: ready to merge, comments after merge**. The switch is shared with [ready-to-merge notices](autofix-merge-ready.md): one key, `autoFixMergeReady` in `<userData>/claude-desktop-extra.json`, turns on both. Off by default; it applies live, because the sweep wrapper asks `globalThis.__cdbAutoFixMergeReadyEnabled()` on every sweep. A boolean for the same key in the hand-owned `claude-desktop-extra.jsonc` wins and locks the switch. With the switch off, upstream's sweep runs unchanged and the patch makes no GitHub read and touches no file.
+
+Only PRs whose own **Auto-fix** switch is on are followed.
 
 ## Information is not authorization
 
-Post-merge notices are deliberately separate from the ordinary Auto-fix fix-and-push prompt. They identify the PR and quote feedback, but expressly grant **no authorization** to change code, commit, push, reply on GitHub, open another PR, merge or deploy. The agent reports the feedback and awaits separate user authorization for action. Third-party author/body text is normalized, control characters removed, opening angle brackets escaped and every line quoted. At most 20 comments, each body bounded to 1,600 characters, are delivered per notice; subsequent sweeps drain the remainder.
+Post-merge notices are separate from the ordinary Auto-fix fix-and-push prompt. They identify the PR and quote feedback, but expressly grant **no authorization** to change code, commit, push, reply on GitHub, open another PR, merge or deploy. The agent reports the feedback and awaits separate user authorization for any action.
 
-Issue comments, inline review comments and review summaries are included, regardless of author association. The currently authenticated GitHub user's own comments and empty bodies are excluded. Editing an existing comment is not a new comment. Review summaries use `submitted_at`; other comments use `created_at`. Only timestamps strictly after GitHub's `merged_at` and at or after this feature's initial account activation are eligible. Old history is **not** replayed when installing this feature. Comments that arrived while the app was stopped after activation can be recovered on the next sweep.
+## What is forwarded
+
+Issue comments, inline review comments and review summaries, with the same trust filter upstream uses for the CI comments Auto-fix forwards on an open PR:
+
+- **Authors:** only comments whose author is a GitHub bot (`user.type === "Bot"`) or whose `author_association` is `OWNER`, `MEMBER` or `COLLABORATOR`. `CONTRIBUTOR`, `FIRST_TIMER`, `FIRST_TIME_CONTRIBUTOR`, `NONE` and a missing association are dropped. The authenticated GitHub user's own comments are dropped too.
+- **Reviews:** only states `CHANGES_REQUESTED` and `COMMENTED` with a non-empty body; approvals, dismissed and pending reviews are dropped.
+- **Resolved inline threads are still forwarded.** GitHub's REST review-comment payload does not say whether a thread is resolved (only GraphQL does), and the patch adds no GraphQL scan, so inline comments are kept regardless of resolution.
+- **Time:** review summaries use `submitted_at`, other comments `created_at`. Only timestamps strictly after GitHub's `merged_at`, within the 7-day window below and at or after the feature's first activation for the account are eligible. Old history is not replayed when the switch is first turned on; comments that arrive while the app is stopped are picked up on the next sweep. Editing an existing comment is not a new comment.
+
+Text hygiene: each author and body is NFC-normalized, control and format characters are removed, `@` becomes the fullwidth `＠` (U+FF20, as upstream's own text normalizer does, so a quoted mention cannot notify anyone), the text is capped at 1200 code points (never splitting a surrogate pair) with `…` appended when cut, opening angle brackets are escaped and every line is quoted with `> `. At most 20 comments go into one notice; later sweeps drain the rest.
+
+## The 7-day window
+
+A merged PR is read for at most **7 days after its `merged_at`**. Past that, the patch drops the PR's ledger entry and keeps only its key in the ledger's `expired` list, so it is never read again while a binding still names it; the key is removed once no Auto-fix binding refers to the PR. A PR first seen more than 7 days after its merge is read once, forwards nothing, and is marked expired.
+
+## Cost
+
+Auto-fix sweeps every 60 seconds while the app is focused and every 5 minutes otherwise.
+
+- **One round of GitHub REST reads per Auto-fix PR per sweep** while it is inside its window: the PR itself plus its three comment lists (issue comments, review comments, reviews), all ETag-conditional, so an unchanged list costs a `304`.
+- **No read while the REST budget is low:** the read is skipped when GitHub reports fewer than **1000** remaining REST requests for that host, or a rate-limit window is open. 1000 is upstream's own REST low-budget threshold (`rest:1e3` in 4.16336.0).
+- **Failures back off** per PR, doubling from 1 minute up to 30 minutes. At most five PRs are read at once, the same batch size as the engine's own sweep.
+- **One model turn per notice.**
 
 ## Archived sessions and ownership
 
-**Archived sessions do not poll GitHub and do not wake.** No session is automatically unarchived, no human-only notification substitutes for agent delivery, and no autoarchive preference is changed. If a session is later unarchived, it can receive eligible pending comments. If it stays archived, no polling is performed on its behalf. A separate configurable autoarchive delay can provide a post-merge window; this patch does not implement or assume one.
+**Archived sessions are not read and do not wake.** No session is unarchived and no autoarchive preference is changed; an unarchived session can receive comments that are still inside the window.
 
-Inherited, dismissed, unconfirmed, disabled or non-GitHub bindings are excluded, as are sessions explicitly stopped until a person sends. A single owner is selected for duplicate bindings (existing owner, otherwise earliest session, stable ID tie-break). An archived owner's binding does not silently transfer to an active duplicate. Explicit removal or disabling of the old binding permits another eligible owner. Removing all bindings stops delivery. `CLOSED` without merge and open PRs stay outside this helper.
+Inherited, dismissed, unconfirmed, disabled or non-GitHub bindings are excluded, as are sessions stopped until a person sends. Duplicate bindings get a single owner (the existing owner, otherwise the earliest session, stable ID tie-break); an archived owner's binding does not move to an active duplicate unless the old binding is removed or disabled. Closed-without-merge and open PRs are left to upstream.
 
 ## Persistence and failure handling
 
-The atomic, mode-0600 `autofix-post-merge.json` ledger lives in the app's **account/org storage directory**, itself scoped by Electron userData/profile. Keys include GitHub host, repository and PR number, not HEAD SHA: a new HEAD cannot replay comments. Switching accounts cannot send an in-flight response into the new account. A successful merged-state read confirms repository identity, PR number and merge time; all calls use the binding's configured host and the app's existing authenticated REST client.
+`autofix-post-merge.json` is an atomic, mode-0600 ledger in the app's **account/org storage directory**, itself scoped by the profile's userData. Keys are host + repository + PR number, not the head SHA, so a new head cannot replay comments. It holds seen comment IDs, the pending batch with its message UUID, the PR's `merged_at`, and the expired keys; no comment bodies or credentials. Switching accounts cannot send an in-flight notice into the new account.
 
-Seen comment IDs, pending batch IDs and message UUIDs survive restart. A queued send is not considered seen until completion (or explicit user cancellation, which dismisses it). Lost sends retry; a surviving parked send is not duplicated. An unconfirmed send lost across restart is retried with the same UUID: delivery is **at least once**, not an exactly-once claim across a crash between acceptance and the receipt write. A failed or rejected send never consumes comment IDs. Missing authentication, unknown hosts, incomplete pagination and malformed/corrupt storage fail closed. Storage failures never cause an untracked send.
+A queued notice counts as seen only after its turn completes, or when the user deletes or stops it (dismissed). A lost send is retried with its original UUID; a send still parked in the queue is not duplicated. Delivery is **at least once**: a crash between acceptance and the ledger write can repeat a notice. A failed or undelivered send never consumes comment IDs. Missing authentication, unknown hosts, incomplete pagination and a corrupt or unwritable ledger fail closed, and a failed pre-send write prevents the send. Diagnostics use `[post-merge]` in `claude-patches.log`, without comment bodies or credentials.
 
-The helper observes upstream REST rate limits and leaves at least 20 requests of known headroom, reads each active merged PR at most once per minute, and backs failures off up to 30 minutes. Each read checks the PR plus three conditionally cached paginated comment endpoints; no GraphQL scan is added. Concurrency is capped at five targets, matching the existing engine batch size. The app's CLI cap and stopped/archived/binding checks remain in force before delivery. Diagnostics use `[post-merge]` in `claude-patches.log`, without logging comment bodies or credentials.
+## Upstream anchors and validation
 
-Validation: `node scripts/tests/core/test-autofix-post-merge.mjs`, the core/community feature harnesses, the pristine absorption probe and full patch application with JavaScript syntax checks. No installation/restart is required for these checks; a live Electron test is a separate step.
+Audited against upstream **4.16336.0**. The patch wraps `AutoFixEngine.sweep` (the original always runs first, then the gated helper inside a try/catch) and prepends contained callbacks to `handleTurnCompleted` and `handleSendsDroppedUnsent`. Each anchor must match exactly once; idempotency checks the exact injected end states. Runtime dependencies to re-audit after an upstream change: `githubPr.config.listSessionIds` / `getSession`, `githubPr.readBudgets(host).rest`, `ghRest.isKnownHost` / `rest` / `restPaginateWithMeta`, `getGhLogin`, `getAccountStorageDir`, `hasLiveQuery`, `cliGovernor.isAtCap`, `isSendParked`, and `sendMessage`'s `delivered/queued` receipt plus the completion/drop events and the drop reason `cancelled`.
+
+The harness `scripts/tests/community/test-autofix-post-merge.mjs` covers the switch gate, the trust, review and time filters, text hygiene, the window, the REST floor, delivery state and the compiled patch in both orders with the ready-to-merge patch; it does not prove live Electron delivery.
