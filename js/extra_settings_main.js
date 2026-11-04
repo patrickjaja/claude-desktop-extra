@@ -91,6 +91,26 @@
     return out;
   }
 
+  // This capability is granted only by the main-process native approval dialog.
+  // The remote settings page may read or revoke it, never grant it.
+  var __cdbEx_startRevision = 0;
+  if (process.platform === "linux") globalThis.__cdbSessionStartPermission = {
+    get revision() { return __cdbEx_startRevision; },
+    read: function () {
+      return __cdbEx_readFileKey(__cdbEx_paths().json, "alwaysAllowSessionStarts") === true;
+    },
+    grant: function () {
+      var result = __cdbEx_writeCfg(function (cfg) { cfg.alwaysAllowSessionStarts = true; });
+      if (result.ok) __cdbEx_startRevision++;
+      return result;
+    },
+    revoke: function () {
+      var result = __cdbEx_writeCfg(function (cfg) { delete cfg.alwaysAllowSessionStarts; });
+      if (result.ok) __cdbEx_startRevision++;
+      return result;
+    }
+  };
+
   // --- theme swatches -------------------------------------------------------
   // Five tokens per variant, each with fallbacks, reduced to CSS colors here so
   // the ~90 full token maps never cross into the remote page.
@@ -3021,6 +3041,17 @@
 
     "cdb-extra:paths": function () {
       return { ok: true, paths: __cdbEx_paths() };
+    },
+
+    "cdb-session-start:read": function () {
+      var store = globalThis.__cdbSessionStartPermission;
+      return store ? { ok: true, enabled: store.read() } : { ok: false, error: "Session-start permissions are Linux only" };
+    },
+    "cdb-session-start:revoke": function () {
+      var store = globalThis.__cdbSessionStartPermission;
+      if (!store) return { ok: false, error: "Session-start permissions are Linux only" };
+      var result = store.revoke();
+      return result.ok ? { ok: true, enabled: false } : result;
     },
 
     // Theme picker (Ctrl+Shift+T). The window and the hotkey live in

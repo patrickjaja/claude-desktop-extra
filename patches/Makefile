@@ -53,6 +53,8 @@ linux/fix_computer_use_linux: \
 
 community/add_feature_autofix_merge_ready: ../js/autofix_merge_ready.js
 
+core/add_session_start_permission: ../js/session_start_permission.js
+
 community/add_feature_dev_tools_toggle: ../js/dev_tools_toggle_main.js
 
 linux/fix_cowork_font: ../js/fix_cowork_font.js

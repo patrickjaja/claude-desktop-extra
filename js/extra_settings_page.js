@@ -3329,12 +3329,51 @@
     renderDevToolsRow
   ];
 
+  function renderSessionStartPermission(panel) {
+    if (!api || typeof api.sessionStartPermissionRead !== "function" ||
+        typeof api.sessionStartPermissionRevoke !== "function") return;
+    var host = el("div", "cdbx-row");
+    var main = el("div", "cdbx-row-main");
+    main.appendChild(el("div", "cdbx-id", "Starting other sessions"));
+    var status = el("div", "cdbx-note", "Reading permission...");
+    status.setAttribute("role", "status");
+    var revoke = el("button", "cdbx-btn", "Revoke always allow");
+    revoke.type = "button";
+    revoke.disabled = true;
+    main.appendChild(status);
+    host.appendChild(main);
+    var aside = el("div", "cdbx-row-aside");
+    aside.appendChild(revoke);
+    host.appendChild(aside);
+    panel.appendChild(host);
+    function show(result) {
+      if (failed(result)) {
+        status.textContent = "Could not read permission: " + reason(result);
+        revoke.disabled = false;
+        return;
+      }
+      status.textContent = result.enabled
+        ? "Always allow is saved for this Desktop profile. It grants no permissions inside new sessions. Revocation applies live."
+        : "Ask each time. Choose Allow always in an eligible native session-start dialog to remember your choice. Applies live.";
+      revoke.disabled = !result.enabled;
+    }
+    api.sessionStartPermissionRead().then(show, function (error) { status.textContent = String(error); });
+    revoke.addEventListener("click", function () {
+      revoke.disabled = true;
+      api.sessionStartPermissionRevoke().then(show, function (error) {
+        status.textContent = "Could not revoke permission: " + String(error);
+        revoke.disabled = false;
+      });
+    });
+  }
+
   function renderFeatures(panel) {
     clear(panel);
     panel.appendChild(el("div", "cdbx-h1", "Community Features"));
     panel.appendChild(el("div", "cdbx-sub",
       "Optional features this package adds on top of the official build - each applies live unless its " +
       "row says it needs a restart."));
+    renderSessionStartPermission(panel);
 
     var search = el("input", "cdbx-search");
     search.type = "search";

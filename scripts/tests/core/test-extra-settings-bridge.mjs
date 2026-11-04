@@ -32,6 +32,13 @@ ok(exposed && exposed.name === "cdbExtra", "the bridge exposes cdbExtra");
 const api = exposed.api;
 
 calls.length = 0;
+api.sessionStartPermissionRead(); api.sessionStartPermissionRevoke();
+ok(JSON.stringify(calls) === '[["cdb-session-start:read"],["cdb-session-start:revoke"]]',
+   "session-start permissions expose read and revoke through fixed channels only");
+ok(api.sessionStartPermissionSet === undefined && api.sessionStartPermissionGrant === undefined,
+   "remote settings cannot grant persistent session-start approval");
+
+calls.length = 0;
 api.autoFixAuthorRead(); api.autoFixAuthorSet(["github.com/my-app[bot]"]); api.autoFixAuthorSet(true);
 ok(calls.map(c => c[0]).join(" ") === "cdb-autofix-author:read cdb-autofix-author:set cdb-autofix-author:set", "trusted-author editor uses fixed channels");
 ok(calls[1][1][0] === "github.com/my-app[bot]" && calls[2][1] === null, "bridge forwards a list, never translates the legacy boolean into trust");

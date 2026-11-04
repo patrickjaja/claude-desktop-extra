@@ -299,6 +299,18 @@ async function featuresPanel(featuresItem) {
   ok(panel.querySelector(".cdbx-h1").textContent === "Community Features",
      "the heading spells the full name out even though the nav row says Community: " +
      panel.querySelector(".cdbx-h1").textContent);
+  const revokeStart = Array.from(panel.querySelectorAll("button")).find(function (button) {
+    return button.textContent === "Revoke always allow";
+  });
+  ok(!!revokeStart && !revokeStart.disabled, "a remembered session-start grant has an enabled revoke action");
+  if (revokeStart) {
+    revokeStart.click();
+    await sleep(40);
+    ok(window.__sessionStartRevokes === 1 && revokeStart.disabled,
+       "revocation uses its dedicated bridge and disables the now-cleared action");
+    ok(revokeStart.closest(".cdbx-row").textContent.indexOf("Ask each time") !== -1,
+       "the row reflects live revocation without a restart");
+  }
   // No standing notice: a restart is offered per row, next to the switch that
   // owes it (renderToggleRow's restartOwed slot), never as a bar above the rows
   // that scrolls out of view.
@@ -3183,6 +3195,8 @@ window.cdbExtra = {
   // Load large sessions in full. Without these two the row is silently skipped
   // (renderToggleRow answers nothing when its bridge half is missing), so a
   // harness that omits them would pass while never rendering the row.
+  sessionStartPermissionRead: function () { return Promise.resolve({ ok: true, enabled: window.__sessionStartAllowed !== false }); },
+  sessionStartPermissionRevoke: function () { window.__sessionStartAllowed = false; window.__sessionStartRevokes = (window.__sessionStartRevokes || 0) + 1; return Promise.resolve({ ok: true, enabled: false }); },
   autoFixAuthorRead: function () { return Promise.resolve({ ok: true, entries: [], lockedByJsonc: false }); },
   autoFixAuthorSet: function (entries) {
     (window.__authorCalls || (window.__authorCalls = [])).push(entries);

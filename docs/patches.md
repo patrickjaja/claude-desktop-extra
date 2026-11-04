@@ -47,13 +47,14 @@ Panel tabs and Files quick open depend on DOM anchors in remote claude.ai code; 
 
 ## Core infrastructure
 
-**7 patches**, always on. These are what the rest is built on: the Extra settings pages, the theme engine behind them, the local feature-flag override mechanism, and the plumbing that keeps multiple profiles apart.
+**8 patches**, always on. These are what the rest is built on: the Extra settings pages, the theme engine behind them, the local feature-flag override mechanism, and the plumbing that keeps multiple profiles apart.
 
 | Patch | What it does & why it exists |
 |-------|------------------------------|
 | [`add_feature_custom_themes.nim`](../patches/core/add_feature_custom_themes.nim) | The theme engine: 97 bundled light/dark palettes, each with its own loading spinner, applied live to every open window. Upstream has no theming beyond the light/dark toggle |
 | [`add_feature_extra_settings.nim`](../patches/core/add_feature_extra_settings.nim) | The **Extra** group in the app's own Settings dialog - Themes, Community Features, Computer Use (its status, TPM access and switches), Models (the custom models editor), Anthropic Features and [Deployment](../README.md#third-party--enterprise-inference) - and the main-process half that reads and writes what those panels show. Also captures the app's own relaunch primitive, so the restart these panels ask for runs the full quit-cleanup pass instead of killing the process |
 | [`add_feature_extra_settings_bridge.nim`](../patches/core/add_feature_extra_settings_bridge.nim) | The narrow preload bridge the Extra panels talk through: one fixed channel per call, because the Settings dialog is remote code |
+| [`add_session_start_permission.nim`](../patches/core/add_session_start_permission.nim) | Adds a native **Deny / Allow once / Allow always** dialog for ordinary session-start approvals, with a revocable per-profile grant. Keeps the SDK's `always_ask` policy and all host, destination and organization checks; see [session-start permission](session-start-permission.md) |
 | [`add_growthbook_overrides.nim`](../patches/core/add_growthbook_overrides.nim) | Lets you [override Anthropic's feature flags](feature-flags.md) from your own config file. Upstream has no local override mechanism - the flag cache is encrypted |
 | [`fix_profile_url_routing.nim`](../patches/core/fix_profile_url_routing.nim) | Routes an SSO callback back to the [profile](profiles.md) that started the login, instead of landing it in whichever profile owns the URL scheme |
 | [`fix_profile_window_title.nim`](../patches/core/fix_profile_window_title.nim) | Puts the profile name in the window title (`Claude (work)`), so profiles are tellable apart in Alt-Tab and the taskbar |
