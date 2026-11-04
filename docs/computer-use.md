@@ -12,6 +12,41 @@ Example prompt: *"Can you use computer use MCP to explain me the PhpStorm applic
 - **App discovery** (listing and opening apps, the teach overlay) reads `.desktop` files from `$XDG_DATA_HOME/applications` and every `$XDG_DATA_DIRS/applications` (which covers NixOS profiles, snap and `/usr/local`), plus the Flatpak export dirs, registering each with multiple name variants for flexible matching; a match on the app's name or desktop id wins over one on its executable name. On wlroots, GNOME and X11 sessions `open_application` runs the launcher's full `Exec` line as the Desktop Entry spec defines it (field codes, quoting, `Path=`, `TryExec`), so Flatpak apps, Chromium web apps and `env`-wrapped launchers start correctly. When a launcher has no usable `Exec`, is `Terminal=true`, or its binary is missing, it falls back to whichever of `gio launch`, `gtk-launch`, `kioclient6`/`kioclient5 exec` and `exo-open` is installed (plus `xdg-terminal-exec`, `x-terminal-emulator -e` or `$TERMINAL -e` for terminal apps); none of them is required.
 - **Teach overlay** stays interactive but blocks clicks to apps behind it during a tour (Electron's `setIgnoreMouseEvents` is [broken on X11](https://github.com/electron/electron/issues/16777)).
 
+## Approving apps
+
+Settings -> Extra -> Computer Use -> **Ask before Computer Use controls an app** (on by default). Claude names the apps it wants in `request_access`, and you approve them in the approval card in the chat, as on macOS. Approved apps get full control: clicks, typing and key presses, also for terminals, editors and browsers (macOS limits those to "read" or "click"). The card still offers the clipboard and system key combo checkboxes, and warns for terminals and file managers.
+
+The switch governs Code sessions (the Code tab and local Cowork) on X11, wlroots, GNOME and the background display. Sessions that upstream runs itself already ask, whatever the switch says: cloud Cowork, Dispatch and teach mode pass their own approved apps to Computer Use, and their screenshots are masked by that list where the session can mask (see the table). Approved apps get full control in all of them on these sessions, also with the switch off. On KDE Plasma Wayland upstream handles everything.
+
+With approval on, Computer Use refuses:
+
+- every tool until at least one app is approved (a session without an approval card gets upstream's "not wired with a permission handler" answer, so nothing can be approved there);
+- clicks, scrolls and drags on a window of an app you did not approve, and typing and key presses while such an app is in front, as far as the session can tell (see the table). A drag by hand (`left_mouse_down`, `mouse_move`, `left_mouse_up`) is checked at every move and at the release; a refused release still lets go of the button;
+- input when the session could not tell which app is in front (the window list failed), rather than guessing; with nothing focused at all input is allowed, as upstream does;
+- clipboard access and system key combos (lock screen, switch app, quit, Super on its own, XF86 keys, in any spelling the bridges accept such as `Super_L` or `page_up`) unless you ticked them in the card;
+- `open_application` and the accessibility tools for an app you did not approve.
+
+Apps are matched by their app id (the .desktop id and its aliases), never by a window title or display name. Where the session has a hit test, a click on one of Claude's own windows is refused as well.
+
+What screenshots show and how input is checked depends on the session:
+
+| Session | Screenshots | Input check |
+|---|---|---|
+| X11, X11 background display (x11-bridge) | Only the approved apps; other windows are covered by solid rectangles | The app under the pointer and the app in front |
+| Sway, Hyprland, background display on headless sway (wlroots-bridge) | Only the approved apps; popup menus, layer-shell panels and overlays, and (sway) XWayland menus can still show over or next to an approved window | The app under the pointer (approximate: from the compositor's window rectangles, popups and layer-shell surfaces are not seen) and the app in front |
+| Niri, river (wlroots-bridge) | The whole screen, including apps you did not approve | The app in front |
+| GNOME Wayland (gnome-portal-bridge) | The whole screen, including apps you did not approve | The app in front |
+| XWayland-only, fallback route (ydotool / spectacle) | The whole screen | Only "at least one app approved" |
+| KDE Plasma Wayland (KWin mode) | Upstream's own handling: only the approved apps | Upstream's own checks; Claude always asks here, whatever the switch says |
+
+On sessions without a hit test (the app in front only), a click lands on whatever is under the pointer; it is refused only while an unapproved app is in front. With one of Claude's own windows in front such a click is not refused (Claude's window stands for the shared screen, as upstream treats it), but typing is.
+
+Masking needs a bundled bridge that supports it; an older or custom bridge (`*_BRIDGE_BIN`) without it gives the whole screen, and the status line says so. When the bridge cannot say whether it can mask (its `doctor` failed) or a masked capture fails, the screenshot is refused; it is never taken unmasked in its place.
+
+Where screenshots show the whole screen, Claude is told so in the tool descriptions and with the first such screenshot of each task. Settings -> Extra -> Computer Use shows a line under **This desktop** saying which case applies to your session, from what the last screenshot actually did ("Screenshots show only approved apps", with what the mask does not cover on Sway and Hyprland, or "On this session (...) screenshots show the whole screen, including apps you did not approve").
+
+**Turn it off** with the switch, or with `"computerUseAskBeforeControl": false` in `claude-desktop-extra.jsonc` in the profile's userData directory (`~/.config/Claude/`; a value there locks the switch). Off, every app can be controlled without asking in Code sessions: `request_access` answers at once, nothing is checked and screenshots show the whole screen, as in earlier versions. Cloud Cowork, Dispatch and teach mode keep upstream's own approval and masking. The change applies from Claude's next Computer Use call; tool descriptions follow in the next session.
+
 All four bridges implement one [command-line contract](computer-use-bridge-contract.md), which `claude-desktop --diagnose` and `--reset-screen-sharing` rely on, so they work with whatever bridges are bundled.
 
 See [CLAUDE_BUILT_IN_MCP.md](../baseline/CLAUDE_BUILT_IN_MCP.md#17-computer-use) for the full tool reference, and [Computer Use dependencies](computer-use-dependencies.md) for the package matrix, the KDE/GNOME portal behavior notes, `COWORK_SCREENSHOT_CMD`, and `ydotool` v1.0+ setup.

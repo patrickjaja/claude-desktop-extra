@@ -48,6 +48,7 @@ linux/fix_computer_use_linux: \
   ../js/cu_ax_tools.js \
   ../js/cu_session_check.js \
   ../js/cu_display_target.js \
+  ../js/cu_consent.js \
   ../js/executor_linux.js
 
 community/add_feature_dev_tools_toggle: ../js/dev_tools_toggle_main.js
@@ -67,6 +68,11 @@ linux/fix_second_instance_diag: ../js/second_instance_diag.js
 linux/fix_startup_settings: ../js/startup_session_restore_gate.js
 
 linux/fix_tray_less_desktops: ../js/tray_host_probe.js
+
+# Popout menus on Wayland: the main-process half embeds the injected page script.
+linux/fix_popout_menus_wayland: \
+  ../js/popout_frames_main.js \
+  ../js/popout_frames_page.js
 
 # Diff view modes: the main-process half embeds the injected page script AND the
 # expand/collapse-all module, both via staticRead, so a change to any of them has
@@ -93,6 +99,7 @@ community/add_feature_panel_tabs_bridge: ../js/panel_tabs_bridge.js
 # No window controls: the patch embeds the synchronous pref reader AND the IPC
 # half via staticRead, so a change to either has to rebuild the binary.
 community/add_feature_window_controls: \
+  ../js/window_controls_page.js \
   ../js/window_controls_pref.js \
   ../js/window_controls_main.js
 

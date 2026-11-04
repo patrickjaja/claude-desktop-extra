@@ -1321,6 +1321,63 @@ async function cusPanel(cuItem) {
   ok(!!ax && ax.closest(".cdbx-row").querySelector(".cdbx-id .cdbx-exp").textContent === "Experimental",
      "read app controls renders here with its Experimental badge");
 
+  // --- "Ask before Computer Use controls an app": first under Options, on by
+  // default, no badge; the switch writes a plain boolean. The remounts below
+  // read the status again; the read count is restored after them.
+  const readsBeforeAsk = window.__cusCalls.read;
+  {
+    const ASK_SW = '.cdbx-switch[aria-label="ask before Computer Use controls an app"]';
+    let ask = panel.querySelector(ASK_SW);
+    ok(!!ask && before(optsHead, ask) && before(ask, bg), "the ask switch is the first Options row, before the background display switch");
+    const askRow = ask && ask.closest(".cdbx-row");
+    ok(!!askRow && askRow.querySelector(".cdbx-id").textContent === "Ask before Computer Use controls an app" && !askRow.querySelector(".cdbx-exp"),
+       "titled as decided, without an Experimental badge");
+    ok(!!ask && ask.getAttribute("aria-checked") === "true" && /^on - Claude asks which apps it may control/.test(askRow.querySelector(".cdbx-state").textContent),
+       "on by default: " + (askRow ? askRow.querySelector(".cdbx-state").textContent : "-"));
+    ok(!!askRow && /approve them in a card/.test(askRow.querySelector(".cdbx-note").textContent) && /Off: every app can be controlled without asking/.test(askRow.querySelector(".cdbx-note").textContent),
+       "the note says what on and off do");
+    window.__cuAskSets = [];
+    if (ask) { ask.click(); await sleep(60); }
+    ok(JSON.stringify(window.__cuAskSets) === "[false]" && ask.getAttribute("aria-checked") === "false",
+       "clicking it writes false and turns the switch off: " + JSON.stringify(window.__cuAskSets));
+    ok(/Computer Use controls apps without asking/.test(toastText()), "with its toast: " + toastText());
+    window.__cuAskState = { ok: true, enabled: false, lockedByJsonc: true };
+    panel = await remount();
+    ask = panel.querySelector(ASK_SW);
+    ok(!!ask && ask.getAttribute("aria-checked") === "false" && /set in claude-desktop-extra\.jsonc/.test(ask.closest(".cdbx-row").querySelector(".cdbx-state").textContent),
+       "a .jsonc false locks it off and says where");
+    window.__cuAskState = { ok: false, error: "Computer Use app approval is Linux only" };
+    panel = await remount();
+    ok(!panel.querySelector(ASK_SW) && !!panel.querySelector(BG_SW), "a Linux-only refusal (win32 main side) hides only this row");
+    window.__cuAskState = { ok: true, enabled: true, lockedByJsonc: null };
+  }
+
+  // --- the screenshot status line under "This desktop", from main's facts
+  {
+    const shots = function () { const n = row("desktop") && row("desktop").querySelector(".cdbx-cus-shots"); return n ? n.textContent : null; };
+    const cases = [
+      [{ ask: true, kwin: false, filtering: "filtered", session: "X11" }, /^Screenshots show only approved apps\.$/, "filtered"],
+      [{ ask: true, kwin: false, filtering: "whole", session: "GNOME Wayland" }, /^On this session \(GNOME Wayland\) screenshots show the whole screen, including apps you did not approve\.$/, "whole"],
+      [{ ask: false, kwin: false, filtering: "filtered", session: "X11" }, /Ask before Computer Use controls an app is off/, "off"],
+      [{ ask: true, kwin: true, filtering: "filtered", session: "KDE Wayland" }, /^Screenshots show only approved apps \(on this KDE session Claude always asks/, "filtered"],
+      [{ ask: true, kwin: false, filtering: "unknown", session: "" }, /^Screenshots: unknown/, "unknown"],
+      // O3: what the wlroots mask does not cover is named
+      [{ ask: true, kwin: false, filtering: "filtered", gaps: ["popups", "layer_shell_top_overlay"], session: "sway" }, /^Screenshots show only approved apps\. Not covered on this desktop: popup menus, panels and overlays\.$/, "filtered"]
+    ];
+    for (const [facts, re, attr] of cases) {
+      window.__cusState = { ok: true, rows: window.__cusRows(), actions: { tpmEnable: PK_EN }, screenshots: facts };
+      panel = await remount();
+      const t = shots();
+      const n = row("desktop") && row("desktop").querySelector(".cdbx-cus-shots");
+      ok(t !== null && re.test(t) && n.getAttribute("data-filtering") === attr,
+         "status line for " + JSON.stringify(facts) + ": " + t);
+    }
+    window.__cusState = { ok: true, rows: window.__cusRows(), actions: { tpmEnable: PK_EN } };
+    panel = await remount();
+    ok(shots() === null, "an older main side (no screenshots fact) draws no line");
+  }
+  window.__cusCalls.read = readsBeforeAsk;
+
   const sec = row("tpm").querySelector(".cdbx-cus-sec");
   const enable = btn(row("tpm"), "Enable TPM access");
   ok(!!enable && !!sec && /active local seat/.test(sec.textContent) && /clearing it/.test(sec.textContent) &&
@@ -2988,6 +3045,8 @@ window.__cusPkDisable = { kind: "pkexec",
   link: "/etc/udev/rules.d/70-claude-desktop-extra-tpm.rules",
   apply: "udevadm control --reload\\nudevadm trigger --action=change --subsystem-match=tpmrm" };
 window.__cuAxState = { ok: true, enabled: false, lockedByJsonc: null };
+window.__cuAskState = { ok: true, enabled: true, lockedByJsonc: null };
+window.__cuAskSets = [];
 window.__cusState = { ok: true, rows: window.__cusRows(), actions: { tpmEnable: window.__cusPkEnable, tpmDisable: null,
   restart: false, resetScreenSharing: false, tssCommand: null } };
 window.__cusCalls = { read: 0, enable: 0, disable: 0, reset: 0 };
@@ -3169,6 +3228,8 @@ window.cdbExtra = {
       "wl-copy": null, "wl-paste": null, xprop: "/usr/bin/xprop" } });
   },
   cuAxRead: function () { return Promise.resolve(window.__cuAxState); },
+  cuAskRead: function () { return Promise.resolve(window.__cuAskState); },
+  cuAskSet: function (v) { window.__cuAskSets.push(v); window.__cuAskState = Object.assign({}, window.__cuAskState, { enabled: v === true }); return Promise.resolve({ ok: true, enabled: v === true }); },
   cuAxSet: function (v) { window.__cuAxState = Object.assign({}, window.__cuAxState, { enabled: v === true }); return Promise.resolve({ ok: true, enabled: v === true }); },
   cuStatusRead: function () { window.__cusCalls.read++; return Promise.resolve(window.__cusState); },
   cuStatusTpmEnable: function () { window.__cusCalls.enable += arguments.length ? 100 : 1; return Promise.resolve(window.__cusEnable); },

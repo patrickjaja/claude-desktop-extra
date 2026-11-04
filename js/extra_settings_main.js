@@ -179,6 +179,7 @@
   // is handed back to the caller as `extra`. Both writers below funnel through
   // here so there is still exactly one place that rewrites the .json.
   function __cdbEx_writeCfg(mutate) {
+    __cdbEx_cuAskCache = null;
     var p = __cdbEx_paths();
     var raw = null;
     try {
@@ -298,6 +299,42 @@
   if (process.platform === "linux") {
     globalThis.__cdbCuAxElements = function () {
       try { return __cdbEx_cuAxPref().value === true; } catch (e) { return false; }
+    };
+  }
+
+  // --- Computer Use: ask before controlling an app -------------------------
+  // js/cu_consent.js asks globalThis.__cdbCuAskBeforeControl() on every tool
+  // call of a regular-mode session and on each tools/list build. Anything but
+  // false: request_access shows upstream's approval card and every other tool
+  // is checked against the apps the user approved. ON by default - only an
+  // explicit false turns it off; a boolean in the .jsonc wins and locks the
+  // row. A read that fails answers true (ask). The tool side asks on every tool
+  // call and description build, so the answer is cached and the two files are
+  // re-read only when either one's mtime or size moved (two stat calls per
+  // ask, no read or parse); every write of ours drops the cache as well
+  // (__cdbEx_writeCfg).
+  var __cdbEx_CUASK_KEY = "computerUseAskBeforeControl";
+  var __cdbEx_cuAskCache = null;
+  function __cdbEx_cuAskSig(p) {
+    return [p.json, p.jsonc].map(function (f) {
+      try { var st = _fs.statSync(f); return st.mtimeMs + ":" + st.size; } catch (e) { return "-"; }
+    }).join("|");
+  }
+  function __cdbEx_cuAskPref() {
+    var p = __cdbEx_paths();
+    var jsonc = __cdbEx_readFileKey(p.jsonc, __cdbEx_CUASK_KEY);
+    if (typeof jsonc === "boolean") return { value: jsonc, locked: true };
+    return { value: __cdbEx_readFileKey(p.json, __cdbEx_CUASK_KEY) !== false, locked: false };
+  }
+  if (process.platform === "linux") {
+    globalThis.__cdbCuAskBeforeControl = function () {
+      try {
+        var c = __cdbEx_cuAskCache, sig = __cdbEx_cuAskSig(__cdbEx_paths());
+        if (c && c.sig === sig) return c.value;
+        var v = __cdbEx_cuAskPref().value !== false;
+        __cdbEx_cuAskCache = { sig: sig, value: v };
+        return v;
+      } catch (e) { return true; }
     };
   }
 
@@ -2639,6 +2676,40 @@
     });
   }
 
+  // What screenshots show on this session, for the status line under "This
+  // desktop": the ask switch, and the running executor's own answer - the
+  // regular executor's last capture with an allowlist (__lastCapture(): what it
+  // actually did), before one its live capabilitiesNow().screenshotFiltering
+  // ("mask" = only approved apps), plus what the mask does not cover (gaps,
+  // wlroots-bridge); kwin mode's static capabilities (upstream always asks
+  // there). "unknown" when no executor runs or it does not say. No I/O beyond
+  // the switch's two small files.
+  function __cdbEx_cusShots() {
+    var d = __cdbEx_cusDecision();
+    var out = { ask: true, kwin: false, filtering: "unknown", gaps: [], session: d ? __cdbEx_cusSession(d) : "", backend: d ? d.backend : null };
+    try { out.ask = __cdbEx_cuAskPref().value !== false; } catch (e) { out.ask = true; }
+    try {
+      var ex = globalThis.__linuxExecutor;
+      out.kwin = globalThis.__cuKwinMode === true || !!(d && d.mode === "kwin-wayland");
+      if (ex && typeof ex === "object") {
+        if (out.kwin) {
+          var f = ex.capabilities && ex.capabilities.screenshotFiltering;
+          out.filtering = f === "native" || f === "mask" ? "filtered" : f === "none" ? "whole" : "unknown";
+        } else if (typeof ex.capabilitiesNow === "function") {
+          var c = ex.capabilitiesNow();
+          var last = typeof ex.__lastCapture === "function" ? ex.__lastCapture() : null;
+          var src = last && typeof last.filtering === "string" ? last : c && typeof c.screenshotFiltering === "string" ? { filtering: c.screenshotFiltering, gaps: c.screenshotMaskGaps } : null;
+          if (src) {
+            out.filtering = src.filtering === "mask" ? "filtered" : "whole";
+            if (out.filtering === "filtered" && Array.isArray(src.gaps)) out.gaps = src.gaps.filter(function (g) { return typeof g === "string" && g; });
+          }
+          if (c && typeof c.backend === "string" && c.backend) out.backend = c.backend;
+        }
+      }
+    } catch (e2) { out.filtering = "unknown"; }
+    return out;
+  }
+
   function __cdbEx_cusState() {
     return Promise.all([__cdbEx_cusDesktop(), __cdbEx_cusTpm(), __cdbEx_cusLog(), __cdbEx_cusGate()]).then(function (a) {
       var d = __cdbEx_cusDecision();
@@ -2664,7 +2735,7 @@
         resetScreenSharing: !!(s.desktop.doctor && s.desktop.doctor.session_supported === true && process.env.CLAUDE_LAUNCHER),
         tssCommand: s.tpm.tss
       };
-      return { ok: true, rows: { desktop: s.desktop.row, tpm: s.tpm.row, cloud: s.cloud }, actions: actions };
+      return { ok: true, rows: { desktop: s.desktop.row, tpm: s.tpm.row, cloud: s.cloud }, actions: actions, screenshots: __cdbEx_cusShots() };
     });
     __cdbEx_cusReadP = p;
     function done() { if (__cdbEx_cusReadP === p) __cdbEx_cusReadP = null; }
@@ -2937,6 +3008,28 @@
       var res = __cdbEx_writeCfg(function (cfg) {
         if (enabled) cfg[__cdbEx_CUAX_KEY] = true;
         else delete cfg[__cdbEx_CUAX_KEY];
+        return enabled;
+      });
+      if (!res.ok) return res;
+      return { ok: true, enabled: enabled, path: res.path };
+    },
+
+    // Computer Use: ask before controlling an app. Pref and reader above. On is
+    // the absence of the key, off an explicit false.
+    "cdb-cu-ask:read": function () {
+      var s = __cdbEx_cuAskPref();
+      return { ok: true, enabled: s.value !== false, lockedByJsonc: s.locked ? true : null };
+    },
+
+    "cdb-cu-ask:set": function (enabled) {
+      if (typeof enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
+      if (__cdbEx_cuAskPref().locked) {
+        return { ok: false, lockedByJsonc: true,
+          error: __cdbEx_CUASK_KEY + " is set in claude-desktop-extra.jsonc - edit that file to change it" };
+      }
+      var res = __cdbEx_writeCfg(function (cfg) {
+        if (enabled) delete cfg[__cdbEx_CUASK_KEY];
+        else cfg[__cdbEx_CUASK_KEY] = false;
         return enabled;
       });
       if (!res.ok) return res;
@@ -3439,6 +3532,8 @@
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use on a background display is Linux only" }; };
       } else if (ch.indexOf("cdb-cu-status:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use status is Linux only" }; };
+      } else if (ch.indexOf("cdb-cu-ask:") === 0) {
+        __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use app approval is Linux only" }; };
       } else if (ch.indexOf("cdb-cu-ax:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use app controls are Linux only" }; };
       } else if (ch.indexOf("cdb-tray:") === 0) {

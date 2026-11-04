@@ -1604,7 +1604,8 @@ async function _desktopCapturerRegion(lx,ly,lw,lh,displayIdx,xr){
 // bridge's returned width/height and mimeType with "image/jpeg". The
 // desktopCapturer tier downscales by the same rule and emits PNG. The handler
 // uses imgW/imgH to map model image-pixel coordinates back to root pixels.
-async function _captureRegion(x,y,w,h,sf,displayIdx){
+// mk (from _maskFor): mask mode - the masking bridge only, never another tier.
+async function _captureRegion(x,y,w,h,sf,displayIdx,mk){
   if(!sf){var _m=_findMonByPoint(x,y);sf=_m?_m.scaleFactor:1}
   var _lx0=x,_ly0=y,_lw0=w,_lh0=h;
   // X11: per-display DIP -> root-pixel transform shared with the pointer paths
@@ -1614,6 +1615,8 @@ async function _captureRegion(x,y,w,h,sf,displayIdx){
   else if(sf&&sf!==1){x=Math.round(x*sf);y=Math.round(y*sf);w=Math.round(w*sf);h=Math.round(h*sf)}
   var tmp=_path.join(_os.tmpdir(),"claude-cu-"+Date.now()+"-"+Math.random().toString(36).slice(2)+".png");
   if(_tgt&&_tgt.refuse)throw _tgtErr();
+  // x11-bridge takes the root-pixel region, wlroots-bridge the logical one.
+  if(mk)return mk.be.kind==="x11"?await _captureMasked(mk,x,y,w,h):await _captureMasked(mk,Math.round(_lx0),Math.round(_ly0),Math.round(_lw0),Math.round(_lh0));
   var _de=_desktopId();
   // Native (non-downscaling) tiers crop to exactly w x h at native resolution
   // and emit PNG.
@@ -1941,10 +1944,12 @@ function _mapKeyWayland(k){
 // may be downscaled below the monitor's native size); displayWidth/displayHeight
 // are the monitor's native logical size. The handler needs both to map model
 // image-pixel coordinates back to root pixels.
-async function _screenshotMon(mon){
-  var cap=await _captureRegion(mon.originX,mon.originY,mon.width,mon.height,mon.scaleFactor||1,mon.displayId);
+async function _screenshotMon(mon,mk){
+  var cap=await _captureRegion(mon.originX,mon.originY,mon.width,mon.height,mon.scaleFactor||1,mon.displayId,mk);
   _x11LastShotIdx=mon.displayId;
-  return{base64:cap.base64,imgW:cap.imgW,imgH:cap.imgH,mimeType:cap.mimeType,displayWidth:mon.width,displayHeight:mon.height,originX:mon.originX||0,originY:mon.originY||0};
+  var out={base64:cap.base64,imgW:cap.imgW,imgH:cap.imgH,mimeType:cap.mimeType,displayWidth:mon.width,displayHeight:mon.height,originX:mon.originX||0,originY:mon.originY||0};
+  if(mk)out.hidden=cap.hidden||[];
+  return out;
 }
 // Wayland window enumeration goes through the covered session's bridge
 // (wlroots-bridge: foreign-toplevel protocols; gnome-portal-bridge: best-effort
@@ -1979,7 +1984,9 @@ function _appRefFromCommand(result,wins,pick){
   return{bundleId:raw,displayName:result.displayName};
 }
 // The live backend's app-identity capabilities (capabilitiesNow):
-//   hitTest     native = appUnderPoint asks the window system; none = null
+//   hitTest     native = appUnderPoint asks the window system (x11-bridge
+//               app-under-point; wlroots-bridge with window geometry: a JS
+//               hit test of `windows` by stacking_order); none = null
 //   frontmost   native = the window system names the focused window
 //   windowList  full | partial (XWayland: X clients only) | best-effort (GNOME
 //               Introspect, may be []) | none
@@ -1989,7 +1996,9 @@ function _appBackend(){
   if(_tgt&&(_tgt.refuse||!_tgt.bin)){none.name="none (background display "+(_tgt.display||"?")+" unavailable)";return none}
   if(_useWlBridge()){
     var b=_wlBridge();
-    if(b.name==="wlroots-bridge")return{name:"wlroots-bridge"+(_tgt?" (background display "+_tgt.display+")":""),hitTest:"none",frontmost:"native",windowList:"full",windowPositions:!1};
+    // sway / Hyprland (doctor window_geometry): positions and a JS hit test
+    // by stacking_order; niri, river: no positions, no hit test.
+    if(b.name==="wlroots-bridge"){var gc=_bcNow(_bcBridge(!0)),geo=!!(gc&&gc.geometry);return{name:"wlroots-bridge"+(_tgt?" (background display "+_tgt.display+")":""),hitTest:geo?"native":"none",frontmost:"native",windowList:"full",windowPositions:geo}}
     return{name:b.name,hitTest:"none",frontmost:"native",windowList:"best-effort",windowPositions:!1};
   }
   if(_wayland&&!_tgt&&_checkYdotool()){none.name="ydotool";return none}
@@ -2013,12 +2022,34 @@ function _appWins(){
 //     DIP size * scale, the _x11PxDisplays transform the clicks use).
 //   x11-bridge, background display: window geometry and the target's monitors
 //     (its bridge `screens`) are both that X server's root pixels.
-//   wlroots-bridge (foreign-toplevel: no geometry) and gnome-portal-bridge
-//     (Introspect: size only, x/y always 0): no positions - nothing counts.
+//   wlroots-bridge with doctor `window_geometry` (sway / Hyprland IPC): window
+//     geometry and the bridge `screens` are both the compositor's global
+//     logical space; each screen maps to the Electron display at the same
+//     origin (background display: the target's monitor at the same index),
+//     and `output` names the screen of a window.
+//   wlroots-bridge without it (niri, river: foreign-toplevel only) and
+//     gnome-portal-bridge (Introspect: size only, x/y always 0): no positions -
+//     nothing counts.
 //   x11-bridge with Electron on native Wayland: XWayland root coordinates do
 //     not map to Electron's displays reliably - nothing counts.
 async function _dtSource(){
-  if(_useWlBridge())return{why:_wlBridge().name+" reports no window positions"};
+  if(_useWlBridge()){
+    var wb=_wlBridge(),wc=wb.name==="wlroots-bridge"?await _bcProbe(_bcBridge(!0)):null;
+    if(!wc||!wc.geometry)return{why:wb.name+" reports no window positions"};
+    var scr=await _wlBridgeScreens(),lm2=_getMonitors(),wm=[],byOut={};
+    for(var si=0;si<scr.length;si++){
+      var s=scr[si],g=s&&s.geometry,e2=null;
+      if(!g)continue;
+      if(_tgt)e2=lm2[si]||null;
+      else for(var li=0;!e2&&li<lm2.length;li++)if(lm2[li].originX===g.x&&lm2[li].originY===g.y)e2=lm2[li];
+      if(!e2)continue;
+      wm.push({displayId:e2.displayId,label:e2.label,isPrimary:!!e2.isPrimary,rect:{x:g.x,y:g.y,width:g.width,height:g.height}});
+      if(s.id!=null)byOut[String(s.id)]=e2.displayId;
+    }
+    if(!wm.length)return{why:"wlroots-bridge screens match none of Electron's displays"};
+    var wraw=await _wlBridgeCallAsync(["windows"]);
+    return{mons:wm,raw:Array.isArray(wraw)?wraw:[],displayOf:function(w){return w&&w.output!=null&&_hasOwn.call(byOut,String(w.output))?byOut[String(w.output)]:null}};
+  }
   if(_wayland&&_checkYdotool())return{why:"no window list on this session"};
   if(_wayland&&!_x11BridgeBin())return{why:"no window list on this session"};
   var mons;
@@ -2038,15 +2069,229 @@ async function _dtResolve(bundleIds){
   if(!DT)return{why:"display target helper missing"};
   var src;try{src=await _dtSource()}catch(e){return{why:"window list failed: "+(e&&e.message||e)}}
   if(!src.mons)return src;
-  src.wins=DT.normalize(src.raw,bundleIds,function(w){return w.geometry||null},null);
+  src.wins=DT.normalize(src.raw,bundleIds,function(w){return w.geometry||null},src.displayOf||null);
   return src;
 }
-globalThis.__linuxExecutor={
+// ── Bridge capabilities (doctor) ──
+// The live capture bridge's optional doctor keys, asked once per bridge binary
+// and display (cached CU_BRIDGE_CAPS_TTL_MS, async, never on a sync path):
+//   mask      x11-bridge `capabilities.screenshot_mask`, wlroots-bridge
+//             `screenshot_mask` (sway / Hyprland IPC answered): screenshot and
+//             zoom take --keep-window / --mask-all.
+//   geometry  wlroots-bridge `window_geometry`: windows carry geometry,
+//             output, is_visible and stacking_order (x11-bridge always does).
+//   gaps      wlroots-bridge `screenshot_mask_gaps`: what the mask cannot cover.
+// A bridge that answers without the keys (or exits 2: contract 0) cannot mask:
+// {mask:false}. A doctor that fails (timeout, crash, non-JSON) is {error}:
+// capture with an allowlist then FAILS CLOSED rather than guess "cannot mask".
+// GNOME, ydotool, XWayland-only, COWORK_SCREENSHOT_CMD and the desktopCapturer
+// fallback have no masking bridge at all (_bcBridge null).
+var CU_BRIDGE_CAPS_TTL_MS=60000,CU_BRIDGE_DOCTOR_MS=8000;
+var _bcCache={};
+// windows=true: the bridge whose window list is used (COWORK_SCREENSHOT_CMD
+// only replaces the capture).
+function _bcBridge(windows){
+  if(!windows&&process.env.COWORK_SCREENSHOT_CMD)return null;
+  if(_tgt&&(_tgt.refuse||!_tgt.bin))return null;
+  if(_useWlBridge()){var b=_wlBridge();return b.name==="wlroots-bridge"?{kind:"wlroots",name:b.name,bin:b.bin}:null}
+  if(_wayland&&!_tgt)return null;
+  var x=_x11BridgeBin();
+  return x?{kind:"x11",name:"x11-bridge",bin:x}:null;
+}
+function _bcKey(be){return be.kind+"\n"+be.bin+"\n"+(_tgt?_tgt.key:"")}
+function _bcParse(be,doc){
+  if(!doc||typeof doc!=="object"||Array.isArray(doc))return{error:be.name+" doctor answered no JSON object"};
+  if(typeof doc.contract!=="number"||doc.contract<1)return{mask:!1,geometry:be.kind==="x11",gaps:[],why:"contract 0"};
+  var c=doc.capabilities&&typeof doc.capabilities==="object"?doc.capabilities:{};
+  var mask=doc.screenshot_mask===!0||c.screenshot_mask===!0;
+  var gaps=Array.isArray(doc.screenshot_mask_gaps)?doc.screenshot_mask_gaps.filter(function(g){return typeof g==="string"}):[];
+  return{mask:mask,geometry:be.kind==="x11"||doc.window_geometry===!0,gaps:mask?gaps:[]};
+}
+// -> Promise<{mask, geometry, gaps} | {error}>, or null without a bridge.
+function _bcProbe(be){
+  if(!be)return Promise.resolve(null);
+  var k=_bcKey(be),c=_bcCache[k];
+  if(c&&c.res&&Date.now()-c.at<CU_BRIDGE_CAPS_TTL_MS)return Promise.resolve(c.res);
+  if(c&&c.p)return c.p;
+  var ent=c||(_bcCache[k]={res:null,at:0,p:null});
+  ent.p=_execFileAsync(be.name,be.bin,["doctor"],CU_BRIDGE_DOCTOR_MS).then(function(doc){return _bcParse(be,doc)},function(e){
+    if(_bridgeExitCode(e)===2)return{mask:!1,geometry:be.kind==="x11",gaps:[],why:"contract 0"};
+    return{error:be.name+" doctor failed: "+(e&&e.message||e)};
+  }).then(function(res){
+    if(_bcCache[k]!==ent)return res;
+    ent.p=null;
+    // A failed doctor is asked again on the next capture, not kept a minute.
+    if(res.error){ent.res=null;ent.at=0}else{ent.res=res;ent.at=Date.now()}
+    var line="[claude-cu] "+be.name+" capabilities: "+(res.error?res.error:"screenshot mask "+(res.mask?"yes"+(res.gaps.length?" (not covered: "+res.gaps.join(", ")+")":""):"no"+(res.why?" ("+res.why+")":""))+", window geometry "+(res.geometry?"yes":"no"));
+    if(ent.line!==line){ent.line=line;globalThis.__cdbDiag(line)}
+    return res;
+  });
+  return ent.p;
+}
+// Sync view for capabilitiesNow / capabilities: the cached answer (a stale one
+// is served while a refresh runs), else null after starting the probe.
+function _bcNow(be){
+  if(!be)return null;
+  var c=_bcCache[_bcKey(be)];
+  if(!c||!c.res||Date.now()-c.at>=CU_BRIDGE_CAPS_TTL_MS){try{_bcProbe(be).catch(function(){})}catch(e){}}
+  return c&&c.res||null;
+}
+function _bcWarm(){try{_bcNow(_bcBridge(!0))}catch(e){}}
+function _bcForget(be){if(be)delete _bcCache[_bcKey(be)]}
+function _filteringNow(){var r=_bcNow(_bcBridge());return r&&r.mask?"mask":"none"}
+// ── Allowlist mask (screenshot / zoom / resolvePrepareCapture) ──
+// allowedBundleIds undefined = legacy unmasked capture: only our own
+// Code-session handler sends that, with "Ask before Computer Use controls an
+// app" off. Upstream's own dispatch (cloud Cowork, Dispatch, teach) always
+// passes its allowlist, so those sessions are masked whatever the switch says.
+// An ARRAY (even empty) = mask mode: on a bridge that can mask, only the
+// windows of those canonical ids stay visible (never Claude's own), everything
+// else is painted over by the bridge; no window of them on screen =
+// --mask-all. Mask mode FAILS CLOSED: a doctor that did not answer, any bridge
+// error, an old bridge without the flags (exit 2), a result without the
+// `mask` report, or (wlroots) a kept window that no longer belongs to an
+// allowed app is an error, and no other capture tier (spectacle,
+// desktopCapturer, ...) is tried. Unmasked with an allowlist ONLY where the
+// backend definitively cannot mask: no capture bridge (GNOME, ydotool,
+// XWayland-only, COWORK_SCREENSHOT_CMD, desktopCapturer fallback) or a doctor
+// that answered without screenshot_mask. Every capture result says what was
+// done: masked (true / false), filtering ("mask" / "none") and maskGaps; the
+// last one is kept for the settings status line (__lastCapture).
+// x11-bridge kept windows are checked by XID only: the bridge captures under a
+// server grab, and an XID is allocated from its client's own id range, so the
+// id of a window that vanished between our `windows` and the capture can only
+// come back as a window of that same client - not of another app.
+function _isHostWin(w){
+  if(!w)return !1;
+  if(w.pid===process.pid)return !0;
+  var r=_aWin(w);
+  return !!(r&&(r.host||_akey(r.id)===_akey(_hostId())));
+}
+function _maskAllowed(ids){
+  var out=[],seen={},h=_akey(_hostId());
+  (Array.isArray(ids)?ids:[]).forEach(function(b){if(typeof b!=="string"||!b.trim())return;var k=_akey(b);if(!k||seen[k]||k===h)return;seen[k]=1;out.push(b)});
+  return out;
+}
+var _lastCap=null;
+function _capNote(res,mk,allowed){
+  if(!res||typeof res!=="object")return res;
+  var masked=!!mk,gaps=mk&&mk.caps&&Array.isArray(mk.caps.gaps)?mk.caps.gaps.slice():[];
+  res.masked=masked;res.filtering=masked?"mask":"none";res.maskGaps=gaps;
+  if(Array.isArray(allowed))_lastCap={filtering:res.filtering,gaps:gaps.slice(),at:Date.now()};
+  return res;
+}
+// -> null (capture unmasked) or {be, caps, allowed}; throws when the bridge
+// could not say whether it can mask.
+async function _maskFor(allowed){
+  if(!Array.isArray(allowed))return null;
+  var be=_bcBridge();if(!be)return null;
+  var caps=await _bcProbe(be);
+  if(caps&&caps.error)throw new Error("Screenshot not taken: could not check whether "+be.name+" can hide the apps that are not allowed ("+caps.error+").");
+  if(!caps||!caps.mask)return null;
+  return{be:be,caps:caps,allowed:_maskAllowed(allowed)};
+}
+function _maskErr(mk,why){
+  var e=new Error("Screenshot not taken: "+mk.be.name+" could not hide the apps that are not allowed ("+why+"). Nothing was captured unmasked; try again, or ask the user.");
+  e.__cdbSurface=!0;e.__cdbMask=!0;return e;
+}
+function _maskWindows(mk){return mk.be.kind==="x11"?_x11BridgeAsync(["windows"]):_wlBridgeCallAsync(["windows"])}
+// Canonical ids of masked windows for upstream's "X was hidden" note: no
+// Claude, no allowed app, no desktop / panel, nothing unresolvable, deduped.
+function _maskHiddenIds(mk,list){
+  var out=[],seen={},al={};
+  mk.allowed.forEach(function(b){al[_akey(_acanon(b)||b)]=1});
+  (list||[]).forEach(function(w){
+    if(!w||w.is_dock===!0||w.is_desktop===!0||_isHostWin(w))return;
+    var r=_aWin(w);if(!r||!r.id)return;
+    var k=_akey(r.id);if(seen[k]||al[k])return;
+    for(var i=0;i<mk.allowed.length;i++)if(_aOwns(mk.allowed[i],w))return;
+    seen[k]=1;out.push(r.id);
+  });
+  return out;
+}
+function _rectsMeet(a,b){return !!a&&!!b&&a.width>0&&a.height>0&&b.width>0&&b.height>0&&a.x<b.x+b.width&&b.x<a.x+a.width&&a.y<b.y+b.height&&b.y<a.y+a.height}
+// Masked capture of a region. x/y/w/h: x11-bridge root pixels, or the wlroots
+// global logical region (lx..). Returns {base64, imgW, imgH, mimeType, hidden}.
+async function _captureMasked(mk,x,y,w,h){
+  if(_tgt&&_tgt.refuse)throw _tgtErr();
+  var be=mk.be,wins;
+  try{wins=await _maskWindows(mk)}catch(e){throw _maskErr(mk,"window list failed: "+(e&&e.message||e))}
+  if(!Array.isArray(wins))throw _maskErr(mk,"the window list is not an array");
+  var cand=wins.filter(function(v){return v&&!_isHostWin(v)});
+  var keep=mk.allowed.length&&globalThis.__cdbCuAppIds?globalThis.__cdbCuAppIds.windowIds(mk.allowed,cand):[];
+  var flags=[];
+  if(keep.length)keep.forEach(function(id){flags.push("--keep-window",id)});else flags.push("--mask-all");
+  var x11=be.kind==="x11",r=null;
+  for(var tr=0;;tr++){
+    var mr=x11?await _x11MonForRegion(x,y):await _wlMonForRegion(x,y);
+    // Bridge zoom coordinates are relative to --display: never without it.
+    if(!mr||!mr.name)throw _maskErr(mk,"no monitor list from the bridge");
+    var args=["zoom","--x",String(mr.x),"--y",String(mr.y),"--w",String(w),"--h",String(h),"--display",mr.name].concat(flags);
+    try{r=x11?await _x11BridgeAsync(args):await _wlBridgeCallAsync(args);break}
+    catch(ze){
+      if(!tr&&_cuDisplayNotFound(ze)){globalThis.__cdbDiag("[claude-cu] "+be.name+" masked zoom: display "+mr.name+" not found - monitor list refreshed, retrying once");if(x11)_x11ScreensInvalidate();else _wlScreensInvalidate();continue}
+      if(_bridgeExitCode(ze)===2){_bcForget(be);throw _maskErr(mk,"this "+be.name+" does not take --keep-window / --mask-all; update the package")}
+      if(ze&&ze.__cdbSurface)throw ze;
+      throw _maskErr(mk,(ze&&ze.message||String(ze)).trim());
+    }
+  }
+  var m=r&&r.mask;
+  if(!r||typeof r.base64!=="string"||!r.base64||!m||typeof m!=="object"||m.mode!==(keep.length?"keep":"all"))throw _maskErr(mk,"the result carries no mask report");
+  var hidden;
+  if(x11){
+    // x11-bridge: XIDs are stable while it holds the server grab; it reports
+    // the masked windows itself (topmost first, client ids as in `windows`).
+    var kept=Array.isArray(m.kept)?m.kept.map(String):[];
+    for(var ki=0;ki<kept.length;ki++)if(keep.indexOf(kept[ki])<0)throw _maskErr(mk,"it kept window "+kept[ki]+", which was not asked for");
+    var byId={};wins.forEach(function(v){if(v&&v.id!=null)byId[String(v.id)]=v});
+    hidden=_maskHiddenIds(mk,(Array.isArray(m.masked)?m.masked:[]).map(function(v){var lw=v&&byId[String(v.id)];return lw?lw:null}).filter(Boolean));
+  }else{
+    // wlroots-bridge ids are per-connection protocol ids that can shift
+    // between our `windows` and its capture: every kept entry (the app id and
+    // title the bridge resolved at capture time) must be a window we asked
+    // for, of an allowed app, and never Claude. A title that changed is fine
+    // (terminals, browsers); an app id that is not allowed discards the image.
+    var listed={};cand.forEach(function(v){if(v&&v.id!=null)listed[String(v.id)]=v});
+    var kl=Array.isArray(m.kept)?m.kept:[];
+    if(kl.length!==keep.length)throw _maskErr(mk,"it reported "+kl.length+" kept window(s) for "+keep.length+" asked for");
+    for(var wi=0;wi<kl.length;wi++){
+      var k=kl[wi]||{},lw2=listed[String(k.id)],aid=typeof k.appId==="string"?k.appId:"";
+      // The listed window (pid included) when it still has this app id, else
+      // the app id alone.
+      var pw=lw2&&aid&&(lw2.desktop_file_name===aid||lw2.resource_class===aid)?lw2:{id:k.id,title:k.title,desktop_file_name:aid||null,resource_class:aid||null,resource_name:null,pid:null};
+      var okWin=!!aid&&keep.indexOf(String(k.id))>=0&&!_isHostWin(pw)&&mk.allowed.some(function(b){return _aOwns(b,pw)});
+      if(!okWin)throw _maskErr(mk,"kept window "+k.id+" ("+(aid||"no app id")+") is not a window of an allowed app any more - the image was discarded");
+    }
+    var reg={x:x,y:y,width:w,height:h};
+    hidden=_maskHiddenIds(mk,wins.filter(function(v){return v&&keep.indexOf(String(v.id))<0&&v.is_minimized!==!0&&v.is_visible!==!1&&_rectsMeet(v.geometry,reg)}));
+  }
+  globalThis.__cdbDiag("[claude-cu] screenshot: captured via "+be.name+" (mask "+m.mode+", kept "+keep.length+" window(s)"+(hidden.length?", masked apps "+hidden.join(","):"")+")");
+  return{base64:r.base64,imgW:r.width||w,imgH:r.height||h,mimeType:"image/jpeg",hidden:hidden};
+}
+// wlroots-bridge with window geometry: the app whose window is topmost
+// (stacking_order) at logical point (x, y). undefined = cannot tell: a
+// non-minimized window without a position could be the one on top.
+function _wlHitTest(wins,x,y){
+  var best=null;
+  for(var i=0;i<(wins||[]).length;i++){
+    var w=wins[i];
+    if(!w||w.is_minimized===!0||w.is_visible===!1)continue;
+    var g=w.geometry;
+    if(!g||!(g.width>0&&g.height>0))return void 0;
+    if(x>=g.x&&x<g.x+g.width&&y>=g.y&&y<g.y+g.height&&(!best||(w.stacking_order||0)>(best.stacking_order||0)))best=w;
+  }
+  return best;
+}
+var _ex=globalThis.__linuxExecutor={
   // Read by upstream's dispatch on every call (platform, hostBundleId,
-  // screenshotFiltering, hitTest). No hitTest key: it stays as before; the
-  // live per-backend values are capabilitiesNow(). hostBundleId is Claude's
-  // own canonical id (com.anthropic.Claude), the id its windows resolve to.
-  capabilities:{screenshotFiltering:"none",platform:"linux",get hostBundleId(){return _hostId()}},
+  // screenshotFiltering, hitTest): request_access's result and the session
+  // tools read executor.capabilities.screenshotFiltering live, so it is a
+  // getter with capabilitiesNow()'s value ("mask" when the live bridge masks,
+  // else "none"; "none" too until its doctor answered once). No hitTest key:
+  // it stays as before; the live per-backend values are capabilitiesNow().
+  // hostBundleId is Claude's own canonical id (com.anthropic.Claude), the id
+  // its windows resolve to.
+  capabilities:{get screenshotFiltering(){return _filteringNow()},platform:"linux",get hostBundleId(){return _hostId()}},
   // CU lock lifecycle hook, invoked by the upstream lock holder (Patches 4b/4b.2
   // call __linuxExecutor?.__setLockHeld?.(!0/!1) on every Linux lock transition
   // and chain .catch() — so this MUST return a Promise, hence async). On GNOME
@@ -2058,6 +2303,9 @@ globalThis.__linuxExecutor={
     _gnomeHolder=held&&typeof holder==="string"?holder:null;
     globalThis.__cdbDiag?.("[claude-cu] "+(held?"lock taken by "+(_gnomeHolder||"none"):"lock released"));
     if(!held)_gnomeCheckStop("lock released");
+    // The ask-before-control notes ("screenshots are not filtered") are once
+    // per session and lock (js/cu_consent.js).
+    if(!held){try{var _cc=globalThis.__cdbCuConsent;if(_cc&&typeof _cc.lockReleased==="function")_cc.lockReleased()}catch(ce){}}
     // A notFound holder is checked again on the next lock.
     if(globalThis.__cdbCuSessionCheck&&typeof globalThis.__cdbCuSessionCheck.forget==="function")globalThis.__cdbCuSessionCheck.forget();
     // The background-display setting is re-latched on every lock acquire (a
@@ -2068,7 +2316,11 @@ globalThis.__linuxExecutor={
       try{if(typeof globalThis.__cuTargetSig==="function")_tgtSigLast=await globalThis.__cuTargetSig()}catch(se){}
       _tgtSyncAt=Date.now();
       _tgtLatch("lock acquired");
-      if(_tgt){await _tgtAfterLatch();return}
+      // Warm the bridge capabilities (async, after the display check) so
+      // capabilities / capabilitiesNow() answer from the live bridge by
+      // request_access.
+      if(_tgt){await _tgtAfterLatch();_bcWarm();return}
+      _bcWarm();
     }else if(_tgt)return;
     if(!_isGnomeCovered()||!_gnomeBridgeBin())return;
     // A new lock is a new task: a stop the user made during the previous one
@@ -2166,14 +2418,34 @@ globalThis.__linuxExecutor={
     var m=_findMon(displayId);
     return{width:m.width,height:m.height,scaleFactor:m.scaleFactor,originX:m.originX||0,originY:m.originY||0};
   },
+  // opts {displayId, allowedBundleIds, scale}. allowedBundleIds undefined =
+  // unmasked; an array = mask mode (see "Allowlist mask"), which throws
+  // rather than capture unmasked.
   async screenshot(opts){
     await _tgtPrime();
     var mon=_findMon(opts&&opts.displayId);
-    var shot=await _screenshotMon(mon);
-    // {base64, imgW, imgH, mimeType, displayWidth, displayHeight, originX, originY}
-    return shot;
+    var al=opts?opts.allowedBundleIds:void 0,mk=await _maskFor(al);
+    var shot=await _screenshotMon(mon,mk);
+    // {base64, imgW, imgH, mimeType, displayWidth, displayHeight, originX,
+    // originY, masked, filtering, maskGaps[, hidden]}
+    return _capNote(shot,mk,al);
   },
+  // opts {allowedBundleIds, preferredDisplayId, autoResolve, doHide, scale}.
+  // With an allowedBundleIds array (upstream always passes one) a failure is
+  // returned as captureError, as upstream's own executors do; `hidden` lists
+  // the apps the mask painted over (canonical ids), for upstream's "X was
+  // hidden ... call request_access" note. Nothing is hidden on screen, so
+  // __unhideApps stays a no-op.
   async resolvePrepareCapture(opts){
+    if(!opts||!Array.isArray(opts.allowedBundleIds))return _ex.__resolvePrepareCapture(opts);
+    try{return await _ex.__resolvePrepareCapture(opts)}
+    catch(e){
+      var em=e&&e.message||String(e);
+      globalThis.__cdbDiag("[claude-cu] resolvePrepareCapture: "+em);
+      return{base64:"",width:0,height:0,displayWidth:0,displayHeight:0,displayId:opts.preferredDisplayId!=null?opts.preferredDisplayId:0,originX:0,originY:0,hidden:[],captureError:em};
+    }
+  },
+  async __resolvePrepareCapture(opts){
     await _tgtPrime();
     var did=opts&&opts.preferredDisplayId;
     if(did==null){var sdid=await _gnomeSharedDefaultDisplayId();if(sdid!=null)did=sdid}
@@ -2194,17 +2466,30 @@ globalThis.__linuxExecutor={
         else{globalThis.__cdbDiag(tag+" -> "+lbl(pm)+" (preferred "+lbl(mon)+(r.why==="tie"?", tie":"")+")");mon=pm}
       }
     }
-    var shot=await _screenshotMon(mon);
-    return{base64:shot.base64,mimeType:shot.mimeType,width:shot.imgW,height:shot.imgH,displayWidth:mon.width,displayHeight:mon.height,displayId:mon.displayId,originX:mon.originX,originY:mon.originY,hidden:[]};
+    var al=opts&&opts.allowedBundleIds,mk=await _maskFor(al);
+    var shot=await _screenshotMon(mon,mk);
+    return _capNote({base64:shot.base64,mimeType:shot.mimeType,width:shot.imgW,height:shot.imgH,displayWidth:mon.width,displayHeight:mon.height,displayId:mon.displayId,originX:mon.originX,originY:mon.originY,hidden:shot.hidden||[]},mk,al);
   },
-  async zoom(rect,scale,displayId){
+  // zoom(rect, allowedBundleIds, displayId, scale[, opts]) - upstream's order.
+  // rect {x,y,w,h} in logical px. Upstream's zoom tool passes it relative to
+  // displayId's origin (as on macOS); opts.globalCoords (our own handler)
+  // says it is already global. No displayId = global. allowedBundleIds:
+  // undefined = unmasked, an array = mask mode (throws instead of capturing
+  // unmasked). A second argument that is neither (a number: the handler's old
+  // (rect, 1, displayId) call) = unmasked, global coordinates, as before.
+  // scale is not used: every tier downscales by the bridges' rule.
+  async zoom(rect,allowedBundleIds,displayId,scale,opts){
     await _tgtPrime();
+    var legacy=allowedBundleIds!==void 0&&!Array.isArray(allowedBundleIds);
     var mon=displayId!=null?_findMon(displayId):_findMonByPoint(rect.x,rect.y);
+    var local=displayId!=null&&!!mon&&!legacy&&!(opts&&opts.globalCoords===!0);
+    var rx=rect.x+(local?mon.originX||0:0),ry=rect.y+(local?mon.originY||0:0);
     var sf=mon?mon.scaleFactor:1;
-    globalThis.__cdbDiag("[claude-cu] zoom: rect="+JSON.stringify(rect)+" scale="+scale+" displayId="+displayId+" mon="+((mon&&mon.label)||"?")+" sf="+sf);
-    var cap=await _captureRegion(rect.x,rect.y,rect.w,rect.h,sf,displayId!=null&&mon?mon.displayId:void 0);
-    // {base64, imgW, imgH, mimeType}
-    return cap;
+    var mk=legacy?null:await _maskFor(allowedBundleIds);
+    globalThis.__cdbDiag("[claude-cu] zoom: rect="+JSON.stringify(rect)+(local?" (display-relative)":"")+" displayId="+displayId+" mon="+((mon&&mon.label)||"?")+" sf="+sf+(mk?" mask "+(mk.allowed.length?mk.allowed.join(","):"all"):Array.isArray(allowedBundleIds)?" unmasked (backend cannot mask)":""));
+    var cap=await _captureRegion(rx,ry,rect.w,rect.h,sf,displayId!=null&&mon?mon.displayId:void 0,mk);
+    // {base64, imgW, imgH, mimeType, masked, filtering, maskGaps[, hidden]}
+    return _capNote(cap,mk,legacy?void 0:allowedBundleIds);
   },
   async prepareForAction(bundleIds,displayId){return[]},
   // Upstream's Linux unhide (sub-patch 4h routes it here): nothing is hidden
@@ -2249,7 +2534,7 @@ globalThis.__linuxExecutor={
     }catch(e){globalThis.__cdbDiag("[claude-cu] listInstalledApps failed: "+(e&&e.message||e))}
     return apps;
   },
-  // Visible, non-minimized windows -> one {bundleId, displayName} per app.
+  // Non-minimized windows (any workspace) -> one {bundleId, displayName} per app.
   async listRunningApps(){
     await _tgtPrime();
     var be=_appBackend();
@@ -2260,7 +2545,10 @@ globalThis.__linuxExecutor={
       if(Array.isArray(wins)){
         for(var i=0;i<wins.length;i++){
           var w=wins[i];
-          if(!w||w.is_minimized===true||w.is_visible===false)continue;
+          // A window on another workspace (is_visible false, x11-bridge and
+          // wlroots-bridge alike) still means the app runs; minimized ones
+          // stay out as before.
+          if(!w||w.is_minimized===true)continue;
           var ref=_appRefFromWindow(w);
           if(ref&&!seen[ref.bundleId]){seen[ref.bundleId]=true;apps.push(ref)}
         }
@@ -2273,26 +2561,44 @@ globalThis.__linuxExecutor={
   // x11-bridge without one falls back to its frontmost-app (GetInputFocus on a
   // WM without EWMH). null when the backend cannot know: XWayland (a native
   // Wayland window may have the focus), ydotool, no bridge, no active window
-  // (wlroots-bridge's own frontmost-app would pick the first toplevel).
+  // (wlroots-bridge's own frontmost-app would pick the first toplevel), or
+  // nothing focused. A bridge that FAILED throws (an Error with __cdbFront):
+  // "could not tell" is not "nothing in front" - js/cu_consent.js refuses
+  // input then, and upstream's own check (cloud Cowork, teach) fails the
+  // action, as it does with its own executors.
   async getFrontmostApp(){
     await _tgtPrime();
     var be=_appBackend();
     if(be.frontmost!=="native")return null;
+    var wins,act=null;
     try{
       _logFirstUse("window",be.name);
-      var wins=_appWins(),act=null;
-      if(Array.isArray(wins)){for(var i=0;i<wins.length;i++){var w=wins[i];if(w&&w.is_active===true&&(!act||(w.stacking_order||0)>(act.stacking_order||0)))act=w}}
+      wins=_appWins();
+      if(!Array.isArray(wins))throw new Error("the window list is not an array");
+      for(var i=0;i<wins.length;i++){var w=wins[i];if(w&&w.is_active===true&&(!act||(w.stacking_order||0)>(act.stacking_order||0)))act=w}
       if(act)return _appRefFromWindow(act);
       if(_useWlBridge())return null;
       return _appRefFromCommand(_x11Bridge(["frontmost-app"]),function(){return wins},function(w){return w.is_minimized!==true});
-    }catch(e){return null}
+    }catch(e){
+      var fe=new Error(be.name+": "+String(e&&e.message||e).trim().split("\n").slice(-1)[0]);
+      fe.__cdbFront=!0;
+      globalThis.__cdbDiag("[claude-cu] getFrontmostApp failed: "+fe.message);
+      throw fe;
+    }
   },
   // The app owning the window at DIP point (x, y): x11-bridge's
-  // app-under-point (X11, or the background display). Every other backend has
-  // no hit test (wlroots: no window geometry; GNOME Introspect: no global
-  // origin; XWayland: native Wayland windows are invisible to X) -> null.
+  // app-under-point (X11, or the background display); wlroots-bridge with
+  // window geometry (sway / Hyprland): the topmost window there by
+  // stacking_order, null while any window has no position. Every other
+  // backend has no hit test (niri / river: no geometry; GNOME Introspect: no
+  // global origin; XWayland: native Wayland windows are invisible to X) -> null.
   async appUnderPoint(x,y){
     await _tgtPrime();
+    if(_useWlBridge()&&_wlBridge().name==="wlroots-bridge"){
+      var gc=await _bcProbe(_bcBridge(!0));
+      if(!gc||!gc.geometry)return null;
+      try{var hw=_wlHitTest(await _wlBridgeCallAsync(["windows"]),x,y);return hw?_appRefFromWindow(hw):null}catch(e){return null}
+    }
     if(_appBackend().hitTest!=="native")return null;
     try{
       var _ap=_x11Px(x,y),px=_ap[0],py=_ap[1];
@@ -2303,10 +2609,26 @@ globalThis.__linuxExecutor={
   // every call: session, background display and bridge availability). The
   // static `capabilities` above is what upstream reads; this is for our own
   // callers (tool descriptions, request_access forwarding).
+  // screenshotFiltering: "mask" when the live capture bridge masks (x11-bridge
+  // with doctor capabilities.screenshot_mask, the background display
+  // included; wlroots-bridge with doctor screenshot_mask), else "none" -
+  // capture stays unmasked there even with an allowlist. Answered from the
+  // cached doctor (async probe started on first use and on every lock
+  // acquire); capabilitiesAsync() waits for it. screenshotMaskGaps: what the
+  // mask does not cover (wlroots-bridge doctor screenshot_mask_gaps).
   capabilitiesNow(){
-    var be=_appBackend();
-    return{screenshotFiltering:"none",platform:"linux",hostBundleId:_hostId(),backend:be.name,hitTest:be.hitTest,frontmost:be.frontmost,windowList:be.windowList,windowPositions:be.windowPositions};
+    var be=_appBackend(),mb=_bcBridge(),mc=_bcNow(mb),mask=!!(mc&&mc.mask);
+    return{screenshotFiltering:mask?"mask":"none",screenshotMaskGaps:mask?mc.gaps.slice():[],platform:"linux",hostBundleId:_hostId(),backend:be.name,hitTest:be.hitTest,frontmost:be.frontmost,windowList:be.windowList,windowPositions:be.windowPositions};
   },
+  async capabilitiesAsync(){
+    try{await _tgtPrime()}catch(e){}
+    try{await _bcProbe(_bcBridge())}catch(e){}
+    try{await _bcProbe(_bcBridge(!0))}catch(e){}
+    return _ex.capabilitiesNow();
+  },
+  // What the last capture with an allowlist did ({filtering, gaps, at}), or
+  // null before one: the settings status line reports it rather than a probe.
+  __lastCapture(){return _lastCap?{filtering:_lastCap.filtering,gaps:_lastCap.gaps.slice(),at:_lastCap.at}:null},
   // request_access name -> {bundleId, displayName, path} | null, and the alias
   // strings of a canonical id (see "App identity").
   resolveApp(name){return _aResolveName(name)},

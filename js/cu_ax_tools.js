@@ -19,7 +19,11 @@
 //   15d upstream's dispatch (kwin mode, where upstream dispatches) calls
 //       __cdbAxCall(name, args, {sid, ctx, tier}) before its app_* branch
 // Regular mode (x11 / wlroots / gnome / background display) dispatches in
-// js/cu_handler_injection.js, which calls __cdbAxCall(name, input, {sid}).
+// js/cu_handler_injection.js, which calls __cdbAxCall(name, input, {sid, pin,
+// sync}) plus, with "Ask before Computer Use controls an app" on, the
+// session's grants as {allowedApps, tier} (js/cu_consent.js axOpts). opts.ctx
+// is upstream's dispatch context and only counts in kwin mode (kctx below):
+// its lastScreenshot / onDisplayPinned frame is upstream's, never ours.
 //
 // Lifecycle of the desktop's accessibility switch (org.a11y.Status.IsEnabled):
 // the first AX call runs `ax-enable --holder-pid <our pid>` once (the bridge
@@ -179,8 +183,16 @@ function seg(x){var t=String(x).trim().replace(/\.desktop$/i,""),i=t.lastIndexOf
 function keysOf(arr){var k={};for(var i=0;i<arr.length;i++){var x=arr[i];if(typeof x==="string"&&x.trim()){var a=gk(x),b=gk(seg(x));if(a)k[a]=1;if(b)k[b]=1}}return k}
 // The `app` argument names a grant: its bundle id, its display name (what
 // request_access granted, e.g. "Mousepad"), or either one's last segment.
-function grantOf(app,ctx){
-  var list=ctx&&Array.isArray(ctx.allowedApps)?ctx.allowedApps:[];
+// The grant list: opts.allowedApps (regular mode, the consent switch), else
+// upstream's context (kwin mode).
+function kctx(opts){return globalThis.__cuKwinMode&&opts&&opts.ctx?opts.ctx:null}
+function grantList(opts){
+  if(opts&&Array.isArray(opts.allowedApps))return opts.allowedApps;
+  var c=kctx(opts);
+  return c&&Array.isArray(c.allowedApps)?c.allowedApps:[];
+}
+function grantOf(app,opts){
+  var list=grantList(opts);
   for(var i=0;i<list.length;i++){if(list[i]&&list[i].bundleId===app)return list[i]}
   var k=gk(app),s=gk(seg(app));
   for(var j=0;j<list.length;j++){var g=list[j];if(!g)continue;var gkk=keysOf([g.bundleId,g.displayName]);if(gkk[k]||gkk[s])return g}
@@ -279,8 +291,9 @@ async function pickWin(br,app,ak,appId,id,sid){
 // the inverse), regular mode -> the handler's __cuLastShot (image -> DIP), via
 // the executor's root-pixel -> DIP map on X11 HiDPI.
 function frameOf(opts){
-  if(opts&&opts.ctx){
-    var ls=opts.ctx.lastScreenshot;
+  var kc=kctx(opts);
+  if(kc){
+    var ls=kc.lastScreenshot;
     if(!ls||!(ls.displayWidth>0)||!(ls.displayHeight>0))return null;
     var fw=ls.frameWidth||ls.width,fh=ls.frameHeight||ls.height;
     if(!(fw>0)||!(fh>0))return null;
@@ -298,7 +311,7 @@ function frameOf(opts){
 // x/scaleFactor + display origin, so report in that frame.
 function predict(opts,x,y){
   try{
-    if(opts&&opts.ctx){
+    if(kctx(opts)){
       var sc=require("electron").screen,d=sc.getDisplayNearestPoint({x:Math.round(x),y:Math.round(y)}),b=d.bounds,sf=d.scaleFactor||1;
       return{w:Math.round(b.width*sf),h:Math.round(b.height*sf),predicted:"kwin",map:function(px,py){return[Math.round((px-b.x)*sf),Math.round((py-b.y)*sf)]}};
     }
@@ -322,17 +335,18 @@ function targetDims(w,h){var pw=Math.max(1,w),ph=Math.max(1,h),s=Math.min(1,1568
 // display: the existing frame (or the pre-screenshot one), no switch.
 async function place(opts,x,y,fr){
   var ex=globalThis.__linuxExecutor;
-  if(opts&&opts.ctx){
+  var kc=kctx(opts);
+  if(kc){
     var ds=null;try{ds=ex&&typeof ex.listDisplays==="function"?await ex.listDisplays():null}catch(e){}
     var D=null;
     if(Array.isArray(ds)&&ds.length>1){for(var i=0;i<ds.length;i++){var c=ds[i];if(x>=c.originX&&x<c.originX+c.width&&y>=c.originY&&y<c.originY+c.height){D=c;break}}}
-    var ls=opts.ctx.lastScreenshot,cur=ls&&ls.displayId!=null?ls.displayId:opts.ctx.selectedDisplayId;
-    if(!D||D.displayId===cur||typeof opts.ctx.onDisplayPinned!=="function"){
+    var ls=kc.lastScreenshot,cur=ls&&ls.displayId!=null?ls.displayId:kc.selectedDisplayId;
+    if(!D||D.displayId===cur||typeof kc.onDisplayPinned!=="function"){
       if(fr)return{fr:fr,note:""};
       var pf=predict(opts,x,y);
       return{fr:pf,note:pf?" No screenshot yet: (x, y) are for left_click now; after a screenshot, call app_ax_find again.":""};
     }
-    opts.ctx.onDisplayPinned(D.displayId);
+    kc.onDisplayPinned(D.displayId);
     var sf=D.scaleFactor||1,t=targetDims(Math.round(D.width*sf),Math.round(D.height*sf));
     log("display: window on display "+D.displayId+" - made it the current display");
     return{fr:{w:t.width,h:t.height,map:function(px,py){return[Math.round((px-D.originX)*t.width/D.width),Math.round((py-D.originY)*t.height/D.height)]}},
@@ -454,9 +468,10 @@ async function call(name,input,opts){
   input=input&&typeof input==="object"?input:{};
   var app=input.app,sid=String(opts&&opts.sid!=null?opts.sid:"(no-session)");
   if(typeof app!=="string"||!app.trim())return err("app is required.");
-  // Grants: upstream's tier check where upstream dispatches (kwin mode); the
-  // regular mode auto-grants every app at tier full (cu_handler_injection.js).
-  var grant=grantOf(app,opts&&opts.ctx);
+  // Grants: upstream's tier check where upstream dispatches (kwin mode); in
+  // regular mode the consent switch's check (opts.tier, opts.allowedApps),
+  // else every app at tier full (cu_handler_injection.js).
+  var grant=grantOf(app,opts);
   if(opts&&typeof opts.tier==="function"){var g=opts.tier(grant?grant.bundleId:app,TIER[name]);if(g&&g.error)return g.error}
   var ak=matcherOf(app,grant),appId=String(grant?grant.bundleId:app).trim().replace(/\.desktop$/i,"");
   var br=bridge();

@@ -104,6 +104,14 @@
       return ipcRenderer.invoke("cdb-cu-ax:set", enabled === true);
     },
 
+    // Computer Use: ask before controlling an app. Fixed channels, boolean only.
+    cuAskRead: function () {
+      return ipcRenderer.invoke("cdb-cu-ask:read");
+    },
+    cuAskSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-cu-ask:set", enabled === true);
+    },
+
     // Diff view modes (the Code tab's diff-scope dropdown). BOTH channels are
     // owned by patches/add_feature_diff_views.nim, not by the settings patch:
     // that patch reads and writes `diffViewModes` and applies it live, the same

@@ -616,12 +616,12 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
   check("page: the cu entry is labelled Computer Use and not carried on Windows",
     /\{ kind: "cu", label: "Computer Use", icon: ICON_CU \}/.test(page) && /var WINDOWS_NAV = \{ models: true \};/.test(page) &&
     /cu: renderCu,/.test(page), true);
-  check("page: CU_ROWS is background display, then read app controls",
-    /var CU_ROWS = \[\s*renderCuBackgroundRow,\s*renderCuAxRow\s*\];/.test(page), true);
+  check("page: CU_ROWS is ask before control, background display, then read app controls",
+    /var CU_ROWS = \[\s*renderCuAskRow,\s*renderCuBackgroundRow,\s*renderCuAxRow\s*\];/.test(page), true);
   check("page: no Computer Use row left in FEATURE_ROWS",
     /var FEATURE_ROWS = \[[^\]]*renderCu(Status|Background|Ax)/.test(page) || /function renderCuStatusRow\b/.test(page), false);
-  check("page: both switches share the one Options heading",
-    (page.match(/section: "Options"/g) || []).length === 2 && (page.match(/sharedSection: true/g) || []).length === 2 &&
+  check("page: the three switches share the one Options heading",
+    (page.match(/section: "Options"/g) || []).length === 3 && (page.match(/sharedSection: true/g) || []).length === 3 &&
     !/section: "Computer Use"/.test(page), true);
   const cuPage = /function renderCu\(panel\) \{[\s\S]*?\n {2}\}\n/.exec(page);
   check("page: renderCu draws the status block first, then the Options heading, then CU_ROWS",

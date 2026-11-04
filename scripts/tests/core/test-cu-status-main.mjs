@@ -951,6 +951,106 @@ section("single sources: rule text, risk text, container markers");
     "the helper's sticky exception is /nix/store only");
 }
 
+section("ask before Computer Use controls an app: switch and screenshot facts");
+{
+  const J1 = join(userData, "claude-desktop-extra.json");
+  const JC = join(userData, "claude-desktop-extra.jsonc");
+  const saved = [J1, JC].map((f) => (existsSync(f) ? readFileSync(f, "utf8") : null));
+  rmSync(J1, { force: true }); rmSync(JC, { force: true });
+  ok(typeof m.handlers["cdb-cu-ask:read"] === "function" && typeof m.handlers["cdb-cu-ask:set"] === "function", "both cdb-cu-ask channels are registered");
+  let r = await m.call("cdb-cu-ask:read");
+  ok(r.ok === true && r.enabled === true && r.lockedByJsonc === null, "on by default (no key)", J(r));
+  ok(typeof globalThis.__cdbCuAskBeforeControl === "function" && globalThis.__cdbCuAskBeforeControl() === true, "the tool-side helper says on");
+  r = await m.call("cdb-cu-ask:set", "no");
+  ok(r.ok === false && /boolean/.test(r.error), "a non-boolean is refused", J(r));
+  r = await m.call("cdb-cu-ask:set", false);
+  ok(r.ok === true && r.enabled === false && JSON.parse(readFileSync(J1, "utf8")).computerUseAskBeforeControl === false, "off writes an explicit false", J(r));
+  ok(globalThis.__cdbCuAskBeforeControl() === false && (await m.call("cdb-cu-ask:read")).enabled === false, "and the helper and the read say off");
+  r = await m.call("cdb-cu-ask:set", true);
+  ok(r.ok === true && !("computerUseAskBeforeControl" in JSON.parse(readFileSync(J1, "utf8"))), "on again removes the key (the default)");
+  writeFileSync(JC, '{ // hand-edited\n "computerUseAskBeforeControl": false }');
+  r = await m.call("cdb-cu-ask:read");
+  ok(r.enabled === false && r.lockedByJsonc === true, "a .jsonc boolean wins and locks", J(r));
+  r = await m.call("cdb-cu-ask:set", true);
+  ok(r.ok === false && r.lockedByJsonc === true, "and the switch cannot override it", J(r));
+  rmSync(JC, { force: true });
+
+  // O5: the tool side asks on every tool call: the answer is cached (no file
+  // read per call, re-read when a file's mtime / size moved), so a write of
+  // ours and a hand edit are both seen at once.
+  {
+    const fsm = require2("fs");
+    const realRead = fsm.readFileSync;
+    let reads = 0;
+    fsm.readFileSync = function (f, ...a) { if (String(f).startsWith(userData)) reads++; return realRead.call(this, f, ...a); };
+    try {
+      globalThis.__cdbCuAskBeforeControl();
+      reads = 0;
+      for (let i = 0; i < 200; i++) globalThis.__cdbCuAskBeforeControl();
+      ok(reads === 0, "O5: 200 helper calls read no config file (cached)", reads);
+      await m.call("cdb-cu-ask:set", false);
+      ok(globalThis.__cdbCuAskBeforeControl() === false, "O5: our own write is seen at once");
+      await m.call("cdb-cu-ask:set", true);
+      ok(globalThis.__cdbCuAskBeforeControl() === true, "O5: and back");
+      writeFileSync(JC, '{ "computerUseAskBeforeControl": false }');
+      ok(globalThis.__cdbCuAskBeforeControl() === false, "O5: a hand edit is seen");
+      rmSync(JC, { force: true });
+      ok(globalThis.__cdbCuAskBeforeControl() === true, "O5: and its removal");
+      reads = 0;
+      for (let i = 0; i < 50; i++) globalThis.__cdbCuAskBeforeControl();
+      ok(reads === 0, "O5: and cached again", reads);
+    } finally { fsm.readFileSync = realRead; rmSync(JC, { force: true }); }
+  }
+
+  // The status read carries what screenshots show, from the running executor.
+  reset();
+  const savedDesk = process.env.XDG_CURRENT_DESKTOP;
+  delete process.env.XDG_CURRENT_DESKTOP;
+  delete globalThis.__cuKwinMode;
+  globalThis.__linuxExecutor = { capabilitiesNow: () => ({ screenshotFiltering: "mask", backend: "x11-bridge", hitTest: "native" }) };
+  let st = await read();
+  ok(J(st.screenshots) === J({ ask: true, kwin: false, filtering: "filtered", gaps: [], session: "X11", backend: "x11-bridge" }), "mask -> filtered", J(st.screenshots));
+  // R2: the last capture's own answer wins over the capability probe; O3: gaps
+  globalThis.__linuxExecutor = { capabilitiesNow: () => ({ screenshotFiltering: "mask", backend: "x11-bridge", hitTest: "native" }), __lastCapture: () => ({ filtering: "none", gaps: [], at: 1 }) };
+  st = await read();
+  ok(st.screenshots.filtering === "whole", "R2: the last capture was unmasked -> whole, whatever the probe says", J(st.screenshots));
+  globalThis.__linuxExecutor = { capabilitiesNow: () => ({ screenshotFiltering: "mask", screenshotMaskGaps: ["popups"], backend: "wlroots-bridge", hitTest: "native" }), __lastCapture: () => null };
+  st = await read();
+  ok(st.screenshots.filtering === "filtered" && J(st.screenshots.gaps) === J(["popups"]), "O3: before a capture: the probe, with its mask gaps", J(st.screenshots));
+  globalThis.__linuxExecutor = { capabilitiesNow: () => ({ screenshotFiltering: "none", backend: "wlroots-bridge" }), __lastCapture: () => ({ filtering: "mask", gaps: ["popups", "layer_shell_top_overlay"], at: 1 }) };
+  st = await read();
+  ok(st.screenshots.filtering === "filtered" && J(st.screenshots.gaps) === J(["popups", "layer_shell_top_overlay"]), "R2/O3: a masked last capture with gaps", J(st.screenshots));
+  globalThis.__linuxExecutor = { capabilitiesNow: () => ({ screenshotFiltering: "none", backend: "gnome-portal-bridge", hitTest: "none" }) };
+  setDecision({ wayland: true, backend: "gnome-portal-bridge" });
+  process.env.XDG_CURRENT_DESKTOP = "GNOME";
+  st = await read();
+  ok(st.screenshots.filtering === "whole" && st.screenshots.session === "GNOME Wayland", "none -> whole, with the session", J(st.screenshots));
+  await m.call("cdb-cu-ask:set", false);
+  st = await read();
+  ok(st.screenshots.ask === false, "the switch is reported", J(st.screenshots));
+  await m.call("cdb-cu-ask:set", true);
+  globalThis.__linuxExecutor = { capabilities: { screenshotFiltering: "native", platform: "linux" } };
+  globalThis.__cuKwinMode = true;
+  st = await read();
+  ok(st.screenshots.kwin === true && st.screenshots.filtering === "filtered", "kwin mode: its static capabilities", J(st.screenshots));
+  delete globalThis.__cuKwinMode;
+  delete globalThis.__linuxExecutor;
+  st = await read();
+  ok(st.screenshots.filtering === "unknown", "no executor -> unknown", J(st.screenshots));
+  globalThis.__linuxExecutor = { capabilitiesNow: () => { throw new Error("boom"); } };
+  st = await read();
+  ok(st.ok === true && st.screenshots.filtering === "unknown", "a throwing executor -> unknown, the read still answers", J(st.screenshots));
+  delete globalThis.__linuxExecutor;
+  if (savedDesk === undefined) delete process.env.XDG_CURRENT_DESKTOP; else process.env.XDG_CURRENT_DESKTOP = savedDesk;
+  reset();
+  [J1, JC].forEach((f, i) => { if (saved[i] === null) rmSync(f, { force: true }); else writeFileSync(f, saved[i]); });
+
+  // win32 (the downstream Windows build): a plain refusal, no file access.
+  const w = load({ platform: "win32" });
+  r = await w.call("cdb-cu-ask:read");
+  ok(r.ok === false && /Linux only/.test(r.error), "win32: cdb-cu-ask answers Linux only", J(r));
+}
+
 server.close();
 rmSync(base, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);

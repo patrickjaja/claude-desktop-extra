@@ -9,7 +9,13 @@
 # embeds them via staticRead at compile time; Python reads them at runtime.
 # No codegen — the .js files are the single source of truth.
 #
-# All 45 sub-patches use std/nre (PCRE) because many require backreferences.
+# All 47 sub-patches use std/nre (PCRE) because many require backreferences.
+# "Ask before Computer Use controls an app" (js/cu_consent.js, injected by
+# Patch 1 after the executors): sub-patch 6b makes upstream's grants full level
+# in the regular executor mode, 6c lets upstream's terminal / file-manager
+# warnings classify our canonical app ids by their aliases, and the description
+# sub-patches 13a/13b/13b.linux/13e/13f/13g ask globalThis.__cdbCuConsent.text()
+# first (empty while the switch is off), with 15b keying the tools list on it.
 # Sub-patches 15a-15d add the Linux accessibility tools (issue #306,
 # js/cu_ax_tools.js, injected with the executors by Patch 1): upstream's tool
 # builder, its tools/list cache key, the teach-mode read-only set and upstream's
@@ -48,6 +54,7 @@ const KWIN_EXECUTOR_SOURCE = staticRead("../../js/executor_linux.js")
 const AX_TOOLS_JS = staticRead("../../js/cu_ax_tools.js")
 const SESSION_CHECK_JS = staticRead("../../js/cu_session_check.js")
 const DISPLAY_TARGET_JS = staticRead("../../js/cu_display_target.js")
+const CONSENT_JS = staticRead("../../js/cu_consent.js")
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -253,6 +260,19 @@ proc endStateMarkers(): seq[EndStateMarker] =
       """globalThis\.__cdbCuDisplayTarget=\{pick:""",
     ),
     rx(
+      # js/cu_consent.js embedded by Patch 1: its one definition.
+      "1 consent embed",
+      """globalThis\.__cdbCuConsent=\{active:active,""",
+    ),
+    lit(
+      "6b full grant level",
+      "cuOnlyMode:process.platform===\"linux\"&&!globalThis.__cuKwinMode||process.env.COWORK_CU_ONLY",
+    ),
+    rx(
+      "6c sentinel aliases",
+      """\{return ([\w$]+)\(([\w$]+)\)!==null\|\|process\.platform==="linux"&&\(globalThis\.__cdbCuAppIds\?\.aliasesOf\?\.\(\2\)\|\|\[\]\)\.some\(__cdbS=>\1\(__cdbS\)!==null\)\}""",
+    ),
+    rx(
       "2 CU platform gate",
       "function [\\w$]+\\(\\)\\{if\\(process\\.platform===\"linux\"\\)return!0;" &
         CU_PLATFORM_FN_BODY,
@@ -348,11 +368,23 @@ proc endStateMarkers(): seq[EndStateMarker] =
       "13a allowlist gate",
       """(?:=|:\()process\.platform==="linux"\?"":"The frontmost application must be in the session allowlist""",
     ),
+    rx(
+      "13a.ask input sentence",
+      """\(process\.platform==="linux"&&globalThis\.__cdbCuConsent\?\.text\("input"\)\|\|\([\w$]+\.hitTest==="none"\?""",
+    ),
     lit(
       "13b request_access prefix",
       "(process.platform===\"linux\"?(globalThis.__cuKwinMode?`This computer is running Linux with KDE Plasma. The file manager is \"Dolphin\". `",
     ),
     lit("13b.linux request_access X11 sentence", CU_X11_ACCESS_SENTENCE),
+    lit(
+      "13b.ask request_access prefix",
+      ":(globalThis.__cdbCuConsent?.text(\"prefix\")||`This computer is running Linux. ",
+    ),
+    lit(
+      "13b.linux.ask request_access sentence",
+      "(globalThis.__cdbCuConsent?.text(\"access\")||(globalThis.__cuKwinMode||process.env.XDG_SESSION_TYPE===\"wayland\"?",
+    ),
     rx(
       "13b.kwin-alias",
       """[\w$]+=globalThis\.__cuKwinMode\?[\w$]+\.map\(v=>v==="org\.kde\.plasmashell"\?"plasmashell":v\):[\w$]+,""",
@@ -383,15 +415,15 @@ proc endStateMarkers(): seq[EndStateMarker] =
     ),
     lit(
       "13e open_application allowlist",
-      "\"On Linux, all applications are directly accessible.\"",
+      "(globalThis.__cdbCuConsent?.text(\"openApp\")||\"On Linux, all applications are directly accessible.\")",
     ),
     lit(
       "13f screenshot description",
-      "\"Take a screenshot of the primary display. All open windows are visible.\"",
+      "(globalThis.__cdbCuConsent?.text(\"screenshot\")||\"Take a screenshot of the primary display. All open windows are visible.\")",
     ),
     lit(
       "13g screenshot suffix",
-      "(process.platform===\"linux\"?\" The returned image is what subsequent click coordinates are relative to.\"",
+      "(process.platform===\"linux\"?(globalThis.__cdbCuConsent?.text(\"shotSuffix\")||\" The returned image is what subsequent click coordinates are relative to.\")",
     ),
     lit(
       "14a same filesystem",
@@ -419,7 +451,7 @@ proc endStateMarkers(): seq[EndStateMarker] =
     ),
     rx(
       "15b tools/list cache key",
-      """\$\{process\.platform==="linux"&&globalThis\.__cdbAxKey\?\.\(\)\|\|""\}`;""",
+      """\$\{process\.platform==="linux"&&\(globalThis\.__cdbAxKey\?\.\(\)\|\|""\)\+\(globalThis\.__cdbCuConsent\?\.key\?\.\(\)\|\|""\)\|\|""\}`;""",
     ),
     rx(
       "15c read-only tools",
@@ -442,7 +474,7 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 45
+  const EXPECTED_PATCHES = 47
 
   let gateSet = cuPlatformSetName(content)
   if gateSet == "":
@@ -489,6 +521,9 @@ proc apply*(input: string): string =
     # globalThis.__cdbCuDisplayTarget from resolvePrepareCapture and
     # findWindowDisplays at run time.
     let displayTargetJs = DISPLAY_TARGET_JS.strip()
+    # The consent module ("Ask before Computer Use controls an app") goes last:
+    # it reads the executor and the app-id helper only at call time.
+    let consentJs = CONSENT_JS.strip()
     # v1.26832.0 switched minifier: most string literals became backtick
     # template literals (app.on(`ready`)). Accept either quote style here and
     # everywhere else a literal is part of an anchor.
@@ -503,7 +538,7 @@ proc apply*(input: string): string =
       proc(m: RegexMatch): string =
         m.captures[0] & "if(process.platform===\"linux\"){" & MODE_PREAMBLE_JS &
           sessionJs & "\n" & displayTargetJs & "\n" & "if(globalThis.__cuKwinMode){" &
-          kwinJs & "}else{" & regularJs & "}" & axJs & "}",
+          kwinJs & "}else{" & regularJs & "}" & axJs & "\n" & consentJs & "}",
     )
     if n >= 1:
       echo &"  [OK] Linux executor: injected session check + regular + kwin-wayland variants ({n} match)"
@@ -1167,6 +1202,75 @@ proc apply*(input: string): string =
     inc changes
     inc patchesApplied
 
+  # ── Patch 6b: full grant level in the regular executor mode ─────────────
+  block:
+    # "Ask before Computer Use controls an app" sends request_access through
+    # upstream's own handleToolCall (js/cu_handler_injection.js). Upstream
+    # grants browsers at level "read" and terminals/IDEs at "click"; only its
+    # `cuOnlyMode` context flag proposes and stores "full" for every app (and
+    # drops the read/click first-request warnings that go with those levels).
+    # The flag is one property of the per-session dispatch context builder:
+    #   cuOnlyMode:process.env.COWORK_CU_ONLY!=="0"&&<flag>("3371831021")
+    # Linux regular mode sets it whatever the ask switch says (the switch only
+    # decides whether a Code session's request_access reaches upstream at all;
+    # upstream's own request_access / request_teach_access - teach mode, cloud
+    # Cowork - get full-level grants in regular mode either way); kwin mode
+    # keeps upstream's levels. Cowork's own cuOnlyMode (the system prompt /
+    # tool set one) is a separate value and is not touched.
+    let pat = re"""cuOnlyMode:(process\.env\.COWORK_CU_ONLY!==["`]0["`]&&)"""
+    let found = countMatches(content, pat)
+    if found != 1:
+      raise newException(
+        ValueError,
+        &"  [FAIL] 6b cuOnlyMode context flag (`cuOnlyMode:process.env.COWORK_CU_ONLY!==\"0\"&&`): {found} matches, expected 1 - re-audit",
+      )
+    let n = replaceFirst(
+      content,
+      pat,
+      proc(m: RegexMatch): string =
+        "cuOnlyMode:process.platform===\"linux\"&&!globalThis.__cuKwinMode||" &
+          m.captures[0],
+    )
+    if n != 1:
+      raise newException(
+        ValueError, &"  [FAIL] 6b cuOnlyMode context flag: {n} rewrites, expected 1"
+      )
+    echo "  [OK] 6b grant level: full for every approved app in regular mode (1 match)"
+    inc changes
+    inc patchesApplied
+
+  # ── Patch 6c: sentinel warnings see our canonical app ids ──────────────
+  block:
+    # Upstream's request_access card marks terminals, file managers and system
+    # settings (isSentinel) from executable names ("gnome-terminal-server",
+    # "nautilus", "dolphin", ...). The regular executor's app ids are .desktop
+    # ids ("org.gnome.Nautilus"), so the predicate also tries the id's aliases
+    # (StartupWMClass, Exec, the resolved executable) on Linux. Anchored on the
+    # classifier's last return so the predicate right after it is the one.
+    let pat =
+      re"""(return["`]system_settings["`]\}return null\}function ([\w$]+)\(([\w$]+)\)\{return ([\w$]+)\(\3\)!==null)\}"""
+    let found = countMatches(content, pat)
+    if found != 1:
+      raise newException(
+        ValueError,
+        &"  [FAIL] 6c sentinel predicate (`return\"system_settings\"}}return null}}function S(e){{return x(e)!==null}}`): {found} matches, expected 1 - re-audit",
+      )
+    let n = replaceFirst(
+      content,
+      pat,
+      proc(m: RegexMatch): string =
+        let c = m.captures
+        c[0] & "||process.platform===\"linux\"&&(globalThis.__cdbCuAppIds?.aliasesOf?.(" &
+          c[2] & ")||[]).some(__cdbS=>" & c[3] & "(__cdbS)!==null)}",
+    )
+    if n != 1:
+      raise newException(
+        ValueError, &"  [FAIL] 6c sentinel predicate: {n} rewrites, expected 1"
+      )
+    echo "  [OK] 6c sentinel predicate: Linux app ids classified by their aliases (1 match)"
+    inc changes
+    inc patchesApplied
+
   var overlayVarOpt: Option[string]
 
   # ── Patch 7b (kwin-wayland): teach overlay bridge-backed init ──────────
@@ -1607,28 +1711,26 @@ proc apply*(input: string): string =
 
   # 13a: Lf allowlist gate → empty on Linux
   block:
-    let pat =
-      re"""([\w$]+)=["`]The frontmost application must be in the session allowlist at the time of this call, or this tool returns an error and does nothing\.["`]"""
-    var n = replaceFirst(
-      content,
-      pat,
-      proc(m: RegexMatch): string =
-        let v = m.captures[0]
-        &"{v}=process.platform===\"linux\"?\"\":\"The frontmost application must be in the session allowlist at the time of this call, or this tool returns an error and does nothing.\"",
-    )
     # v2.19675.1: the sentence is the else-arm of a hitTest ternary
-    # (`i=t.hitTest==="none"?"<shared-screen text>":"The frontmost ..."`), no
-    # longer its own assignment. Wrap that arm instead.
-    if n == 0:
-      let patV19675 =
-        re"""([\w$]+\.hitTest==="none"\?"[^"]*":)("The frontmost application must be in the session allowlist at the time of this call, or this tool returns an error and does nothing\.")"""
+    # (`i=t.hitTest==="none"?"<shared-screen text>":"The frontmost ..."`).
+    # Wrap that arm (empty on Linux), and the whole ternary in the live
+    # "Ask before Computer Use controls an app" sentence, which is "" while
+    # the switch is off (js/cu_consent.js text("input")).
+    let patV19675 =
+      re"""([\w$]+\.hitTest==="none"\?"[^"]*":)("The frontmost application must be in the session allowlist at the time of this call, or this tool returns an error and does nothing\.")"""
+    let found13a = countMatches(content, patV19675)
+    var n = 0
+    if found13a == 1:
       n = replaceFirst(
         content,
         patV19675,
         proc(m: RegexMatch): string =
-          m.captures[0] & "(process.platform===\"linux\"?\"\":" & m.captures[1] & ")",
+          "(process.platform===\"linux\"&&globalThis.__cdbCuConsent?.text(\"input\")||(" &
+            m.captures[0] & "(process.platform===\"linux\"?\"\":" & m.captures[1] & ")))",
       )
-    if n >= 1:
+    else:
+      echo &"  [FAIL] 13a frontmost sentence (hitTest ternary): {found13a} matches, expected 1"
+    if n == 1:
       echo "  [OK] 13a Lf allowlist gate: empty on Linux"
       inc descChanges
       inc patchesApplied
@@ -1651,13 +1753,14 @@ proc apply*(input: string): string =
     let new13b =
       "(process.platform===\"linux\"?(globalThis.__cuKwinMode?" &
       "`This computer is running Linux with KDE Plasma. The file manager is \"Dolphin\". `" &
-      ":" & "`This computer is running Linux. " &
+      ":(globalThis.__cdbCuConsent?.text(\"prefix\")||" &
+      "`This computer is running Linux. " &
       "On Linux, ALL applications are automatically accessible at full " &
       "tier without explicit permission grants. You do NOT need to call " &
       "request_access before using other tools. If called, it returns " &
       "synthetic grant confirmations. The file manager depends on the " &
       "desktop environment (e.g. Nautilus on GNOME, Dolphin on KDE, " &
-      "Thunar on XFCE). `)" & ":" &
+      "Thunar on XFCE). `))" & ":" &
       "`This computer is running macOS. The file manager is \"Finder\". `)"
     if replaceLiteralFirstAny(content, old13b, new13b) == 1:
       echo "  [OK] 13b request_access: 3-way (kwin-wayland=KDE/Dolphin, regular=generic Linux, other=macOS)"
@@ -1685,8 +1788,8 @@ proc apply*(input: string): string =
         content,
         pat,
         proc(m: RegexMatch): string =
-          "(globalThis.__cuKwinMode||process.env.XDG_SESSION_TYPE===\"wayland\"?" &
-            m.match & ":" & CU_X11_ACCESS_SENTENCE & ")",
+          "(globalThis.__cdbCuConsent?.text(\"access\")||(globalThis.__cuKwinMode||process.env.XDG_SESSION_TYPE===\"wayland\"?" &
+            m.match & ":" & CU_X11_ACCESS_SENTENCE & "))",
       )
       if n == 1:
         echo "  [OK] 13b.linux request_access: Wayland sentence only on Wayland, X11 gets the whole-display sentence"
@@ -1906,7 +2009,9 @@ proc apply*(input: string): string =
     # v1.32352.1: the em-dash is emitted as the six-char \u2014 escape (see
     # 13b.kwin-shell-hint). The re-emitted branch keeps the escape, which JS
     # decodes to the same character.
-    let linuxSentence = "\"On Linux, all applications are directly accessible.\""
+    # Switch on, js/cu_consent.js text("openApp") says the app must be approved.
+    let linuxSentence =
+      "(globalThis.__cdbCuConsent?.text(\"openApp\")||\"On Linux, all applications are directly accessible.\")"
     let macSentence =
       "\"The target must already be in the session allowlist " &
       "\\u2014 call request_access first.\""
@@ -1941,9 +2046,12 @@ proc apply*(input: string): string =
       "\"Take a screenshot of the primary display. On this platform, screenshots are NOT filtered \\u2014 all open windows are visible. Input actions targeting apps not in the session allowlist are rejected.\"",
       "`Take a screenshot of the primary display. On this platform, screenshots are NOT filtered \\u2014 all open windows are visible. Input actions targeting apps not in the session allowlist are rejected.`",
     ]
+    # Switch on, js/cu_consent.js text("screenshot") says what this session's
+    # screenshots show (masked or the whole screen).
+    const linux13f =
+      "(globalThis.__cdbCuConsent?.text(\"screenshot\")||\"Take a screenshot of the primary display. All open windows are visible.\")"
     let new13f =
-      "(process.platform===\"linux\"?" &
-      "\"Take a screenshot of the primary display. All open windows are visible.\"" & ":" &
+      "(process.platform===\"linux\"?" & linux13f & ":" &
       "\"Take a screenshot of the primary display. On this platform, " &
       "screenshots are NOT filtered \\u2014 all open windows are visible. " &
       "Input actions targeting apps not in the session allowlist are rejected.\")"
@@ -1957,9 +2065,7 @@ proc apply*(input: string): string =
       content,
       pat13f,
       proc(m: RegexMatch): string =
-        "(process.platform===\"linux\"?" &
-          "\"Take a screenshot of the primary display. All open windows are visible.\":" &
-          m.captures[0] & ")",
+        "(process.platform===\"linux\"?" & linux13f & ":" & m.captures[0] & ")",
     )
     if n13f == 0:
       n13f = replaceLiteralFirstAny(content, old13f, new13f)
@@ -1980,7 +2086,7 @@ proc apply*(input: string): string =
       proc(m: RegexMatch): string =
         let v = m.captures[0]
         &"{v}+(process.platform===\"linux\"" &
-          "?\" The returned image is what subsequent click coordinates are relative to.\"" &
+          "?(globalThis.__cdbCuConsent?.text(\"shotSuffix\")||\" The returned image is what subsequent click coordinates are relative to.\")" &
           ":\" Returns an error if the allowlist is empty. The returned image is what subsequent click coordinates are relative to.\")",
     )
     if n >= 1:
@@ -2125,9 +2231,9 @@ proc apply*(input: string): string =
         pat,
         proc(m: RegexMatch): string =
           m.captures[0] &
-            "${process.platform===\"linux\"&&globalThis.__cdbAxKey?.()||\"\"}`;",
+            "${process.platform===\"linux\"&&(globalThis.__cdbAxKey?.()||\"\")+(globalThis.__cdbCuConsent?.key?.()||\"\")||\"\"}`;",
       )
-      echo "  [OK] 15b tools/list cache key: includes the accessibility switch (1 match)"
+      echo "  [OK] 15b tools/list cache key: includes the accessibility and ask-before-control modes (1 match)"
       inc changes
       inc patchesApplied
 

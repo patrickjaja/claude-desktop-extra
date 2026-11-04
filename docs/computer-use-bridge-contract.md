@@ -65,6 +65,28 @@ Bridges without a session (`session_supported: false`) answer exactly:
 {"ok":true,"ended":false,"daemon":"none","token_removed":false,"token_path":null}
 ```
 
+## Optional: allowlist mask (`screenshot` / `zoom`)
+
+Bridges may let a capture keep only some windows. Additive and optional: contract v1 does not change, and a consumer passes the flags only when `doctor` says the bridge has them. x11-bridge and wlroots-bridge (sway, Hyprland) implement it.
+
+- `screenshot` and `zoom` take `--keep-window <id>` (repeatable; ids from `windows`) or `--mask-all` (keep nothing). The two conflict (exit 2). Without either flag the capture and its output are unchanged.
+- Every pixel outside a kept window's visible region is painted over (a solid fill): the desktop, panels and bars, other apps' windows and Claude's own window, unless kept.
+- The result adds `mask` with at least `mode` (`"keep"` or `"all"`) and `kept`. Bridge-specific keys follow:
+  - x11-bridge: `{mode, fill, kept: [id], kept_hidden: [id], kept_missing: [id], auto_kept: [id], masked: [{id, frame, pid, desktop_file_name, resource_class, resource_name, override_redirect}]}`. `masked` lists the masked windows with pixels in the image, topmost first, by client id as in `windows`; titles are never reported.
+  - wlroots-bridge: `{mode, kept: [{id, appId, title, visible}], regions: [{x, y, width, height}]}`. Its ids are per-connection protocol ids that can shift between `windows` and the capture, so `kept` echoes the app id and title each kept id named at capture time.
+- Fail closed: a bridge that cannot build the mask exits 1 with no image (never an unmasked one).
+- `doctor` advertises it: x11-bridge `capabilities.screenshot_mask: true`; wlroots-bridge top-level `screenshot_mask: true` plus `screenshot_mask_gaps` (string list, what the mask cannot cover: sway `popups`, `layer_shell_top_overlay`, `xwayland_unmanaged`; Hyprland `popups`). A missing key means no support.
+
+How claude-desktop-extra uses it (js/cu_linux_executor.js): when the caller passes the granted apps (`allowedBundleIds`: upstream's own dispatch always, the Code-session handler with "Ask before Computer Use controls an app" on), the windows of those apps are kept (never Claude's own), `--mask-all` when none is on screen. A `doctor` that fails, any bridge error, an exit 2 from a bridge without the flags, a result without `mask`, or (wlroots) a kept entry whose app id is no longer an allowed app discards the capture; no other capture tier is tried. A backend that definitively cannot mask (no capture bridge: GNOME, XWayland-only, the Electron fallback; or a `doctor` without the key: niri, river, an older bridge) captures unmasked. Every capture result carries `masked` (true / false), `filtering` (`"mask"` / `"none"`) and `maskGaps`; `capabilitiesNow().screenshotFiltering` is the cached `doctor` answer.
+
+x11-bridge kept windows are checked by id only (`kept` must be a subset of the ids asked for). That is sufficient on X11: the bridge captures under a server grab, and an XID comes from its client's own resource-id range, so the id of a window that vanished between `windows` and the capture can only come back as a window of the same client, never another app's. wlroots-bridge ids are per-connection protocol ids with no such guarantee, hence its `appId` / `title` echo and the executor's re-check.
+
+## Optional: window geometry keys
+
+`windows` entries keep the frozen shape; bridges that can locate windows fill `geometry` (global logical px on Wayland, root px on X11, the space `screens` uses), `output` (a `screens` id), `is_visible` (false for other workspaces, hidden tabs, minimized) and `stacking_order` (back-to-front rank). A bridge that cannot locate a window reports `geometry` `{0,0,0,0}` and `output` null for it; consumers never guess a position.
+
+wlroots-bridge `doctor` adds `window_geometry: true` when the compositor IPC answered (sway `GET_TREE`, Hyprland `j/clients`); niri, river and others report false. claude-desktop-extra then uses the geometry for the display auto-target and for a hit test (`appUnderPoint`, topmost window by `stacking_order`; unknown while any non-minimized window has no position).
+
 ## Optional: accessibility (AT-SPI) commands
 
 Bridges may add four commands that read and act on a window's accessibility tree. They are additive and optional: contract v1 does not change, and a consumer calls them only when the bridge has them. All four bridges (x11, wlroots, kwin, gnome) implement them with the shared `cu-atspi` crate.

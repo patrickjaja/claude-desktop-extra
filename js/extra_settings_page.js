@@ -577,7 +577,7 @@
   // On Windows (a downstream Windows build of this patch set) only custom
   // models is carried: the other panels drive Linux-only patches or Linux
   // paths (/etc/claude-desktop) that do not exist there. Computer Use is one of
-  // them: every cdb-cu-status / cdb-cubg / cdb-cu-ax channel answers "Linux
+  // them: every cdb-cu-status / cdb-cubg / cdb-cu-ax / cdb-cu-ask channel answers "Linux
   // only" on win32, so the page would hold nothing.
   var WINDOWS_NAV = { models: true };
   if (/^Win/.test((typeof navigator !== "undefined" && navigator.platform) || "")) {
@@ -1541,9 +1541,33 @@
   // The Computer Use switches, below the status block. Same keys, same rows as
   // they had under Community Features.
   var CU_ROWS = [
+    renderCuAskRow,
     renderCuBackgroundRow,
     renderCuAxRow
   ];
+
+  // What the wlroots-bridge mask does not cover (doctor screenshot_mask_gaps).
+  var CUS_GAP_NAMES = { popups: "popup menus", layer_shell_top_overlay: "panels and overlays", xwayland_unmanaged: "XWayland menus and tooltips" };
+  function cusGapName(g) { return CUS_GAP_NAMES[g] || String(g).replace(/_/g, " "); }
+
+  // The status line under "This desktop": what screenshots show here. Facts
+  // from main (cdb-cu-status:read `screenshots`); null draws nothing.
+  function cusShotsLine(s) {
+    if (!s || typeof s !== "object") return null;
+    var where = typeof s.session === "string" && s.session ? s.session : "this desktop";
+    if (s.kwin === true) {
+      if (s.filtering === "filtered") return "Screenshots show only approved apps (on this KDE session Claude always asks before it controls an app).";
+      if (s.filtering === "whole") return "On this session (" + where + ") screenshots show the whole screen, including apps you did not approve.";
+      return "Screenshots: unknown - Computer Use did not start in this run.";
+    }
+    if (s.ask === false) return "Screenshots show the whole screen and every app can be controlled: Ask before Computer Use controls an app is off.";
+    if (s.filtering === "filtered") {
+      var gaps = Array.isArray(s.gaps) ? s.gaps.filter(function (g) { return typeof g === "string" && g; }) : [];
+      return "Screenshots show only approved apps." + (gaps.length ? " Not covered on this desktop: " + gaps.map(cusGapName).join(", ") + "." : "");
+    }
+    if (s.filtering === "whole") return "On this session (" + where + ") screenshots show the whole screen, including apps you did not approve.";
+    return "Screenshots: unknown - Computer Use did not start in this run.";
+  }
 
   // One status row: the word, the fact line, the explanation, its actions.
   function cusRow(host, key, row) {
@@ -1707,6 +1731,12 @@
       var restartOk = acts.restart === true && typeof api.appRelaunch === "function";
 
       var desk = cusRow(page, "desktop", rows.desktop);
+      var shots = cusShotsLine(st.screenshots);
+      if (shots) {
+        var sl = el("div", "cdbx-note cdbx-cus-shots", shots);
+        sl.setAttribute("data-filtering", String(st.screenshots.ask === false && st.screenshots.kwin !== true ? "off" : st.screenshots.filtering));
+        desk.main.appendChild(sl);
+      }
       if (acts.resetScreenSharing === true) {
         var reset = cusButton("Reset screen sharing", "Forget the remembered screen-sharing choice; the next Computer Use task asks again");
         reset.addEventListener("click", function () {
@@ -2791,6 +2821,40 @@
           : "Tray icon follows the theme again";
       },
       errorPrefix: "Could not change the tray icon: "
+    });
+  }
+
+  // --- Computer Use: ask before controlling an app --------------------------
+  // On by default (main answers enabled unless the key is false). Main side:
+  // cdb-cu-ask:* in js/extra_settings_main.js; the tool side js/cu_consent.js.
+  function renderCuAskRow(panel) {
+    return renderToggleRow(panel, {
+      section: "Options",
+      title: "Ask before Computer Use controls an app",
+      // Under the Options heading renderCu draws.
+      sharedSection: true,
+      note: "Claude names the apps it wants to use and you approve them in a card in the chat. Approved " +
+        "apps get full control (clicks and typing); clicks and typing on other apps are refused. Where this " +
+        "desktop can filter screenshots they show only the approved apps - the status above says what this " +
+        "session does. Off: every app can be controlled without asking. On KDE Plasma (Wayland) Claude always asks.",
+      ariaLabel: "ask before Computer Use controls an app",
+      read: "cuAskRead",
+      write: "cuAskSet",
+      lockFile: "claude-desktop-extra.jsonc",
+      // The downstream Windows build carries this page; its main side answers
+      // "Linux only" and the row must not appear there.
+      hideIf: function (res) { return failed(res) && /Linux only/.test(reason(res)); },
+      isOn: function (res) { return res.enabled === true; },
+      describe: function (on) {
+        return on ? "on - Claude asks which apps it may control" : "off - every app can be controlled without asking";
+      },
+      writeArg: function (next) { return next; },
+      toast: function (next) {
+        return next
+          ? "Computer Use asks before it controls an app"
+          : "Computer Use controls apps without asking";
+      },
+      errorPrefix: "Could not change the setting: "
     });
   }
 

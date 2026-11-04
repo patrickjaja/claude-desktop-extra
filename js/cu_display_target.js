@@ -11,8 +11,11 @@
 //
 // Bridge-agnostic: each executor normalizes its bridge's window list and its
 // monitor list into ONE coordinate space and hands them here. A window whose
-// bridge reports no position (wlroots foreign-toplevel, GNOME Introspect) has
-// rect null and, without a displayId, simply does not count - never guessed.
+// bridge reports no position (wlroots-bridge without doctor window_geometry,
+// i.e. niri / river, or a sway / Hyprland window it could not match; GNOME
+// Introspect) has rect null and, without a displayId, simply does not count -
+// never guessed. wlroots-bridge on sway / Hyprland gives global logical rects
+// plus the screen id in `output` (the executor maps it to a displayId).
 //
 //   mons: [{displayId, label, isPrimary, rect:{x,y,width,height}}]
 //   wins: [{bundleId, rect:{x,y,width,height}|null, displayId?, minimized}]

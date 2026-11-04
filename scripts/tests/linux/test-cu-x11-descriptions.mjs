@@ -122,10 +122,18 @@ function evalPreset(decls, { presetName, waylandFnName, platform, env }) {
 
 // Evaluate the builder's description selector for one capabilities object and
 // return the screenshot tool description and the request_access prefix.
-function evalDescriptions({ tName, selector, shot, access }, caps, { platform, env, kwin = false }) {
+// `ask` loads the real js/cu_consent.js ("Ask before Computer Use controls an
+// app") into the sandbox with a fake executor reporting `ask.caps`.
+const CONSENT_SRC = readFileSync(join(repo, "js", "cu_consent.js"), "utf8");
+function evalDescriptions({ tName, selector, shot, access }, caps, { platform, env, kwin = false, ask = null }) {
   const sandbox = { process: { platform, env } };
   if (kwin) sandbox.__cuKwinMode = true;
   sandbox.globalThis = sandbox;
+  if (ask) {
+    sandbox.__cdbCuAskBeforeControl = () => ask.on;
+    sandbox.__linuxExecutor = { capabilitiesNow: () => ask.caps };
+    vm.runInNewContext(CONSENT_SRC, vm.createContext(sandbox));
+  }
   const src = `(function(${tName}){let ${selector};return {screenshot:${shot},access:${access}}})`;
   return vm.runInNewContext(src, vm.createContext(sandbox))(caps);
 }
@@ -239,7 +247,7 @@ if (patchMissing || !existsSync(stub)) {
     check("preset marker lands exactly once", count(patched, PRESET_MARKER), 1);
     check("our X11 request_access sentence lands exactly once", count(patched, OUR_X11_ACCESS), 1);
     check("the 13f else-arm still carries the clean screenshot text",
-      /=([\w$]+)\.screenshotFiltering==="native"\?[\w$]+:\1\.screenshotFiltering==="mask"\?"[^"]*":\(process\.platform==="linux"\?"Take a screenshot of the primary display\. All open windows are visible\.":/.test(patched),
+      /=([\w$]+)\.screenshotFiltering==="native"\?[\w$]+:\1\.screenshotFiltering==="mask"\?"[^"]*":\(process\.platform==="linux"\?\(globalThis\.__cdbCuConsent\?\.text\("screenshot"\)\|\|"Take a screenshot of the primary display\. All open windows are visible\."\):/.test(patched),
       true);
 
     const presetRe = /(?<![\w$.])([\w$]+)=\{screenshotFiltering:"native",platform:"linux"\},([\w$]+)=\{screenshotFiltering:"none",platform:"linux",hitTest:"none"\},([\w$]+)=([\w$]+)\(\)\?\2:process\.platform==="linux"\?\{screenshotFiltering:"none",platform:"linux"\}:\1,([\w$]+)=!\4\(\)/;
@@ -258,7 +266,7 @@ if (patchMissing || !existsSync(stub)) {
       const accessExpr = patched.slice(retIdx + ';return[{name:"request_access",description:'.length, accEnd);
       const tm = /\}\[([\w$]+)\.platform\]$/.exec(accessExpr);
       check("builder parameter name is recoverable from the prefix object", !!tm, true);
-      const shotM = /\{name:"screenshot",description:([\w$]+\+\(process\.platform==="linux"\?"[^"]*":"[^"]*"\))/.exec(patched.slice(accEnd, accEnd + 40000));
+      const shotM = /\{name:"screenshot",description:([\w$]+\+\(process\.platform==="linux"\?\(globalThis\.__cdbCuConsent\?\.text\("shotSuffix"\)\|\|"[^"]*"\):"[^"]*"\))/.exec(patched.slice(accEnd, accEnd + 40000));
       check("patched screenshot tool description is extractable", !!shotM, true);
       if (tm && shotM) {
         const tName = tm[1];
@@ -279,6 +287,26 @@ if (patchMissing || !existsSync(stub)) {
           check(`X11 (${label}) request_access carries the whole-display sentence`, d.access.includes(OUR_X11_ACCESS), true);
           check(`X11 (${label}) request_access keeps upstream's Linux file-manager sentence`, d.access.startsWith('This computer is running Linux. The file manager is usually listed as "Files" (not Finder). '), true);
           check(`X11 (${label}) request_access does not claim a Wayland session`, d.access.includes(UPSTREAM_WAYLAND_ACCESS), false);
+        }
+
+        // "Ask before Computer Use controls an app" on: the live mode decides
+        // the texts; off: byte-for-byte the switch-off texts above.
+        for (const [label, env] of [["x11", X11_ENV], ["wayland", WAYLAND_ENV]]) {
+          const caps = evalPreset(decls, { ...presetOpts, platform: "linux", env });
+          const mask = evalDescriptions(shapes, caps, { platform: "linux", env, ask: { on: true, caps: { screenshotFiltering: "mask", hitTest: "native", frontmost: "native" } } });
+          check(`ask on (${label}, mask): screenshot says unapproved apps are covered`, mask.screenshot.includes("Apps the user did not approve are covered by solid rectangles"), true);
+          check(`ask on (${label}, mask): screenshot suffix says approval comes first`, mask.screenshot.includes("Returns an error until the user has approved at least one app."), true);
+          check(`ask on (${label}, mask): request_access names the approval card`, mask.access.includes("in an approval card"), true);
+          check(`ask on (${label}, mask): request_access keeps the Linux file-manager sentence`, mask.access.startsWith('This computer is running Linux. The file manager is usually listed as "Files" (not Finder). '), true);
+          check(`ask on (${label}, mask): no whole-display sentence`, mask.access.includes(OUR_X11_ACCESS), false);
+          const none = evalDescriptions(shapes, caps, { platform: "linux", env, ask: { on: true, caps: { screenshotFiltering: "none", hitTest: "none", frontmost: "native" } } });
+          check(`ask on (${label}, none): screenshot says it is not filtered`, none.screenshot.includes("screenshots are not filtered"), true);
+          check(`ask on (${label}, none): request_access says the whole screen shows`, none.access.includes("including apps the user did not approve"), true);
+          const off = evalDescriptions(shapes, caps, { platform: "linux", env, ask: { on: false, caps: { screenshotFiltering: "mask", hitTest: "native" } } });
+          const plain = evalDescriptions(shapes, caps, { platform: "linux", env });
+          check(`ask off (${label}): texts identical to no consent module`, off.screenshot === plain.screenshot && off.access === plain.access, true);
+          const kw = evalDescriptions(shapes, caps, { platform: "linux", env, kwin: true, ask: { on: true, caps: { screenshotFiltering: "mask" } } });
+          check(`ask on in kwin mode (${label}): upstream's Wayland sentence`, kw.access.includes(UPSTREAM_WAYLAND_ACCESS), true);
         }
 
         // Wayland
