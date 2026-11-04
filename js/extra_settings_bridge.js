@@ -96,6 +96,15 @@
       return ipcRenderer.invoke("cdb-tray:set", enabled === true);
     },
 
+    // Wake Auto-fix sessions when a PR is ready to merge. Fixed channels,
+    // boolean only; the main side re-validates the type.
+    autoFixMergeReadyRead: function () {
+      return ipcRenderer.invoke("cdb-autofix-merge-ready:read");
+    },
+    autoFixMergeReadySet: function (enabled) {
+      return ipcRenderer.invoke("cdb-autofix-merge-ready:set", enabled === true);
+    },
+
     // Computer Use: read app controls (accessibility). Fixed channels, boolean only.
     cuAxRead: function () {
       return ipcRenderer.invoke("cdb-cu-ax:read");

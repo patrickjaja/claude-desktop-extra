@@ -1,9 +1,15 @@
 // Embedded as an expression in AutoFixEngine; no timer or separate poller.
+// Cost: one GraphQL read per sweep per Auto-fix PR (none while the app's own
+// GraphQL budget guard says low or a rate-limit window is open, none while a
+// failed send backs off); a PR already notified at its head is re-read at most
+// every 10 minutes, only to notice a new head or a regression.
 (function __cdbCreateMergeReady(engine, dependencies) {
   const manager = engine.sessionManager;
   const fs = dependencies?.fs || require("node:fs");
   const path = dependencies?.path || require("node:path");
   const uuid = dependencies?.uuid || require("node:crypto").randomUUID;
+  const now = dependencies?.now || Date.now;
+  const NOTIFIED_REREAD_MS = 10 * 60 * 1000;
   const file = path.join(dependencies?.userData || require("electron").app.getPath("userData"), "autofix-merge-ready.json");
   const log = error => (globalThis.__cdbDiag || (() => {}))(`[merge-ready] ${String(error)}`);
   const query = `query CdbMergeReady($owner:String!,$name:String!,$number:Int!) {
@@ -20,6 +26,10 @@
   }`;
   let states = Object.create(null), usable = true;
   const inFlight = new Set(), livePending = new Set(), awaitingReceipt = new Map();
+  // In memory only: the last ready observation per key (a notice needs two
+  // consecutive sweeps agreeing on head and base), when a key was last read,
+  // and the send-failure backoff (like upstream's sendFailureCounts).
+  const observed = new Map(), lastReadAt = new Map(), backoff = new Map();
   try {
     const stored = JSON.parse(fs.readFileSync(file, "utf8"));
     if (stored.version !== 1 || !stored.states || typeof stored.states !== "object" || Array.isArray(stored.states)) throw Error("invalid readiness ledger");
@@ -27,10 +37,31 @@
   } catch (error) {
     if (error.code !== "ENOENT") { usable = false; log(error); }
   }
+  const serialize = () => JSON.stringify({ version: 1, states });
+  let saved = serialize();
+  // Writes only when the ledger changed since the last successful write.
   function save() {
+    const text = serialize();
+    if (text === saved) return;
     const temporary = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(temporary, JSON.stringify({ version: 1, states }), { mode: 0o600 });
+    fs.writeFileSync(temporary, text, { mode: 0o600 });
     fs.renameSync(temporary, file);
+    saved = text;
+  }
+  // Upstream's own guard (GitHubPrManager.readBudgets + graphqlBudgetLow, the
+  // check its row refresh uses). Missing methods mean no read: fail closed.
+  function budgetAllows(host) {
+    try {
+      const github = manager.githubPr;
+      if (typeof github?.readBudgets !== "function" || typeof github.graphqlBudgetLow !== "function") return false;
+      const graphql = github.readBudgets(host)?.graphql;
+      if (!graphql || graphql.rateLimited !== false) return false;
+      return github.graphqlBudgetLow(host, graphql.remaining) === false;
+    } catch (error) { log(error); return false; }
+  }
+  function sendFailed(key) {
+    const count = (backoff.get(key)?.count ?? 0) + 1;
+    backoff.set(key, { count, skip: Math.min(2 ** count, 16) - 1 });
   }
   function verdict(pr) {
     const sha = /^[0-9a-f]{40}$/;
@@ -70,25 +101,30 @@
       return response.data?.repository?.pullRequest;
     } catch (error) { log(error); }
   }
-  function acknowledge(sessionId, messageId, dropped) {
+  // outcome: "completed", "dropped" (retriable) or "cancelled" (the user
+  // deleted the queued notice or pressed Stop: dismissed, never re-sent for
+  // this head - upstream ignores a cancelled drop the same way).
+  function acknowledge(sessionId, messageId, outcome) {
     if (!usable) return;
     if (awaitingReceipt.has(messageId)) {
-      awaitingReceipt.set(messageId, dropped ? "dropped" : "completed");
+      awaitingReceipt.set(messageId, outcome);
       return;
     }
     for (const state of Object.values(states)) {
       if (state.sessionId !== sessionId || state.messageId !== messageId) continue;
       livePending.delete(messageId);
       state.pending = false;
-      state.notified = !dropped;
-      state.delivery = dropped ? "dropped" : "completed";
+      state.notified = outcome !== "dropped";
+      state.delivery = outcome;
       try { save(); } catch (error) { usable = false; log(error); }
     }
   }
   return {
     verdict,
-    completed(sessionId, messageId) { acknowledge(sessionId, messageId, false); },
-    dropped(sessionId, messageIds) { for (const id of messageIds) acknowledge(sessionId, id, true); },
+    completed(sessionId, messageId) { acknowledge(sessionId, messageId, "completed"); },
+    dropped(sessionId, messageIds, reason) {
+      for (const id of messageIds || []) acknowledge(sessionId, id, reason === "cancelled" ? "cancelled" : "dropped");
+    },
     async check(session, pr) {
       if (!usable || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(pr.repo || "") || !Number.isSafeInteger(pr.prNumber) || pr.prNumber <= 0) return;
       const host = (pr.host || "github.com").toLowerCase();
@@ -118,22 +154,33 @@
           const previous = states[key];
           if (previous?.pending && manager.isSendParked(previous.sessionId, previous.messageId)) await manager.withdrawParkedSend(previous.sessionId, previous.messageId);
           if (previous?.messageId) livePending.delete(previous.messageId);
+          observed.delete(key);
           delete states[key];
           save();
           return;
         }
-        let current = await read(pr);
+        // A failed send backs off: skip 1, 3, 7, then 15 sweeps.
+        const wait = backoff.get(key);
+        if (wait?.skip > 0) { wait.skip--; return; }
+        // Already notified at its head: re-read only every 10 minutes, to see
+        // a new head or a regression. A new head waiting for its confirming
+        // read is not throttled.
+        const known = states[key];
+        if (known?.ready && known.notified && !known.pending && (observed.get(key)?.head ?? known.head) === known.head &&
+          lastReadAt.has(key) && now() - lastReadAt.get(key) < NOTIFIED_REREAD_MS) return;
+        if (!budgetAllows(host)) return;
+        lastReadAt.set(key, now());
+        const current = await read(pr);
         if (!active()) return;
-        let result = verdict(current);
-        if (result === "unknown") return;
+        const result = verdict(current);
+        if (result === "unknown") { observed.delete(key); return; }
+        // Ready counts only when the previous read of this key was ready at the
+        // same head and base; any other verdict restarts the confirmation.
+        const seen = observed.get(key);
+        const confirmed = result === "ready" && !!seen && seen.head === current.headRefOid && seen.base === current.baseRefOid;
+        if (result === "ready") observed.set(key, { head: current.headRefOid, base: current.baseRefOid });
+        else observed.delete(key);
         let previous = states[key];
-        if (result === "ready") {
-          const second = await read(pr);
-          if (!active() || !second || second.headRefOid !== current.headRefOid || second.baseRefOid !== current.baseRefOid) return;
-          current = second;
-          result = verdict(second);
-          if (result === "unknown") return;
-        }
         if (previous?.pending && previous.head !== current.headRefOid && manager.isSendParked(previous.sessionId, previous.messageId)) {
           await manager.withdrawParkedSend(previous.sessionId, previous.messageId);
           if (!active()) return;
@@ -145,6 +192,7 @@
         if (result !== "ready") {
           if (previous.pending && manager.isSendParked(previous.sessionId, previous.messageId)) await manager.withdrawParkedSend(previous.sessionId, previous.messageId);
           livePending.delete(previous.messageId);
+          backoff.delete(key);
           states[key] = { head: current.headRefOid, ready: false, notified: false, pending: false };
           save();
           return;
@@ -156,6 +204,7 @@
           previous.notified = false;
         }
         if (previous.ready && (previous.notified || previous.pending)) return;
+        if (!confirmed) return;
         if (!manager.hasLiveQuery(sessionId) && manager.cliGovernor.isAtCap()) return;
         const messageId = uuid();
         states[key] = { ...previous, ready: true, notified: false, pending: false, sessionId, messageId, delivery: "sending" };
@@ -165,15 +214,16 @@
         let sent;
         try {
           sent = await manager.sendMessage(sessionId, text, undefined, { origin: { kind: "auto-continuation" }, initiator: "ci-monitor", messageUuid: messageId });
-        } catch (error) { awaitingReceipt.delete(messageId); throw error; }
+        } catch (error) { awaitingReceipt.delete(messageId); sendFailed(key); throw error; }
         const earlyOutcome = awaitingReceipt.get(messageId);
         awaitingReceipt.delete(messageId);
-        if (sent?.delivered !== true) return;
+        if (sent?.delivered !== true) { sendFailed(key); return; }
+        backoff.delete(key);
         // A completion/drop callback may arrive before the receipt. Bank it,
         // but do not mark notified until acceptance is positively confirmed.
         if (states[key]?.messageId !== messageId) return;
         if (earlyOutcome === "dropped") { states[key].delivery = "dropped"; save(); return; }
-        if (earlyOutcome === "completed") { states[key].notified = true; states[key].delivery = "completed"; }
+        if (earlyOutcome === "completed" || earlyOutcome === "cancelled") { states[key].notified = true; states[key].delivery = earlyOutcome; }
         if (!states[key].notified) {
           states[key].pending = sent.queued === true;
           if (states[key].pending) livePending.add(messageId);
