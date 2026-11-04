@@ -422,7 +422,7 @@ async function featuresPanel(featuresItem) {
     const row = author.closest(".cdbx-row"), save = row.querySelector("button");
     ok(author.value === "", "additional trust list defaults empty");
     ok(!!row.querySelector('label[for="cdbx-autofix-authors"]'), "editor has an accessible label");
-    ok(/only the author check/.test(row.textContent), "editor explains narrow scope");
+    ok(/count as the session's own PRs/.test(row.textContent) && /race checks remain/.test(row.textContent), "editor explains the scope");
     author.value = "github.com/my-app[bot]\nghe.example/human";
     save.click(); save.click();
     await sleep(60);

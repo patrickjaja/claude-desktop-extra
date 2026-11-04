@@ -12,7 +12,7 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ### Auto-fix
 
-- **Trusted Auto-fix PR authors** in Settings → Extra → Community Features recognizes explicitly listed users and GitHub App bots in addition to the authenticated `gh` user. Entries are exact server/login pairs (for example `github.com/my-app[bot]`); the list is empty by default, with no blanket bypass or implicit migration from the earlier local preview. Only author recognition changes: authentication, session ownership, origin/age, confirmation, consent and concurrent-write protection stay unchanged. Applies live to future activation attempts; does not enable Auto-fix itself or revoke already-enabled PRs.
+- **Trusted Auto-fix PR authors** (thanks @alexx-ftw, #308) in Settings -> Extra -> Community Features recognizes explicitly listed users and GitHub App bots in addition to the authenticated `gh` user. Entries are exact server/login pairs (for example `github.com/my-app[bot]`); the list is empty by default, with no blanket bypass or implicit migration from the earlier local preview. PRs from a listed author are also bound as the session's own PRs (and found on the session's branch), so the switch takes effect end to end. Authentication, origin/age, confirmation, consent and concurrent-write protection stay unchanged. Applies live to future activation attempts; does not enable Auto-fix itself or revoke already-enabled PRs.
 
 ### Faster builds
 

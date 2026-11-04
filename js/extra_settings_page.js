@@ -2324,9 +2324,9 @@
       section: "Code", title: "Trusted Auto-fix PR authors",
       note: "Empty by default: the authenticated gh user is always recognized. Add exact host/login " +
         "pairs, one per line (for example github.com/my-app[bot]), to also recognize selected users " +
-        "or GitHub App bots. No URLs or wildcards. This extends only the author check for automatic " +
-        "and model-requested activation: authentication, session ownership, PR scope, consent and " +
-        "race checks remain. It does not enable Auto-fix itself. Applies live to future attempts."
+        "or GitHub App bots. No URLs or wildcards. Their PRs count as the session's own PRs (binding, " +
+        "discovery on the session's branch, automatic and model-requested Auto-fix); authentication, " +
+        "PR scope, origin/age, consent and race checks remain. It does not enable Auto-fix itself. Applies live to future attempts."
     };
     var head = el("div", "cdbx-section", spec.section);
     var host = el("div", "cdbx-list");

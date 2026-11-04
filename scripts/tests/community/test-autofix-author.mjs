@@ -15,13 +15,18 @@ const bin = join(ROOT, "patches/community/add_feature_autofix_author");
 const dir = mkdtempSync(join(tmpdir(), "cdb-autofix-author-"));
 const fixture = `function ld(e,t){let n=e.user?.login;return!!t&&!!n&&n.toLowerCase()===t.toLowerCase()}
 function dd(e,t,n,r,i,a){if(!e?.success)return"unreadable";if(t.login===null)return t.failed?"unreadable":"no_login";if(!ld({user:{login:e.author}},t.login))return"not_author";let o=Date.parse(e.createdAt??"");return a!==void 0&&!(o>=a&&o<=i+Fd)?"older_pr":n.length===0?"no_origin":n.some((t=>{let n=\`\${t.owner}/\${t.name}\`.toLowerCase();return t.hostname===Wu(r)&&(n===r.repo.toLowerCase()||n===e.headRepo?.toLowerCase())}))?"armed":"other_repo"}
-class Manager {async armOwnCreate(){} async enableAutoFixForModel(e,t,n,r){if(this.storedAutoFix(e,t,n,r)===!0)return;if(this.config.claudeCodeRunsHere?.(e)!==!0)return"runs_elsewhere";let i=this.autoFixRefusedToModel(e,t,n,r);if(i!==void 0)return i;let a=this.storedAutoFix(e,t,n,r),o=Wu({host:r}),s=Ku(e,{host:r,repo:t,prNumber:n}),c=this.autoFixWrites.get(s),l=await this.readGhLogin(o).catch((()=>({login:null,failed:!0})));if(l.login===null)return l.failed?"unreadable":"no_login";this.prStateCache.delete(Gu(o,t,n));let u=await this.getPrStateByNumber(t,n,r).catch((()=>void 0));if(!u?.success)return"unreadable";if(!ld({user:{login:u.author}},l.login))return"not_author";let d=this.autoFixRefusedToModel(e,t,n,r);if(d!==void 0)return d;let f=this.storedAutoFix(e,t,n,r);if(f!==a||this.autoFixWrites.get(s)!==c)return f?void 0:"changed";this.writeBoundPrAutoFix(e,t,n,!0,"model",r)}}`;
+class Manager {async armOwnCreate(){} async enableAutoFixForModel(e,t,n,r){if(this.storedAutoFix(e,t,n,r)===!0)return;if(this.config.claudeCodeRunsHere?.(e)!==!0)return"runs_elsewhere";let i=this.autoFixRefusedToModel(e,t,n,r);if(i!==void 0)return i;let a=this.storedAutoFix(e,t,n,r),o=Wu({host:r}),s=Ku(e,{host:r,repo:t,prNumber:n}),c=this.autoFixWrites.get(s),l=await this.readGhLogin(o).catch((()=>({login:null,failed:!0})));if(l.login===null)return l.failed?"unreadable":"no_login";this.prStateCache.delete(Gu(o,t,n));let u=await this.getPrStateByNumber(t,n,r).catch((()=>void 0));if(!u?.success)return"unreadable";if(!ld({user:{login:u.author}},l.login))return"not_author";let d=this.autoFixRefusedToModel(e,t,n,r);if(d!==void 0)return d;let f=this.storedAutoFix(e,t,n,r);if(f!==a||this.autoFixWrites.get(s)!==c)return f?void 0:"changed";this.writeBoundPrAutoFix(e,t,n,!0,"model",r)}
+async getPrStateByNumberUncached(e,n,r,i={}){let o=(await this.ghRest.rest(e,r)).data;return{success:!0,ownCreate:await this.getGhLogin(r).then((e=>e===null?void 0:ld(o,e))),author:o.user?.login}}
+async getPrStateForBranchUncached(e,r,i,a=[]){let n=await this.resolveSlug(e),c=await this.ghRest.rest(r,n.hostname),l=c.data.length>0?await this.getGhLogin(n.hostname):null,u=new Set(a),d=await Promise.all(c.data.map((async e=>ld(e,l)||e.number!==void 0&&u.has(e.number)||fd(e,n.hostname)?!0:await this.authorMayPush(n,e)))),h=c.data.filter(((e,t)=>d[t]))[0];return await this.withMergeQueueState({success:!0,number:h.number,ownCreate:l===null?void 0:ld(h,l)})}
+async discoverPrByHeadSha(e,n){let t=await this.resolveSlug(e),s="org/repo",o=await this.ghRest.rest(n,t.hostname),c=o.data.length>0?await this.getGhLogin(t.hostname):null,l=c?.toLowerCase(),u=o.data,d=await Promise.all(u.map((async e=>{let n=ld(e,c);return e.head?.repo?.full_name?.toLowerCase()===s?n||fd(e,t.hostname)||await this.authorMayPush(t,e):n&&e.head?.repo?.owner?.login?.toLowerCase()===l}))),p=u.filter(((e,t)=>d[t]))[0];return{success:!0,number:p.number,ownCreate:c!==null&&!ld(p,c)?!1:void 0}}}`;
 function patch(source, name = "fixture.js") {
   const path = join(dir, name);
   writeFileSync(path, source);
   execFileSync(bin, [path], { stdio: "pipe" });
   const result = readFileSync(path, "utf8");
-  assert.equal(result.replace(/!\(globalThis\.__cdbAutoFixAuthorAllowed\?\.\([\w$]+\.author,[\w$]+(?:\.host)?\?\?"github\.com"\)===true\)&&/g, ""), source,
+  assert.equal(result.replace(/!\(globalThis\.__cdbAutoFixAuthorAllowed\?\.\([\w$]+\.author,[\w$]+(?:\.host)?\?\?"github\.com"\)===true\)&&/g, "")
+    .replace(/&&!\(globalThis\.__cdbAutoFixAuthorAllowed\?\.\([\w$]+\.user\?\.login,[\w$]+\.hostname\)===true\)/g, "")
+    .replace(/\|\|globalThis\.__cdbAutoFixAuthorAllowed\?\.\([\w$]+\.user\?\.login,[\w$]+(?:\.hostname|\?\?"github\.com")\)===true/g, ""), source,
     "the patch changes only the author comparison conditions");
   execFileSync(bin, [path], { stdio: "pipe" });
   assert.equal(readFileSync(path, "utf8"), result, "patch is byte-idempotent");
@@ -103,8 +108,48 @@ try {
   assert.equal((await win.handlers["cdb-autofix-author:set"](sender, [pair])).ok, false);
   console.log("PASS settings: exact host/login allowlist, defaults, persistence, legacy bypass ignored, validation, JSONC lock, sender guards");
 
+  // Ownership/discovery sites: extract each patched expression from the patched
+  // source (names recovered, not assumed) and evaluate it with stubs.
+  async function checkOwnership(patched, label) {
+    const A = String.raw`globalThis\.__cdbAutoFixAuthorAllowed\?\.\(`;
+    const one = re => { const all = [...patched.matchAll(new RegExp(re, "g"))]; assert.equal(all.length, 1, label + ": exactly one " + re); return all[0]; };
+    const m1 = one(String.raw`ownCreate:(await this\.getGhLogin\(([\w$]+)\)\.then\(\(([\w$]+)=>\3===null\?void 0:[\w$]+\(([\w$]+),\3\)\|\|${A}\4\.user\?\.login,\2\?\?"github\.com"\)===true\)\))`);
+    const m2 = one(String.raw`\(async ([\w$]+)=>([\w$]+\(\1,([\w$]+)\)\|\|\1\.number!==void 0&&([\w$]+)\.has\(\1\.number\)\|\|([\w$]+)\(\1,([\w$]+)\.hostname\)\|\|${A}\1\.user\?\.login,\6\.hostname\)===true\?!0:await this\.authorMayPush\(\6,\1\))\)`);
+    const m3 = one(String.raw`ownCreate:(([\w$]+)===null\?void 0:[\w$]+\(([\w$]+),\2\)\|\|${A}\3\.user\?\.login,([\w$]+)\.hostname\)===true)\}\)`);
+    const m4 = one(String.raw`\(async ([\w$]+)=>(\{let ([\w$]+)=[\w$]+\(\1,([\w$]+)\);return \1\.head\?\.repo\?\.full_name\?\.toLowerCase\(\)===([\w$]+)\?\3\|\|([\w$]+)\(\1,([\w$]+)\.hostname\)\|\|${A}\1\.user\?\.login,\7\.hostname\)===true\|\|await this\.authorMayPush\(\7,\1\):\3&&\1\.head\?\.repo\?\.owner\?\.login\?\.toLowerCase\(\)===([\w$]+)\})\)`);
+    const m5 = one(String.raw`ownCreate:(([\w$]+)!==null&&![\w$]+\(([\w$]+),\2\)&&!\(${A}\3\.user\?\.login,([\w$]+)\.hostname\)===true\)\?!1:void 0)\}`);
+    const matcher = one(String.raw`function ([\w$]+)\([\w$]+,[\w$]+\)\{let [\w$]+=[\w$]+\.user\?\.login;return[^}]*\}`);
+    const ctx = vm.createContext({});
+    vm.runInContext(matcher[0], ctx);
+    const fn = (params, body) => vm.runInContext(`(async function(${params.join(",")})${body})`, ctx);
+    const s1 = fn([m1[2], m1[4]], `{return ${m1[1]}}`);
+    const s2 = fn([m2[1], m2[3], m2[4], m2[6], m2[5]], `{return ${m2[2]}}`);
+    const s3 = fn([m3[2], m3[3], m3[4]], `{return ${m3[1]}}`);
+    const s4 = fn([m4[1], m4[4], m4[5], m4[6], m4[7], m4[8]], m4[2]);
+    const s5 = fn([m5[2], m5[3], m5[4]], `{return ${m5[1]}}`);
+    const pr = (login, fullName = "org/repo") => ({ number: 7, user: { login, type: "Bot" }, head: { repo: { full_name: fullName, owner: { login: fullName.split("/")[0] } } } });
+    const bot = pr("project-app[bot]"), other = pr("other-app[bot]"), mine = pr("Human");
+    const gh = { hostname: "github.com" }, ghe = { hostname: "ghe.example" };
+    const self = login => ({ getGhLogin: async () => login, authorMayPush: async () => false });
+    const byNumber = (p, host = "github.com", login = "human") => s1.call(self(login), host, p);
+    const branch = (p, h = gh, login = "human") => s3.call(self(login), login, p, h);
+    const sha = (p, h = gh, login = "human") => s5.call(self(login), login, p, h);
+    const discover = (p, h = gh, login = "human") => s2.call(self(login), p, login, new Set(), h, () => false);
+    const discoverSha = (p, h = gh, login = "human") => s4.call(self(login), p, login, "org/repo", () => false, h, login?.toLowerCase());
+    const all = (p, h, login) => Promise.all([byNumber(p, h === ghe ? "ghe.example" : "github.com", login), discover(p, h, login), branch(p, h, login), discoverSha(p, h, login), sha(p, h, login)]);
+    assert.deepEqual(await all(bot, gh), [false, false, false, false, false], "missing helper keeps upstream ownership");
+    ctx.__cdbAutoFixAuthorAllowed = (login, host) => typeof login === "string" && login.toLowerCase() === "project-app[bot]" && host === "github.com";
+    assert.deepEqual(await all(bot, gh), [true, true, true, true, undefined], "listed author on its host is own / discovered");
+    assert.equal(await byNumber(bot, undefined), true, "omitted by-number host defaults to github.com");
+    assert.deepEqual(await all(other, gh), [false, false, false, false, false], "unlisted author stays not-own");
+    assert.deepEqual(await all(bot, ghe), [false, false, false, false, false], "listed login on another server is not trusted");
+    assert.deepEqual(await all(mine, gh), [true, true, true, true, undefined], "the gh user's own PR is unchanged");
+    assert.deepEqual([await byNumber(bot, "github.com", null), await branch(bot, gh, null), await sha(bot, gh, null)], [undefined, undefined, undefined], "no login read stays unknown");
+    assert.equal(await discoverSha(pr("project-app[bot]", "fork/repo")), false, "fork PRs still need the user's own fork");
+  }
   async function exercise(source, label, armSource) {
     const patched = patch(source, label + ".js");
+    await checkOwnership(patched, label);
     let enabled = false;
     const ctx = vm.createContext({ Fd: 300000, Md: 600000,
       t: { jJ() {}, pa: () => false }, K: { n: p => p.state === "OPEN" && !p.dismissed },
@@ -196,10 +241,12 @@ try {
       await arm(0, undefined, () => { session.autoFixOwnPrs = false; });
       await arm(0, undefined, () => { enabled = false; });
     }
-    console.log(`PASS ${label}: automatic eligibility, model activation, auth/scope/ownership/race rejection`);
+    console.log(`PASS ${label}: automatic eligibility, model activation, ownership/discovery, auth/scope/race rejection`);
   }
   await exercise(fixture, "fixture");
-  for (const bad of [fixture.replace('return"not_author";', 'return"changed";'), fixture + fixture]) {
+  for (const bad of [fixture.replace('return"not_author";', 'return"changed";'), fixture + fixture,
+    fixture.replace("?!1:void 0", "?!1:null"), fixture.replace("fd(e,n.hostname)?!0:", "fd(e,n.host)?!0:"),
+    fixture.replace(":ld(h,l)})", ":ld(l,h)})"), fixture.replace(".then((e=>e===null?", ".then((e=>e==null?")]) {
     const path = join(dir, "bad.js"); writeFileSync(path, bad);
     assert.notEqual(spawnSync(bin, [path]).status, 0, "missing/extra guard must fail loudly");
     assert.equal(readFileSync(path, "utf8"), bad, "no partially written patch");
@@ -218,7 +265,11 @@ try {
     const match = chunk.match(new RegExp(`function ${matchFn}\\(e,t\\)\\{[^}]+\\}`))[0];
     const arm = chunk.match(/async armOwnCreate\([^]*?\}async asGitHubNamesThem\(/)?.[0].replace(/async asGitHubNamesThem\($/, "");
     assert.ok(arm, "real automatic activation method retains its audited shape");
-    await exercise(`${match}\n${helper}\nclass Manager {${arm} ${method}}`.replaceAll(matchFn + "(", "ld(").replaceAll(judgeFn + "(", "dd("), "real-release", arm);
+    // The ownership reads: by number, then by branch + head SHA (adjacent methods).
+    const byNumber = chunk.match(/async getPrStateByNumberUncached\([^]*?\}(?=mergeQueueAwareTtl\()/)?.[0];
+    const discovery = chunk.match(/async getPrStateForBranchUncached\([^]*?\}(?=prCacheKey\()/)?.[0];
+    assert.ok(byNumber && discovery?.includes("async discoverPrByHeadSha("), "real ownership methods retain their audited shapes");
+    await exercise(`${match}\n${helper}\nclass Manager {${arm} ${method} ${byNumber} ${discovery}}`.replaceAll(matchFn + "(", "ld(").replaceAll(judgeFn + "(", "dd("), "real-release", arm);
   } else console.log("SKIP pristine release check: tmp/app.asar.contents unavailable");
   console.log("PASS Auto-fix author opt-in");
 } finally { rmSync(dir, { recursive: true, force: true }); }
