@@ -351,6 +351,30 @@
     };
   }
 
+  // --- Code: auto-archive delay after a PR merges or closes -----------------
+  // patches/community/add_feature_auto_archive_grace.nim asks
+  // globalThis.__cdbAutoArchiveMergeDelayMinutes() once per auto-archive sweep
+  // (every 5 min plus upstream's kicks). 0 = immediate = upstream, the default
+  // and the absence of the key. Same shape as the tray switch above: a valid
+  // value in the .jsonc locks the row; an invalid one is reported as a warning
+  // and ignored, so the row and claude-desktop-extra.json stay in charge.
+  var __cdbEx_AAG_KEY = "autoArchiveMergeDelayMinutes";
+  function __cdbEx_aagValid(value) {
+    return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 10080;
+  }
+  function __cdbEx_aagPref() {
+    var p = __cdbEx_paths();
+    var jsonc = __cdbEx_readFileKey(p.jsonc, __cdbEx_AAG_KEY);
+    if (__cdbEx_aagValid(jsonc)) return { value: jsonc, locked: true };
+    var warning = jsonc === undefined ? null :
+      "Ignoring " + __cdbEx_AAG_KEY + " in claude-desktop-extra.jsonc: expected a whole number from 0 to 10080";
+    var value = __cdbEx_readFileKey(p.json, __cdbEx_AAG_KEY);
+    return { value: __cdbEx_aagValid(value) ? value : 0, locked: false, warning: warning };
+  }
+  if (process.platform === "linux") {
+    globalThis.__cdbAutoArchiveMergeDelayMinutes = function () { return __cdbEx_aagPref().value; };
+  }
+
   // --- Computer Use: read app controls through AT-SPI (issue #306) ---------
   // Same shape as the tray switch above. The Computer Use patch asks
   // globalThis.__cdbCuAxElements?.() on every call that could involve the
@@ -3126,6 +3150,22 @@
       return { ok: true, enabled: enabled, path: res.path };
     },
 
+    "cdb-archive-grace:read": function () {
+      var s = __cdbEx_aagPref();
+      return { ok: true, minutes: s.value, lockedByJsonc: s.locked ? true : null, warning: s.warning || null };
+    },
+    "cdb-archive-grace:set": function (minutes) {
+      if (!__cdbEx_aagValid(minutes)) return { ok: false, error: "minutes must be a whole number from 0 to 10080" };
+      if (__cdbEx_aagPref().locked) return { ok: false, lockedByJsonc: true,
+        error: __cdbEx_AAG_KEY + " is set in claude-desktop-extra.jsonc - edit that file to change it" };
+      var res = __cdbEx_writeCfg(function (cfg) {
+        if (minutes === 0) delete cfg[__cdbEx_AAG_KEY];
+        else cfg[__cdbEx_AAG_KEY] = minutes;
+        return minutes;
+      });
+      return res.ok ? { ok: true, minutes: minutes, path: res.path, warning: __cdbEx_aagPref().warning || null } : res;
+    },
+
     // Computer Use: read app controls (accessibility). Pref and reader above.
     "cdb-cu-ax:read": function () {
       var s = __cdbEx_cuAxPref();
@@ -3702,6 +3742,8 @@
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "the Auto-fix author option is Linux only" }; };
       } else if (ch.indexOf("cdb-tray:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "the tray icon switch is Linux only" }; };
+      } else if (ch.indexOf("cdb-archive-grace:") === 0) {
+        __cdbEx_handlers[ch] = function () { return { ok: false, error: "the PR archive delay is Linux only" }; };
       } else if (ch.indexOf("cdb-autofix-merge-ready:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "the Auto-fix ready-to-merge wake is Linux only" }; };
       }

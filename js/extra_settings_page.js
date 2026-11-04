@@ -2894,6 +2894,66 @@
     });
   }
 
+  // Reuse existing row/form styles; no independent visual design or theme.
+  function renderAutoArchiveGraceRow(panel) {
+    var api = window.cdbExtra;
+    if (!api || typeof api.autoArchiveGraceRead !== "function" || typeof api.autoArchiveGraceSet !== "function") return;
+    var spec = { section: "Code", title: "Auto-archive delay after a PR merges or closes",
+      note: "Only applies when native PR auto-archive is enabled. The grace starts when the app first confirms " +
+        "the merged or closed PR and persists across restarts. Archives on the next native sweep after it expires " +
+        "(normally within 5 minutes), once all safety checks pass. The separate inactivity rule is unchanged. " +
+        "Changing the delay recalculates from the same start; disabling PR auto-archive cancels it. Applies live." };
+    var head = el("div", "cdbx-sec-h"); head.appendChild(el("span", "cdbx-sec-t", spec.section));
+    var host = el("div", "cdbx-list"), row = el("div", "cdbx-row"), main = el("div", "cdbx-row-main");
+    main.appendChild(el("div", "cdbx-id", spec.title)); main.appendChild(el("div", "cdbx-note", spec.note));
+    var label = el("label", "cdbx-note", "Delay after merged or closed PR confirmation");
+    label.htmlFor = "cdbx-archive-grace-preset";
+    var select = el("select", "cdbx-select"); select.id = label.htmlFor;
+    [["0", "Immediately (default)"], ["5", "5 minutes"], ["15", "15 minutes"], ["30", "30 minutes"],
+      ["60", "1 hour"], ["custom", "Custom minutes"]].forEach(function (pair) {
+      var option = el("option", "", pair[1]); option.value = pair[0]; select.appendChild(option);
+    });
+    var customLabel = el("label", "cdbx-note", "Custom delay (1-10080 whole minutes)");
+    customLabel.htmlFor = "cdbx-archive-grace-custom";
+    var custom = el("input", "cdbx-input"); custom.id = customLabel.htmlFor;
+    custom.type = "number"; custom.min = "1"; custom.max = "10080"; custom.step = "1";
+    var save = el("button", "cdbx-btn", "Save archive delay"); save.type = "button";
+    var state = el("div", "cdbx-state", "Loading..."); state.setAttribute("role", "status"); state.setAttribute("aria-live", "polite");
+    var busy = false, locked = true;
+    function controls() {
+      var isCustom = select.value === "custom";
+      custom.hidden = customLabel.hidden = !isCustom;
+      select.disabled = save.disabled = busy || locked; custom.disabled = busy || locked || !isCustom;
+    }
+    function show(res) {
+      if (failed(res)) { state.textContent = "Unavailable: " + reason(res); controls(); return; }
+      locked = !!res.lockedByJsonc;
+      select.value = [0, 5, 15, 30, 60].indexOf(res.minutes) >= 0 ? String(res.minutes) : "custom";
+      custom.value = String(res.minutes || 1); controls();
+      state.textContent = (res.warning ? res.warning + ". " : "") +
+        (res.minutes ? res.minutes + " minutes after confirmation" : "Immediate (native behavior)") +
+        (locked ? " - set in claude-desktop-extra.jsonc; edit that file to change this" : " - applies live");
+    }
+    select.addEventListener("change", controls);
+    save.addEventListener("click", function () {
+      if (busy || locked) return;
+      var minutes = select.value === "custom" ? Number(custom.value) : Number(select.value);
+      if (!Number.isInteger(minutes) || minutes < (select.value === "custom" ? 1 : 0) || minutes > 10080) {
+        state.textContent = "Enter a whole number from 1 to 10080 minutes."; custom.focus(); return;
+      }
+      busy = true; controls(); state.textContent = "Saving...";
+      api.autoArchiveGraceSet(minutes).then(function (res) {
+        busy = false;
+        if (failed(res)) { controls(); state.textContent = "Could not save delay: " + reason(res); return; }
+        show(res); toast("Archive delay saved");
+      }, function (error) { busy = false; controls(); state.textContent = "Could not save delay: " + String(error); });
+    });
+    [label, select, customLabel, custom, save, state].forEach(function (node) { main.appendChild(node); });
+    row.appendChild(main); host.appendChild(row); panel.appendChild(head); panel.appendChild(host); controls();
+    api.autoArchiveGraceRead().then(show, function (error) { state.textContent = "Unavailable: " + String(error); });
+    return { head: head, host: host, spec: spec };
+  }
+
   // --- Code: Auto-fix notices (ready to merge, comments after merge) -------
   // Off by default. Main side: cdb-autofix-merge-ready:* in
   // js/extra_settings_main.js; the wrappers in
@@ -3324,6 +3384,7 @@
     renderAllowNonAnthropicModelsRow,
     renderAutoFixAuthorRow,
     renderAutoFixMergeReadyRow,
+    renderAutoArchiveGraceRow,
     renderTranscriptLimitsRow,
     renderWindowControlsRow,
     renderNativeTitlebarRow,

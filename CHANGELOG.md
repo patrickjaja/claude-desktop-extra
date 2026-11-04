@@ -9,6 +9,11 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - **After an Auto-fix PR is merged, new comments, inline review comments and reviews from the repository's owners, members, collaborators and bots reach its Code session as quoted informational notices for 7 days after the merge** (mentions defanged, each text capped at 1200 characters; upstream stops reading a PR once it is merged). Claude reports them and waits for you: it never changes code, replies on GitHub or merges. Archived sessions are not read or woken. Same switch as the ready-to-merge notice, now titled Settings -> Extra -> Community Features -> "Auto-fix notices: ready to merge, comments after merge" (off by default, applies live).
 - Cost: per Auto-fix PR inside its window, one round of ETag-conditional GitHub REST reads per sweep (the PR and its three comment lists), none while fewer than 1000 REST requests remain or a rate-limit window is open; one model turn per notice. Details: [docs/autofix-post-merge.md](docs/autofix-post-merge.md).
 
+### Auto-archive delay after a PR merges or closes (thanks @alexx-ftw, #311)
+
+- **New row Settings -> Extra -> Community Features -> "Auto-archive delay after a PR merges or closes"**: Immediately (the default, upstream's behavior), 5, 15, 30 or 60 minutes, or a custom 1-10080 minutes. After upstream confirms a session's PR merged or closed, its auto-archive waits that long. The deadline survives restarts, and a confirmed reopen cancels it. It does not turn auto-archive on, and the inactivity rule is unchanged.
+- Expiry is checked on upstream's 5-minute archive sweep, so the archive lands within about 5 minutes of the deadline. During the delay the session skips upstream's GitHub re-reads and worktree checks (a close upstream could not confirm yet is still confirmed first); when it ends, every upstream check and hold still applies. Details: [docs/auto-archive-grace.md](docs/auto-archive-grace.md).
+
 ## 2026-11-04
 
 ### Auto-fix wakes the session when its PR is ready to merge (thanks @alexx-ftw, #309)
