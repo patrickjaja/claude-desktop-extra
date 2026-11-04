@@ -97,6 +97,12 @@ await test("disk/corrupt state failures hold MERGED and CLOSED archives", async 
   const bad = harness(new Map([[h.file, "not json"]])); assert.equal(await bad.wait(), true); assert.equal(await bad.wait("closed"), true);
   bad.minutes(0); assert.equal(await bad.wait(), false, "immediate restores native behavior even with corrupt leftover state");
 });
+await test("a stale terminal binding cannot recreate grace after confirmed reopen", async () => {
+  const h = harness(); await h.wait("closed"); h.api.cancel(h.session.sessionId);
+  h.tick(10 * 60000); await h.api.reconcileAll(); assert.deepEqual(h.state(), {});
+  h.tick(10 * 60000); assert.equal(await h.wait("closed"), true);
+  assert.equal(h.state().s.since, 2200000, "a fresh close gets its own confirmation clock");
+});
 await test("failed reopen cancellation cannot consume an old deadline in memory", async () => {
   const h = harness(); await h.wait("closed"); h.fail(); h.api.cancel(h.session.sessionId);
   h.tick(20 * 60000); assert.equal(await h.wait("closed"), true, "fresh grace write fails closed instead of consuming expired old deadline");

@@ -9,6 +9,7 @@
   const enabled = session => (session.autoArchiveOnPrClose ?? defaultEnabled()) === true;
   const log = message => globalThis.__cdbDiag?.("[archive-grace] " + message);
   let records;
+  const reopened = new Set();
   function load() {
     if (records) return;
     try {
@@ -39,6 +40,7 @@
   function reconcile(sessions) {
     load();
     const live = new Map(sessions.map(s => [s.sessionId, s]));
+    for (const id of reopened) if (!live.has(id)) reopened.delete(id);
     const next = { ...records };
     const minutes = globalThis.__cdbAutoArchiveMergeDelayMinutes?.() ?? 0;
     let changed = false;
@@ -52,7 +54,7 @@
     // prevents checkAndArchive from being called. No network reads here.
     if (Number.isInteger(minutes) && minutes > 0 && minutes <= 10080) {
       for (const session of sessions) {
-        if (session.isArchived || !enabled(session)) continue;
+        if (session.isArchived || !enabled(session) || reopened.has(session.sessionId)) continue;
         const own = engine.ownPrBindings(session.prs);
         if (!engine.terminalVerdict(session.sessionId, own, Date.now()).terminal) continue;
         if (!Object.hasOwn(next, session.sessionId)) {
@@ -66,6 +68,9 @@
   }
   return {
     cancel(id) {
+      // Do not recreate the clock from a stale CLOSED binding while the native
+      // forge refresh is in flight; wait for a fresh terminal archive check.
+      reopened.add(id);
       try {
         load();
         // Invalidate memory before persisting too: a failed cancellation write
@@ -96,6 +101,7 @@
         if (state !== "merged" && state !== "closed") { forget(session.sessionId); return false; }
         if (!Number.isInteger(minutes) || minutes < 0 || minutes > 10080)
           throw new Error("invalid PR archive delay; expected 0..10080 minutes");
+        reopened.delete(session.sessionId);
         const binding = identity(latest), now = Date.now();
         let entry = records[session.sessionId];
         if (!entry || entry.binding !== binding) {
