@@ -86,7 +86,7 @@ A feature moved from `core/` to `community/` gets: `git mv` of the patch, a `glo
 
 1. Build in the PR worktree, hand over `sudo pacman -U <worktree>/build/<pkg>`, wait for the maintainer to install and restart the app.
 2. Live check what the host can check: the new Settings row (read, save, reload, JSONC lock), the `[...]` lines in `~/.config/Claude/logs/claude-patches.log`, and the feature path when an identity for it exists. A test PR in this repo via `gh` is fine for GitHub-side features; delete it afterwards.
-3. Merge on `master`, directly, no feature branch: `git merge --no-ff pr-<n>` (or merge both PRs in sequence), then the integration commit (count re-bumps, CHANGELOG with credit, docs), then `git push origin master`. The PR shows as merged once its head commit is reachable from master.
+3. **Re-fetch every PR head right before merging** (`git fetch origin pull/<n>/head` and compare with the SHA you reviewed): contributors push while you review, and a head that is not reachable from master leaves the PR open even after its earlier commits landed. A late commit is cherry-picked under the author's name (`--author`), then `git merge -s ours pr-<n>` makes the head reachable so GitHub marks the PR merged. Merge on `master`, directly, no feature branch: `git merge --no-ff pr-<n>` (or merge both PRs in sequence), then the integration commit (count re-bumps, CHANGELOG with credit, docs), then `git push origin master`. The PR shows as merged once its head commit is reachable from master.
 4. Release: `gh workflow run build-and-release.yml --ref master -f force_rebuild=true` (or `/deploy force`), watch with `gh run watch <id> --exit-status`, confirm `gh release view`.
 5. Clean up: `git worktree remove .claude/worktrees/pr-<n>`, delete the local `pr-<n>` branches.
 
@@ -102,3 +102,4 @@ Before reporting done, update **this file**. Fold lessons into the phase they be
 
 - 2026-11-04 (#308): a PR's harness can be green with the feature unreachable. Always trace the gates *before* the patched site in the pristine bundle, and read the fixtures' starting state.
 - 2026-11-04 (#309): a contributor may put a new feature in `patches/core/` because the infrastructure patches live there; the category question is the first thing the maintainer asks.
+- 2026-11-04: `run-feature-tests.sh` prints its Summary on the second-to-last line (a `===` rule follows); gate on `tail -2 | grep ' 0 failed'`, not `tail -1`.
