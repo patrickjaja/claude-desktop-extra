@@ -534,6 +534,38 @@ async function featuresPanel(featuresItem) {
     }
   }
 
+  // --- Code: native dialog with "Allow always" for starting other sessions.
+  // Opt-in switch plus a forget button; the page can never add an approval.
+  {
+    const ssSel = '.cdbx-switch[aria-label="use a native dialog with Allow always for starting other sessions"]';
+    const ss = panel.querySelector(ssSel);
+    ok(!!ss, "renders the session-start dialog switch");
+    if (ss) {
+      const ssRow = ss.closest(".cdbx-row");
+      const ssNote = ssRow.querySelector(".cdbx-note").textContent;
+      ok(ssRow.querySelector(".cdbx-id").textContent === "Native dialog with 'Allow always' for starting other sessions",
+         "titled Native dialog with 'Allow always' for starting other sessions");
+      ok(ssRow.parentElement.previousElementSibling.textContent === "Code", "under a Code heading");
+      ok(ss.getAttribute("aria-checked") === "false" && !ss.disabled, "off by default (opt-in), not locked");
+      ok(/project and its default destination only/.test(ssNote) && /nothing inside/.test(ssNote) &&
+         /Off \(the default\)/.test(ssNote) && /forgets every/.test(ssNote) && /Applies live/.test(ssNote),
+         "the note states scope, default, switch-off forgets and live: " + ssNote);
+      const forget = Array.from(ssRow.querySelectorAll("button")).find(function (b) { return b.textContent === "Forget remembered approvals"; });
+      ok(!!forget && !forget.disabled, "two remembered approvals -> an enabled forget button");
+      ok(/2 projects have a remembered approval/.test(ssRow.textContent), "the row shows the count");
+      if (forget) {
+        forget.click();
+        await sleep(60);
+        ok(window.__ssForgets === 1 && forget.disabled && /No remembered approvals/.test(ssRow.textContent),
+           "forget uses its own bridge call and the row reflects it live");
+      }
+      ss.click();
+      await sleep(60);
+      ok(JSON.stringify(window.__ssCalls || []) === "[true]", "clicking calls sessionStartAlwaysAllowSet(true) once: " + JSON.stringify(window.__ssCalls));
+      ok(ss.getAttribute("aria-checked") === "true", "the switch reflects the write");
+    }
+  }
+
   // --- non-Anthropic gateway models: read at startup, so the same per-row
   // Restart now as every other restart row, shown exactly while the switch and
   // the running app (activeNow) disagree.
@@ -3225,6 +3257,9 @@ window.cdbExtra = {
   // Load large sessions in full. Without these two the row is silently skipped
   // (renderToggleRow answers nothing when its bridge half is missing), so a
   // harness that omits them would pass while never rendering the row.
+  sessionStartAlwaysAllowRead: function () { return Promise.resolve({ ok: true, enabled: window.__ssOn === true, lockedByJsonc: null, grants: window.__ssGrants === undefined ? 2 : window.__ssGrants }); },
+  sessionStartAlwaysAllowSet: function (enabled) { window.__ssCalls = (window.__ssCalls || []).concat([enabled]); window.__ssOn = enabled; return Promise.resolve({ ok: true, enabled: enabled }); },
+  sessionStartAlwaysAllowForget: function () { window.__ssGrants = 0; window.__ssForgets = (window.__ssForgets || 0) + 1; return Promise.resolve({ ok: true, enabled: window.__ssOn === true, grants: 0 }); },
   autoFixAuthorRead: function () { return Promise.resolve({ ok: true, entries: [], lockedByJsonc: false }); },
   autoFixAuthorSet: function (entries) {
     (window.__authorCalls || (window.__authorCalls = [])).push(entries);

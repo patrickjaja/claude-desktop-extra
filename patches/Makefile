@@ -56,6 +56,7 @@ community/add_feature_auto_archive_grace: ../js/auto_archive_grace.js
 community/add_feature_autofix_merge_ready: ../js/autofix_merge_ready.js
 
 community/add_feature_autofix_post_merge: ../js/autofix_post_merge.js
+community/add_feature_session_start_always_allow: ../js/session_start_permission.js
 
 community/add_feature_dev_tools_toggle: ../js/dev_tools_toggle_main.js
 

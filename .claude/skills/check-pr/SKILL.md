@@ -47,7 +47,7 @@ git diff origin/master...pr-<n> -- . ':!scripts/tests' ':!docs'   # code first, 
 
 Answer these in the first reply, because the maintainer asks them every time:
 
-1. **Category and switch.** `patches/linux/` is always on and must be a Linux fix. `patches/community/` is an opt-in feature with a row in Settings -> Extra -> Community Features (a toggle, or a list/editor whose empty state equals upstream behavior). `patches/core/` is always-on infrastructure that other patches build on. A new *feature* in `core/` with no switch is misplaced: it goes to `community/` behind a switch, default off, as an on-top commit.
+1. **Category and switch - a judgement per patch, not a reflex.** The maintainer wants the project to be "for everyone": a contributor's Linux fix belongs in `patches/linux/` always on, infrastructure in `core/` always on, and only a feature that changes behavior or cost for every user goes behind a Community switch. The switch's default is a judgement too: ON when the feature is a plain improvement most people want and costs nothing (the theme picker and the Computer Use consent switch ship on), OFF when it spends model turns or API budget or replaces an upstream surface. Say which in the review and in the thank-you. `patches/linux/` is always on and must be a Linux fix. `patches/community/` is an opt-in feature with a row in Settings -> Extra -> Community Features (a toggle, or a list/editor whose empty state equals upstream behavior). `patches/core/` is always-on infrastructure that other patches build on. A new *feature* in `core/` with no switch is misplaced: it goes to `community/` behind a switch, default off, as an on-top commit.
 2. **Cost and blast radius.** Does it call GitHub/claude.ai APIs on a sweep (rate budget shared with upstream's own reads)? Does it inject messages into a running session (spends model turns)? Does it persist state (per-profile path via `app.getPath("userData")`, never a fixed home path)? Default off unless the maintainer says otherwise.
 3. **Linux exposure.** Does it touch the launcher, a bridge, packaging, session-type or compositor paths? If yes, check it against every row of the `/linux` matrix. Pure main-process JS + settings UI has no exposure; say so explicitly.
 4. **Windows branch.** Custom models and the Extra settings page also load on win32 for the downstream fork; a new Extra row needs the `win32` handler refusal and must not change Linux behavior.
@@ -93,6 +93,8 @@ A feature moved from `core/` to `community/` gets: `git mv` of the patch, a `glo
 ## Phase 7 - thank the author
 
 One comment per PR, in the `/comment` voice: thanks, what shipped (and its menu path), the **release** in bold, what we changed on top in one sentence and why (no blame, no internals), and - when the live test needed something we lack - one friendly sentence saying so and asking whether they can confirm it on the release. No bullet lists, no edge cases, no invitation to send more PRs.
+
+For a PR with a UI change, attach two or three screenshots from the live check to the comment itself: the new row or dialog, with a rectangle around what is new, and personal data blurred (name, org, sidebar recents, paths, other windows). `gh` cannot upload attachments, so a worker uses claude-in-chrome with the maintainer's GitHub session and drags the PNGs into the comment editor (the same recipe as `/check-issue` Phase 7); check every PNG before uploading.
 
 ## Phase 8 - self-improve (always, last step)
 

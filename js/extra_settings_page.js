@@ -2990,6 +2990,79 @@
     });
   }
 
+  // --- Code: native dialog with "Allow always" for starting other sessions --
+  // Off by default. Main side: cdb-session-start:* in js/extra_settings_main.js;
+  // the broker hook in patches/community/add_feature_session_start_always_allow.nim
+  // reads the switch and the remembered approvals on every ask, so it applies
+  // live. Approvals are only ever added by the native dialog; this row can show
+  // how many are remembered and forget them, never add one.
+  function renderSessionStartAlwaysAllowRow(panel) {
+    var row = renderToggleRow(panel, {
+      section: "Code",
+      title: "Native dialog with 'Allow always' for starting other sessions",
+      note: "When Claude asks to start another Code session, a native dialog replaces the in-chat card and " +
+        "offers Deny, Allow once and Allow always (Deny is the default; Escape denies). Allow always " +
+        "remembers the approval for that project and its default destination only: a request for another " +
+        "folder, host, environment, preset, the cloud or a higher permission mode still asks. Sessions started " +
+        "this way run in this session's permission mode or lower from a prompt Claude wrote; nothing inside " +
+        "them is approved by this. When the app window is hidden or minimized the in-chat card asks instead. " +
+        "Off (the default) leaves Anthropic's in-chat card as shipped; turning it off also forgets every " +
+        "remembered approval. Applies live.",
+      ariaLabel: "use a native dialog with Allow always for starting other sessions",
+      read: "sessionStartAlwaysAllowRead",
+      write: "sessionStartAlwaysAllowSet",
+      lockFile: "claude-desktop-extra.jsonc",
+      // Opt-in: only an explicit true is on.
+      isOn: function (res) { return res.enabled === true; },
+      describe: function (on) {
+        return on ? "on - native dialog with Allow always" : "off - Anthropic's in-chat card";
+      },
+      writeArg: function (next) { return next; },
+      toast: function (next) {
+        return next
+          ? "Starting other sessions now asks in a native dialog"
+          : "Starting other sessions asks in the chat again; remembered approvals were forgotten";
+      },
+      errorPrefix: "Could not change the setting: "
+    });
+    if (!row || typeof api.sessionStartAlwaysAllowForget !== "function") return row;
+    var rowNode = row.host.querySelector(".cdbx-row");
+    var main = rowNode && rowNode.querySelector(".cdbx-row-main");
+    var aside = rowNode && rowNode.querySelector(".cdbx-row-aside");
+    if (!main || !aside) return row;
+    var count = el("div", "cdbx-note", "");
+    count.setAttribute("role", "status");
+    main.appendChild(count);
+    var forget = el("button", "cdbx-btn", "Forget remembered approvals");
+    forget.type = "button";
+    forget.disabled = true;
+    aside.insertBefore(forget, aside.firstChild);
+    function show(res) {
+      if (failed(res)) { count.textContent = ""; forget.disabled = true; return; }
+      var n = typeof res.grants === "number" ? res.grants : 0;
+      count.textContent = n === 0 ? "No remembered approvals."
+        : n === 1 ? "1 project has a remembered approval." : n + " projects have a remembered approval.";
+      forget.disabled = n === 0;
+    }
+    function refresh() { api.sessionStartAlwaysAllowRead().then(show, function () { show({ ok: false }); }); }
+    refresh();
+    // The switch's own click handler writes; re-read the count after it settles.
+    var toggle = aside.querySelector(".cdbx-switch");
+    if (toggle) toggle.addEventListener("click", function () { setTimeout(refresh, 300); });
+    forget.addEventListener("click", function () {
+      forget.disabled = true;
+      api.sessionStartAlwaysAllowForget().then(function (res) {
+        if (failed(res)) { toast("Could not forget the approvals: " + reason(res), true); refresh(); return; }
+        show(res);
+        toast("Remembered session-start approvals forgotten");
+      }, function (err) {
+        toast("Could not forget the approvals: " + (err && err.message ? err.message : String(err)), true);
+        refresh();
+      });
+    });
+    return row;
+  }
+
   // --- Computer Use: ask before controlling an app --------------------------
   // On by default (main answers enabled unless the key is false). Main side:
   // cdb-cu-ask:* in js/extra_settings_main.js; the tool side js/cu_consent.js.
@@ -3385,6 +3458,7 @@
     renderAutoFixAuthorRow,
     renderAutoFixMergeReadyRow,
     renderAutoArchiveGraceRow,
+    renderSessionStartAlwaysAllowRow,
     renderTranscriptLimitsRow,
     renderWindowControlsRow,
     renderNativeTitlebarRow,

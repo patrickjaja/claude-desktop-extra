@@ -32,6 +32,14 @@ ok(exposed && exposed.name === "cdbExtra", "the bridge exposes cdbExtra");
 const api = exposed.api;
 
 calls.length = 0;
+api.sessionStartAlwaysAllowRead(); api.sessionStartAlwaysAllowSet("yes"); api.sessionStartAlwaysAllowSet(true); api.sessionStartAlwaysAllowForget();
+ok(JSON.stringify(calls) === '[["cdb-session-start:read"],["cdb-session-start:set",false],["cdb-session-start:set",true],["cdb-session-start:revoke"]]',
+   "session-start dialog switch: read, boolean-coerced set and forget through fixed channels only");
+ok(Object.keys(api).filter(function (k) { return /^sessionStart/.test(k); }).sort().join(",") ===
+   "sessionStartAlwaysAllowForget,sessionStartAlwaysAllowRead,sessionStartAlwaysAllowSet",
+   "no bridge call can add a remembered session-start approval");
+
+calls.length = 0;
 api.autoFixAuthorRead(); api.autoFixAuthorSet(["github.com/my-app[bot]"]); api.autoFixAuthorSet(true);
 ok(calls.map(c => c[0]).join(" ") === "cdb-autofix-author:read cdb-autofix-author:set cdb-autofix-author:set", "trusted-author editor uses fixed channels");
 ok(calls[1][1][0] === "github.com/my-app[bot]" && calls[2][1] === null, "bridge forwards a list, never translates the legacy boolean into trust");

@@ -96,6 +96,16 @@
       return ipcRenderer.invoke("cdb-tray:set", enabled === true);
     },
 
+    sessionStartAlwaysAllowRead: function () {
+      return ipcRenderer.invoke("cdb-session-start:read");
+    },
+    sessionStartAlwaysAllowSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-session-start:set", enabled === true);
+    },
+    sessionStartAlwaysAllowForget: function () {
+      return ipcRenderer.invoke("cdb-session-start:revoke");
+    },
+
     autoFixAuthorRead: function () {
       return ipcRenderer.invoke("cdb-autofix-author:read");
     },
