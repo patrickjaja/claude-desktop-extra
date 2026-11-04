@@ -31,6 +31,7 @@ A skill is more than a saved prompt:
 | `/debug` | manual | something is broken and you need the evidence |
 | `/comment` | manual | you want to reply to an issue reporter and ask for the evidence we still need |
 | `/check-issue` | manual | one or more bug reports should go from triage to a shipped, released fix (self-improving) |
+| `/check-pr` | manual | a contributor PR should be reviewed, gap-fixed on top, merged, released and the author thanked (self-improving) |
 | `/test-native` | auto / manual | a report comes from a session type the host does not run (Wayland/sway, hidden workspaces, XWayland vs native), or a value must be measured inside the running app with an injected probe |
 
 ### How the skills connect
@@ -51,6 +52,7 @@ fresh-upstream ──▶ update ──▶ deploy        new-version pipeline
 - `deploy` redirects version/patch work → `/update` (it only fires the pipeline).
 - `debug` runs out of local evidence → `/comment` asks the reporter for theirs; `deploy` ships a fix for an issue → `/comment` tells them what to upgrade to and what to send back.
 - `check-issue` drives a bug report end to end: `/test-native` to reproduce, `/deploy force` to release, `/comment` for every reporter reply. Its last step rewrites its own phases with what the run taught.
+- `check-pr` drives a contributor PR end to end: build the branch, audit the upstream gates around every patched site, fix gaps with our own commit on top (no review ping-pong), merge, `/deploy force`, and a `/comment`-voice thank-you that credits the author.
 - `/linux` ↔ `/architecture` link each other (complementary references); `/debug` cites both because, being manual-only, it won't auto-pull them and genuinely needs the CU cascade + Cowork backend context.
 
 ### `/linux` - Linux compatibility reference
@@ -115,6 +117,11 @@ fresh-upstream ──▶ update ──▶ deploy        new-version pipeline
 - bridge repos pushed before the main repo, then commit, `force_rebuild` release, and `/comment`-voice replies that close the fixed issues
 
 Every run ends by folding its lessons back into the skill's own phases. Lessons are edited into the phases, not appended, and stale lines are pruned.
+
+### `/check-pr` - contributor PR to released feature
+**What:** The review loop for one or more PRs: read the diff against `origin/master`, classify it (category and switch, cost, Linux exposure, win32 branch), build the branch in a worktree, extract the pristine bundle and audit the upstream gates *before* every patched site plus every runtime anchor the injected JS assumes, run the harnesses, decide with you per PR, fix real gaps with an on-top commit instead of a review round-trip, merge to master, release, and thank the author with the credit in `CHANGELOG.md`.
+
+**Why:** A contributor's green harness proves the regex applied, not that the feature is reachable; the pristine-bundle audit is where the real findings come from, and fixing on top keeps contributors' effort shipped instead of parked in review threads.
 **When:** New bug reports arrive that need a fix and a release, not just evidence (that is `/debug` + `/comment`).
 **Why:** The workflow has many traps that are easy to repeat: a chat has no Computer Use tools, `make` does not track `js/`, bridges must be pushed first, and an ask for data must be one action plus one command. The self-improve step keeps the next run from paying for them again.
 
