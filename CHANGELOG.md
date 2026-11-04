@@ -6,7 +6,7 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ### Auto-fix readiness notices
 
-- **Auto-fix wakes the session when its watched PR becomes ready to merge**, using the existing sweep and CI-event delivery pipeline. Two fresh GitHub reads must agree on HEAD/base and report open, non-draft, CLEAN/MERGEABLE, satisfied reviews and successful checks; unknown, skipped, cancelled and incomplete states do not notify. The notice is informational, never merge/deploy authorization. Per-profile persistence suppresses repeated accepted notices; failed/dropped deliveries retry.
+- **Auto-fix wakes the session when its watched PR becomes ready to merge**, using the existing sweep and CI-event delivery pipeline. Two fresh GitHub reads must agree on HEAD/base and report open, non-draft, CLEAN/MERGEABLE, satisfied reviews and successful checks; unknown, required-skipped, cancelled and incomplete states do not notify. Explicitly non-required skips are allowed only with GitHub's successful aggregate verdict. The notice is informational, never merge/deploy authorization. Per-profile persistence suppresses repeated accepted notices; failed/dropped deliveries retry.
 
 ### Upstream 4.16336.0
 

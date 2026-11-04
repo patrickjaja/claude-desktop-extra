@@ -148,4 +148,26 @@ await test("compiled patch wires the real sweep and delivery method shapes", asy
     const other = new OtherEngine(); await other.checkSession(session, pr); assert.equal(other.original, true); assert.equal(other.__cdbMergeReady, undefined);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+for (const isRequired of [true, false, undefined]) {
+  await test(`skipped requirement ${isRequired} is explicit`, async () => {
+    const h = harness(), p = good(); p.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[0] = { __typename: "CheckRun", status: "COMPLETED", conclusion: "SKIPPED", isRequired };
+    h.set(p); await h.check(); assert.equal(h.sent.length, isRequired === false ? 1 : 0);
+  });
+}
+for (const conclusion of ["CANCELLED", "FAILURE", "NEUTRAL"]) {
+  await test(`optional ${conclusion} still blocks after optional skipped check`, async () => {
+    const h = harness(), p = good(); p.commits.nodes[0].commit.statusCheckRollup.contexts.nodes = [
+      { __typename: "CheckRun", status: "COMPLETED", conclusion: "SKIPPED", isRequired: false },
+      { __typename: "CheckRun", status: "COMPLETED", conclusion, isRequired: false }
+    ]; h.set(p); await h.check(); assert.equal(h.sent.length, 0);
+  });
+}
+await test("optional skip still requires CLEAN and successful rollup", async () => {
+  for (const mergeStateStatus of ["UNSTABLE", "UNKNOWN", "CLEAN"]) {
+    const h = harness(), p = good(); p.mergeStateStatus = mergeStateStatus;
+    p.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[0] = { __typename: "CheckRun", status: "COMPLETED", conclusion: "SKIPPED", isRequired: false };
+    p.commits.nodes[0].commit.statusCheckRollup.state = "PENDING";
+    h.set(p); await h.check(); assert.equal(h.sent.length, 0);
+  }
+});
 console.log(`${passed} merge-ready tests passed`);

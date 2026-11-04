@@ -12,7 +12,7 @@
       commits(last:1) { nodes { commit { oid statusCheckRollup {
         state contexts(first:100) { pageInfo { hasNextPage } nodes {
           __typename
-          ... on CheckRun { status conclusion }
+          ... on CheckRun { status conclusion isRequired(pullRequestNumber:$number) }
           ... on StatusContext { state }
         } }
       } } } }
@@ -53,7 +53,11 @@
       if (check?.__typename === "CheckRun") {
         if (["QUEUED", "IN_PROGRESS", "WAITING", "PENDING", "REQUESTED"].includes(check.status)) return "blocked";
         if (check.status !== "COMPLETED") return "unknown";
-        if (["FAILURE", "CANCELLED", "SKIPPED", "NEUTRAL", "TIMED_OUT", "ACTION_REQUIRED", "STALE", "STARTUP_FAILURE"].includes(check.conclusion)) return "blocked";
+        if (check.conclusion === "SKIPPED") {
+          if (check.isRequired === false) continue;
+          return check.isRequired === true ? "blocked" : "unknown";
+        }
+        if (["FAILURE", "CANCELLED", "NEUTRAL", "TIMED_OUT", "ACTION_REQUIRED", "STALE", "STARTUP_FAILURE"].includes(check.conclusion)) return "blocked";
         if (check.conclusion !== "SUCCESS") return "unknown";
       } else if (check?.__typename === "StatusContext") {
         if (["PENDING", "ERROR", "FAILURE", "EXPECTED"].includes(check.state)) return "blocked";
@@ -160,7 +164,7 @@
         const messageId = uuid();
         states[key] = { ...previous, ready: true, notified: false, pending: false, sessionId, messageId, delivery: "sending" };
         save(); // If persistence is unavailable, do not send an untracked wake.
-        const text = `<ci-monitor-event>\nThe desktop app read GitHub twice: https://${host}/${pr.repo}/pull/${pr.prNumber} is ready to merge at HEAD ${current.headRefOid} (base ${current.baseRefOid}): open, not draft, CLEAN/MERGEABLE, checks successful and review requirements satisfied. This is an informational readiness notice only. It does not authorize merge, auto-merge, deployment, or any repository change. Report readiness to the user and wait for their decision. Revalidate the current HEAD and GitHub rules before any separately authorized action; GitHub may have changed since this observation. Do not start a CI poller.\n</ci-monitor-event>`;
+        const text = `<ci-monitor-event>\nThe desktop app read GitHub twice: https://${host}/${pr.repo}/pull/${pr.prNumber} is ready to merge at HEAD ${current.headRefOid} (base ${current.baseRefOid}): open, not draft, CLEAN/MERGEABLE, required checks successful, optional skipped checks confirmed non-required, and review requirements satisfied. This is an informational readiness notice only. It does not authorize merge, auto-merge, deployment, or any repository change. Report readiness to the user and wait for their decision. Revalidate the current HEAD and GitHub rules before any separately authorized action; GitHub may have changed since this observation. Do not start a CI poller.\n</ci-monitor-event>`;
         awaitingReceipt.set(messageId, undefined);
         let sent;
         try {
