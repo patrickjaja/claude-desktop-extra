@@ -2328,7 +2328,8 @@
         "discovery on the session's branch, automatic and model-requested Auto-fix); authentication, " +
         "PR scope, origin/age, consent and race checks remain. It does not enable Auto-fix itself. Applies live to future attempts."
     };
-    var head = el("div", "cdbx-section", spec.section);
+    var head = el("div", "cdbx-sec-h");
+    head.appendChild(el("span", "cdbx-sec-t", spec.section));
     var host = el("div", "cdbx-list");
     var row = el("div", "cdbx-row");
     var main = el("div", "cdbx-row-main");
@@ -3318,8 +3319,8 @@
     renderCustomModelsRow,
     renderAllowNonAnthropicModelsRow,
     renderAutoFixAuthorRow,
-    renderTranscriptLimitsRow,
     renderAutoFixMergeReadyRow,
+    renderTranscriptLimitsRow,
     renderWindowControlsRow,
     renderNativeTitlebarRow,
     renderWindowTransparencyRow,

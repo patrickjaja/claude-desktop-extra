@@ -908,12 +908,14 @@ async function featuresPanel(featuresItem) {
         .map(function (h) { return h.textContent; });
     };
     ok(visible().length === heads.length, "every row is visible before typing");
+    // The trusted-authors row is a list editor, not a switch, so count switches rather than heads.
+    const switchesBefore = panel.querySelectorAll(".cdbx-switch").length;
 
     await type("panel tabs");
     ok(visible().join(",") === "Layout",
        "a title match leaves only that section: " + visible().join(","));
     ok(!!panel.querySelector(".cdbx-row .cdbx-id"), "the matching row is still in the DOM");
-    ok(panel.querySelectorAll(".cdbx-switch").length === heads.length,
+    ok(panel.querySelectorAll(".cdbx-switch").length === switchesBefore,
        "no row was re-rendered - all switches survive the filter (" +
        panel.querySelectorAll(".cdbx-switch").length + ")");
     ok(window.__panelTabsCalls.length === 1 && window.__pickerCalls.length === 2,
