@@ -4,6 +4,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-04
 
+### Auto-fix readiness notices
+
+- **Auto-fix wakes the session when its watched PR becomes ready to merge**, using the existing sweep and CI-event delivery pipeline. Two fresh GitHub reads must agree on HEAD/base and report open, non-draft, CLEAN/MERGEABLE, satisfied reviews and successful checks; unknown, skipped, cancelled and incomplete states do not notify. The notice is informational, never merge/deploy authorization. Per-profile persistence suppresses repeated accepted notices; failed/dropped deliveries retry.
+
 ### Upstream 4.16336.0
 
 - **Re-fitted to the new release** (Electron 44.9.3): the native-frame overlay color gate, the tray left-click toggle (the "Show App" item now calls a wrapper), the hidden-launch show hook for tray-less desktops, the "Update available" link hook (the updater init now waits for the managed settings first) and the profile window title (upstream keeps the main window's OS title at "Claude" and shows the conversation title in its own title bar; named profiles still get `Claude (work)`). No patch removed.

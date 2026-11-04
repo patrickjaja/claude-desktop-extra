@@ -51,6 +51,8 @@ linux/fix_computer_use_linux: \
   ../js/cu_consent.js \
   ../js/executor_linux.js
 
+core/add_autofix_merge_ready: ../js/autofix_merge_ready.js
+
 community/add_feature_dev_tools_toggle: ../js/dev_tools_toggle_main.js
 
 linux/fix_cowork_font: ../js/fix_cowork_font.js
