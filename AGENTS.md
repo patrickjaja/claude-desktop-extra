@@ -63,14 +63,19 @@ Classify a patch by its effect, not by how internal its hook is:
 
 **Example:** additional `turnCompleted` events needed by Auto-fix notices belong in the Auto-fix notices patch, behind its switch, not in a standalone core patch. Those events also reach upstream's own Auto-fix ledger. Tests must cover both the enabled behavior and preservation of upstream behavior when the switch is off.
 
-Relevant files for this example:
+Relevant files for this example (bare `@path` entries below are instruction-file imports, not just links):
 
-- Feature-owned completion patch: @patches/community/add_feature_autofix_merge_ready.nim
 - Shared notice switch: @js/extra_settings_main.js
 - Batch receipt regression tests, including switch-off behavior: @scripts/tests/community/test-autofix-batch-receipts.mjs
-- Post-merge notice integration: @patches/community/add_feature_autofix_post_merge.nim
 - Notice behavior and lifecycle: @docs/autofix-merge-ready.md and @docs/autofix-post-merge.md
 - Patch authoring guide and catalog: @docs/patches.md
+
+Claude Code 2.1.318 skips `.nim` files during `@` import expansion, logging `Skipping non-text file in @include`. When working on this example, explicitly read the following source files; do not assume their contents were auto-imported. Backticks keep these references literal rather than requesting an unsupported import:
+
+- Feature-owned completion patch: [`@patches/community/add_feature_autofix_merge_ready.nim`](patches/community/add_feature_autofix_merge_ready.nim)
+- Post-merge notice integration: [`@patches/community/add_feature_autofix_post_merge.nim`](patches/community/add_feature_autofix_post_merge.nim)
+
+Import syntax and loading rules: [Claude Code memory documentation](https://code.claude.com/docs/en/memory#import-additional-files). These imports require this AGENTS.md to be loaded as project instructions (directly or through a CLAUDE.md import); merely mentioning AGENTS.md in a prompt does not prove import expansion occurred.
 
 The project skills in `.claude/skills/` (`/update`, `/fresh-upstream`, `/debug`, `/linux`, ...) are optional helpers for Claude Code users.
 
