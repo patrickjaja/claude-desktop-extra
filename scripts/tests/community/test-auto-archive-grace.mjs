@@ -279,4 +279,60 @@ await test("narrow bridge forwards raw value for main validation", async () => {
   api.autoArchiveGraceRead(); api.autoArchiveGraceSet(42); api.autoArchiveGraceSet("bad");
   assert.deepEqual(calls, [["cdb-archive-grace:read"], ["cdb-archive-grace:set", 42], ["cdb-archive-grace:set", "bad"]]);
 });
+await test("ion patch is strict, syntactically valid and idempotent", async () => {
+  const binary = path.join(ROOT, "patches/community/add_feature_auto_archive_grace_ion");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-grace-ion-")), assets = path.join(dir, "assets/v1"), file = path.join(assets, "fixture.js");
+  fs.mkdirSync(assets, { recursive: true });
+  const fixture = `function cje(e){let $=J9(3),[t,n]=v(),r,i;return e?(r=()=>{Zn?.onPreferencesChanged?.(t)},i=[e],K2($,0,e,r,i)):(r=$[1],i=$[2]),O(r,i),t}
+function CE(e){let $=J9(11),t=ra(),n=Qc(),r=Mc(),{account:i}=jr(),a=i?.settings?.ccr_auto_archive_on_pr_close,o=Et?.setSessionAutoArchiveOnPrClose;return o}
+function y5(e){let $=J9(7),{hold:t,sessionRef:n}=e,r=Vu();return f("div",{role:"status","aria-live":"polite","data-find-omitted":"",className:"x",children:"This session will be archived automatically after you leave it."})}
+function Rail(e,t){let $=J9(440),{repoKey:n,sessionRef:r,sessionRepo:i,isPrimary:a,inRail:d}=e;return J5($,433,u,d,f,p,m,g)?K5($,433,u,d,f,p,m,g,h(y,{children:[u,d,f,p,m,g]})):$[439]}`;
+  try {
+    fs.writeFileSync(file, fixture); execFileSync(binary, [dir]);
+    const patched = fs.readFileSync(file, "utf8"); execFileSync(process.execPath, ["--check", file]);
+    execFileSync(binary, [dir]); assert.equal(fs.readFileSync(file, "utf8"), patched);
+    for (const bad of [fixture.replace("setSessionAutoArchiveOnPrClose", "changed"), fixture.replace("isPrimary:a", "primary:a"),
+      patched.replace("rail:true", "rail:false"), patched.replace("setSessionAutoArchiveOnPrClose(sessionRef.id, false)", "changed(sessionRef.id, false)")]) {
+      fs.writeFileSync(file, bad); assert.notEqual(spawnSync(binary, [dir]).status, 0);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+await test("status projects only the effective persisted deadline", async () => {
+  const h = harness();
+  assert.equal((await h.api.status("s")).deadline, null);
+  await h.wait();
+  assert.equal((await h.api.status("s")).deadline, 1000000 + 15 * 60000);
+  h.minutes(30);
+  assert.equal((await h.api.status("s")).deadline, 1000000 + 30 * 60000);
+  h.session.autoArchiveOnPrClose = false;
+  assert.equal((await h.api.status("s")).enabled, false);
+  h.session.autoArchiveOnPrClose = true; h.session.prs[0].state = "OPEN";
+  assert.equal((await h.api.status("s")).terminal, false);
+  h.minutes(0); assert.equal((await h.api.status("s")).active, false);
+});
+await test("renderer shows delay, preserves native off and keeps only this session", async () => {
+  const ui = fs.readFileSync(path.join(ROOT, "js/auto_archive_grace_ui.js"), "utf8");
+  let values = [], slot = 0, effects = [], saved = [], enabled = true, now = 1000000;
+  const context = {
+    __cdbReactState: initial => { const n = slot++; if (!(n in values)) values[n] = initial; return [values[n], value => { values[n] = value; }]; },
+    __cdbReactEffect: fn => effects.push(fn),
+    __cdbArchiveControl: () => ({ kind: "session", enabled, disabled: false }),
+    __cdbLocalSessions: { setSessionAutoArchiveOnPrClose: async (...args) => { saved.push(args); enabled = false; } },
+    __cdbJsx: (type, props) => ({ type, props }),
+    Date: { now: () => now }, setInterval: () => 1, clearInterval: () => {},
+    globalThis: { cdbExtra: { autoArchiveGraceRead: async () => ({ ok: true, active: true, terminal: true, deadline: 1061000 }) } }
+  };
+  const view = vm.runInNewContext(ui + "\n__cdbArchiveGraceView", context);
+  const render = rail => { slot = 0; effects = []; return view({ sessionRef: { type: "local", id: "s" }, children: "native notice", rail }); };
+  assert.equal(render(false), "native notice");
+  const cleanup = effects[0](); await new Promise(resolve => setImmediate(resolve));
+  assert.match(render(false).props.children[2], /0h 1m 1s/);
+  now += 61000; values[1] = now;
+  assert.match(render(false).props.children[2], /delay has ended/);
+  const button = render(true).props.children[0]; await button.props.onClick();
+  assert.deepEqual(saved, [["s", false]]);
+  assert.match(render(false), /off for this session/);
+  values[0] = { ok: true, active: false }; assert.equal(render(false), "native notice");
+  cleanup();
+});
 console.log(`${passed} archive-grace tests passed`);

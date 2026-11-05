@@ -79,7 +79,28 @@
     }
     if (changed) commit(next);
   }
-  return {
+  const api = {
+    // A read-only UI projection of the same ledger and sweep snapshot. It must
+    // never start a clock, trigger a sweep, or claim a guaranteed archive time.
+    async status(id) {
+      const delay = minutes();
+      if (delay === 0) return { ok: true, active: false };
+      if (!validMinutes(delay)) return { ok: false, error: "Invalid archive delay" };
+      const session = await engine.sessionManager.getSession(id);
+      if (!session || session.isArchived) return { ok: true, active: false };
+      const isEnabled = enabled(session);
+      if (!isEnabled) return { ok: true, active: true, enabled: false };
+      const known = engine.terminalVerdict(id, engine.ownPrBindings(session.prs), Date.now()).terminal;
+      if (!known || reopened.has(id)) return { ok: true, active: true, enabled: true, terminal: false };
+      try {
+        load();
+        const entry = records[id];
+        const deadline = entry?.binding === identity(session) ? entry.since + delay * 60000 : null;
+        return { ok: true, active: true, enabled: true, terminal: true, deadline };
+      } catch (error) {
+        return { ok: false, error: "Archive deadline unavailable" };
+      }
+    },
     begin() { current = readMinutes(); },
     cancel(id) {
       // Do not recreate the clock from a stale CLOSED binding while the native
@@ -154,4 +175,6 @@
       }
     }
   };
+  globalThis.__cdbArchiveGraceStatus = id => api.status(id);
+  return api;
 })

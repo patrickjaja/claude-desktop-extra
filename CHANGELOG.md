@@ -4,6 +4,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-05
 
+### PR auto-archive delay visibility
+
+- When a nonzero PR auto-archive delay is configured, the Code session notice shows its remaining grace and the session rail offers a keep button. Keeping changes only that session's native PR auto-archive setting; safety holds, sweeps and the separate inactivity rule remain unchanged.
+
 ### Clearer patch placement guidance and corrected Auto-fix notice docs (thanks @alexx-ftw, #315)
 
 - AGENTS.md and docs/patches.md now say where a patch belongs: `core/` only for shared plumbing, a fix serving an optional feature stays in that feature's patch behind its switch, tested with the switch on and off. The Auto-fix notice docs now match the shipped behavior (REST read spacing and backoff, direct vs queued delivery, budget-skip handling, text normalization), and docs/patches.md no longer claims a byte-identical install tree or that a green build proves runtime behavior.
