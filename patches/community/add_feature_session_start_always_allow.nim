@@ -85,10 +85,13 @@ proc apply*(input: string): string =
   let session = input[h.group(6)]
   let head =
     input[headers[0].boundaries.a .. min(input.high, headers[0].boundaries.a + 2500)]
-  let namespaces = head.findAll(re2"\.viaHostCliLauncher===!0\|\|([\w$]+)\.TF\(")
+  # Every namespace export the hook calls is resolved from upstream's own call
+  # site of the same check (export names are re-minified each release).
+  let namespaces = head.findAll(re2"\.viaHostCliLauncher===!0\|\|([\w$]+)\.([\w$]+)\(")
   if namespaces.len != 1:
     raise newException(ValueError, "session-start policy namespace must match once")
   let api = head[namespaces[0].group(0)]
+  let hostCliFn = head[namespaces[0].group(1)]
   # The broker's chunk and the chunk its `api` namespace is required from.
   let brokerPart = partAt(input, h.boundaries.a)
   let broker = input[brokerPart.a ..< brokerPart.b]
@@ -108,7 +111,38 @@ proc apply*(input: string): string =
     )
   let apiPart = partNamed(input, apiChunk)
   let apiSrc = input[apiPart.a ..< apiPart.b]
-  for name in ["TF", "_K", "hm", "qn"]:
+  proc brokerCall(hits: seq[RegexMatch2], label: string): string =
+    ## The `api.<export>` upstream's broker calls at one fixed check site.
+    if hits.len != 1 or broker[hits[0].group(0)] != api:
+      raise newException(
+        ValueError,
+        "session-start: broker's " & label & " check must call " & api & " once (" &
+          $hits.len & ")",
+      )
+    broker[hits[0].group(1)]
+
+  # Organization requires approval: forceAsk's `return api.X(e)?"org_requires_approval"`.
+  let hostPolicyFn = brokerCall(
+    broker.findAll(
+      re2"""if\([\w$]+!=="ordinary"\)return ([\w$]+)\.([\w$]+)\([\w$]+\)\?"org_requires_approval":"""
+    ),
+    "org_requires_approval",
+  )
+  # The session's own ask rules/hooks: `??=api.X(s?.query,tool).then(...own_ask_rules_read`.
+  let ownAskFn = brokerCall(
+    broker.findAll(
+      re2"""\?\?=([\w$]+)\.([\w$]+)\([\w$]+\?\.query,[\w$]+\)\.then\(\([\w$]+=>\{[^{}]{0,100}"desktop_ccd_own_ask_rules_read","""
+    ),
+    "own ask rules",
+  )
+  # Unattended session: firstUseSidePlace's `||api.X(sid,(e=>this.config.getSession(e)))`.
+  let unattendedFn = brokerCall(
+    broker.findAll(
+      re2"""\}async firstUseSidePlace\([\w$]+,[\w$]+,[\w$]+\)\{if\(!\([^{}]*?\|\|([\w$]+)\.([\w$]+)\([\w$]+,\([\w$]+=>this\.config\.getSession\([\w$]+\)\)\)\)\)try\{"""
+    ),
+    "unattended",
+  )
+  for name in [hostCliFn, ownAskFn, hostPolicyFn, unattendedFn]:
     let local = exportTarget(apiSrc, name)
     if apiSrc.count("function " & local & "(") != 1:
       raise newException(
@@ -116,19 +150,34 @@ proc apply*(input: string): string =
         "session-start: " & api & "." & name & " -> " & local &
           " is not defined once in " & apiChunk,
       )
-  # The main window: `V=new u.BrowserWindow(e),zi(V.webContents,Li.MAIN_WINDOW)`.
-  let mainVar = exportTarget(apiSrc, "Xmt")
+  # The main window: `V=new u.BrowserWindow(e),zi(V.webContents,Li.MAIN_WINDOW)`,
+  # and the one export that returns it.
+  var mainVar = ""
   var mainHits = 0
   for m in apiSrc.findAll(
     re2"""(?:^|[^\w$.])([\w$]+)=new [\w$]+\.BrowserWindow\([\w$]+\),[\w$]+\(([\w$]+)\.webContents,[\w$]+\.MAIN_WINDOW\)"""
   ):
-    if apiSrc[m.group(0)] == mainVar and apiSrc[m.group(1)] == mainVar:
+    if apiSrc[m.group(0)] == apiSrc[m.group(1)]:
+      mainVar = apiSrc[m.group(0)]
       inc mainHits
   if mainHits != 1:
     raise newException(
       ValueError,
-      "session-start: " & api & ".Xmt is not the MAIN_WINDOW BrowserWindow in " &
-        apiChunk,
+      "session-start: MAIN_WINDOW BrowserWindow not found once in " & apiChunk,
+    )
+  var mainExport = ""
+  var mainExports = 0
+  for m in apiSrc.findAll(
+    re2"""Object\.defineProperty\(exports,"([\w$]+)",\{enumerable:!0,get:function\(\)\{return ([\w$]+)\}\}\)"""
+  ):
+    if apiSrc[m.group(1)] == mainVar:
+      mainExport = apiSrc[m.group(0)]
+      inc mainExports
+  if mainExports != 1:
+    raise newException(
+      ValueError,
+      "session-start: the MAIN_WINDOW variable must be exported once from " & apiChunk &
+        " (" & $mainExports & ")",
     )
   for meth in [
     "firstUseSidePlace(", "forceAskVerdict(", "internalNameProvenanceVerdict("
@@ -161,10 +210,6 @@ proc apply*(input: string): string =
     raise newException(
       ValueError, "session-start: native rule matcher is not exported from " & apiChunk
     )
-  for required in [api & "._K(", api & ".hm(", api & ".qn("]:
-    if required notin input:
-      raise
-        newException(ValueError, "session-start host-policy anchor absent: " & required)
   let startGates = input.findAll(
     re2"""function ([\w$]+)\([\w$]+,[\w$]+,[\w$]+,[\w$]+,[\w$]+,[\w$]+\)\{if\(![\w$]+\.has\([\w$]+\)[^{}]*;return [\w$]+\.[\w$]+\([\w$]+\)\|\|[\w$]+\([\w$]+,[\w$]+,[\w$]+\)\|\|[\w$]+\([\w$]+,[\w$]+,[\w$]+\)>=10\}"""
   )
@@ -243,13 +288,16 @@ proc apply*(input: string): string =
     keep(o & ".connectorAsk!==undefined", tok("gate:connectorAsk")) &
     keep(o & ".viaHostCliLauncher===true", tok("gate:viaHostCliLauncher")) &
     keep("this.config.getSession(" & sid & ")!==" & session, tok("sessionChanged")) &
-    keep(api & ".TF(" & session & ")", tok("hostCliLauncher")) &
+    keep(api & "." & hostCliFn & "(" & session & ")", tok("hostCliLauncher")) &
     keep(session & ".permissionMode===\"plan\"", tok("planMode")) &
     keep(
       "this.config.laptopMcpToolAsksEveryCall?.(" & sid & "," & tool & ")===true",
       tok("laptopAsksEveryCall"),
-    ) & keep(api & ".hm(" & tool & ")", tok("hostPolicy")) &
-    keep(api & ".qn(" & sid & ",e=>this.config.getSession(e))", tok("unattended")) &
+    ) & keep(api & "." & hostPolicyFn & "(" & tool & ")", tok("hostPolicy")) &
+    keep(
+      api & "." & unattendedFn & "(" & sid & ",e=>this.config.getSession(e))",
+      tok("unattended"),
+    ) &
     keep(
       "this.internalNameProvenanceVerdict(" & sid & "," & tool & ")!==undefined",
       tok("provenance"),
@@ -270,7 +318,7 @@ proc apply*(input: string): string =
       "\"forceAsk:\"+__cdbStartTok(__cdbStartVerdict.cause??__cdbStartVerdict.standDown)",
     ) &
     keep(
-      "await " & api & "._K(" & session & ".query," & tool & ")!==false",
+      "await " & api & "." & ownAskFn & "(" & session & ".query," & tool & ")!==false",
       tok("ownAskRules"),
     ) & "let __cdbStartListing=await " & session &
     ".query?.listPermissionRules?.(),__cdbStartRules=__cdbStartListing?.state?.rules;" &
@@ -296,8 +344,8 @@ proc apply*(input: string): string =
     marker &
     "if(process.platform===\"linux\"&&globalThis.__cdbSessionStartDialogEnabled?.()===true){let __cdbStartResult=await (" &
     helper & ")(" & data & "," & signal & "," & eligibility & ",{session:" & session &
-    ",sessionId:" & sid & ",mainWindow:()=>" & api &
-    ".Xmt,place:()=>this.firstUseSidePlace(" & sid & "," & tool & "," & data &
+    ",sessionId:" & sid & ",mainWindow:()=>" & api & "." & mainExport &
+    ",place:()=>this.firstUseSidePlace(" & sid & "," & tool & "," & data &
     "),onApproved:__cdbResult=>this.allowedOnCardJustNow.add(__cdbResult)});if(__cdbStartResult!==undefined)return __cdbStartResult}"
   if marker in input:
     if input.count(injected & anchor) != 1:

@@ -287,7 +287,7 @@ proc endStateMarkers(): seq[EndStateMarker] =
     ),
     rx(
       "4d platform executor factory",
-      """if\(process\.platform===["`]darwin["`]\)return [\w$]+(?:\.[\w$]+)*\([\w$]+\);if\(process\.platform==="linux"&&globalThis\.__linuxExecutor\)return globalThis\.__linuxExecutor;(?:if\(process\.platform===["`]linux["`]\)return [^;]{1,80};)?throw (?:new )?Error\(["`]computer-use executor not implemented""",
+      """if\(process\.platform===["`]darwin["`]\)return [\w$]+(?:\.[\w$]+)*\([^;]{1,400}\);if\(process\.platform==="linux"&&globalThis\.__linuxExecutor\)return globalThis\.__linuxExecutor;(?:if\(process\.platform===["`]linux["`]\)return [^;]{1,80};)?throw (?:new )?Error\(["`]computer-use executor not implemented""",
     ),
     rx(
       "4b cu lock acquire",
@@ -677,11 +677,15 @@ proc apply*(input: string): string =
     # (`if(linux)return init(),isWayland()?portalExec(t):x11Exec(t);`). Ours
     # goes in front of it, so our bridges keep driving Linux CU and upstream's
     # native executor stays the fallback when no bridge executor was installed.
+    # 4.23118.0: the darwin arm's argument became an object literal
+    # (`t.Fm({...a,aimPhantomCursor:(e,n,r)=>...,placePhantomCursor:t.ur})`),
+    # so the argument is `[^;]{1,400}` (no `;` inside; the throw string pins
+    # the site), not a bare identifier.
     # NB: the throw interpolates `${process.platform}` - the placeholder body
     # contains a `.`, so it is `[\w$.]+` (NOT `[\w$]+`, which stops at the dot
     # and never reaches the closing `}` - a silent 0-match trap).
     let pat =
-      re"""(if\(process\.platform===["`]darwin["`]\)return [\w$]+(?:\.[\w$]+)*\([\w$]+\);)((?:if\(process\.platform===["`]linux["`]\)return [^;]{1,80};)?throw (?:new )?Error\(`computer-use executor not implemented for \$\{[\w$.]+\}`\))"""
+      re"""(if\(process\.platform===["`]darwin["`]\)return [\w$]+(?:\.[\w$]+)*\([^;]{1,400}\);)((?:if\(process\.platform===["`]linux["`]\)return [^;]{1,80};)?throw (?:new )?Error\(`computer-use executor not implemented for \$\{[\w$.]+\}`\))"""
     let n = replaceFirst(
       content,
       pat,

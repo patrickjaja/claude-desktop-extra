@@ -1,6 +1,6 @@
 # Auto-archive delay after a PR merges or closes
 
-**Linux, validated against upstream 4.16336.0.** Settings -> Extra -> Community Features -> **Auto-archive delay after a PR merges or closes** holds upstream's own PR auto-archive for a while after a Code session's PR merges or closes, so the chat stays in the sidebar long enough to read the outcome.
+**Linux, validated against upstream 4.23118.0.** Settings -> Extra -> Community Features -> **Auto-archive delay after a PR merges or closes** holds upstream's own PR auto-archive for a while after a Code session's PR merges or closes, so the chat stays in the sidebar long enough to read the outcome.
 
 ## Configure
 

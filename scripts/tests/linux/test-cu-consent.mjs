@@ -494,7 +494,10 @@ if (!haveBin || !existsSync(join(BUILD_DIR, "index.js"))) {
     // executable name is a sentinel; without aliases it is not.
     const pm = /__cdbS=>[\w$]+\(__cdbS\)!==null\)\}/.exec(patched);
     const end = pm ? pm.index + pm[0].length : -1;
-    const start = end < 0 ? -1 : patched.lastIndexOf("function c(e){return e.toLowerCase().split(", end);
+    // The classifier's first helper (`function X(e){return e.toLowerCase().split(`),
+    // the last one before the predicate; minified names change every release.
+    let start = -1;
+    if (end >= 0) for (const m of patched.slice(0, end).matchAll(/function [\w$]+\(([\w$]+)\)\{return \1\.toLowerCase\(\)\.split\(/g)) start = m.index;
     const fnName = pm ? /function ([\w$]+)\([\w$]+\)\{return [\w$]+\([\w$]+\)!==null\|\|process/.exec(patched.slice(start, end)) : null;
     ok(start > 0 && end - start < 20000 && !!fnName, "the classifier region before the predicate is extractable");
     if (start > 0 && fnName) {
@@ -512,7 +515,7 @@ if (!haveBin || !existsSync(join(BUILD_DIR, "index.js"))) {
     ok(r2.status === 0 && readFileSync(staged, "utf8") === patched, "a second run changes nothing");
     const r3 = run(blob.replace('cuOnlyMode:process.env.COWORK_CU_ONLY!=="0"&&', 'cuOnlyMode:process.env.COWORK_CU_MODE!=="0"&&'));
     ok(r3.status !== 0 && /\[FAIL\] 6b cuOnlyMode context flag/.test(r3.out), "a moved cuOnlyMode flag fails the build");
-    const r4 = run(blob.replace('return"system_settings"}return null}function S(e){return x(e)!==null}', 'return"system_settings"}return null}function S(e){return!!x(e)}'));
+    const r4 = run(blob.replace(/(return"system_settings"\}return null\}function [\w$]+\(([\w$]+)\)\{return )([\w$]+)\(\2\)!==null\}/, (_m, pre, v, cls) => pre + "!!" + cls + "(" + v + ")}"));
     ok(r4.status !== 0 && /\[FAIL\] 6c sentinel predicate/.test(r4.out), "a moved sentinel predicate fails the build");
   } finally {
     rmSync(scratch, { recursive: true, force: true });

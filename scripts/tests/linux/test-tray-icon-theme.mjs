@@ -594,10 +594,10 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
   check("page: renderTrayIconRow exists", !!row, true);
   if (row) {
     check("page: row reads/writes the bridge methods", /read: "trayIconRead",\s*write: "trayIconSet"/.test(row[0]), true);
-    check("page: section Tray, title as specified", /section: "Tray",\s*title: "Always use the white tray icon"/.test(row[0]), true);
+    check("page: title as specified", /title: "Always use the white tray icon"/.test(row[0]), true);
     check("page: no em-dash in the row", row[0].includes("—"), false);
   }
-  check("page: row is in FEATURE_ROWS", /var FEATURE_ROWS = \[[^\]]*renderTrayIconRow/.test(page), true);
+  check("page: row is in FEATURE_GROUPS", /var FEATURE_GROUPS = [\s\S]*?renderTrayIconRow/.test(page), true);
   const axRow = /function renderCuAxRow\(panel\) \{[\s\S]*?\n {2}\}\n/.exec(page);
   check("page: renderCuAxRow exists", !!axRow, true);
   if (axRow) {
@@ -618,8 +618,8 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
     /cu: renderCu,/.test(page), true);
   check("page: CU_ROWS is ask before control, background display, then read app controls",
     /var CU_ROWS = \[\s*renderCuAskRow,\s*renderCuBackgroundRow,\s*renderCuAxRow\s*\];/.test(page), true);
-  check("page: no Computer Use row left in FEATURE_ROWS",
-    /var FEATURE_ROWS = \[[^\]]*renderCu(Status|Background|Ax)/.test(page) || /function renderCuStatusRow\b/.test(page), false);
+  check("page: no Computer Use row left in FEATURE_GROUPS",
+    /var FEATURE_GROUPS = [\s\S]*?renderCu(Status|Background|Ax)/.test(page) || /function renderCuStatusRow\b/.test(page), false);
   check("page: the three switches share the one Options heading",
     (page.match(/section: "Options"/g) || []).length === 3 && (page.match(/sharedSection: true/g) || []).length === 3 &&
     !/section: "Computer Use"/.test(page), true);

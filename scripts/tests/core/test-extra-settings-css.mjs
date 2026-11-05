@@ -303,5 +303,13 @@ section("[6] every webContents keeps its own sheet");
   ok(a.removed.length === 0, "and the first webContents is still untouched");
 }
 
+{
+  const css = readFileSync(join(ROOT, "js/extra_settings_page.css"), "utf8");
+  ok(/\.cdbx-navgroup \{[^}]*animation: cdbx-rainbow[^}]*\}/.test(css) && /@keyframes cdbx-rainbow/.test(css),
+     "the Extra headline gradient is animated");
+  ok(/prefers-reduced-motion: reduce\) \{\s*\.cdbx-navgroup \{ animation: none/.test(css),
+     "reduced motion turns the rainbow animation off");
+}
+
 console.log("\n" + (fail ? `${pass} passed, ${fail} FAILED` : `ALL ${pass} CHECKS PASSED`));
 process.exit(fail ? 1 : 0);

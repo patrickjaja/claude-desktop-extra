@@ -89,6 +89,10 @@ proc apply*(input: string): string =
   #       if(e.isDestroyed()){p("abandoned");return}P.info("Main webview render process gone: %o",n),...
   #     p() logs only while a hang-kill recovery is in progress, so these deaths
   #     still leave no trace in main.log otherwise (#128).
+  #   v4.23118.0: a bare call and a `let` (Date.now()) now precede the first guard,
+  #   and the second `let` carries an object-literal declarator, so both lets are
+  #   matched as `let <no-semicolon run>;`:
+  #     {H4n(e);let r=Date.now(),i=O4n(r);if(!F3n(n))return;d();let s=l(),...,h={...b6n(r),renderer_age_ms:i};if(...){p("abandoned");return}...
   #
   # Every early return is a suppressed death that stays silent -- the gap #128
   # is about. Each gains a log line right before its `return`; the guard
@@ -110,7 +114,7 @@ proc apply*(input: string): string =
   # handler and the site needs a re-audit; 0 means upstream changed the code.
   # Both fail loudly.
   let pattern =
-    re2"""(\.on\(["`]render-process-gone["`],\(?async\(([\w$]+),([\w$]+)\)=>\{)(if\(((?:[\w$]+(?:\.[\w$]+)*\([^()]*\),)*)!([\w$]+)\(([\w$]+)\)\)return;)((?:[\w$]+(?:\.[\w$]+)*\([^()]*\);)*)(let [\w$]+=[\w$]+(?:\.[\w$]+)*\([^()]*\)(?:,[\w$]+=[\w$]+(?:\.[\w$]+)*\([^()]*\))*;)((?:if\([^{}]{1,100}[^{}]{0,100}[^{}]{0,100}\)(?:return;|\{[^{}]{0,100}return\}))+)(([\w$]+(?:\.[\w$]+)*)\.info\(["`]Main webview render process gone: %o)"""
+    re2"""(\.on\(["`]render-process-gone["`],\(?async\(([\w$]+),([\w$]+)\)=>\{)((?:[\w$]+(?:\.[\w$]+)*\([^()]*\);)*(?:let [^;]*;)?)(if\(((?:[\w$]+(?:\.[\w$]+)*\([^()]*\),)*)!([\w$]+)\(([\w$]+)\)\)return;)((?:[\w$]+(?:\.[\w$]+)*\([^()]*\);)*)(let [^;]*;)((?:if\([^{}]{1,100}[^{}]{0,100}[^{}]{0,100}\)(?:return;|\{[^{}]{0,100}return\}))+)(([\w$]+(?:\.[\w$]+)*)\.info\(["`]Main webview render process gone: %o)"""
   var count = 0
   var guardCount = 0
   result = input.replace(
@@ -118,14 +122,15 @@ proc apply*(input: string): string =
     proc(m: RegexMatch2, s: string): string =
       # group(0) head incl. arrow params; group(1) is the (unused) event arg.
       let head = s[m.group(0)]
+      let preamble = s[m.group(3)] # bare calls / `let` before the first guard, verbatim
       let details = s[m.group(2)] # RenderProcessGoneDetails
-      let firstGuard = s[m.group(3)] # `if(<calls>,!<pred>(<details>))return;`
-      let predArg = s[m.group(6)] # what the first guard passes to the predicate
-      let bareCalls = s[m.group(7)] # `d();` -- kept verbatim
-      let letStmt = s[m.group(8)] # interposed `let x=f(),...;` -- kept verbatim
-      let guards = s[m.group(9)] # the killed-grace / destroyed guards
-      let tail = s[m.group(10)] # the handled path's own `<logger>.info(...` call
-      let logger = s[m.group(11)] # module-level logger
+      let firstGuard = s[m.group(4)] # `if(<calls>,!<pred>(<details>))return;`
+      let predArg = s[m.group(7)] # what the first guard passes to the predicate
+      let bareCalls = s[m.group(8)] # `d();` -- kept verbatim
+      let letStmt = s[m.group(9)] # interposed `let x=f(),...;` -- kept verbatim
+      let guards = s[m.group(10)] # the killed-grace / destroyed guards
+      let tail = s[m.group(11)] # the handled path's own `<logger>.info(...` call
+      let logger = s[m.group(12)] # module-level logger
       let whole = s[m.boundaries]
       let ifs = firstGuard.count("if(") + guards.count("if(")
       let rets = firstGuard.count("return") + guards.count("return")
@@ -137,7 +142,8 @@ proc apply*(input: string): string =
       inc count
       guardCount = ifs
       let log = logCall(logger, details)
-      head & addLogs(firstGuard, log) & bareCalls & letStmt & addLogs(guards, log) & tail,
+      head & preamble & addLogs(firstGuard, log) & bareCalls & letStmt &
+        addLogs(guards, log) & tail,
   )
   if count != 1:
     if HandledLog in input:

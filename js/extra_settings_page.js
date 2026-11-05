@@ -1135,7 +1135,7 @@
     if (!api || typeof api[spec.read] !== "function" || typeof api[spec.write] !== "function") return;
 
     var head = el("div", "cdbx-sec-h");
-    head.appendChild(el("span", "cdbx-sec-t", spec.section));
+    if (spec.section) head.appendChild(el("span", "cdbx-sec-t", spec.section));
     // spec.sharedSection: this row sits under the section header the row before
     // it already rendered, so it gets no header of its own (head stays detached).
     if (!spec.sharedSection) panel.appendChild(head);
@@ -1236,13 +1236,9 @@
   // this row is the way to ask for it.
   function renderDiffViewsRow(panel) {
     return renderToggleRow(panel, {
-      section: "Source control",
       title: "Diff view modes",
-      note: "Adds a scope dropdown to the Code tab's diff panel - Working tree, Branch changes " +
-        "(committed work only) and Latest turn - and compares against the branch you actually " +
-        "branched from. Also adds an expand/collapse-all button next to it, which keeps expanding " +
-        "files as they load while it is on. Off leaves the panel exactly as Anthropic ships it. " +
-        "Applies live - an open Code tab picks the change up within a few seconds.",
+      note: "Adds a scope dropdown to the Code tab's diff panel: Working tree, Branch changes or Latest turn. Off leaves the panel as Anthropic ships it. Applies live.",
+      keywords: "expand collapse all button branched from committed work latest turn scope",
       ariaLabel: "show the diff view modes dropdown and the expand/collapse-all button",
       read: "diffViewsRead",
       write: "diffViewsSet",
@@ -1268,14 +1264,9 @@
   // layout is presented, so it is opt-in and this row is the way to ask for it.
   function renderPanelTabsRow(panel) {
     return renderToggleRow(panel, {
-      section: "Layout",
       title: "Panel tabs",
-      note: "Shows the Code tab's side panels as tabs instead of squeezing them side by side, so " +
-        "the panel you are using gets the full width. The rest stay open in the background and keep " +
-        "their place, so switching back is instant - that also means a live preview goes on " +
-        "running while you are not looking at it. Drag the divider to resize; opening or closing a " +
-        "panel will not move it. Off gives you the normal split layout back, and nothing you have " +
-        "open is lost. Applies live - an open Code tab picks the change up within a few seconds.",
+      note: "Shows the Code tab's side panels as tabs, so the panel you are using gets the full width. Off gives you the normal split layout back. Applies live.",
+      keywords: "layout split divider resize background live preview side by side",
       ariaLabel: "show the Code tab's side panels as tabs instead of a split layout",
       read: "panelTabsRead",
       write: "panelTabsSet",
@@ -1304,14 +1295,9 @@
   // so the note says "or after a restart" rather than pretending it is instant.
   function renderFilesQuickOpenRow(panel) {
     return renderToggleRow(panel, {
-      section: "Files",
       title: "Files quick open",
-      note: "Ctrl+P on the Code tab opens a VS Code-style quick-open box over the Files panel: " +
-        "type part of a name, use the arrow keys or the mouse, press Enter to open it as a file tab. " +
-        "Spaces split the query into pieces that must all match, in any order - 'user service' " +
-        "finds user-service.spec.ts - and that also fixes the Files panel's own filter and the " +
-        "composer's @ file picker. Off leaves the panel and the index exactly as Anthropic ships them. " +
-        "The hotkey applies live; the spaces fix reaches the file index on its next start or after a restart.",
+      note: "Press Ctrl+P on the Code tab to jump to a file by typing part of its name. Off leaves the Files panel as Anthropic ships it. The hotkey applies live; the improved search reaches the file index after a restart.",
+      keywords: "VS Code quick-open arrow keys Enter file tab spaces split query user service files panel filter composer @ file picker index",
       ariaLabel: "open files with Ctrl+P from a quick-open box over the Files panel",
       read: "quickOpenRead",
       write: "quickOpenSet",
@@ -1339,13 +1325,9 @@
   // it found and the row refuses to turn on when there is nothing to list.
   function renderCustomModelsRow(panel) {
     return renderToggleRow(panel, {
-      section: "Models",
       title: "Custom models",
-      note: "Adds models from Anthropic-compatible endpoints (DeepSeek, OpenRouter, a gateway) to the Code " +
-        "tab's model picker, next to Anthropic's. Sessions on them use your key; everything else stays on " +
-        "your subscription. Set up providers and models in Settings > Extra > Models. Applies live: new " +
-        "sessions follow the switch, the picker updates when the Code tab reloads, and open sessions stop " +
-        "routing at once. A session opened while this was off needs reopening.",
+      note: "Adds models from Anthropic-compatible providers (DeepSeek, OpenRouter, your own gateway) to the Code tab's model picker. Sessions on them use your own key; set them up in Settings > Extra > Models. Applies live.",
+      keywords: "endpoint subscription routing reopen picker reload",
       ariaLabel: "list custom Anthropic-compatible models in the Code model picker",
       read: "customModelsRead",
       write: "customModelsSet",
@@ -1380,13 +1362,9 @@
   // differ - the same arrangement as the transcript limits row below.
   function renderDevToolsRow(panel) {
     return renderToggleRow(panel, {
-      section: "Developer",
       title: "Developer tools",
-      note: "Lets Ctrl+Alt+I open Chromium DevTools for the focused window, and shows \"Toggle Dev " +
-        "Tools\" in the app menu. Writes the official build's own opt-in file, developer_settings.json " +
-        "in the profile directory, which the app re-reads on every shortcut press - so the shortcut works " +
-        "right away; the menu entry appears after a restart. An organization that disabled developer " +
-        "mode for its workspace keeps DevTools off regardless.",
+      note: "Lets Ctrl+Alt+I open the browser developer tools for the focused window. The shortcut applies live; the app menu entry appears after a restart, and an organization that turned developer mode off keeps it off.",
+      keywords: "Chromium DevTools Toggle Dev Tools developer_settings.json profile directory official build",
       ariaLabel: "allow developer tools (Ctrl+Alt+I)",
       read: "devToolsRead",
       write: "devToolsSet",
@@ -2276,14 +2254,9 @@
 
   function renderAllowNonAnthropicModelsRow(panel) {
     return renderToggleRow(panel, {
-      section: "Inference",
       title: "Allow non-Anthropic models",
-      note: "Relaxes the built-in check that drops model IDs which do not look Anthropic - " +
-        "DeepSeek, Qwen, GLM, Kimi, gpt-oss and the like - from a third-party gateway's model " +
-        "list. For 3P/gateway users who route to non-Anthropic models through their own gateway; " +
-        "with it off, those routes are silently removed and the session falls back to the default " +
-        "model. The setting is per mode: set it while in 3P mode, where it is saved in " +
-        "~/.config/Claude-3p. Takes effect after a restart - the model list is built at startup.",
+      note: "Keeps models such as DeepSeek, Qwen, GLM or Kimi in the model list when you use a third-party (3P) gateway. 3P mode only: set it while in 3P mode. Takes effect after a restart.",
+      keywords: "gpt-oss model IDs filter gateway Claude-3p default model fallback",
       ariaLabel: "allow non-Anthropic models from a third-party gateway in the model list",
       read: "allowNonAnthropicModelsRead",
       write: "allowNonAnthropicModelsSet",
@@ -2321,15 +2294,14 @@
     var api = window.cdbExtra;
     if (!api || typeof api.autoFixAuthorRead !== "function" || typeof api.autoFixAuthorSet !== "function") return;
     var spec = {
-      section: "Code", title: "Trusted Auto-fix PR authors",
-      note: "Empty by default: the authenticated gh user is always recognized. Add exact host/login " +
-        "pairs, one per line (for example github.com/my-app[bot]), to also recognize selected users " +
-        "or GitHub App bots. No URLs or wildcards. Their PRs count as the session's own PRs (binding, " +
-        "discovery on the session's branch, automatic and model-requested Auto-fix); authentication, " +
-        "PR scope, origin/age, consent and race checks remain. It does not enable Auto-fix itself. Applies live to future attempts."
+      title: "Trusted Auto-fix PR authors",
+      note: "Lets Auto-fix also handle PRs opened by other GitHub users or bots. Empty by default, so only " +
+        "the signed-in gh user counts; add one host/login per line, for example github.com/my-app[bot]. " +
+        "Applies live to future attempts.",
+      keywords: "binding discovery branch model-requested authentication PR scope origin age consent race " +
+        "checks URLs wildcards GitHub App does not enable Auto-fix"
     };
     var head = el("div", "cdbx-sec-h");
-    head.appendChild(el("span", "cdbx-sec-t", spec.section));
     var host = el("div", "cdbx-list");
     var row = el("div", "cdbx-row");
     var main = el("div", "cdbx-row-main");
@@ -2397,14 +2369,9 @@
   // .jsonc; this row only shows them.
   function renderTranscriptLimitsRow(panel) {
     return renderToggleRow(panel, {
-      section: "Sessions",
       title: "Load large sessions in full",
-      note: "Anthropic's app loads only the most recent part of a very large session - currently " +
-        "the last 50 MiB of the conversation plus 32 MiB shared by its subagents - and hides the " +
-        "rest behind \"This session is too large to load in full\". That is typical after long " +
-        "sessions with many browser screenshots. On loads up to 256 MiB and 192 MiB by default " +
-        "(adjustable in claude-desktop-extra.jsonc), using more memory and time to open a huge " +
-        "session. Off leaves the limits exactly as Anthropic ships them. Takes effect after a restart.",
+      note: "Opens very large sessions in full instead of hiding their older part. It uses more memory and time on huge sessions; off keeps Anthropic's limits. Takes effect after a restart.",
+      keywords: "too large to load in full 50 MiB 32 MiB 256 MiB 192 MiB subagents browser screenshots claude-desktop-extra.jsonc memory",
       ariaLabel: "load large Code sessions in full",
       read: "transcriptLimitsRead",
       write: "transcriptLimitsSet",
@@ -2474,17 +2441,9 @@
 
   function renderWindowControlsRow(panel) {
     return renderToggleRow(panel, {
-      section: "Window",
       title: "Hide window controls",
-      note: "Opens the main window with no frame, no minimize/maximize/close buttons and no drop " +
-        "shadow. On xfwm4 (XFCE), i3 and Awesome, Chromium draws a thin 4px border inside a " +
-        "frameless window, and dropping the controls overlay together with the shadow is the only " +
-        "way from inside the app to be rid of it. The price is the buttons: you minimize, maximize " +
-        "and close through your window manager instead - Alt+F4 and whatever else it binds. " +
-        "Dragging the window edges still resizes as usual. Off keeps the integrated titlebar the " +
-        "official build ships, and the native titlebar below wins over this either way. Takes " +
-        "effect after a restart - the frame is fixed when the window is created, so nothing " +
-        "changes until you quit and reopen Claude Desktop.",
+      note: "Opens the main window without frame, buttons or shadow, which removes the thin border some window managers (XFCE, i3, Awesome) leave. You minimize, maximize and close through your window manager; the native titlebar wins if both are on. Takes effect after a restart.",
+      keywords: "frameless 4px border xfwm4 xfce i3 awesome overlay shadow Alt+F4 integrated titlebar",
       ariaLabel: "open the main window frameless, without window-control buttons or a shadow",
       read: "windowControlsRead",
       write: "windowControlsSet",
@@ -2536,16 +2495,9 @@
     var slider = null;
 
     var row = renderToggleRow(panel, {
-      section: "Window",
       title: "Transparent window",
-      note: "Makes the main window see-through so the desktop - and any blur your compositor " +
-        "(Hyprland, KWin, ...) applies behind it - shows through the sidebar and the chat area. " +
-        "The Transparency slider sets how see-through the surfaces are (higher is more see-through) " +
-        "and applies live. A transparent window has " +
-        "no minimize/maximize/close buttons and no shadow: close and maximize through your window " +
-        "manager (Alt+F4 and friends) and resize by dragging the outermost few pixels of the window. " +
-        "On X11 a compositor must be running, or the window turns black. Needs the integrated " +
-        "titlebar: it does nothing while the native titlebar is on. The switch takes effect after a restart.",
+      note: "Makes the main window see-through so your desktop, or the blur your compositor adds, shows through. It has no window buttons or shadow and needs the integrated titlebar. The switch takes effect after a restart; the Transparency slider applies live.",
+      keywords: "Hyprland KWin blur compositor X11 black sidebar chat area Alt+F4 resize edge",
       ariaLabel: "make the main window transparent",
       read: "windowTransparencyRead",
       write: "windowTransparencySet",
@@ -2695,15 +2647,9 @@
   // happens when it is off - that is the other row's line to write.
   function renderNativeTitlebarRow(panel) {
     return renderToggleRow(panel, {
-      section: "Window",
       title: "Native titlebar",
-      note: "Swaps this app's integrated titlebar for your system's own window frame, so the " +
-        "titlebar, its buttons and its right-click menu are the ones your window manager draws " +
-        "for every other application. It also avoids the thin 4px border xfwm4 (XFCE), i3 and " +
-        "Awesome leave behind, because the window is not frameless at all any more - at the cost " +
-        "of a second bar above the app's own header. This wins over \"Hide window controls\": with " +
-        "both on you get the system frame. Takes effect after a restart - the frame is fixed when " +
-        "the window is created, so nothing changes until you quit and reopen Claude Desktop.",
+      note: "Uses your system's own window frame and titlebar instead of the app's. It adds a second bar above the app's header and wins over \"Hide window controls\". Takes effect after a restart.",
+      keywords: "integrated titlebar xfwm4 xfce i3 awesome 4px border frameless window manager right-click menu",
       ariaLabel: "use the system window frame instead of this app's integrated titlebar",
       read: "nativeTitlebarRead",
       write: "nativeTitlebarSet",
@@ -2870,11 +2816,9 @@
   // whole Community panel (not in WINDOWS_NAV).
   function renderTrayIconRow(panel) {
     return renderToggleRow(panel, {
-      section: "Tray",
       title: "Always use the white tray icon",
-      note: "Off follows the theme like the stock app: a white icon on GNOME and in dark mode, " +
-        "a black one in light mode. On keeps it white, for dark panels with a light Claude theme " +
-        "or bars that report no color scheme. Applies live.",
+      note: "Keeps the tray icon white instead of following the theme. Off follows the theme like the stock app. Applies live.",
+      keywords: "tray glyph dark light panel color scheme black icon GNOME",
       ariaLabel: "always show the white tray icon",
       read: "trayIconRead",
       write: "trayIconSet",
@@ -2898,12 +2842,12 @@
   function renderAutoArchiveGraceRow(panel) {
     var api = window.cdbExtra;
     if (!api || typeof api.autoArchiveGraceRead !== "function" || typeof api.autoArchiveGraceSet !== "function") return;
-    var spec = { section: "Code", title: "Auto-archive delay after a PR merges or closes",
-      note: "Only applies when native PR auto-archive is enabled. The grace starts when the app first confirms " +
-        "the merged or closed PR and persists across restarts. Archives on the next native sweep after it expires " +
-        "(normally within 5 minutes), once all safety checks pass. The separate inactivity rule is unchanged. " +
-        "Changing the delay recalculates from the same start; disabling PR auto-archive cancels it. Applies live." };
-    var head = el("div", "cdbx-sec-h"); head.appendChild(el("span", "cdbx-sec-t", spec.section));
+    var spec = { title: "Auto-archive delay after a PR merges or closes",
+      note: "Waits a chosen time after a PR merges or closes before its Code session is archived. Only used " +
+        "while PR auto-archive is on; in 3P mode the Code session also shows the time left and a Keep this " +
+        "session button. Applies live.",
+      keywords: "grace native sweep 5 minutes safety checks inactivity rule recalculates disabling cancels persists restarts" };
+    var head = el("div", "cdbx-sec-h");
     var host = el("div", "cdbx-list"), row = el("div", "cdbx-row"), main = el("div", "cdbx-row-main");
     main.appendChild(el("div", "cdbx-id", spec.title)); main.appendChild(el("div", "cdbx-note", spec.note));
     var label = el("label", "cdbx-note", "Delay after merged or closed PR confirmation");
@@ -2961,14 +2905,9 @@
   // add_feature_autofix_post_merge.nim read it on every sweep, so it applies live.
   function renderAutoFixMergeReadyRow(panel) {
     return renderToggleRow(panel, {
-      section: "Code",
       title: "Auto-fix notices: ready to merge, comments after merge",
-      note: "For a PR with Auto-fix on, the Code session gets a short notice when GitHub reports it " +
-        "ready to merge (open, checks green, reviews done, no conflicts). After the PR is merged, new " +
-        "comments from the repository's owners, members, collaborators and bots are forwarded as quoted " +
-        "informational notices for up to 7 days. Claude reports them and waits for you - it never merges, " +
-        "turns on auto-merge or replies on GitHub. Costs one GitHub read per Auto-fix PR on each Auto-fix " +
-        "sweep (every minute while the app is focused) and one model turn per notice. Applies live.",
+      note: "Tells the Code session when a PR with Auto-fix on is ready to merge, and passes on new comments after it merges. Claude only reports them and waits for you - it never merges. Costs one GitHub read per Auto-fix PR and one model turn per notice. Applies live.",
+      keywords: "checks green reviews done conflicts owners members collaborators bots quoted informational 7 days auto-merge replies sweep",
       ariaLabel: "Auto-fix notices: ready to merge, comments after merge",
       read: "autoFixMergeReadyRead",
       write: "autoFixMergeReadySet",
@@ -2998,16 +2937,9 @@
   // how many are remembered and forget them, never add one.
   function renderSessionStartAlwaysAllowRow(panel) {
     var row = renderToggleRow(panel, {
-      section: "Code",
       title: "Native dialog with 'Allow always' for starting other sessions",
-      note: "When Claude asks to start another Code session, a native dialog replaces the in-chat card and " +
-        "offers Deny, Allow once and Allow always (Deny is the default; Escape denies). Allow always " +
-        "remembers the approval for that asking project and the displayed local destination only. A different " +
-        "folder asks separately, and an explicit folder is asked again in a new asking session or after an app restart; host, environment, preset, cloud and higher-mode requests keep the in-chat card. Sessions started " +
-        "this way run in this session's permission mode or lower from a prompt Claude wrote; nothing inside " +
-        "them is approved by this. When the app window is hidden or minimized the in-chat card asks instead. " +
-        "Off (the default) leaves Anthropic's in-chat card as shipped; turning it off also forgets every " +
-        "remembered approval. Applies live.",
+      note: "Asks with a system dialog (Deny, Allow once, Allow always) when Claude wants to start another Code session. Off (the default) keeps Anthropic's in-chat card, and turning it off forgets every remembered approval. Applies live.",
+      keywords: "native dialog asking project displayed local destination different folder asks separately permission mode nothing inside host environment preset cloud hidden minimized",
       ariaLabel: "use a native dialog with Allow always for starting other sessions",
       read: "sessionStartAlwaysAllowRead",
       write: "sessionStartAlwaysAllowSet",
@@ -3136,11 +3068,9 @@
   // explicit false takes it away.
   function renderThemePickerRow(panel) {
     return renderToggleRow(panel, {
-      section: "Shortcuts",
       title: "Theme picker",
-      note: "Ctrl+Shift+T opens a searchable gallery of every theme this build knows about. " +
-        "Clicking a card applies it live and saves it; the same chord closes the window again. " +
-        "Applies live - the shortcut reads this switch on every press.",
+      note: "Press Ctrl+Shift+T to open a searchable gallery of themes and apply one with a click. Applies live.",
+      keywords: "shortcut hotkey gallery card palette",
       ariaLabel: "open the theme gallery with Ctrl+Shift+T",
       read: "pickerRead",
       write: "pickerSet",
@@ -3449,23 +3379,35 @@
   // the transparent window, the transcript limits and the non-Anthropic models
   // rows, which are read once at startup.
 
-  var FEATURE_ROWS = [
-    renderDiffViewsRow,
-    renderPanelTabsRow,
-    renderFilesQuickOpenRow,
-    renderCustomModelsRow,
-    renderAllowNonAnthropicModelsRow,
-    renderAutoFixAuthorRow,
-    renderAutoFixMergeReadyRow,
-    renderAutoArchiveGraceRow,
-    renderSessionStartAlwaysAllowRow,
-    renderTranscriptLimitsRow,
-    renderWindowControlsRow,
-    renderNativeTitlebarRow,
-    renderWindowTransparencyRow,
-    renderTrayIconRow,
-    renderThemePickerRow,
-    renderDevToolsRow
+  // Three headlined groups, in this order. A group's `items` are row renderers
+  // or one nested group (the Pull requests subgroup under Code). The headline
+  // replaces what used to be a per-row section label; nothing here changes what
+  // a row does.
+  var FEATURE_GROUPS = [
+    { title: "Code", sub: "Code tab: panels, files, diffs and sessions", items: [
+      renderPanelTabsRow,
+      renderFilesQuickOpenRow,
+      renderDiffViewsRow,
+      renderTranscriptLimitsRow,
+      renderSessionStartAlwaysAllowRow,
+      { title: "Pull requests", sub: "Auto-fix and auto-archive for your GitHub PRs", items: [
+        renderAutoFixAuthorRow,
+        renderAutoFixMergeReadyRow,
+        renderAutoArchiveGraceRow
+      ] }
+    ] },
+    { title: "App and window", sub: "Look and behavior of the app window, tray and theme", items: [
+      renderWindowControlsRow,
+      renderNativeTitlebarRow,
+      renderWindowTransparencyRow,
+      renderTrayIconRow,
+      renderThemePickerRow,
+      renderDevToolsRow
+    ] },
+    { title: "Models and 3P", sub: "Extra models and gateway options", items: [
+      renderCustomModelsRow,
+      renderAllowNonAnthropicModelsRow
+    ] }
   ];
 
   function renderFeatures(panel) {
@@ -3480,12 +3422,32 @@
     panel.appendChild(search);
 
     var rows = [];
-    FEATURE_ROWS.forEach(function (render) {
-      // renderToggleRow answers nothing when the bridge half of a row is missing
-      // (older preload, newer page) - such a row is simply not there to filter.
-      var row = render(panel);
-      if (row) rows.push(row);
-    });
+    // Renders one group into `parent`; answers the node and its rows so the
+    // filter can hide a headline whose rows are all hidden.
+    function buildGroup(parent, group, nested) {
+      var node = el("div", nested ? "cdbx-group cdbx-group-sub" : "cdbx-group");
+      node.appendChild(el("div", nested ? "cdbx-sec-h cdbx-sec-h2" : "cdbx-sec-h", group.title));
+      node.appendChild(el("div", "cdbx-sub", group.sub));
+      parent.appendChild(node);
+      var g = { node: node, rows: [], kids: [] };
+      group.items.forEach(function (item) {
+        if (typeof item !== "function") {
+          var kid = buildGroup(node, item, true);
+          g.kids.push(kid);
+          return;
+        }
+        // renderToggleRow answers nothing when the bridge half of a row is missing
+        // (older preload, newer page) - such a row is simply not there to filter.
+        var row = item(node);
+        if (!row) return;
+        // The group headline stands in for the per-row label.
+        row.head.remove();
+        g.rows.push(row);
+        rows.push(row);
+      });
+      return g;
+    }
+    var groups = FEATURE_GROUPS.map(function (group) { return buildGroup(panel, group, false); });
     // The two Window rows are three mutually exclusive modes and the only rows
     // that outlive a flip, so they are the one pair here that cannot report
     // itself row by row.
@@ -3509,12 +3471,20 @@
       var needle = (filter || "").trim().toLowerCase();
       var shown = 0;
       rows.forEach(function (row) {
-        var hay = (row.spec.section + " " + row.spec.title + " " + row.spec.note).toLowerCase();
+        var hay = (row.spec.title + " " + row.spec.note + " " + (row.spec.keywords || "")).toLowerCase();
         var hit = !needle || hay.indexOf(needle) >= 0;
         row.head.style.display = hit ? "" : "none";
         row.host.style.display = hit ? "" : "none";
         if (hit) shown++;
       });
+      // A headline hides when none of its rows (own or in a subgroup) match.
+      function sync(g) {
+        var any = g.rows.some(function (row) { return row.host.style.display !== "none"; });
+        g.kids.forEach(function (kid) { if (sync(kid)) any = true; });
+        g.node.style.display = any ? "" : "none";
+        return any;
+      }
+      groups.forEach(sync);
       empty.style.display = shown ? "none" : "";
     }
 

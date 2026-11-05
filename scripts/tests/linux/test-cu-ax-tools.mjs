@@ -312,7 +312,8 @@ function loadChunk(ctx, src) {
   const mod = { exports: {} };
   vm.runInContext("(function(exports,require,module){" + src + "\n})", ctx)(
     mod.exports,
-    (id) => (id.startsWith("./") ? coreStub : nodeRequire(id)),
+    // 4.23118.0: the tool-builder chunk requires electron at load (ctx stub).
+    (id) => (id.startsWith("./") ? coreStub : id === "electron" ? ctx.require(id) : nodeRequire(id)),
     mod
   );
   return mod.exports;
@@ -480,7 +481,7 @@ if (patchMissing || !existsSync(stubPath)) {
     const VA_RE =
       /function (?<va>[\w$]+)\(\)\{let (?<loc>[\w$]+)=`\$\{(?<fa>[\w$]+)\(\)\}:\$\{(?<ns>[\w$]+)\.(?<teach>[\w$]+)\(\)\}:\$\{\k<ns>\.(?<adapt>[\w$]+)\(\)\.adaptiveResolution\}(?:\$\{process\.platform==="linux"&&\(globalThis\.__cdbAxKey\?\.\(\)\|\|""\)\+\(globalThis\.__cdbCuConsent\?\.key\?\.\(\)\|\|""\)\|\|""\})?`;\k<loc>!==(?<key>[\w$]+)&&\((?<ma>[\w$]+)=void 0,(?<ga>[\w$]+)=!1,\k<key>=\k<loc>\)\}/;
     const PA_RE =
-      /function (?<pa>[\w$]+)\((?<arg>[\w$]+)\)\{return (?<ha>[\w$]+)=[\w$]+\(\),(?<bns>[\w$]+)\.s\(\{\.\.\.(?<ns>[\w$]+)\.(?<caps>[\w$]+),teachMode:\k<ns>\.(?<teach>[\w$]+)\(\),adaptiveResolution:\k<ns>\.(?<adapt>[\w$]+)\(\)\.adaptiveResolution,appScoped:\k<ha>\?\{supportsRawInput:!0\}:void 0\},\k<ns>\.(?<mode>[\w$]+)\(\),\k<arg>\)\.map\(\(\k<arg>=>\(\{name:\k<arg>\.name,description:\k<arg>\.description\?\?"",inputSchema:\k<arg>\.inputSchema\}\)\)\)\}/;
+      /function (?<pa>[\w$]+)\((?<arg>[\w$]+)\)\{return (?<ha>[\w$]+)=[\w$]+\(\),(?<bns>[\w$]+)\.(?<bm>[\w$]+)\(\{\.\.\.(?<ns>[\w$]+)\.(?<caps>[\w$]+),teachMode:\k<ns>\.(?<teach>[\w$]+)\(\),adaptiveResolution:\k<ns>\.(?<adapt>[\w$]+)\(\)\.adaptiveResolution,appScoped:\k<ha>\?\{supportsRawInput:!0\}:void 0\},\k<ns>\.(?<mode>[\w$]+)\(\),\k<arg>\)\.map\(\(\k<arg>=>\(\{name:\k<arg>\.name,description:\k<arg>\.description\?\?"",inputSchema:\k<arg>\.inputSchema\}\)\)\)\}/;
     const keyRig = (src, ctx, builder) => {
       const va = VA_RE.exec(src);
       const pa = PA_RE.exec(src);
@@ -492,7 +493,7 @@ if (patchMissing || !existsSync(stubPath)) {
       return vm.runInContext(
         `(function(){var ${g.key},${g.ma},${g.ga},${h.ha};function ${g.fa}(){return!1}` +
           `var ${g.ns}={${g.teach}:function(){return!1},${g.adapt}:function(){return{adaptiveResolution:!0}},${h.caps}:${JSON.stringify(LINUX_CAPS)},${h.mode}:function(){return"pixels"}};` +
-          `var ${h.bns}={s:function(){return __keyBuilder.apply(null,arguments)}};${va[0]}${pa[0]}` +
+          `var ${h.bns}={${h.bm}:function(){return __keyBuilder.apply(null,arguments)}};${va[0]}${pa[0]}` +
           `return{va:${g.va},pa:${h.pa},key:function(){return ${g.key}},cached:function(){return ${g.ma}},cache:function(v){${g.ma}=v}}})()`,
         ctx
       );

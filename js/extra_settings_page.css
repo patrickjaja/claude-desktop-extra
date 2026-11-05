@@ -21,11 +21,27 @@
  */
 
 .cdbx-navgroup {
-  background: linear-gradient(90deg, #ff5f6d, #ffa751, #f7e14b, #47d178, #4aa8ff, #a56cf0, #ff5f6d);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+  /* Same first and last stop and a 200% wide ramp: the drift loops seamlessly. */
+  background: linear-gradient(90deg, #f2707a, #f0a463, #e8d765, #62c987, #63a9ee, #a982e6, #f2707a);
+  background-size: 200% 100%;
+  background-position: 0% 50%;
+  color: #c98fd8; /* fallback where background-clip:text is unsupported */
+  animation: cdbx-rainbow 7s linear infinite;
+}
+
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .cdbx-navgroup {
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+}
+
+@keyframes cdbx-rainbow { to { background-position: -200% 50%; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .cdbx-navgroup { animation: none; }
 }
 
 /* Fabricated group header only - the cloned header brings its own metrics. It
@@ -205,6 +221,17 @@
 
 .cdbx-sec-h:first-child {
   margin-top: 2px;
+}
+
+/* Community Features groups: a headline with a one-line subtitle under it, and
+ * the Pull requests subgroup, which only sits a little quieter. */
+.cdbx-group > .cdbx-sec-h + .cdbx-sub {
+  margin: -3px 0 8px;
+}
+
+.cdbx-sec-h2 {
+  margin-top: 13px;
+  opacity: 0.45;
 }
 
 .cdbx-sec-n {

@@ -265,7 +265,7 @@ if (patchMissing || !existsSync(stub)) {
         ctx[mo] = () => !!s.wayland;
         const jxName = /!([\w$]+)\((["'`])4293378213\2\)/.exec(body)[1];
         ctx[jxName] = (id) => (id === "4293378213" ? s.cuFlag !== false : !!s.otherFlags);
-        const qk = /\?!1:([\w$]+)\(\)\?!0:/.exec(body)[1];
+        const qk = /\?!1:([\w$]+)\([^()]*\)\?!0:/.exec(body)[1]; // 4.23118.0: the term takes an options object
         ctx[qk] = () => s.qk !== false;
         if ("announce" in s) ctx.__cdbCuWaylandAnnounce = s.announce;
         vm.createContext(ctx);

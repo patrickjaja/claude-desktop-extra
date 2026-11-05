@@ -422,7 +422,8 @@ async function featuresPanel(featuresItem) {
     const row = author.closest(".cdbx-row"), save = row.querySelector("button");
     ok(author.value === "", "additional trust list defaults empty");
     ok(!!row.querySelector('label[for="cdbx-autofix-authors"]'), "editor has an accessible label");
-    ok(/count as the session's own PRs/.test(row.textContent) && /race checks remain/.test(row.textContent), "editor explains the scope");
+    ok(/^Lets Auto-fix also handle PRs opened by other GitHub users or bots\./.test(row.querySelector(".cdbx-note").textContent) &&
+       /only the signed-in gh user counts/.test(row.textContent), "editor explains the scope in plain words");
     author.value = "github.com/my-app[bot]\nghe.example/human";
     save.click(); save.click();
     await sleep(60);
@@ -450,11 +451,10 @@ async function featuresPanel(featuresItem) {
     ok(tl.getAttribute("aria-checked") === "false", "off by default (opt-in)");
     ok(!tl.disabled, "enabled when the .jsonc does not lock it");
     ok(tlState() === "off - Anthropic's limits", "the off state says Anthropic's limits apply: " + tlState());
-    ok(/browser screenshots/.test(tlNote), "the note names what it is for (long sessions with browser screenshots)");
-    ok(/exactly as Anthropic ships them/.test(tlNote), "the note promises off leaves Anthropic's limits as shipped");
+    ok(/^Opens very large sessions in full/.test(tlNote), "the note leads with what it does for the user");
+    ok(/off keeps Anthropic's limits/.test(tlNote), "the note promises off leaves Anthropic's limits as shipped");
     ok(/Takes effect after a restart/.test(tlNote), "the note says it needs a restart");
-    ok(/by default/.test(tlNote) && /adjustable in claude-desktop-extra\.jsonc/.test(tlNote),
-       "the note says the 256/192 are defaults and can be adjusted in the config file (file only, no GUI field)");
+    ok(!/256|192/.test(tlNote), "the visible note carries no byte figures (they are search keywords)");
     ok(tlNote.length < 700, "the note stays within the length range of the other rows (" + tlNote.length + " chars)");
     ok(!tlRow.querySelector("input"), "no number field in the row: the numbers stay in the file");
 
@@ -488,15 +488,15 @@ async function featuresPanel(featuresItem) {
       const afNote = afRow.querySelector(".cdbx-note").textContent;
       ok(afRow.querySelector(".cdbx-id").textContent === "Auto-fix notices: ready to merge, comments after merge",
          "titled Auto-fix notices: ready to merge, comments after merge");
-      ok(afRow.previousElementSibling === null && afRow.parentElement.previousElementSibling.textContent === "Code",
-         "under its own Code heading");
+      ok(afRow.parentElement.parentElement.firstElementChild.textContent === "Pull requests",
+         "under the Pull requests subheading");
       ok(af.getAttribute("aria-checked") === "false" && !af.disabled, "off by default (opt-in), not locked");
-      ok(/one GitHub read per Auto-fix PR/.test(afNote) && /one model turn per notice/.test(afNote),
+      ok(/^Tells the Code session when a PR with Auto-fix on is ready to merge/.test(afNote) &&
+         /one GitHub read per Auto-fix PR/.test(afNote) && /one model turn per notice/.test(afNote),
          "the note says what it costs: " + afNote);
       ok(/never merges/.test(afNote) && /Applies live/.test(afNote), "the note says it never merges and applies live");
-      ok(/After the PR is merged/.test(afNote) && /owners, members, collaborators and bots/.test(afNote) &&
-         /up to 7 days/.test(afNote) && /replies on GitHub/.test(afNote),
-         "the note covers post-merge comments, who is trusted, the 7-day window and no GitHub replies: " + afNote);
+      ok(/new comments after it merges/.test(afNote) && /never merges/.test(afNote),
+         "the note covers post-merge comments and that it never merges: " + afNote);
       af.click();
       await sleep(60);
       ok((window.__afmrCalls || []).length === 1 && window.__afmrCalls[0] === true,
@@ -545,11 +545,11 @@ async function featuresPanel(featuresItem) {
       const ssNote = ssRow.querySelector(".cdbx-note").textContent;
       ok(ssRow.querySelector(".cdbx-id").textContent === "Native dialog with 'Allow always' for starting other sessions",
          "titled Native dialog with 'Allow always' for starting other sessions");
-      ok(ssRow.parentElement.previousElementSibling.textContent === "Code", "under a Code heading");
+      ok(ssRow.parentElement.parentElement.firstElementChild.textContent === "Code", "directly under the Code group, not Pull requests");
       ok(ss.getAttribute("aria-checked") === "false" && !ss.disabled, "off by default (opt-in), not locked");
-      ok(/asking project and the displayed local destination only/.test(ssNote) && /different folder asks separately/.test(ssNote) && /nothing inside/.test(ssNote) &&
+      ok(/^Asks with a system dialog/.test(ssNote) && /Allow always/.test(ssNote) &&
          /Off \(the default\)/.test(ssNote) && /forgets every/.test(ssNote) && /Applies live/.test(ssNote),
-         "the note states scope, default, switch-off forgets and live: " + ssNote);
+         "the note states the dialog, default, switch-off forgets and live: " + ssNote);
       const forget = Array.from(ssRow.querySelectorAll("button")).find(function (b) { return b.textContent === "Forget remembered approvals"; });
       ok(!!forget && !forget.disabled, "two remembered approvals -> an enabled forget button");
       ok(/2 project\/destination approvals remembered/.test(ssRow.textContent), "the row counts scoped approvals, not distinct projects");
@@ -963,18 +963,50 @@ async function featuresPanel(featuresItem) {
     ok(document.activeElement === box, "the filter has the caret when the panel opens, ready to type into");
     ok(/^Filter \d+ features by name or description$/.test(box.placeholder),
        "which says what it filters: " + box.placeholder);
-    const heads = Array.from(panel.querySelectorAll(".cdbx-sec-h"));
-    const visible = function () {
-      return heads.filter(function (h) { return h.style.display !== "none"; })
-        .map(function (h) { return h.textContent; });
+    // Group headlines: three, in order, with the Pull requests subgroup under Code.
+    const groupNodes = Array.from(panel.querySelectorAll(".cdbx-group"));
+    const topGroups = groupNodes.filter(function (g) { return !g.classList.contains("cdbx-group-sub"); });
+    const gtitle = function (g) { return g.firstElementChild.textContent; };
+    ok(topGroups.map(gtitle).join("|") === "Code|App and window|Models and 3P",
+       "three group headlines in order: " + topGroups.map(gtitle).join("|"));
+    ok(topGroups.map(function (g) { return g.children[1].textContent; }).join("|") ===
+       "Code tab: panels, files, diffs and sessions|Look and behavior of the app window, tray and theme|Extra models and gateway options",
+       "each headline has its one-line subtitle");
+    const subGroup = groupNodes.filter(function (g) { return g.classList.contains("cdbx-group-sub"); });
+    ok(subGroup.length === 1 && gtitle(subGroup[0]) === "Pull requests" && subGroup[0].parentElement === topGroups[0] &&
+       subGroup[0].children[1].textContent === "Auto-fix and auto-archive for your GitHub PRs",
+       "Pull requests is the one subgroup, inside Code, with its subtitle");
+    const titlesIn = function (g, own) {
+      return Array.from(g.querySelectorAll(".cdbx-row .cdbx-id")).filter(function (n) {
+        return !own || n.closest(".cdbx-group") === g;
+      }).map(function (n) { return n.textContent; });
     };
-    ok(visible().length === heads.length, "every row is visible before typing");
+    ok(titlesIn(topGroups[0], true).join("|") === "Panel tabs|Files quick open|Diff view modes|Load large sessions in full|Native dialog with 'Allow always' for starting other sessions",
+       "Code rows in order, the session dialog before the subgroup: " + titlesIn(topGroups[0], true).join("|"));
+    ok(titlesIn(subGroup[0]).join("|") === "Trusted Auto-fix PR authors|Auto-fix notices: ready to merge, comments after merge|Auto-archive delay after a PR merges or closes",
+       "Pull requests rows: " + titlesIn(subGroup[0]).join("|"));
+    // The harness bridge has no tray or developer-tools halves, so those two rows are skipped here.
+    const appOrder = ["Hide window controls", "Native titlebar", "Transparent window", "Always use the white tray icon", "Theme picker", "Developer tools"];
+    ok(titlesIn(topGroups[1]).join("|") === appOrder.filter(function (t) { return titlesIn(topGroups[1]).indexOf(t) >= 0; }).join("|") &&
+       titlesIn(topGroups[1]).length >= 4,
+       "App and window rows in order: " + titlesIn(topGroups[1]).join("|"));
+    ok(titlesIn(topGroups[2]).join("|") === "Custom models|Allow non-Anthropic models",
+       "Models and 3P rows: " + titlesIn(topGroups[2]).join("|"));
+    ok(!panel.querySelector(".cdbx-row ~ .cdbx-sec-h, .cdbx-list > .cdbx-sec-h") &&
+       Array.from(panel.querySelectorAll(".cdbx-sec-t")).length === 0,
+       "no per-row section label is left");
+
+    const heads = groupNodes;
+    const visible = function () {
+      return heads.filter(function (h) { return h.style.display !== "none"; }).map(gtitle);
+    };
+    ok(visible().length === heads.length, "every group is visible before typing");
     // The trusted-authors row is a list editor, not a switch, so count switches rather than heads.
     const switchesBefore = panel.querySelectorAll(".cdbx-switch").length;
 
     await type("panel tabs");
-    ok(visible().join(",") === "Layout",
-       "a title match leaves only that section: " + visible().join(","));
+    ok(visible().join(",") === "Code",
+       "a title match leaves only its group: " + visible().join(","));
     ok(!!panel.querySelector(".cdbx-row .cdbx-id"), "the matching row is still in the DOM");
     ok(panel.querySelectorAll(".cdbx-switch").length === switchesBefore,
        "no row was re-rendered - all switches survive the filter (" +
@@ -984,21 +1016,29 @@ async function featuresPanel(featuresItem) {
        JSON.stringify(window.__panelTabsCalls) + JSON.stringify(window.__pickerCalls));
 
     await type("ctrl+shift+t");
-    ok(visible().join(",") === "Shortcuts",
+    ok(visible().join(",") === "App and window",
        "a note match works too: " + visible().join(","));
 
-    await type("source control");
-    ok(visible().join(",") === "Source control", "so does a section match: " + visible().join(","));
+    // Words that only live in a row's note or keywords still find it.
+    await type("gallery");
+    ok(visible().join(",") === "App and window", "a word only in the note or keywords finds its row: " + visible().join(","));
+    await type("keep this session");
+    ok(visible().join(",") === "Code,Pull requests", "a word only in the archive-delay note finds it, under Code and Pull requests: " + visible().join(","));
+    await type("deepseek");
+    ok(visible().join(",") === "Models and 3P",
+       "a word in the model rows opens only Models and 3P: " + visible().join(","));
+    await type("pull requests");
+    ok(visible().join(",") === "", "a headline alone is not searchable text: " + visible().join(","));
 
     await type("no such feature");
-    ok(visible().length === 0, "a needle nothing matches hides every row");
+    ok(visible().length === 0, "a needle nothing matches hides every row and every group headline");
     const empty = panel.querySelector(".cdbx-empty");
     ok(!!empty && empty.style.display !== "none" &&
        empty.textContent === "No feature matches that filter.",
        "and the empty state says so");
 
     await type("");
-    ok(visible().length === heads.length, "clearing the filter brings every row back");
+    ok(visible().length === heads.length, "clearing the filter brings every group and row back");
     ok(panel.querySelector(".cdbx-empty").style.display === "none", "and hides the empty state");
   }
 

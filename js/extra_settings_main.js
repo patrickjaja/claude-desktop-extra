@@ -956,6 +956,9 @@
     { key: "disableBypassPermissionsMode", kind: "bool", group: "sandbox", scope: "3p",
       label: "Disable bypass permissions mode",
       note: "Removes the bypass permissions mode from Code sessions and Cowork tasks, so Claude always follows the permission policy (available since v1.46388.1)." },
+    { key: "allowManagedHooksOnly", kind: "bool", group: "sandbox", scope: "3p",
+      label: "Allow managed hooks only",
+      note: "Locks Claude Code to hooks from managed settings (the host hands the lock to Claude Code on self-hosted sessions); added in v4.23118.0, availableInVersion @next." },
     { key: "disableDesktopLocalSessions", kind: "bool", group: "sandbox", scope: "3p",
       label: "Disable local Code sessions",
       note: "Code sessions run only on SSH hosts, never on this computer; without an SSH host allowlist Code may have nowhere to start a session (available since v2.42304.0)." },
@@ -1061,8 +1064,6 @@
       note: "A claude.ai connector (remote MCP) OAuth sign-in completes in the system browser instead of the app finishing it from a claude:// link; applies from the next launch." },
 
     // --- plugins ------------------------------------------------------------
-    { key: "organizationPluginsUrl", kind: "text", group: "plugins", scope: "3p",
-      label: "Organization plugins endpoint" },
     { key: "allowedPluginMarketplaces", kind: "json", group: "plugins", scope: "3p",
       label: "Allowed plugin marketplaces" },
     { key: "orgPluginSettings", kind: "json", group: "plugins", scope: "3p",

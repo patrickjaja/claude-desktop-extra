@@ -147,20 +147,56 @@ try {
     assert.deepEqual([await byNumber(bot, "github.com", null), await branch(bot, gh, null), await sha(bot, gh, null)], [undefined, undefined, undefined], "no login read stays unknown");
     assert.equal(await discoverSha(pr("project-app[bot]", "fork/repo")), false, "fork PRs still need the user's own fork");
   }
-  async function exercise(source, label, armSource) {
+  // Free constants the extracted upstream code references (renamed on every
+  // re-minify): on a ReferenceError, define the name from its `X=<literal>`
+  // definition in the real chunk (`realChunk`), then retry. Never hardcoded.
+  let realChunk = null;
+  function defineFree(ctx, err) {
+    const name = /^([\w$]+) is not defined$/.exec(err?.message || "")?.[1];
+    if (!name || !realChunk || name in ctx) throw err;
+    const esc = name.replace(/\$/g, "\\$");
+    const defs = [...realChunk.matchAll(new RegExp(`(?:^|[,;{}\\s])${esc}=(\\d[\\w.+]*|new Map|new Set|"[^"]*"|/[^/\\n]+/[a-z]*)(?=[,;}])`, "g"))].map(x => x[1]);
+    // 1-char names are chunk-local or imports (ambiguous across scopes): never take a literal for those.
+    if (defs.length && name.length > 1) { vm.runInContext(`globalThis[${JSON.stringify(name)}]=(${defs[0]})`, ctx); return; }
+    // A helper function: lift its source (brace-balanced) from the real bundle.
+    const fm = new RegExp(`function ${esc}\\([^)]*\\)\\{`).exec(realChunk);
+    if (fm) {
+      let depth = 1, i = fm.index + fm[0].length;
+      for (; i < realChunk.length && depth; i++) depth += realChunk[i] === "{" ? 1 : realChunk[i] === "}" ? -1 : 0;
+      vm.runInContext(realChunk.slice(fm.index, i), ctx);
+      return;
+    }
+    // Otherwise an imported namespace (`G=require("./index.chunk-...")`): identity stubs, except
+    // the PR-open predicate the module exports as `.n` (open and not dismissed).
+    vm.runInContext(`globalThis[${JSON.stringify(name)}]=new Proxy({}, {get:(_, k)=>k==="n"?(p=>p.state==="OPEN"&&!p.dismissed):(x=>x)})`, ctx);
+  }
+  const heal = (ctx, fn) => {
+    for (let i = 0; i < 20; i++) {
+      try { return fn(); } catch (e) { defineFree(ctx, e); }
+    }
+    throw new Error("too many free constants");
+  };
+  const healAsync = async (ctx, fn) => {
+    for (let i = 0; i < 20; i++) {
+      try { return await fn(); } catch (e) { defineFree(ctx, e); }
+    }
+    throw new Error("too many free constants");
+  };
+  async function exercise(source, label, armSource, judgeName = "dd") {
     const patched = patch(source, label + ".js");
     await checkOwnership(patched, label);
     let enabled = false;
-    const ctx = vm.createContext({ Fd: 300000, Md: 600000,
+    // The fixture needs its stubs; the real release resolves its free names from the bundle.
+    const ctx = vm.createContext(realChunk ? {} : { Fd: 300000, Md: 600000,
       t: { jJ() {}, pa: () => false }, K: { n: p => p.state === "OPEN" && !p.dismissed },
       ad: (a, b) => a.repo === b.repo && a.prNumber === b.prNumber,
       Wu: r => r.host || "github.com", Ku: () => "key", Gu: () => "key" });
-    vm.runInContext(patched + ";globalThis.Manager=Manager;globalThis.judge=dd;", ctx);
+    vm.runInContext(patched + ";globalThis.Manager=Manager;globalThis.judge=" + judgeName + ";", ctx);
     const pr = { success: true, author: "project-app[bot]", createdAt: new Date().toISOString() };
     const login = { login: "human", failed: false };
     const origins = [{ hostname: "github.com", owner: "org", name: "repo" }];
     const binding = { host: "github.com", repo: "org/repo" };
-    const judge = (p = pr, l = login, o = origins, b = binding) => ctx.judge(p, l, o, b, Date.now(), Date.now() - 60000);
+    const judge = (p = pr, l = login, o = origins, b = binding) => heal(ctx, () => ctx.judge(p, l, o, b, Date.now(), Date.now() - 60000));
     assert.equal(judge(), "not_author", "missing helper remains safe");
     ctx.__cdbAutoFixAuthorAllowed = (author, host) => enabled && author.toLowerCase() === "project-app[bot]" && host.toLowerCase() === "github.com";
     assert.equal(judge(), "not_author");
@@ -185,7 +221,7 @@ try {
     let refusal, state, writes, concurrent;
     const m = new ctx.Manager();
     m.config = { claudeCodeRunsHere: () => true };
-    m.autoFixWrites = new Map(); m.prStateCache = new Map();
+    let writeSeen = false; m.autoFixWrites = Object.assign(new Map(), { get: () => (writeSeen ? 1 : undefined) }); m.prStateCache = new Map();
     m.storedAutoFix = () => state;
     m.autoFixRefusedToModel = () => refusal;
     m.readGhLogin = async () => login;
@@ -193,7 +229,7 @@ try {
     m.writeBoundPrAutoFix = (...args) => { writes.push(args); };
     async function run(expected) {
       writes = [];
-      assert.equal(await m.enableAutoFixForModel("session", "org/repo", 42, "github.com"), expected);
+      assert.equal(await healAsync(ctx, () => m.enableAutoFixForModel("session", "org/repo", 42, "github.com")), expected);
       assert.equal(writes.length, expected === undefined ? 1 : 0);
       if (writes.length) assert.deepEqual(writes[0], ["session", "org/repo", 42, true, "model", "github.com"]);
     }
@@ -212,7 +248,7 @@ try {
     m.readGhLogin = async () => { throw Error("unreadable"); }; await run("unreadable");
     m.readGhLogin = async () => login;
     concurrent = () => { refusal = "not_own"; }; await run("not_own"); refusal = undefined;
-    concurrent = () => { m.autoFixWrites.set("key", 1); }; await run("changed");
+    concurrent = () => { writeSeen = true; }; await run("changed"); writeSeen = false;
     concurrent = () => { state = false; }; await run("changed"); state = undefined;
     concurrent = () => { enabled = false; }; await run("not_author");
     if (armSource) {
@@ -227,7 +263,7 @@ try {
         held = { ...binding, prNumber: 42, branch: "feature", own: true, state: "OPEN" };
         session = { prs: [held], autoFixOwnPrs: true, autoFixOwnPrsOrigin: origins[0] };
         count = 0; duringRead = whileReading; change();
-        await m.armOwnCreate("session", held);
+        await healAsync(ctx, () => m.armOwnCreate("session", held));
         assert.equal(count, expected);
       }
       enabled = false; await arm(0);
@@ -269,7 +305,8 @@ try {
     const byNumber = chunk.match(/async getPrStateByNumberUncached\([^]*?\}(?=mergeQueueAwareTtl\()/)?.[0];
     const discovery = chunk.match(/async getPrStateForBranchUncached\([^]*?\}(?=prCacheKey\()/)?.[0];
     assert.ok(byNumber && discovery?.includes("async discoverPrByHeadSha("), "real ownership methods retain their audited shapes");
-    await exercise(`${match}\n${helper}\nclass Manager {${arm} ${method} ${byNumber} ${discovery}}`.replaceAll(matchFn + "(", "ld(").replaceAll(judgeFn + "(", "dd("), "real-release", arm);
+    realChunk = chunk;
+    await exercise(`${match}\n${helper}\nclass Manager {${arm} ${method} ${byNumber} ${discovery}}`.replaceAll(matchFn + "(", "__cdbMatch(").replaceAll(judgeFn + "(", "__cdbJudge("), "real-release", arm, "__cdbJudge");
   } else console.log("SKIP pristine release check: tmp/app.asar.contents unavailable");
   console.log("PASS Auto-fix author opt-in");
 } finally { rmSync(dir, { recursive: true, force: true }); }

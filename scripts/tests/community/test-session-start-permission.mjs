@@ -10,7 +10,7 @@
 // 2. Helper: switch first, scope rules, window rules, fail directions.
 // 3. Compiled patch on a synthetic staged concat (split markers, a namespace
 //    chunk) incl. the layout assertions and idempotency.
-// 4. When tmp/app.asar.contents exists: the REAL 4.16336.0 broker method,
+// 4. When tmp/app.asar.contents exists: the REAL release broker method,
 //    start gate and rule matcher, patched by the compiled binary from a full
 //    staged concat, driven through one eligible ordinary start_session ask.
 // 5. Diagnostics: every refused start_session ask logs exactly one
@@ -348,9 +348,9 @@ try {
       if(s?.forcedDenial)return {behavior:"deny"};
       let j=(0,G.randomUUID)(),M=J(s?.toolUseID),N=a?.length;
       this.fallbacks++;return {behavior:"native",input:i};
-    }async firstUseSidePlace(e,r,i){return}async forceAskVerdict(e,r,i){return{cause:"ordinary"}}internalNameProvenanceVerdict(e,n){return}
+    }async firstUseSidePlace(e,r,i){if(!(r!==""||t.qn(e,(e=>this.config.getSession(e)))))try{return}catch(e){return}}async forceAskVerdict(e,r,i){return{cause:"ordinary"}}internalNameProvenanceVerdict(e,n){return}
   };globalThis.Broker=Broker;
-  function hostPolicyReferences(c,r,e){return t._K(c?.query,r).then(()=>t.hm(r)||t.qn(e,()=>c))}
+  function hostPolicyReferences(c,r,e,a,ge){if(a!=="ordinary")return t.hm(e)?"org_requires_approval":0;return ge??=t._K(c?.query,r).then((e=>{let n=e;return t.jJ("desktop_ccd_own_ask_rules_read",{covers:n})}))}
   function nativeStartGate(e,r,i,a,o,c){if(!startTools.has(e)||t.qn(i,a))return!1;let l=a(i);return policy.continued(l)||remote(l,e,r)||count(l,o,c)>=10}`;
   const apiPart = `function apiTF(e){return!1}async function apiK(e,t){return flags.ownAsk}function apiHm(e){return flags.ask}function apiQn(e,t){return flags.unattended}
   var mainWin=void 0;function makeMain(e){return mainWin=new u.BrowserWindow(e),zi(mainWin.webContents,Li.MAIN_WINDOW),mainWin}globalThis.makeMain=makeMain;
@@ -571,7 +571,10 @@ try {
       ["export moved out of the namespace chunk", original.replace('Object.defineProperty(exports,"hm",{enumerable:!0,get:function(){return apiHm}});', "").replace("nativeStartGate(", 'nativeStartGate(){}Object.defineProperty(exports,"hm",{enumerable:!0,get:function(){return apiHm}});function x(')],
       ["Xmt is not the main window", original.replace("Li.MAIN_WINDOW", "Li.QUICK_ENTRY")],
       ["start gate in another chunk", `"use strict";` + SPLIT("index.chunk-broker.js") + brokerPart.replace(/function nativeStartGate[^]*$/, "") + SPLIT("index.chunk-api.js") + apiPart + brokerPart.match(/function nativeStartGate[^]*$/)[0]],
-      ["broker method missing", original.replace("async forceAskVerdict(", "async forceAskVerdictX(")]
+      ["broker method missing", original.replace("async forceAskVerdict(", "async forceAskVerdictX(")],
+      ["org-policy call site missing", original.replace('"org_requires_approval"', '"org_other"')],
+      ["own-ask-rules call site missing", original.replace('"desktop_ccd_own_ask_rules_read"', '"desktop_other"')],
+      ["unattended call site missing", original.replace("||t.qn(e,(e=>this.config", "||t.qx(e,(e=>this.config")]
     ];
     for (const [label, text] of broken) {
       fs.writeFileSync(fixture, text);
@@ -611,7 +614,14 @@ try {
     // minified name is recovered from the release, not assumed.
     const method = brokerSrc.match(/async handleToolPermission\([\w$]+(?:,[\w$]+){5}\)\{let [\w$]+=this\.config\.getSession\([^]*?\}(?=respondToToolPermission\()/)?.[0];
     assert.ok(method && method.includes("/*__CDB_SESSION_START_PERMISSION__*/"), "real patched broker method found");
-    const api = method.match(/\.viaHostCliLauncher===!0\|\|([\w$]+)\.TF\(/)[1];
+    // Namespace export names are re-minified per release: resolve each from
+    // the same upstream call site the patch uses.
+    const [, api, tfName] = method.match(/\.viaHostCliLauncher===!0\|\|([\w$]+)\.([\w$]+)\(/);
+    const site = re => { const m = brokerSrc.match(re); assert.ok(m, "real call site " + re); return m[1]; };
+    const hmName = site(/if\([\w$]+!=="ordinary"\)return [\w$]+\.([\w$]+)\([\w$]+\)\?"org_requires_approval":/);
+    const kName = site(/\?\?=[\w$]+\.([\w$]+)\([\w$]+\?\.query,[\w$]+\)\.then\(\([\w$]+=>\{[^{}]{0,100}"desktop_ccd_own_ask_rules_read",/);
+    const qnName = site(/\}async firstUseSidePlace\([\w$]+,[\w$]+,[\w$]+\)\{if\(!\([^{}]*?\|\|[\w$]+\.([\w$]+)\([\w$]+,\([\w$]+=>this\.config\.getSession\(/);
+    const planNs = method.match(/permissionMode!==[\w$]+\.([\w$]+)\.Plan/)[1];
     const uuidNs = method.match(/=\(0,([\w$]+)\.randomUUID\)\(\)/)[1];
     const identity = method.match(/([\w$]+)=([\w$]+)\(\1\),[\w$]+&&[\w$]+\?\.length&&this\.askFirstSessionApprovals/)[2];
     const gate = brokerSrc.match(/function ([\w$]+)\([\w$]+,[\w$]+,[\w$]+,[\w$]+,[\w$]+,[\w$]+\)\{if\(!([\w$]+)\.has\([\w$]+\)[^{}]*;return [\w$]+\.[\w$]+\([\w$]+\)\|\|[\w$]+\([\w$]+,[\w$]+,[\w$]+\)\|\|[\w$]+\([\w$]+,[\w$]+,[\w$]+\)>=10\}/);
@@ -622,13 +632,18 @@ try {
     assert.ok(matcher, "real rule matcher found");
     const matcherExport = apiSrc.match(new RegExp(`"([\\w$]+)",\\{enumerable:!0,get:function\\(\\)\\{return ${matcher[2].replace(/\$/g, "\\$")}\\}\\}`))[1];
     assert.ok(method.includes(`${api}.${matcherExport}(`), "the hook calls the real matcher export");
+    const mainVar = apiSrc.match(/(?:^|[^\w$.])([\w$]+)=new [\w$]+\.BrowserWindow\([\w$]+\),[\w$]+\(\1\.webContents,[\w$]+\.MAIN_WINDOW\)/)[1];
+    const mainExport = apiSrc.match(new RegExp(`"([\\w$]+)",\\{enumerable:!0,get:function\\(\\)\\{return ${mainVar.replace(/\$/g, "\\$")}\\}\\}`))[1];
+    for (const n of [tfName, hmName, kName, qnName]) assert.ok(method.includes(`${api}.${n}(`), "the hook calls " + n);
+    assert.ok(method.includes(`${api}.${mainExport}`), "the hook parents the dialog to the MAIN_WINDOW export");
 
     const stub = new Proxy(function () {}, { get: (t, k) => (k === "then" || typeof k === "symbol") ? undefined : stub, apply: () => undefined });
     const soft = obj => new Proxy(obj, { get: (t, k) => (k in t ? t[k] : (k === "then" || typeof k === "symbol") ? undefined : stub) });
     const realWin = new FakeWin();
     let mainWin = realWin;
-    const nsOverrides = { TF: () => false, hm: () => false, qn: () => false, _K: async () => false, get Xmt() { return mainWin; },
-      Vit: { Plan: "plan", Auto: "auto", Bypass: "bypassPermissions" } };
+    const nsOverrides = { [tfName]: () => false, [hmName]: () => false, [qnName]: () => false, [kName]: async () => false,
+      [planNs]: { Plan: "plan", Auto: "auto", Bypass: "bypassPermissions" } };
+    Object.defineProperty(nsOverrides, mainExport, { get: () => mainWin });
     const passthrough = new Set(["Promise", "Object", "Array", "JSON", "Date", "Error", "TypeError", "Set", "Map", "WeakMap", "String", "Number",
       "Boolean", "Symbol", "Math", "RegExp", "undefined", "NaN", "Infinity", "globalThis", "process", "require", "isFinite", "parseInt", "Reflect"]);
     const explicit = { [api]: soft(nsOverrides), [uuidNs]: { randomUUID: () => "req-" + Math.random() }, [identity]: x => x,
@@ -669,17 +684,17 @@ try {
       }
     });
     const ask = (data = input, options = {}) => brokerThis.handleToolPermission("real-session", START, data, undefined, undefined, options);
-    await test("real 4.16336.0: switch off -> upstream card sink", async () => {
+    await test("real release: switch off -> upstream card sink", async () => {
       assert.equal(R.enabled(), false);
       assert.equal((await ask()).behavior, "card"); assert.equal(cards.at(-1).toolName, START); assert.equal(realCalls.length, 0);
     });
-    await test("real 4.16336.0: switch on -> dialog parented to Xmt, Deny default; Deny denies", async () => {
+    await test("real release: switch on -> dialog parented to Xmt, Deny default; Deny denies", async () => {
       ipc(R.handlers, "cdb-session-start:set", true);
       dialogAnswer = async () => ({ response: 0 });
       assert.equal((await ask()).behavior, "deny");
       assert.equal(realCalls.at(-1).w, realWin); assert.equal(realCalls.at(-1).options.defaultId, 0); assert.equal(realCalls.at(-1).options.cancelId, 0);
     });
-    await test("real 4.16336.0: Allow always stores the project key; the next ask in it is auto-allowed", async () => {
+    await test("real release: Allow always stores the project key; the next ask in it is auto-allowed", async () => {
       dialogAnswer = async () => ({ response: 2 });
       const res = await ask(); assert.equal(res.behavior, "allow"); assert.equal(res.updatedInput, input);
       assert.equal(R.store.has(KEY), true);
@@ -687,7 +702,7 @@ try {
       dialogAnswer = async () => { throw Error("unexpected dialog"); };
       assert.equal((await ask()).behavior, "allow"); assert.equal(realCalls.length, n);
     });
-    await test("real 4.16336.0: explicit local cwd names the directory and preserves native first-use consent", async () => {
+    await test("real release: explicit local cwd names the directory and preserves native first-use consent", async () => {
       const data = { ...input, cwd: destinationA, use_worktree: false };
       const place = { key: "native-place", sentence: "Claude wants to start in a new local folder." };
       target.firstUseSidePlace = async () => place;
@@ -700,9 +715,9 @@ try {
       assert.ok(realCalls.at(-1).options.detail.includes(place.sentence));
       assert.equal(R.store.has(JSON.stringify([KEY, destinationA])), false, "Allow once writes no start grant");
       // Even a matching first-use sentence cannot outrank an external ask/hook.
-      nsOverrides._K = async () => true;
+      nsOverrides[kName] = async () => true;
       assert.equal((await ask(data, options)).behavior, "card");
-      nsOverrides._K = async () => false;
+      nsOverrides[kName] = async () => false;
       assert.equal((await ask(data, { ...options, decisionReason: "different mandatory reason" })).behavior, "card");
       target.firstUseSidePlace = async () => undefined;
       dialogAnswer = async () => ({ response: 2 });
@@ -710,7 +725,7 @@ try {
       assert.equal(R.store.has(JSON.stringify([KEY, destinationA])), true);
       assert.equal((await ask({ ...data, cwd: path.join(dir, "missing-directory") })).behavior, "card");
     });
-    await test("real 4.16336.0: Manual-mode ordinary ask for a new explicit folder reaches the dialog", async () => {
+    await test("real release: Manual-mode ordinary ask for a new explicit folder reaches the dialog", async () => {
       R.store.forget(); realDiag.length = 0;
       const data = { ...input, cwd: destinationB, use_worktree: false };
       const place = { key: "native-place-b", sentence: "Claude wants to start a session in a new folder on this computer." };
@@ -746,14 +761,14 @@ try {
       ipc(R.handlers, "cdb-session-start:set", true);
       assert.deepEqual(realDiag, [], "switch off logs nothing");
     });
-    await test("real 4.16336.0: another project -> dialog", async () => {
+    await test("real release: another project -> dialog", async () => {
       realSession.originCwd = "/home/u/other";
       dialogAnswer = async () => ({ response: 1 });
       const n = realCalls.length;
       assert.equal((await ask()).behavior, "allow"); assert.equal(realCalls.length, n + 1);
       realSession.originCwd = "/home/u/proj";
     });
-    await test("real 4.16336.0: dialog throws -> card; no visible window -> card", async () => {
+    await test("real release: dialog throws -> card; no visible window -> card", async () => {
       realSession.originCwd = "/home/u/third";
       dialogAnswer = async () => { throw Error("no dialog"); };
       assert.equal((await ask()).behavior, "card");
@@ -764,7 +779,7 @@ try {
       assert.equal((await ask()).behavior, "card"); mainWin = realWin;
       realSession.originCwd = "/home/u/proj";
     });
-    await test("real 4.16336.0: switch turned off -> card again and grants cleared", async () => {
+    await test("real release: switch turned off -> card again and grants cleared", async () => {
       ipc(R.handlers, "cdb-session-start:set", false);
       assert.equal((await ask()).behavior, "card");
       ipc(R.handlers, "cdb-session-start:set", true);

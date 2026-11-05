@@ -250,7 +250,6 @@ The quickstart above is intentionally minimal. Below is a **feature-complete** g
   "managedMcpServers": [
     { "name": "atlassian-rovo", "transport": "http", "url": "https://mcp.atlassian.com/v1/mcp/authv2" }
   ],
-  "organizationPluginsUrl": "https://plugins.acme.example/registry",  // org plugin/skill registry
   "isDesktopExtensionEnabled": true,
   "isDesktopExtensionSignatureRequired": true,    // only load signed extensions
 

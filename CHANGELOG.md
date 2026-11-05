@@ -4,6 +4,15 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-05
 
+### Claude Desktop 4.23118.0
+
+- Updated to upstream 4.23118.0 (Electron 44.9.3). Re-fitted four patches to the new minified bundle: Computer Use's executor injection (upstream's macOS executor now takes an options object), the session-start dialog, the auto-archive delay and the renderer-gone log. The session-start and auto-archive patches now take upstream's function names from upstream's own call sites, so a rename no longer breaks them.
+- Extra -> Deployment lists the new managed setting `allowManagedHooksOnly`; `organizationPluginsUrl` is gone upstream and was removed from the list. The GrowthBook override catalog covers the 777 flags of this version.
+
+### Community Features grouped by where they apply
+
+- Settings -> Extra -> Community Features now groups its rows under **Code** (with a **Pull requests** subgroup), **App and window** and **Models and 3P**. Each row starts with one sentence on what it does; search still matches every detail. The **Extra** headline in the settings sidebar now has a slowly moving rainbow (static when the system asks for reduced motion).
+
 ### PR auto-archive delay: remaining time and keep button in 3P mode (thanks @alexx-ftw, #316)
 
 - In 3P mode, with a nonzero PR auto-archive delay, a line below upstream's auto-archive hold notice shows the time left on a merged or closed PR's delay, and the session rail offers **Keep this session**, which turns off upstream's per-session "Auto-archive on merge or close". The delay itself works in both 1P and 3P mode. With the delay at Immediately, upstream's UI is unchanged.
