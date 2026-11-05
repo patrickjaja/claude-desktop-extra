@@ -4,9 +4,9 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-05
 
-### PR auto-archive delay visibility
+### PR auto-archive delay: remaining time and keep button in 3P mode (thanks @alexx-ftw, #316)
 
-- When a nonzero PR auto-archive delay is configured, the Code session notice shows its remaining grace and the session rail offers a keep button. Keeping changes only that session's native PR auto-archive setting; safety holds, sweeps and the separate inactivity rule remain unchanged.
+- In 3P mode, with a nonzero PR auto-archive delay, a line below upstream's auto-archive hold notice shows the time left on a merged or closed PR's delay, and the session rail offers **Keep this session**, which turns off upstream's per-session "Auto-archive on merge or close". The delay itself works in both 1P and 3P mode. With the delay at Immediately, upstream's UI is unchanged.
 
 ### Clearer patch placement guidance and corrected Auto-fix notice docs (thanks @alexx-ftw, #315)
 

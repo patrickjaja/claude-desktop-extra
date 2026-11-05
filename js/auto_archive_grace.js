@@ -83,7 +83,9 @@
     // A read-only UI projection of the same ledger and sweep snapshot. It must
     // never start a clock, trigger a sweep, or claim a guaranteed archive time.
     async status(id) {
-      const delay = minutes();
+      // A fresh settings read, not the sweep snapshot: the display follows the
+      // configured delay as soon as the renderer asks again.
+      const delay = readMinutes();
       if (delay === 0) return { ok: true, active: false };
       if (!validMinutes(delay)) return { ok: false, error: "Invalid archive delay" };
       const session = await engine.sessionManager.getSession(id);

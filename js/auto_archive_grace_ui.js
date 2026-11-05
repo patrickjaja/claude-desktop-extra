@@ -1,59 +1,90 @@
-// Embedded in the ion renderer by the community archive-grace patch.
-// Dependencies are resolved from native anchors, never from private React state.
-function __cdbArchiveGraceView({sessionRef, children, rail = false}) {
+// Embedded in the ion renderer by patches/community/add_feature_auto_archive_grace_ion.nim,
+// once into the chunk with upstream's auto-archive hold notice and once into
+// the chunk with the session rail. The __cdb* placeholders are replaced with
+// each chunk's own local names for the same React exports, resolved from
+// native anchors, never from private React state:
+//   __cdbReactState / __cdbReactEffect  useState / useEffect
+//   __cdbJsxOne / __cdbJsxMany / __cdbFragment  jsx / jsxs / Fragment
+// Nothing here archives, sweeps or reads GitHub; it only displays what the
+// main process reports and writes upstream's own per-session setting.
+const __cdbArchiveGracePollMs = 30000;
+function __cdbArchiveGraceRemaining(deadline, now) {
+  const minutes = Math.ceil((deadline - now) / 60000);
+  if (minutes < 60) return minutes + " min";
+  const hours = Math.floor(minutes / 60), rest = minutes % 60;
+  return rest === 0 ? hours + " h" : hours + " h " + rest + " min";
+}
+function __cdbArchiveGraceView({sessionRef, hold, lineClass, children, rail = false}) {
   const [snapshot, setSnapshot] = __cdbReactState(null);
   const [now, setNow] = __cdbReactState(Date.now());
   const [saving, setSaving] = __cdbReactState(false);
   const [error, setError] = __cdbReactState("");
-  const generation = __cdbReactRef(0);
+  const [kept, setKept] = __cdbReactState(null);
+  const id = sessionRef?.type === "local" ? sessionRef.id : undefined;
+  const holdKey = hold ? String(hold.reason) + "/" + String(hold.detail ?? "") : "";
   __cdbReactEffect(() => {
-    let disposed = false, busy = false;
+    let disposed = false, busy = false, poll = null;
     setSnapshot(null);
     setError("");
-    async function refresh() {
-      if (busy || generation.current % 2 !== 0 || sessionRef?.type !== "local") return;
+    const stop = () => { if (poll !== null) { clearInterval(poll); poll = null; } };
+    async function read() {
+      if (busy) return;
       busy = true;
-      const requestGeneration = generation.current;
-      try {
-        const next = await globalThis.cdbExtra?.autoArchiveGraceRead?.(sessionRef.id);
-        if (!disposed && requestGeneration === generation.current) { setSnapshot(next ? { ...next, sessionId: sessionRef.id } : null); setNow(Date.now()); }
-      } catch (_) {
-        if (!disposed && requestGeneration === generation.current) setSnapshot(null);
-      } finally { busy = false; }
+      let next = null;
+      try { next = (await globalThis.cdbExtra.autoArchiveGraceRead(id)) || null; }
+      catch (_) { next = null; }
+      finally { busy = false; }
+      if (disposed) return;
+      // Tagged with its session, so a render for another session never uses it.
+      setSnapshot(next ? { ...next, sessionId: id } : null);
+      setNow(Date.now());
+      // Poll only while the delay is set and PR auto-archive applies to this
+      // session. With the delay at Immediately, the rule off, or no answer,
+      // this single read is all that runs.
+      if (next?.ok === true && next.active === true && next.enabled === true) {
+        if (poll === null) poll = setInterval(read, __cdbArchiveGracePollMs);
+      } else stop();
     }
-    refresh();
-    // Display refresh only; this timer never archives or asks for a sweep.
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    const poll = setInterval(refresh, 5000);
-    return () => { disposed = true; clearInterval(timer); clearInterval(poll); };
-  }, [sessionRef?.id, sessionRef?.type]);
-  if (!snapshot?.active || !snapshot.ok || snapshot.sessionId !== sessionRef?.id || typeof snapshot.enabled !== "boolean") return rail ? null : children;
-  if (!snapshot.enabled) return rail ? null : "Automatic archiving after PR merge or close is off for this session.";
-  async function keep() {
-    if (generation.current % 2 !== 0) return;
-    generation.current++;
-    setSaving(true); setError("");
-    try {
-      // The native API sets false, schedules its session save and emits an
-      // update. Await IPC errors; upstream's save itself is asynchronous.
-      await __cdbLocalSessions.setSessionAutoArchiveOnPrClose(sessionRef.id, false);
-      setSnapshot(previous => previous?.sessionId === sessionRef.id ? { ...previous, enabled: false } : previous);
-    } catch (_) { setError("Could not keep this session. Try again."); }
-    finally { generation.current++; setSaving(false); }
+    if (id !== undefined && typeof globalThis.cdbExtra?.autoArchiveGraceRead === "function") read();
+    return () => { disposed = true; stop(); };
+  }, [id, holdKey]);
+  const terminal = id !== undefined && snapshot?.sessionId === id && snapshot.ok === true &&
+    snapshot.active === true && snapshot.enabled === true && snapshot.terminal === true;
+  if (rail) {
+    const sessions = globalThis["claude.web"]?.LocalSessions;
+    if (!terminal || kept === id || typeof sessions?.setSessionAutoArchiveOnPrClose !== "function") return null;
+    async function keep() {
+      setSaving(true);
+      setError("");
+      try {
+        // The same persisted per-session setting as upstream's "Auto-archive on
+        // merge or close"; upstream schedules the save and emits the update.
+        // The button stays hidden for this session even if a read still sees
+        // the old value before that save lands.
+        await sessions.setSessionAutoArchiveOnPrClose(id, false);
+        setKept(id);
+      } catch (_) { setError("Could not keep this session. Try again."); }
+      finally { setSaving(false); }
+    }
+    return __cdbJsxMany("div", {className: "flex flex-col gap-1 px-2 py-1", children: [
+      __cdbJsxOne("button", {type: "button", disabled: saving,
+        className: "text-footnote text-muted-as-secondary hover:text-text-primary text-left",
+        title: "Turns off Auto-archive on merge or close for this session, the same setting as in the PR menu",
+        onClick: keep, children: saving ? "Keeping session..." : "Keep this session"}),
+      error ? __cdbJsxOne("span", {role: "alert", className: "text-footnote", children: error}) : null
+    ]});
   }
-  if (rail) return __cdbJsx("div", {className: "flex flex-col gap-1 px-2 py-1", children: [
-    __cdbJsx("button", {type: "button", disabled: saving || !__cdbLocalSessions?.setSessionAutoArchiveOnPrClose,
-      className: "text-footnote text-muted-as-secondary hover:text-text-primary text-left",
-      onClick: keep, children: saving ? "Keeping session…" : "Keep this session", title: "Turn off auto-archive on merge or close for this session only"}),
-    error && __cdbJsx("span", {role: "alert", children: error})
+  // Upstream's notice stays as it is; the delay line is appended after it,
+  // outside its live region. The notice renders for any hold (the PR rule or
+  // the inactivity rule), so the line states only a fact about the PR delay.
+  if (!terminal) return children;
+  const text = !Number.isSafeInteger(snapshot.deadline)
+    ? "The PR auto-archive delay starts at the next archive sweep."
+    : snapshot.deadline > now
+      ? "The PR auto-archive delay has about " + __cdbArchiveGraceRemaining(snapshot.deadline, now) + " left."
+      : "The PR auto-archive delay has ended.";
+  return __cdbJsxMany(__cdbFragment, {children: [
+    children,
+    __cdbJsxOne("div", {"aria-live": "off", "data-find-omitted": "", className: lineClass, children: text})
   ]});
-  if (!snapshot.terminal) return children;
-  const seconds = Number.isSafeInteger(snapshot.deadline) ? Math.max(0, Math.ceil((snapshot.deadline - now) / 1000)) : null;
-  const duration = seconds === null ? null : `${Math.floor(seconds / 3600)}h ${Math.floor(seconds % 3600 / 60)}m ${seconds % 60}s`;
-  const text = duration === null
-    ? "Auto-archive delay is waiting for the next native sweep; no deadline has been recorded yet."
-    : seconds > 0
-      ? `PR auto-archive delay remaining: ${duration}. After it ends, a native sweep can archive this session only when all safety holds clear.`
-      : "PR auto-archive delay has ended. A native sweep can archive this session only when all safety holds clear.";
-  return __cdbJsx("div", {role: "status", className: "text-footnote text-muted-as-secondary", children: [children, " ", text]});
 }
