@@ -47,9 +47,21 @@ Where each check runs:
 ## Adding a feature
 
 1. Clone the repo and run `./scripts/build-local.sh`.
-2. Write one patch following [Adding your own feature](docs/patches.md#adding-your-own-feature).
-3. Rebuild and check the feature in the app.
-4. Open a PR.
+2. Choose the patch's scope using [Choosing where a patch belongs](#choosing-where-a-patch-belongs). Identify the behavior being changed and all affected consumers before implementing it.
+3. Write one patch following [Adding your own feature](docs/patches.md#adding-your-own-feature). A fix serving an existing optional feature belongs in that feature's patch.
+4. Rebuild and check the feature in the app. For optional behavior, test with the switch both on and off: switching it off must preserve upstream behavior for the affected path.
+5. Open a PR.
+
+### Choosing where a patch belongs
+
+Classify a patch by its effect, not by how internal its hook is:
+
+- **`patches/core/`** is reserved for shared plumbing that other patches build on, such as Extra settings pages, flag overrides and profile separation. A core patch must not independently change upstream behavior. Touching an internal mechanism does not make a patch core.
+- **`patches/community/`** contains optional behavior changes, gated by a feature switch.
+- A fix that only serves an existing optional feature belongs in that feature's own patch and follows its switch, even when it hooks into shared upstream internals.
+- **`patches/linux/`** remains for Linux compatibility fixes under the existing project policy; it is not a fallback for optional feature changes.
+
+**Example:** additional `turnCompleted` events needed by Auto-fix notices belong in the Auto-fix notices patch, behind its switch, not in a standalone core patch. Those events also reach upstream's own Auto-fix ledger. Tests must cover both the enabled behavior and preservation of upstream behavior when the switch is off.
 
 The project skills in `.claude/skills/` (`/update`, `/fresh-upstream`, `/debug`, `/linux`, ...) are optional helpers for Claude Code users.
 
