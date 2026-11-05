@@ -4,6 +4,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-05
 
+### Clearer patch placement guidance and corrected Auto-fix notice docs (thanks @alexx-ftw, #315)
+
+- AGENTS.md and docs/patches.md now say where a patch belongs: `core/` only for shared plumbing, a fix serving an optional feature stays in that feature's patch behind its switch, tested with the switch on and off. The Auto-fix notice docs now match the shipped behavior (REST read spacing and backoff, direct vs queued delivery, budget-skip handling, text normalization), and docs/patches.md no longer claims a byte-identical install tree or that a green build proves runtime behavior.
+
 ### Auto-fix notices are confirmed in batched turns (thanks @alexx-ftw, #314)
 
 - With Settings -> Extra -> Community Features -> "Auto-fix notices: ready to merge, comments after merge" on, a ready-to-merge or post-merge notice that Claude reads later in a turn covering several queued messages is now confirmed when that turn completes, instead of staying pending (upstream confirms only the turn's first message). Unread, withdrawn and next-cycle messages are not confirmed.
