@@ -14,7 +14,7 @@ The `<ci-monitor-event>` is informational. It asks the session to report readine
 
 ## Criteria
 
-Two GraphQL reads through the app's authenticated, rate-limited `GhRestClient.graphqlWithErrors`, on two consecutive Auto-fix sweeps, must agree on the PR's head and base commit IDs. Both must report:
+Two GraphQL reads through the app's authenticated, rate-limited `GhRestClient.graphqlWithErrors`, on consecutive eligible Auto-fix sweeps that perform a readiness read, must agree on the PR's head and base commit IDs. Both must report:
 
 - `state: OPEN`, `isDraft: false`, valid head/base SHA values;
 - `mergeable: MERGEABLE` and `mergeStateStatus: CLEAN` (GitHub's merge-state aggregate, not merely an absence of textual conflicts);
@@ -34,7 +34,7 @@ Auto-fix sweeps every 60 seconds while the app is focused and every 5 minutes ot
 
 - **One GitHub GraphQL read per sweep per Auto-fix PR.** Readiness is confirmed by the next sweep's read, not by an immediate second read.
 - **A notified PR is re-read at most every 10 minutes**, only to notice a new head or a regression. A new head seen by that read gets its confirming read on the next sweep.
-- **No read while the app's own budget guard says no**: when GitHub reports the GraphQL budget for that host as low, or a rate-limit window is open (the same `readBudgets` / `graphqlBudgetLow` check the app's PR row refresh uses). If that guard is missing in a future build, the read is skipped.
+- **No read while the app's own budget guard says no**: when GitHub reports the GraphQL budget for that host as low, or a rate-limit window is open (the same `readBudgets` / `graphqlBudgetLow` check the app's PR row refresh uses). If that guard is missing in a future build, the read is skipped. A sweep skipped by the budget guard preserves a pending first observation; an attempted read returning unknown or an error clears it.
 - **A send that is not delivered backs off** like Auto-fix's own wakes: the next attempt waits 1, 3, 7, then 15 sweeps.
 - **One model turn per notice.** The ledger file is only rewritten when its content changes.
 
