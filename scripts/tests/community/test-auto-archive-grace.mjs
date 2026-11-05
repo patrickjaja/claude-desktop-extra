@@ -281,19 +281,32 @@ await test("narrow bridge forwards raw value for main validation", async () => {
 });
 await test("ion patch is strict, syntactically valid and idempotent", async () => {
   const binary = path.join(ROOT, "patches/community/add_feature_auto_archive_grace_ion");
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-grace-ion-")), assets = path.join(dir, "assets/v1"), file = path.join(assets, "fixture.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-grace-ion-")), assets = path.join(dir, "assets/v1");
+  const noticeFile = path.join(assets, "notice.js"), railFile = path.join(assets, "rail.js");
   fs.mkdirSync(assets, { recursive: true });
-  const fixture = `function cje(e){let $=J9(3),[t,n]=v(),r,i;return e?(r=()=>{Zn?.onPreferencesChanged?.(t)},i=[e],K2($,0,e,r,i)):(r=$[1],i=$[2]),O(r,i),t}
-function CE(e){let $=J9(11),t=ra(),n=Qc(),r=Mc(),{account:i}=jr(),a=i?.settings?.ccr_auto_archive_on_pr_close,o=Et?.setSessionAutoArchiveOnPrClose;return o}
-function y5(e){let $=J9(7),{hold:t,sessionRef:n}=e,r=Vu();return f("div",{role:"status","aria-live":"polite","data-find-omitted":"",className:"x",children:"This session will be archived automatically after you leave it."})}
-function Rail(e,t){let $=J9(440),{repoKey:n,sessionRef:r,sessionRepo:i,isPrimary:a,inRail:d}=e;return J5($,433,u,d,f,p,m,g)?K5($,433,u,d,f,p,m,g,h(y,{children:[u,d,f,p,m,g]})):$[439]}`;
+  const imports = `import{Ga as f,To as v,go as O,wo as I}from"./vendor-frame-test.js";`;
+  const notice = imports + `function y5(e){let $=J9(7),{hold:t,sessionRef:n}=e,r=Vu();return f("div",{children:"This session will be archived automatically after you leave it."})}`;
+  const rail = imports + `function tN(e){let $=J9(123),{session:t,pullRequests:n,plan:r,artifacts:i,repoMenuItems:a,outputsSession:s,controls:k}=e;let x=f(Vb,{id:"environment",title:"Environment"}),z=f(Vb,{id:"pullRequests",title:"Changes"});return f("aside",{ref:De,"aria-label":ke,tabIndex:-1,onMouseDownCapture:Km,onClickCapture:Km,onDoubleClickCapture:Km,className:Ae,children:[je,We]})}`;
   try {
-    fs.writeFileSync(file, fixture); execFileSync(binary, [dir]);
-    const patched = fs.readFileSync(file, "utf8"); execFileSync(process.execPath, ["--check", file]);
-    execFileSync(binary, [dir]); assert.equal(fs.readFileSync(file, "utf8"), patched);
-    for (const bad of [fixture.replace("setSessionAutoArchiveOnPrClose", "changed"), fixture.replace("isPrimary:a", "primary:a"),
-      patched.replace("rail:true", "rail:false"), patched.replace("setSessionAutoArchiveOnPrClose(sessionRef.id, false)", "changed(sessionRef.id, false)")]) {
-      fs.writeFileSync(file, bad); assert.notEqual(spawnSync(binary, [dir]).status, 0);
+    fs.writeFileSync(noticeFile, notice); fs.writeFileSync(railFile, rail); execFileSync(binary, [dir]);
+    const patchedNotice = fs.readFileSync(noticeFile, "utf8"), patchedRail = fs.readFileSync(railFile, "utf8");
+    execFileSync(process.execPath, ["--check", noticeFile]); execFileSync(process.execPath, ["--check", railFile]);
+    assert.match(patchedRail, /sessionRef:e\.outputsSession,rail:true/);
+    assert.doesNotMatch(patchedNotice, /__cdbArchiveNativeRail/);
+    const railContext = { J9: () => [], f: (type, props) => ({ type, props }), Vb: "section", De: {}, ke: "Session details", Km() {}, Ae: "rail", je: "header", We: "content" };
+    const renderRail = vm.runInNewContext(patchedRail.replace(imports, "") + "\ntN", railContext);
+    const sessionRef = { type: "local", id: "s" };
+    const rendered = renderRail({ session: {}, outputsSession: sessionRef });
+    assert.equal(rendered.type, "aside"); assert.equal(rendered.props["aria-label"], "Session details");
+    assert.deepEqual(Array.from(rendered.props.children.slice(0, 2)), ["header", "content"]);
+    assert.equal(rendered.props.children[2].props.sessionRef, sessionRef);
+    assert.equal(rendered.props.children[2].props.rail, true);
+    execFileSync(binary, [dir]); assert.equal(fs.readFileSync(noticeFile, "utf8"), patchedNotice); assert.equal(fs.readFileSync(railFile, "utf8"), patchedRail);
+    for (const [badNotice, badRail] of [[notice, rail.replace("outputsSession:s", "changed:s")],
+      [patchedNotice, patchedRail.replace("rail:true", "rail:false")],
+      [patchedNotice.replace("setSessionAutoArchiveOnPrClose(sessionRef.id, false)", "changed(sessionRef.id, false)"), patchedRail]]) {
+      fs.writeFileSync(noticeFile, badNotice); fs.writeFileSync(railFile, badRail);
+      assert.notEqual(spawnSync(binary, [dir]).status, 0);
     }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
@@ -312,26 +325,33 @@ await test("status projects only the effective persisted deadline", async () => 
 });
 await test("renderer shows delay, preserves native off and keeps only this session", async () => {
   const ui = fs.readFileSync(path.join(ROOT, "js/auto_archive_grace_ui.js"), "utf8");
-  let values = [], slot = 0, effects = [], saved = [], enabled = true, now = 1000000;
+  let values = [], slot = 0, effects = [], saved = [], now = 1000000;
+  const genRef = { current: 0 }, timers = [];
   const context = {
-    __cdbReactState: initial => { const n = slot++; if (!(n in values)) values[n] = initial; return [values[n], value => { values[n] = value; }]; },
+    __cdbReactState: initial => { const n = slot++; if (!(n in values)) values[n] = initial; return [values[n], value => { values[n] = typeof value === "function" ? value(values[n]) : value; }]; },
     __cdbReactEffect: fn => effects.push(fn),
-    __cdbArchiveControl: () => ({ kind: "session", enabled, disabled: false }),
-    __cdbLocalSessions: { setSessionAutoArchiveOnPrClose: async (...args) => { saved.push(args); enabled = false; } },
+    __cdbReactRef: () => genRef,
+    __cdbLocalSessions: { setSessionAutoArchiveOnPrClose: async (...args) => { saved.push(args); } },
     __cdbJsx: (type, props) => ({ type, props }),
-    Date: { now: () => now }, setInterval: () => 1, clearInterval: () => {},
-    globalThis: { cdbExtra: { autoArchiveGraceRead: async () => ({ ok: true, active: true, terminal: true, deadline: 1061000 }) } }
+    Date: { now: () => now }, setInterval: fn => { timers.push(fn); return timers.length; }, clearInterval: () => {},
+    globalThis: { cdbExtra: { autoArchiveGraceRead: async () => ({ ok: true, active: true, enabled: true, terminal: true, deadline: 1061000 }) } }
   };
   const view = vm.runInNewContext(ui + "\n__cdbArchiveGraceView", context);
-  const render = rail => { slot = 0; effects = []; return view({ sessionRef: { type: "local", id: "s" }, children: "native notice", rail }); };
+  const render = (rail, id = "s") => { slot = 0; effects = []; return view({ sessionRef: { type: "local", id }, children: "native notice", rail }); };
   assert.equal(render(false), "native notice");
   const cleanup = effects[0](); await new Promise(resolve => setImmediate(resolve));
   assert.match(render(false).props.children[2], /0h 1m 1s/);
+  assert.equal(render(true, "other-session"), null, "never use another session's cached status");
   now += 61000; values[1] = now;
   assert.match(render(false).props.children[2], /delay has ended/);
+  let resolveStale;
+  context.globalThis.cdbExtra.autoArchiveGraceRead = () => new Promise(resolve => { resolveStale = resolve; });
+  timers[1]();
   const button = render(true).props.children[0]; await button.props.onClick();
+  resolveStale({ ok: true, active: true, enabled: true, terminal: true, deadline: 1061000 });
+  await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(saved, [["s", false]]);
-  assert.match(render(false), /off for this session/);
+  assert.match(render(false), /off for this session/, "a stale poll cannot undo the keep action");
   values[0] = { ok: true, active: false }; assert.equal(render(false), "native notice");
   cleanup();
 });

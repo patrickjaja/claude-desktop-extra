@@ -23,7 +23,7 @@ The value is stored in the profile's `claude-desktop-extra.json` as `autoArchive
 
 When a nonzero delay is configured, the Code session's auto-archive hold notice shows the time remaining on the recorded PR grace. This is not a promised archive time: the native sweep and its safety holds still decide when archiving occurs. If the clock has not started, the notice says so rather than inventing a deadline; when it expires, it says the delay ended. Changes to the configured delay and the native session setting are reflected in the display.
 
-The Code rail offers **Keep this session** when native PR auto-archive is enabled. It uses the same persisted per-session setting as **Auto-archive on merge or close**, without changing Auto-fix, the global default, or other sessions. The separate inactivity rule is unaffected. Immediately hides these additions and leaves the native interface unchanged.
+The session rail on the right (the column with Environment and Changes) offers **Keep this session** when native PR auto-archive is enabled. It uses the same persisted per-session setting as **Auto-archive on merge or close**, without changing Auto-fix, the global default, or other sessions. The separate inactivity rule is unaffected. Immediately hides these additions and leaves the native interface unchanged.
 
 ## State and failures
 

@@ -5,19 +5,20 @@ function __cdbArchiveGraceView({sessionRef, children, rail = false}) {
   const [now, setNow] = __cdbReactState(Date.now());
   const [saving, setSaving] = __cdbReactState(false);
   const [error, setError] = __cdbReactState("");
-  const native = __cdbArchiveControl(sessionRef);
+  const generation = __cdbReactRef(0);
   __cdbReactEffect(() => {
     let disposed = false, busy = false;
     setSnapshot(null);
     setError("");
     async function refresh() {
-      if (busy || sessionRef?.type !== "local") return;
+      if (busy || generation.current % 2 !== 0 || sessionRef?.type !== "local") return;
       busy = true;
+      const requestGeneration = generation.current;
       try {
         const next = await globalThis.cdbExtra?.autoArchiveGraceRead?.(sessionRef.id);
-        if (!disposed) { setSnapshot(next || null); setNow(Date.now()); }
+        if (!disposed && requestGeneration === generation.current) { setSnapshot(next ? { ...next, sessionId: sessionRef.id } : null); setNow(Date.now()); }
       } catch (_) {
-        if (!disposed) setSnapshot(null);
+        if (!disposed && requestGeneration === generation.current) setSnapshot(null);
       } finally { busy = false; }
     }
     refresh();
@@ -26,20 +27,22 @@ function __cdbArchiveGraceView({sessionRef, children, rail = false}) {
     const poll = setInterval(refresh, 5000);
     return () => { disposed = true; clearInterval(timer); clearInterval(poll); };
   }, [sessionRef?.id, sessionRef?.type]);
-  if (!snapshot?.active || !snapshot.ok) return rail ? null : children;
-  if (native?.kind !== "session") return rail ? null : children;
-  if (!native.enabled) return rail ? null : "Automatic archiving after PR merge or close is off for this session.";
+  if (!snapshot?.active || !snapshot.ok || snapshot.sessionId !== sessionRef?.id || typeof snapshot.enabled !== "boolean") return rail ? null : children;
+  if (!snapshot.enabled) return rail ? null : "Automatic archiving after PR merge or close is off for this session.";
   async function keep() {
+    if (generation.current % 2 !== 0) return;
+    generation.current++;
     setSaving(true); setError("");
     try {
       // The native API sets false, schedules its session save and emits an
       // update. Await IPC errors; upstream's save itself is asynchronous.
       await __cdbLocalSessions.setSessionAutoArchiveOnPrClose(sessionRef.id, false);
+      setSnapshot(previous => previous?.sessionId === sessionRef.id ? { ...previous, enabled: false } : previous);
     } catch (_) { setError("Could not keep this session. Try again."); }
-    finally { setSaving(false); }
+    finally { generation.current++; setSaving(false); }
   }
   if (rail) return __cdbJsx("div", {className: "flex flex-col gap-1 px-2 py-1", children: [
-    __cdbJsx("button", {type: "button", disabled: saving || native.disabled,
+    __cdbJsx("button", {type: "button", disabled: saving || !__cdbLocalSessions?.setSessionAutoArchiveOnPrClose,
       className: "text-footnote text-muted-as-secondary hover:text-text-primary text-left",
       onClick: keep, children: saving ? "Keeping session…" : "Keep this session", title: "Turn off auto-archive on merge or close for this session only"}),
     error && __cdbJsx("span", {role: "alert", children: error})
