@@ -75,6 +75,7 @@ function runner(profileCtx, dialog = async () => ({ response: 1 }), platform = "
     __cdbSessionStartDialogEnabled: profileCtx.enabled,
     require: name => {
       if (name === "path") return require("node:path");
+      if (name === "fs") return fs;
       assert.equal(name, "electron");
       return { dialog: { showMessageBox: async (win, options) => { calls.push({ win, options }); return dialog(win, options); } } };
     }
@@ -229,9 +230,9 @@ try {
     assert.equal((await run(input, undefined, yes, ctx({ session: parent({ originCwd: "/home/u/other" }) }))).behavior, "deny");
     assert.equal(run.calls.length, 1);
   });
-  await test("explicit place, cloud, remote parents and higher modes -> card, even with a grant", async () => {
+  await test("non-local place, invalid cwd, remote parents and higher modes -> card, even with a grant", async () => {
     const run = runner(P, () => { throw Error("unexpected dialog"); });
-    for (const extra of [{ cwd: "/tmp" }, { host: "box" }, { environment: "env" }, { preset: "p" }, { repository: "o/r" }, { target: "cloud" }, { target: "ssh" },
+    for (const extra of [{ cwd: "relative" }, { cwd: path.join(dir, "missing") }, { host: "box" }, { environment: "env" }, { preset: "p" }, { repository: "o/r" }, { target: "cloud" }, { target: "ssh" },
       { permission_mode: "bypassPermissions" }, { permission_mode: "auto" }, { permission_mode: "dontAsk" }, { permission_mode: "weird" }]) {
       assert.equal(await run({ ...input, ...extra }, undefined, yes, ctx()), undefined, JSON.stringify(extra));
     }
@@ -240,6 +241,58 @@ try {
     }
     assert.equal((await run({ ...input, permission_mode: "plan" }, undefined, yes, ctx())).behavior, "allow", "a lower mode stays in scope");
     assert.equal((await run({ ...input, target: "local" }, undefined, yes, ctx())).behavior, "allow");
+  });
+  P.store.forget();
+  const destinationA = fs.mkdtempSync(path.join(dir, "destination-a-"));
+  const destinationB = fs.mkdtempSync(path.join(dir, "destination-b-"));
+  await test("explicit local directory gets named native dialog and its own durable grant", async () => {
+    const data = { ...input, cwd: destinationA, use_worktree: false };
+    const run = runner(P, async () => ({ response: 2 }));
+    assert.equal((await run(data, undefined, yes, ctx())).behavior, "allow");
+    assert.ok(run.calls[0].options.detail.includes("Destination directory: " + destinationA));
+    assert.ok(run.calls[0].options.detail.includes("ONLY the destination directory"));
+    const key = JSON.stringify([KEY, destinationA]);
+    assert.equal(P.store.has(key), true); assert.equal(P.store.has(KEY), false);
+    assert.equal(readFromFreshProcess(profile, key), true);
+    assert.equal((await runner(P, () => { throw Error("must reuse"); })(data, undefined, yes, ctx())).behavior, "allow");
+    assert.equal((await runner(P, async () => ({ response: 0 }))({ ...data, cwd: destinationB }, undefined, yes, ctx())).behavior, "deny");
+    assert.equal((await runner(P, async () => ({ response: 0 }))(data, undefined, yes, ctx({ session: parent({ originCwd: "/another-project" }) }))).behavior, "deny");
+    assert.equal((await runner(P, async () => ({ response: 0 }))(input, undefined, yes, ctx())).behavior, "deny");
+  });
+  await test("forget and switch-off clear default and explicit-destination grants together", () => {
+    const tuple = JSON.stringify([KEY, destinationA]);
+    assert.equal(P.store.has(tuple), true);
+    assert.equal(ipc(P.handlers, "cdb-session-start:revoke").ok, true);
+    assert.equal(P.store.has(tuple), false); assert.equal(readFromFreshProcess(profile, tuple), false);
+    assert.equal(P.store.grant(KEY).ok, true); assert.equal(P.store.grant(tuple).ok, true);
+    assert.equal(ipc(P.handlers, "cdb-session-start:set", false).ok, true);
+    assert.equal(P.store.has(tuple), false); assert.equal(P.store.has(KEY), false);
+    ipc(P.handlers, "cdb-session-start:set", true);
+    assert.equal(P.store.has(tuple), false);
+    for (const key of [JSON.stringify([KEY]), JSON.stringify([KEY, "relative"]), JSON.stringify([KEY, destinationA, "extra"]), '["/a", "/b"]']) {
+      assert.equal(P.store.grant(key).ok, false, key);
+    }
+    P.store.grant(tuple);
+  });
+  await test("first-use destination consent is shown even when the start was remembered", async () => {
+    const place = { key: "native-place-key", sentence: "Claude wants to start in this new folder." };
+    let approved;
+    const run = runner(P, async () => ({ response: 1 }));
+    const result = await run({ ...input, cwd: destinationA }, undefined, yes, ctx({ place: async () => place, onApproved: value => { approved = value; } }));
+    assert.equal(result.behavior, "allow"); assert.equal(approved, result);
+    assert.equal(run.calls.length, 1); assert.ok(run.calls[0].options.detail.includes(place.sentence));
+  });
+  await test("symlink destination change while asking denies and saves no grant", async () => {
+    P.store.forget();
+    const link = path.join(dir, "destination-link"); fs.symlinkSync(destinationA, link);
+    const run = runner(P, async () => { fs.unlinkSync(link); fs.symlinkSync(destinationB, link); return { response: 2 }; });
+    assert.equal((await run({ ...input, cwd: link }, undefined, yes, ctx())).behavior, "deny");
+    assert.equal(P.store.has(JSON.stringify([KEY, destinationB])), false);
+  });
+  await test("destination consent changing while asking denies", async () => {
+    let place = { key: "a", sentence: "Native destination A" };
+    const run = runner(P, async () => { place = { key: "b", sentence: "Native destination B" }; return { response: 2 }; });
+    assert.equal((await run({ ...input, cwd: destinationA }, undefined, yes, ctx({ place: async () => place }))).behavior, "deny");
   });
   P.store.forget();
   await test("no visible main window -> card, no dialog", async () => {
@@ -317,7 +370,7 @@ try {
   const context = vm.createContext({ process: { platform: "linux" }, exports: exportsObj, flags,
     kor: (pattern, value) => new RegExp("^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$").test(value),
     __cdbSessionStartPermission: P.store, __cdbSessionStartDialogEnabled: P.enabled, __cdbDiag: message => console.error(message),
-    require: name => name === "./index.chunk-api.js" ? exportsObj : name === "path" ? require("node:path")
+    require: name => name === "./index.chunk-api.js" ? exportsObj : name === "fs" ? fs : name === "path" ? require("node:path")
       : { dialog: { showMessageBox: async (w, options) => { dialogCalls.push({ w, options }); return { response: choice }; } } },
     u: { BrowserWindow: FakeWin }, zi() {}, Li: { MAIN_WINDOW: 1 },
     G: { randomUUID: () => "request" }, J: value => value,
@@ -334,6 +387,7 @@ try {
     query: { listPermissionRules: async () => listing } };
   broker.config = { getSession: () => session, laptopMcpToolAsksEveryCall: () => false };
   broker.fallbacks = 0;
+  broker.allowedOnCardJustNow = new WeakSet();
   const call = (options = {}, tool = START, data = input) => broker.handleToolPermission("session", tool, data, [], undefined, options);
   await test("compiled: switch off -> upstream card, on -> dialog parented to Xmt", async () => {
     ipc(P.handlers, "cdb-session-start:set", false);
@@ -496,6 +550,7 @@ try {
       query: { listPermissionRules: async () => ({ state: { managedOnly: false, rules: [] } }) } };
     const target = Object.assign(new RealBroker(), {
       pendingPermissions: new Map(),
+      allowedOnCardJustNow: new WeakSet(),
       async forceAskVerdict() { return { cause: "ordinary" }; },
       async firstUseSidePlace() { return undefined; },
       internalNameProvenanceVerdict() { return undefined; }
@@ -511,7 +566,7 @@ try {
         target.pendingPermissions.get(event.request.requestId).resolve({ behavior: "card" });
       }
     });
-    const ask = (data = input) => brokerThis.handleToolPermission("real-session", START, data, undefined, undefined, {});
+    const ask = (data = input, options = {}) => brokerThis.handleToolPermission("real-session", START, data, undefined, undefined, options);
     await test("real 4.16336.0: switch off -> upstream card sink", async () => {
       assert.equal(R.enabled(), false);
       assert.equal((await ask()).behavior, "card"); assert.equal(cards.at(-1).toolName, START); assert.equal(realCalls.length, 0);
@@ -530,8 +585,28 @@ try {
       dialogAnswer = async () => { throw Error("unexpected dialog"); };
       assert.equal((await ask()).behavior, "allow"); assert.equal(realCalls.length, n);
     });
-    await test("real 4.16336.0: explicit cwd -> card", async () => {
-      assert.equal((await ask({ ...input, cwd: "/tmp/x" })).behavior, "card");
+    await test("real 4.16336.0: explicit local cwd names the directory and preserves native first-use consent", async () => {
+      const data = { ...input, cwd: destinationA, use_worktree: false };
+      const place = { key: "native-place", sentence: "Claude wants to start in a new local folder." };
+      target.firstUseSidePlace = async () => place;
+      const options = { decisionReasonType: "hook", decisionReason: place.sentence, handedToPerson: true, toolUseID: "real-place" };
+      dialogAnswer = async () => ({ response: 1 });
+      const result = await ask(data, options);
+      assert.equal(result.behavior, "allow");
+      assert.equal(target.allowedOnCardJustNow.has(result), true, "upstream outer flow can redeem real on-card consent");
+      assert.ok(realCalls.at(-1).options.detail.includes(destinationA));
+      assert.ok(realCalls.at(-1).options.detail.includes(place.sentence));
+      assert.equal(R.store.has(JSON.stringify([KEY, destinationA])), false, "Allow once writes no start grant");
+      // Even a matching first-use sentence cannot outrank an external ask/hook.
+      nsOverrides._K = async () => true;
+      assert.equal((await ask(data, options)).behavior, "card");
+      nsOverrides._K = async () => false;
+      assert.equal((await ask(data, { ...options, decisionReason: "different mandatory reason" })).behavior, "card");
+      target.firstUseSidePlace = async () => undefined;
+      dialogAnswer = async () => ({ response: 2 });
+      assert.equal((await ask(data)).behavior, "allow");
+      assert.equal(R.store.has(JSON.stringify([KEY, destinationA])), true);
+      assert.equal((await ask({ ...data, cwd: path.join(dir, "missing-directory") })).behavior, "card");
     });
     await test("real 4.16336.0: another project -> dialog", async () => {
       realSession.originCwd = "/home/u/other";

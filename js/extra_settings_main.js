@@ -97,7 +97,7 @@
   // asks globalThis.__cdbSessionStartDialogEnabled() on every eligible
   // start_session ask; false leaves upstream's in-chat card alone.
   // Remembered approvals ("Allow always") live under sessionStartGrants in the
-  // .json only: { "<project folder>": { grantedAt } }, capped. Only the
+  // .json only: { "<project folder or project/destination tuple>": { grantedAt } }, capped. Only the
   // main-process dialog adds one; the remote settings page can read the count,
   // forget them all, or flip the switch (off also forgets them). A stored grant
   // is ignored while the switch is off.
@@ -114,13 +114,25 @@
   function __cdbEx_ssaEnabled() {
     try { return __cdbEx_ssaPref().value === true; } catch (e) { return false; }
   }
-  // Valid entries only: an absolute project folder -> { grantedAt: number }.
+  // Existing keys cover only the default destination. Explicit local starts
+  // use a JSON [asking project, canonical destination] tuple, never a wildcard.
+  function __cdbEx_ssaValidKey(key) {
+    function absolute(v) {
+      return typeof v === "string" && v.charAt(0) === "/" && v.length <= 4096 && !/[\u0000-\u001f\u007f]/.test(v);
+    }
+    if (absolute(key)) return true;
+    if (typeof key !== "string" || key.length > 16400) return false;
+    try {
+      var pair = JSON.parse(key);
+      return Array.isArray(pair) && pair.length === 2 && pair.every(absolute) && JSON.stringify(pair) === key;
+    } catch (e) { return false; }
+  }
   function __cdbEx_ssaClean(raw) {
     var out = {};
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
     Object.keys(raw).forEach(function (k) {
       var v = raw[k];
-      if (typeof k === "string" && k.charAt(0) === "/" && k.length <= 4096 && v && typeof v === "object" &&
+      if (__cdbEx_ssaValidKey(k) && v && typeof v === "object" &&
           !Array.isArray(v) && typeof v.grantedAt === "number" && isFinite(v.grantedAt)) {
         out[k] = { grantedAt: v.grantedAt };
       }
@@ -145,7 +157,7 @@
       },
       count: function () { return Object.keys(__cdbEx_ssaGrants()).length; },
       grant: function (key) {
-        if (typeof key !== "string" || key.charAt(0) !== "/" || key.length > 4096) return { ok: false, error: "invalid project key" };
+        if (!__cdbEx_ssaValidKey(key)) return { ok: false, error: "invalid project/destination key" };
         if (!__cdbEx_ssaEnabled()) return { ok: false, error: __cdbEx_SSA_KEY + " is off" };
         var res = __cdbEx_writeCfg(function (cfg) {
           var grants = __cdbEx_ssaClean(cfg[__cdbEx_SSA_GRANTS]);

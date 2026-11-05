@@ -194,23 +194,29 @@ proc apply*(input: string): string =
   let gate =
     tool & "===\"mcp__ccd_session__start_session\"&&" & options & "!==undefined&&" &
     session & "!==undefined&&(" & options & ".decisionReasonType===undefined||" & options &
-    ".decisionReasonType===\"rule\")&&(" & options & ".forceAskCause===undefined||" &
-    options & ".forceAskCause===\"ordinary\")&&" & options &
-    ".firstDriveReference===undefined&&" & options & ".rulesLock===undefined&&" & options &
-    ".nameTrustWithheld!==true&&" & options & ".handedToPerson!==true&&" & options &
-    ".defaultToNo!==true&&" & options & ".settingsFileRuleAsk!==true&&" & options &
+    ".decisionReasonType===\"rule\"||__cdbStartPlaceAsk)&&(" & options &
+    ".forceAskCause===undefined||" & options & ".forceAskCause===\"ordinary\")&&" &
+    options & ".firstDriveReference===undefined&&" & options & ".rulesLock===undefined&&" &
+    options & ".nameTrustWithheld!==true&&(" & options &
+    ".handedToPerson!==true||__cdbStartPlaceAsk)&&" & options & ".defaultToNo!==true&&" &
+    options & ".settingsFileRuleAsk!==true&&" & options &
     ".suppressAlwaysAllowRule!==true&&" & options & ".connectorAsk===undefined&&" &
     options & ".viaHostCliLauncher!==true"
   let eligibility =
-    "async()=>{if(!(" & gate & "))return false;" & "if(this.config.getSession(" & sid &
-    ")!==" & session & "||" & api & ".TF(" & session & ")||" & session &
+    "async()=>{let __cdbStartPlace=await this.firstUseSidePlace(" & sid & "," & tool &
+    "," & data & ");" & "let __cdbStartPlaceAsk=" & data &
+    "?.cwd!==undefined&&__cdbStartPlace!==undefined&&typeof __cdbStartPlace.sentence===\"string\"&&" &
+    options & "?.decisionReason===__cdbStartPlace.sentence&&(" & options &
+    "?.decisionReasonType===\"hook\"||" & options & "?.decisionReasonType===undefined);" &
+    "if(!(" & gate & "))return false;" & "if(this.config.getSession(" & sid & ")!==" &
+    session & "||" & api & ".TF(" & session & ")||" & session &
     ".permissionMode===\"plan\"||" & "this.config.laptopMcpToolAsksEveryCall?.(" & sid &
     "," & tool & ")===true||" & api & ".hm(" & tool & ")||" & api & ".qn(" & sid &
     ",e=>this.config.getSession(e))||" & "this.internalNameProvenanceVerdict(" & sid &
     "," & tool & ")!==undefined)return false;" & "if(" & startGate & "(" & tool & "," &
     data & "," & sid & ",__cdbSessionId=>this.config.getSession(__cdbSessionId)," &
-    options & ".toolUseID,\"canUseTool\")||" & "await this.firstUseSidePlace(" & sid &
-    "," & tool & "," & data & ")!==undefined)return false;" &
+    options &
+    ".toolUseID,\"canUseTool\")||(__cdbStartPlace!==undefined&&!__cdbStartPlaceAsk))return false;" &
     "let __cdbStartVerdict=await this.forceAskVerdict(" & tool & "," & data & "," & sid &
     ");" &
     "if(!(__cdbStartVerdict.cause===\"ordinary\"||__cdbStartVerdict.standDown===\"bypass\")||" &
@@ -219,7 +225,7 @@ proc apply*(input: string): string =
     ".query?.listPermissionRules?.(),__cdbStartRules=__cdbStartListing?.state?.rules;" &
     "return __cdbStartListing?.state?.managedOnly===false&&Array.isArray(__cdbStartRules)&&" &
     "__cdbStartRules.every(__cdbStartRule=>__cdbStartRule&&typeof __cdbStartRule.rule===\"string\"&&typeof __cdbStartRule.behavior===\"string\"&&typeof __cdbStartRule.source===\"string\")&&" &
-    "((" & options & ".decisionReason===undefined&&" & options &
+    "(__cdbStartPlaceAsk||(" & options & ".decisionReason===undefined&&" & options &
     ".decisionReasonType===undefined)||(" & options & ".decisionReasonType===\"rule\"&&" &
     options &
     ".reasonFromApp!==true&&__cdbStartRules.some(__cdbStartRule=>__cdbStartRule.notInEffect!==true&&__cdbStartRule.behavior===\"ask\"&&__cdbStartRule.source===\"mcpServerPolicy\"&&" &
@@ -231,7 +237,8 @@ proc apply*(input: string): string =
     "if(process.platform===\"linux\"&&globalThis.__cdbSessionStartDialogEnabled?.()===true){let __cdbStartResult=await (" &
     helper & ")(" & data & "," & signal & "," & eligibility & ",{session:" & session &
     ",sessionId:" & sid & ",mainWindow:()=>" & api &
-    ".Xmt});if(__cdbStartResult!==undefined)return __cdbStartResult}"
+    ".Xmt,place:()=>this.firstUseSidePlace(" & sid & "," & tool & "," & data &
+    "),onApproved:__cdbResult=>this.allowedOnCardJustNow.add(__cdbResult)});if(__cdbStartResult!==undefined)return __cdbStartResult}"
   if marker in input:
     if input.count(injected & anchor) != 1:
       raise newException(ValueError, "session-start end state differs; re-audit")

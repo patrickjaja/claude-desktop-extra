@@ -12,7 +12,7 @@ For an eligible ask, a dialog opens on the app window (modal to it; the window i
 
 - **Deny** - the default button. Escape and closing the dialog also deny.
 - **Allow once** - this call only.
-- **Allow always** - this call, and later ones from the same project to its default destination.
+- **Allow always** - this call, and later ones from the same asking project to the same displayed local destination. The default destination and each explicitly named directory have separate approvals.
 
 It names the new session's title, the asking session, the project, the destination, the child's permission mode and model (when given), and the first 300 characters of the prompt Claude wrote.
 
@@ -21,13 +21,14 @@ It names the new session's title, the asking session, the project, the destinati
 A remembered approval is keyed by the asking session's project folder (`originCwd`, else `cwd`; exact path, the way upstream names a session's project for start targets) and applies only when:
 
 - the switch is on;
-- the request names no other place: no `cwd`, `host`, `environment`, `preset` or `repository`, and `target` is absent or `"local"`;
+- the request targets this computer: no `host`, `environment`, `preset` or `repository`, and `target` is absent or `"local"`;
+- `cwd` is absent (the existing default-destination approval), or is an absolute path to an existing local directory. An explicit directory is resolved with `realpath` and has a separate grant keyed by `[asking project, resolved destination]`. A default grant does not cover it, nor does it cover any other directory or asking project;
 - `permission_mode` is absent or at or below the asking session's mode (upstream's own ranking; an unknown mode does not qualify);
 - the asking session runs on this computer (not SSH, WSL or a remote target).
 
 A request outside that scope shows upstream's card, even when the project has a remembered approval. Sessions started this way run in this session's permission mode (or a lower one) from a prompt Claude wrote; nothing inside them is approved by this. No CLI rule or child-session permission is written.
 
-Remembered approvals live under `sessionStartGrants` in `<userData>/claude-desktop-extra.json` (project folder -> `{ grantedAt }`), at most 50, newest kept. Only the dialog adds one; the settings row shows how many there are and has **Forget remembered approvals**. Switching the row off forgets them too, and a stored approval is ignored while the switch is off. Named and third-party profiles use their own `userData`, so approvals do not cross profiles.
+Remembered approvals live under `sessionStartGrants` in `<userData>/claude-desktop-extra.json` (project folder, or serialized `[project, destination]` tuple -> `{ grantedAt }`), at most 50 in total, newest kept. Existing default-destination keys remain valid without migration. Only the dialog adds one; the settings row shows how many there are and has **Forget remembered approvals**. Switching the row off forgets them too, and a stored approval is ignored while the switch is off. Named and third-party profiles use their own `userData`, so approvals do not cross profiles.
 
 ## When upstream's card asks instead
 
@@ -36,8 +37,10 @@ The dialog is only used where upstream would show its ordinary card. Everything 
 - the switch is off;
 - the app window is hidden (to the tray), minimized or gone;
 - a request outside the scope above;
-- non-rule decision reasons, managed-only rules, deny rules (matched by upstream's own rule matcher), explicit ask rules or PreToolUse hooks, organization policy;
-- first use of a destination, unproven tool provenance, continuation, remote-control or unattended sessions, the repeated-start count guard (10), plan mode, the host CLI launcher.
+- non-rule decision reasons other than the exact native first-use sentence for an explicit local directory, managed-only rules, deny rules (matched by upstream's own rule matcher), explicit ask rules or external PreToolUse hooks, organization policy;
+- unproven tool provenance, continuation, remote-control or unattended sessions, the repeated-start count guard (10), plan mode, the host CLI launcher.
+
+For a first-use explicit local directory, the dialog includes the broker's own destination-consent sentence. It always asks visibly, even if a remembered start exists, and only an actual click marks the result as on-card consent for upstream's unchanged destination-grant processing. Matching a destination sentence does not override external ask rules or hooks. A changed destination/consent, including a symlink retargeted while the dialog is open, denies rather than saving a stale approval. No folder is silently added to a global trust list.
 
 ## Fail directions
 
