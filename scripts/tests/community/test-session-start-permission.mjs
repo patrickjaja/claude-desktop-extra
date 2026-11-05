@@ -13,6 +13,9 @@
 // 4. When tmp/app.asar.contents exists: the REAL 4.16336.0 broker method,
 //    start gate and rule matcher, patched by the compiled binary from a full
 //    staged concat, driven through one eligible ordinary start_session ask.
+// 5. Diagnostics: every refused start_session ask logs exactly one
+//    "[session-start-always-allow] card kept: <token>" line; switch off and
+//    other tools log nothing.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -366,10 +369,12 @@ try {
   const flags = { ask: false, ownAsk: false, unattended: false };
   let choice = 1;
   const dialogCalls = [];
+  const diag = [];
+  const kept = () => diag.splice(0).filter(m => m.startsWith("[session-start-always-allow] card kept: ")).map(m => m.slice(40));
   const exportsObj = {};
   const context = vm.createContext({ process: { platform: "linux" }, exports: exportsObj, flags,
     kor: (pattern, value) => new RegExp("^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$").test(value),
-    __cdbSessionStartPermission: P.store, __cdbSessionStartDialogEnabled: P.enabled, __cdbDiag: message => console.error(message),
+    __cdbSessionStartPermission: P.store, __cdbSessionStartDialogEnabled: P.enabled, __cdbDiag: message => diag.push(message),
     require: name => name === "./index.chunk-api.js" ? exportsObj : name === "fs" ? fs : name === "path" ? require("node:path")
       : { dialog: { showMessageBox: async (w, options) => { dialogCalls.push({ w, options }); return { response: choice }; } } },
     u: { BrowserWindow: FakeWin }, zi() {}, Li: { MAIN_WINDOW: 1 },
@@ -442,6 +447,100 @@ try {
     session.sideSessionStartsSinceUserMessage = 10; assert.equal((await call()).behavior, "native"); session.sideSessionStartsSinceUserMessage = 0;
     broker.internalNameProvenanceVerdict = () => ({ decision: "ask" }); assert.equal((await call()).behavior, "native"); delete broker.internalNameProvenanceVerdict;
     broker.forceAskVerdict = async () => ({ cause: "org_settings_unavailable" }); assert.equal((await call()).behavior, "native"); delete broker.forceAskVerdict;
+  });
+  await test("compiled: ordinary first-use ask for an explicit local folder reaches the dialog", async () => {
+    const place = { key: "place-a", sentence: "Claude wants to start a session in a new folder." };
+    const data = { ...input, cwd: destinationA, use_worktree: false };
+    broker.firstUseSidePlace = async () => place;
+    choice = 1; diag.length = 0;
+    const before = dialogCalls.length;
+    const res = await call({ toolUseID: "t1" }, START, data);
+    assert.equal(res.behavior, "allow"); assert.equal(dialogCalls.length, before + 1);
+    assert.ok(dialogCalls.at(-1).options.detail.includes(place.sentence), "place sentence shown");
+    assert.ok(dialogCalls.at(-1).options.detail.includes("Destination directory: " + destinationA));
+    assert.equal(broker.allowedOnCardJustNow.has(res), true, "a real answer stamps upstream's on-card set");
+    assert.deepEqual(kept(), []);
+    // A stored tuple grant never skips the dialog while the place is first-use.
+    const tuple = JSON.stringify([KEY, destinationA]);
+    assert.equal(P.store.grant(tuple).ok, true);
+    choice = 0;
+    assert.equal((await call({}, START, data)).behavior, "deny"); assert.equal(dialogCalls.length, before + 2);
+    // Once the place is known (no first-use sentence), the grant skips it.
+    broker.firstUseSidePlace = async () => undefined;
+    assert.equal((await call({}, START, data)).behavior, "allow"); assert.equal(dialogCalls.length, before + 2);
+    // Without an explicit cwd, a first-use place still keeps the card.
+    broker.firstUseSidePlace = async () => place;
+    assert.equal((await call({}, START, input)).behavior, "native"); assert.deepEqual(kept(), ["firstUsePlace"]);
+    // A reason other than the place sentence or the verified rule reason keeps the card.
+    assert.equal((await call({ decisionReason: "Some other reason" }, START, data)).behavior, "native"); assert.deepEqual(kept(), ["firstUsePlace"]);
+    assert.equal((await call({ decisionReasonType: "hook", decisionReason: "other" }, START, data)).behavior, "native");
+    assert.deepEqual(kept(), ["gate:decisionReasonType=hook"]);
+    assert.equal((await call({ handedToPerson: true }, START, data)).behavior, "native"); assert.deepEqual(kept(), ["gate:handedToPerson"]);
+    // The exact first-use sentence from a hook ask stays admitted.
+    choice = 1;
+    assert.equal((await call({ decisionReasonType: "hook", decisionReason: place.sentence, handedToPerson: true }, START, data)).behavior, "allow");
+    delete broker.firstUseSidePlace; P.store.forget(); diag.length = 0;
+  });
+  await test("compiled: each refused ask logs exactly one card-kept line with its token", async () => {
+    choice = 1; diag.length = 0;
+    const cases = [
+      [{ decisionReasonType: "mode" }, "gate:decisionReasonType=mode"],
+      [{ decisionReasonType: "weird value/../x" }, "gate:decisionReasonType=string"],
+      [{ forceAskCause: "server_unconfirmed" }, "gate:forceAskCause=server_unconfirmed"],
+      [{ firstDriveReference: {} }, "gate:firstDriveReference"],
+      [{ rulesLock: "managed_rules_only" }, "gate:rulesLock"],
+      [{ nameTrustWithheld: true }, "gate:nameTrustWithheld"],
+      [{ handedToPerson: true }, "gate:handedToPerson"],
+      [{ defaultToNo: true }, "gate:defaultToNo"],
+      [{ settingsFileRuleAsk: true }, "gate:settingsFileRuleAsk"],
+      [{ suppressAlwaysAllowRule: true }, "gate:suppressAlwaysAllowRule"],
+      [{ connectorAsk: "policy_only" }, "gate:connectorAsk"],
+      [{ viaHostCliLauncher: true }, "gate:viaHostCliLauncher"],
+      [{ decisionReason: "Explicit ask" }, "reason"]
+    ];
+    for (const [options, token] of cases) {
+      assert.equal((await call(options)).behavior, "native", token);
+      assert.deepEqual(kept(), [token], token);
+    }
+    const env = [
+      [() => { flags.ask = true; }, () => { flags.ask = false; }, "hostPolicy"],
+      [() => { flags.unattended = true; }, () => { flags.unattended = false; }, "unattended"],
+      [() => { flags.ownAsk = true; }, () => { flags.ownAsk = false; }, "ownAskRules"],
+      [() => { session.permissionMode = "plan"; }, () => { session.permissionMode = "default"; }, "planMode"],
+      [() => { session.sideSessionStartsSinceUserMessage = 10; }, () => { session.sideSessionStartsSinceUserMessage = 0; }, "startGate"],
+      [() => { broker.internalNameProvenanceVerdict = () => ({ decision: "ask" }); }, () => { delete broker.internalNameProvenanceVerdict; }, "provenance"],
+      [() => { broker.forceAskVerdict = async () => ({ standDown: "classifier" }); }, () => { delete broker.forceAskVerdict; }, "forceAsk:classifier"],
+      [() => { listing.state.managedOnly = true; }, () => { listing.state.managedOnly = false; }, "rules:listing"],
+      [() => { listing.state.rules = [{ rule: START, behavior: "deny", source: "userSettings" }]; }, () => { listing.state.rules = []; }, "rules:deny"],
+      [() => { broker.config.laptopMcpToolAsksEveryCall = () => true; }, () => { broker.config.laptopMcpToolAsksEveryCall = () => false; }, "laptopAsksEveryCall"],
+      [() => { mainWindow.visible = false; }, () => { mainWindow.visible = true; }, "window"]
+    ];
+    for (const [on, off, token] of env) {
+      on();
+      try { assert.equal((await call()).behavior, "native", token); } finally { off(); }
+      assert.deepEqual(kept(), [token], token);
+    }
+    assert.equal((await call({}, START, { ...input, host: "box" })).behavior, "native"); assert.deepEqual(kept(), ["scope:input"]);
+    const saved = session.originCwd; session.originCwd = undefined; session.cwd = "rel";
+    assert.equal((await call()).behavior, "native"); assert.deepEqual(kept(), ["scope:project"]);
+    session.originCwd = saved; session.cwd = parent().cwd;
+    // An eligible ask, other tools and the switch being off log nothing.
+    assert.equal((await call()).behavior, "allow");
+    for (const tool of ["Bash", "mcp__ccd_session__hand_off_to_session"]) assert.equal((await call({ decisionReason: "x" }, tool)).behavior, "native");
+    ipc(P.handlers, "cdb-session-start:set", false);
+    for (const [options] of cases) assert.equal((await call(options)).behavior, "native");
+    flags.ask = true; assert.equal((await call()).behavior, "native"); flags.ask = false;
+    ipc(P.handlers, "cdb-session-start:set", true);
+    assert.deepEqual(diag, [], "no diagnostics for eligible asks, other tools or switch off");
+  });
+  await test("compiled: the post-answer recheck stays quiet and still denies", async () => {
+    choice = 1; diag.length = 0;
+    const n = dialogCalls.length;
+    // Eligible before the dialog, refused by the host once the person answered.
+    broker.config.laptopMcpToolAsksEveryCall = () => dialogCalls.length > n;
+    try { assert.equal((await call()).behavior, "deny"); } finally { broker.config.laptopMcpToolAsksEveryCall = () => false; }
+    assert.equal(dialogCalls.length, n + 1);
+    assert.deepEqual(diag, [], "recheck refusal is a deny, not a kept card");
   });
   await test("compiled: handoff and other tools cannot acquire this grant", async () => {
     for (const tool of ["Bash", "mcp__ccd_session__hand_off_to_session", "mcp__other__start_session"]) assert.equal((await call({}, tool)).behavior, "native");
@@ -545,6 +644,9 @@ try {
     });
     const code = `(function(__scope){with(__scope){return (function(){${matcher[0]}${gate[0]}class __Broker{${method}}return __Broker})()}})`;
     const RealBroker = vm.runInContext(code, R.context)(scope);
+    const realDiag = [];
+    R.context.__cdbDiag = message => realDiag.push(message);
+    const realKept = () => realDiag.splice(0).filter(m => m.startsWith("[session-start-always-allow] card kept: ")).map(m => m.slice(40));
     const cards = [];
     const realSession = { ...parent(), permissionMode: "default", sessionPermissionUpdates: [], alwaysAllowedReasons: new Set(),
       query: { listPermissionRules: async () => ({ state: { managedOnly: false, rules: [] } }) } };
@@ -607,6 +709,42 @@ try {
       assert.equal((await ask(data)).behavior, "allow");
       assert.equal(R.store.has(JSON.stringify([KEY, destinationA])), true);
       assert.equal((await ask({ ...data, cwd: path.join(dir, "missing-directory") })).behavior, "card");
+    });
+    await test("real 4.16336.0: Manual-mode ordinary ask for a new explicit folder reaches the dialog", async () => {
+      R.store.forget(); realDiag.length = 0;
+      const data = { ...input, cwd: destinationB, use_worktree: false };
+      const place = { key: "native-place-b", sentence: "Claude wants to start a session in a new folder on this computer." };
+      target.firstUseSidePlace = async () => place;
+      dialogAnswer = async () => ({ response: 1 });
+      const n = realCalls.length;
+      const result = await ask(data, { toolUseID: "manual-1" });
+      assert.equal(result.behavior, "allow"); assert.equal(realCalls.length, n + 1);
+      assert.equal(target.allowedOnCardJustNow.has(result), true, "approved only after a real answer");
+      assert.ok(realCalls.at(-1).options.detail.includes(place.sentence));
+      assert.ok(realCalls.at(-1).options.detail.includes("Destination directory: " + destinationB));
+      assert.deepEqual(realKept(), []);
+      // Stored tuple grant + first-use place: still the dialog.
+      assert.equal(R.store.grant(JSON.stringify([KEY, destinationB])).ok, true);
+      dialogAnswer = async () => ({ response: 0 });
+      assert.equal((await ask(data, { toolUseID: "manual-2" })).behavior, "deny"); assert.equal(realCalls.length, n + 2);
+      // Place known (undefined) + stored grant: no dialog.
+      target.firstUseSidePlace = async () => undefined;
+      dialogAnswer = async () => { throw Error("unexpected dialog"); };
+      assert.equal((await ask(data, { toolUseID: "manual-3" })).behavior, "allow"); assert.equal(realCalls.length, n + 2);
+      // Refusals log one token each; the real card sink keeps the card.
+      target.firstUseSidePlace = async () => place;
+      assert.equal((await ask(data, { decisionReasonType: "hook", decisionReason: "other" })).behavior, "card");
+      assert.deepEqual(realKept(), ["gate:decisionReasonType=hook"]);
+      assert.equal((await ask(input)).behavior, "card"); assert.deepEqual(realKept(), ["firstUsePlace"]);
+      realSession.permissionMode = "plan";
+      assert.equal((await ask(data)).behavior, "card"); assert.deepEqual(realKept(), ["planMode"]);
+      realSession.permissionMode = "default";
+      target.firstUseSidePlace = async () => undefined;
+      R.store.forget();
+      ipc(R.handlers, "cdb-session-start:set", false);
+      assert.equal((await ask(data, { decisionReasonType: "mode" })).behavior, "card");
+      ipc(R.handlers, "cdb-session-start:set", true);
+      assert.deepEqual(realDiag, [], "switch off logs nothing");
     });
     await test("real 4.16336.0: another project -> dialog", async () => {
       realSession.originCwd = "/home/u/other";

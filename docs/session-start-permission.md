@@ -37,10 +37,10 @@ The dialog is only used where upstream would show its ordinary card. Everything 
 - the switch is off;
 - the app window is hidden (to the tray), minimized or gone;
 - a request outside the scope above;
-- non-rule decision reasons other than the exact native first-use sentence for an explicit local directory, managed-only rules, deny rules (matched by upstream's own rule matcher), explicit ask rules or external PreToolUse hooks, organization policy;
+- non-rule decision reasons other than the exact native first-use sentence for an explicit local directory (an ask with no reason at all is admitted), managed-only rules, deny rules (matched by upstream's own rule matcher), explicit ask rules or external PreToolUse hooks, organization policy;
 - unproven tool provenance, continuation, remote-control or unattended sessions, the repeated-start count guard (10), plan mode, the host CLI launcher.
 
-For a first-use explicit local directory, the dialog includes the broker's own destination-consent sentence. It always asks visibly, even if a remembered start exists, and only an actual click marks the result as on-card consent for upstream's unchanged destination-grant processing. A changed destination/consent, including a symlink retargeted while the dialog is open, denies rather than saving a stale approval. No folder is silently added to a global trust list.
+For a first-use explicit local directory, the dialog includes the broker's own destination-consent sentence. This covers both shapes in which the folder ask arrives: an ask carrying only that sentence, and the ordinary ask with no reason (the Manual-mode case, where upstream's card shows no sentence). Both are upstream's own folder consent: after any allow of a `start_session` ask, upstream's `canUseTool` grants the first-use place it computed before the ask (`grantSidePlace`), and the local start then accepts it and marks the folder used. The dialog's answer flows through that same path. It always asks visibly, even if a remembered start exists, and only an actual click marks the result as on-card consent for upstream's unchanged destination-grant processing. A changed destination/consent, including a symlink retargeted while the dialog is open, denies rather than saving a stale approval. No folder is silently added to a global trust list.
 
 ### Explicit folders and how long they are remembered
 
@@ -49,6 +49,16 @@ Upstream tracks the first use of a folder in memory, per asking session. A new a
 ### Hooks
 
 An external PreToolUse ask hook is not guaranteed to keep the in-chat card. The Claude Code CLI folds several PreToolUse ask results into one (the last one wins), so when the CLI hands over only the first-use folder sentence, that ask is answered in the native dialog. The person is still asked. A remembered approval never skips a later hook ask: once the folder is no longer first use, a hook-type ask is refused by the gate again and the card shows. User ask rules and managed policy keep the card.
+
+## Diagnostics
+
+With the switch on, each `start_session` ask that keeps upstream's card writes one line to `claude-patches.log`:
+
+```
+[session-start-always-allow] card kept: <reason>
+```
+
+`<reason>` is a fixed token naming the refusing check: `gate:decisionReasonType=<type>`, `gate:forceAskCause=<cause>`, `gate:handedToPerson`, `gate:rulesLock`, `gate:defaultToNo` (and the other `gate:<option>` flags), `sessionChanged`, `hostCliLauncher`, `planMode`, `laptopAsksEveryCall`, `hostPolicy`, `unattended`, `provenance`, `startGate`, `firstUsePlace`, `forceAsk:<cause>`, `ownAskRules`, `rules:listing`, `reason`, `rules:deny`, `scope:project`, `scope:input` or `window`. It never contains a path, prompt or id. Other tools, the switch being off and the post-answer recheck log nothing; a failure before the answer logs the error instead.
 
 ## Fail directions
 

@@ -10,7 +10,7 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ### Session-start dialog for explicit local folders (thanks @alexx-ftw, #313)
 
-- **The opt-in native session-start dialog now also covers an explicit local folder**, showing its resolved directory; the first-use folder consent is answered there too. Approvals are kept per asking project and folder, but upstream tracks first use in memory, so a new asking session or an app restart asks again for that folder; the default destination stays remembered as before. A PreToolUse ask hook may be answered in the dialog instead of the card (the person is still asked); user ask rules and managed policy keep the card.
+- **The opt-in native session-start dialog now also covers an explicit local folder**, showing its resolved directory; the first-use folder consent is answered there too. Approvals are kept per asking project and folder, but upstream tracks first use in memory, so a new asking session or an app restart asks again for that folder; the default destination stays remembered as before. A PreToolUse ask hook may be answered in the dialog instead of the card (the person is still asked); user ask rules and managed policy keep the card. Manual-mode asks for a new folder (upstream's ordinary card, without the folder sentence) now reach the dialog too, and an ask that keeps the card logs `[session-start-always-allow] card kept: <reason>` to `claude-patches.log`.
 
 ### Auto-fix forwards comments that arrive after a merge (thanks @alexx-ftw, #310)
 

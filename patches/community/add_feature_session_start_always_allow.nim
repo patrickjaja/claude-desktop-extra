@@ -191,50 +191,107 @@ proc apply*(input: string): string =
       anchor = input[a.boundaries]
   if hits != 1:
     raise newException(ValueError, "session-start native card sink must match once")
-  let gate =
-    tool & "===\"mcp__ccd_session__start_session\"&&" & options & "!==undefined&&" &
-    session & "!==undefined&&(" & options & ".decisionReasonType===undefined||" & options &
-    ".decisionReasonType===\"rule\"||__cdbStartPlaceAsk)&&(" & options &
-    ".forceAskCause===undefined||" & options & ".forceAskCause===\"ordinary\")&&" &
-    options & ".firstDriveReference===undefined&&" & options & ".rulesLock===undefined&&" &
-    options & ".nameTrustWithheld!==true&&(" & options &
-    ".handedToPerson!==true||__cdbStartPlaceAsk)&&" & options & ".defaultToNo!==true&&" &
-    options & ".settingsFileRuleAsk!==true&&" & options &
-    ".suppressAlwaysAllowRule!==true&&" & options & ".connectorAsk===undefined&&" &
-    options & ".viaHostCliLauncher!==true"
+  let o = options
+  proc keep(cond, token: string): string =
+    ## One refusal: when `cond` holds, log the fixed token once and keep the card.
+    "if(" & cond & ")return __cdbStartKeep(" & token & ");"
+
+  proc tok(token: string): string =
+    "\"" & token & "\""
+
   let eligibility =
+    # Called by the helper as eligible() before the dialog and eligible(true) for the
+    # post-answer recheck; only the first call logs, one line per refused ask.
+    "async(__cdbStartRecheck)=>{let __cdbStartKeep=__cdbReason=>{if(__cdbStartRecheck!==true)try{globalThis.__cdbDiag?.(\"[session-start-always-allow] card kept: \"+__cdbReason)}catch(__cdbE){}return false}," &
+    "__cdbStartTok=__cdbV=>typeof __cdbV===\"string\"&&/^[A-Za-z][\\w-]{0,39}$/.test(__cdbV)?__cdbV:typeof __cdbV;" &
+    # Other tools reach this sink too: silent, never logged.
+    "if(" & tool & "!==\"mcp__ccd_session__start_session\")return false;" &
+    "let __cdbStartPlace=await this.firstUseSidePlace(" & sid & "," & tool & "," & data &
+    ");" &
     # __cdbStartPlaceAsk: the ask is only the first-use folder sentence. The CLI folds several
     # PreToolUse ask results into one (last wins), so a hook ask may arrive here and is answered
     # in the native dialog; the person is still asked. User ask rules and managed policy keep the card.
-    "async()=>{let __cdbStartPlace=await this.firstUseSidePlace(" & sid & "," & tool &
-    "," & data & ");" & "let __cdbStartPlaceAsk=" & data &
+    "let __cdbStartPlaceAsk=" & data &
     "?.cwd!==undefined&&__cdbStartPlace!==undefined&&typeof __cdbStartPlace.sentence===\"string\"&&" &
-    options & "?.decisionReason===__cdbStartPlace.sentence&&(" & options &
-    "?.decisionReasonType===\"hook\"||" & options & "?.decisionReasonType===undefined);" &
-    "if(!(" & gate & "))return false;" & "if(this.config.getSession(" & sid & ")!==" &
-    session & "||" & api & ".TF(" & session & ")||" & session &
-    ".permissionMode===\"plan\"||" & "this.config.laptopMcpToolAsksEveryCall?.(" & sid &
-    "," & tool & ")===true||" & api & ".hm(" & tool & ")||" & api & ".qn(" & sid &
-    ",e=>this.config.getSession(e))||" & "this.internalNameProvenanceVerdict(" & sid &
-    "," & tool & ")!==undefined)return false;" & "if(" & startGate & "(" & tool & "," &
-    data & "," & sid & ",__cdbSessionId=>this.config.getSession(__cdbSessionId)," &
-    options &
-    ".toolUseID,\"canUseTool\")||(__cdbStartPlace!==undefined&&!__cdbStartPlaceAsk))return false;" &
-    "let __cdbStartVerdict=await this.forceAskVerdict(" & tool & "," & data & "," & sid &
-    ");" &
-    "if(!(__cdbStartVerdict.cause===\"ordinary\"||__cdbStartVerdict.standDown===\"bypass\")||" &
-    "await " & api & "._K(" & session & ".query," & tool & ")!==false)return false;" &
-    "let __cdbStartListing=await " & session &
+    o & "?.decisionReason===__cdbStartPlace.sentence&&(" & o &
+    "?.decisionReasonType===\"hook\"||" & o & "?.decisionReasonType===undefined);" &
+    # __cdbStartPlaceOrdinary: upstream's ordinary card (no reason, or the verified
+    # server-policy rule reason below) for an explicit local folder first used by the
+    # asking session. Upstream's outer canUseTool grants that place after ANY allow
+    # (grantSidePlace), so this dialog's answer is the same folder consent.
+    "let __cdbStartPlaceOrdinary=__cdbStartPlace!==undefined&&typeof __cdbStartPlace.sentence===\"string\"&&typeof " &
+    data & "?.cwd===\"string\"&&" & data & ".cwd.startsWith(\"/\")&&" & o &
+    "!==undefined&&" & o & ".handedToPerson!==true&&((" & o &
+    ".decisionReason===undefined&&" & o & ".decisionReasonType===undefined)||" & o &
+    ".decisionReasonType===\"rule\");" & keep(o & "===undefined", tok("gate:options")) &
+    keep(session & "===undefined", tok("gate:session")) &
+    keep(
+      "!(" & o & ".decisionReasonType===undefined||" & o &
+        ".decisionReasonType===\"rule\"||__cdbStartPlaceAsk)",
+      "\"gate:decisionReasonType=\"+__cdbStartTok(" & o & ".decisionReasonType)",
+    ) &
+    keep(
+      "!(" & o & ".forceAskCause===undefined||" & o & ".forceAskCause===\"ordinary\")",
+      "\"gate:forceAskCause=\"+__cdbStartTok(" & o & ".forceAskCause)",
+    ) & keep(o & ".firstDriveReference!==undefined", tok("gate:firstDriveReference")) &
+    keep(o & ".rulesLock!==undefined", tok("gate:rulesLock")) &
+    keep(o & ".nameTrustWithheld===true", tok("gate:nameTrustWithheld")) &
+    keep(o & ".handedToPerson===true&&!__cdbStartPlaceAsk", tok("gate:handedToPerson")) &
+    keep(o & ".defaultToNo===true", tok("gate:defaultToNo")) &
+    keep(o & ".settingsFileRuleAsk===true", tok("gate:settingsFileRuleAsk")) &
+    keep(o & ".suppressAlwaysAllowRule===true", tok("gate:suppressAlwaysAllowRule")) &
+    keep(o & ".connectorAsk!==undefined", tok("gate:connectorAsk")) &
+    keep(o & ".viaHostCliLauncher===true", tok("gate:viaHostCliLauncher")) &
+    keep("this.config.getSession(" & sid & ")!==" & session, tok("sessionChanged")) &
+    keep(api & ".TF(" & session & ")", tok("hostCliLauncher")) &
+    keep(session & ".permissionMode===\"plan\"", tok("planMode")) &
+    keep(
+      "this.config.laptopMcpToolAsksEveryCall?.(" & sid & "," & tool & ")===true",
+      tok("laptopAsksEveryCall"),
+    ) & keep(api & ".hm(" & tool & ")", tok("hostPolicy")) &
+    keep(api & ".qn(" & sid & ",e=>this.config.getSession(e))", tok("unattended")) &
+    keep(
+      "this.internalNameProvenanceVerdict(" & sid & "," & tool & ")!==undefined",
+      tok("provenance"),
+    ) &
+    keep(
+      startGate & "(" & tool & "," & data & "," & sid &
+        ",__cdbSessionId=>this.config.getSession(__cdbSessionId)," & o &
+        ".toolUseID,\"canUseTool\")",
+      tok("startGate"),
+    ) &
+    keep(
+      "__cdbStartPlace!==undefined&&!__cdbStartPlaceAsk&&!__cdbStartPlaceOrdinary",
+      tok("firstUsePlace"),
+    ) & "let __cdbStartVerdict=await this.forceAskVerdict(" & tool & "," & data & "," &
+    sid & ");" &
+    keep(
+      "!(__cdbStartVerdict.cause===\"ordinary\"||__cdbStartVerdict.standDown===\"bypass\")",
+      "\"forceAsk:\"+__cdbStartTok(__cdbStartVerdict.cause??__cdbStartVerdict.standDown)",
+    ) &
+    keep(
+      "await " & api & "._K(" & session & ".query," & tool & ")!==false",
+      tok("ownAskRules"),
+    ) & "let __cdbStartListing=await " & session &
     ".query?.listPermissionRules?.(),__cdbStartRules=__cdbStartListing?.state?.rules;" &
-    "return __cdbStartListing?.state?.managedOnly===false&&Array.isArray(__cdbStartRules)&&" &
-    "__cdbStartRules.every(__cdbStartRule=>__cdbStartRule&&typeof __cdbStartRule.rule===\"string\"&&typeof __cdbStartRule.behavior===\"string\"&&typeof __cdbStartRule.source===\"string\")&&" &
-    "(__cdbStartPlaceAsk||(" & options & ".decisionReason===undefined&&" & options &
-    ".decisionReasonType===undefined)||(" & options & ".decisionReasonType===\"rule\"&&" &
-    options &
-    ".reasonFromApp!==true&&__cdbStartRules.some(__cdbStartRule=>__cdbStartRule.notInEffect!==true&&__cdbStartRule.behavior===\"ask\"&&__cdbStartRule.source===\"mcpServerPolicy\"&&" &
-    api & "." & matcherExport & "(__cdbStartRule.rule," & tool & "))))&&" &
-    "!__cdbStartRules.some(__cdbStartRule=>__cdbStartRule.notInEffect!==true&&__cdbStartRule.behavior===\"deny\"&&" &
-    api & "." & matcherExport & "(__cdbStartRule.rule," & tool & "))}"
+    keep(
+      "!(__cdbStartListing?.state?.managedOnly===false&&Array.isArray(__cdbStartRules)&&" &
+        "__cdbStartRules.every(__cdbStartRule=>__cdbStartRule&&typeof __cdbStartRule.rule===\"string\"&&typeof __cdbStartRule.behavior===\"string\"&&typeof __cdbStartRule.source===\"string\"))",
+      tok("rules:listing"),
+    ) &
+    keep(
+      "!(__cdbStartPlaceAsk||(" & o & ".decisionReason===undefined&&" & o &
+        ".decisionReasonType===undefined)||(" & o & ".decisionReasonType===\"rule\"&&" &
+        o &
+        ".reasonFromApp!==true&&__cdbStartRules.some(__cdbStartRule=>__cdbStartRule.notInEffect!==true&&__cdbStartRule.behavior===\"ask\"&&__cdbStartRule.source===\"mcpServerPolicy\"&&" &
+        api & "." & matcherExport & "(__cdbStartRule.rule," & tool & "))))",
+      tok("reason"),
+    ) &
+    keep(
+      "__cdbStartRules.some(__cdbStartRule=>__cdbStartRule.notInEffect!==true&&__cdbStartRule.behavior===\"deny\"&&" &
+        api & "." & matcherExport & "(__cdbStartRule.rule," & tool & "))",
+      tok("rules:deny"),
+    ) & "return true}"
   let injected =
     marker &
     "if(process.platform===\"linux\"&&globalThis.__cdbSessionStartDialogEnabled?.()===true){let __cdbStartResult=await (" &

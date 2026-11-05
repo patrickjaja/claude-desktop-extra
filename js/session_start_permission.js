@@ -104,6 +104,12 @@
     };
   }
 
+  // One diagnostic line when an eligible-looking ask keeps upstream's card.
+  // Fixed tokens only: no path, prompt or id.
+  function keep(reason) {
+    try { globalThis.__cdbDiag?.("[session-start-always-allow] card kept: " + reason); } catch (e) {}
+  }
+
   return async function sessionStartAlwaysAllow(input, signal, eligible, ctx) {
     // FIRST: the switch. Off means upstream's card, stored grants or not.
     var enabled = globalThis.__cdbSessionStartDialogEnabled;
@@ -114,10 +120,12 @@
     if (!store || typeof eligible !== "function" || !ctx) return;
     var answered = false;
     try {
+      // eligible() logs its own refusal; the recheck below passes true to stay quiet.
       if (!await eligible()) return;
       var session = ctx.session;
       var key = projectKey(session);
-      if (key === undefined || !inScope(input, session)) return;
+      if (key === undefined) { keep("scope:project"); return; }
+      if (!inScope(input, session)) { keep("scope:input"); return; }
       var target = destination(input);
       var grantKey = target === undefined ? key : JSON.stringify([key, target]);
       var place = typeof ctx.place === "function" ? await ctx.place() : undefined;
@@ -131,7 +139,7 @@
         return { behavior: "allow", updatedInput: input };
       }
       var win = sessionWindow(ctx.mainWindow);
-      if (!win) return;
+      if (!win) { keep("window"); return; }
       var revision = store.revision;
       var text = describe(input, session, ctx.sessionId, key, target, place);
       win.show();
@@ -159,7 +167,7 @@
       }
       // Re-read the host's rules after the person answers: a changed policy must
       // not fall through to a card carrying the old, now-stale approval reason.
-      if (!await eligible()) {
+      if (!await eligible(true)) {
         return { behavior: "deny", message: "Session-start policy or destination changed while awaiting approval. Nothing was started. Call the tool again for a fresh approval." };
       }
       if (stale()) {
