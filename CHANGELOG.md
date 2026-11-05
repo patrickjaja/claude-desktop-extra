@@ -4,9 +4,9 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-05
 
-### Session-start dialog for explicit local folders
+### Session-start dialog for explicit local folders (thanks @alexx-ftw, #313)
 
-- **The opt-in native session-start dialog also handles an explicit local `cwd`**, showing its resolved directory. Remembered approvals are isolated by asking project and exact destination; existing default-destination grants are unchanged. First-use native folder consent remains visible and is handed back to upstream only after a real approval; external asks/hooks, policy, remote targets and permission limits remain enforced. Switching off or forgetting approvals clears both kinds.
+- **The opt-in native session-start dialog now also covers an explicit local folder**, showing its resolved directory; the first-use folder consent is answered there too. Approvals are kept per asking project and folder, but upstream tracks first use in memory, so a new asking session or an app restart asks again for that folder; the default destination stays remembered as before. A PreToolUse ask hook may be answered in the dialog instead of the card (the person is still asked); user ask rules and managed policy keep the card.
 
 ### Auto-fix forwards comments that arrive after a merge (thanks @alexx-ftw, #310)
 

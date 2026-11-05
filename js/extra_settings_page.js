@@ -3003,7 +3003,7 @@
       note: "When Claude asks to start another Code session, a native dialog replaces the in-chat card and " +
         "offers Deny, Allow once and Allow always (Deny is the default; Escape denies). Allow always " +
         "remembers the approval for that asking project and the displayed local destination only. A different " +
-        "folder asks separately; host, environment, preset, cloud and higher-mode requests keep the in-chat card. Sessions started " +
+        "folder asks separately, and an explicit folder is asked again in a new asking session or after an app restart; host, environment, preset, cloud and higher-mode requests keep the in-chat card. Sessions started " +
         "this way run in this session's permission mode or lower from a prompt Claude wrote; nothing inside " +
         "them is approved by this. When the app window is hidden or minimized the in-chat card asks instead. " +
         "Off (the default) leaves Anthropic's in-chat card as shipped; turning it off also forgets every " +

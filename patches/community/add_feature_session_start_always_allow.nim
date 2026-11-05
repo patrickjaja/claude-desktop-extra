@@ -203,6 +203,9 @@ proc apply*(input: string): string =
     ".suppressAlwaysAllowRule!==true&&" & options & ".connectorAsk===undefined&&" &
     options & ".viaHostCliLauncher!==true"
   let eligibility =
+    # __cdbStartPlaceAsk: the ask is only the first-use folder sentence. The CLI folds several
+    # PreToolUse ask results into one (last wins), so a hook ask may arrive here and is answered
+    # in the native dialog; the person is still asked. User ask rules and managed policy keep the card.
     "async()=>{let __cdbStartPlace=await this.firstUseSidePlace(" & sid & "," & tool &
     "," & data & ");" & "let __cdbStartPlaceAsk=" & data &
     "?.cwd!==undefined&&__cdbStartPlace!==undefined&&typeof __cdbStartPlace.sentence===\"string\"&&" &

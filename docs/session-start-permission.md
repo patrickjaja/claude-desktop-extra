@@ -12,7 +12,7 @@ For an eligible ask, a dialog opens on the app window (modal to it; the window i
 
 - **Deny** - the default button. Escape and closing the dialog also deny.
 - **Allow once** - this call only.
-- **Allow always** - this call, and later ones from the same asking project to the same displayed local destination. The default destination and each explicitly named directory have separate approvals.
+- **Allow always** - this call, and later ones from the same asking project to the same displayed local destination. The default destination and each explicitly named directory have separate approvals. The default destination stays approved across restarts. For an explicit folder, see "Explicit folders and how long they are remembered" below.
 
 It names the new session's title, the asking session, the project, the destination, the child's permission mode and model (when given), and the first 300 characters of the prompt Claude wrote.
 
@@ -40,7 +40,15 @@ The dialog is only used where upstream would show its ordinary card. Everything 
 - non-rule decision reasons other than the exact native first-use sentence for an explicit local directory, managed-only rules, deny rules (matched by upstream's own rule matcher), explicit ask rules or external PreToolUse hooks, organization policy;
 - unproven tool provenance, continuation, remote-control or unattended sessions, the repeated-start count guard (10), plan mode, the host CLI launcher.
 
-For a first-use explicit local directory, the dialog includes the broker's own destination-consent sentence. It always asks visibly, even if a remembered start exists, and only an actual click marks the result as on-card consent for upstream's unchanged destination-grant processing. Matching a destination sentence does not override external ask rules or hooks. A changed destination/consent, including a symlink retargeted while the dialog is open, denies rather than saving a stale approval. No folder is silently added to a global trust list.
+For a first-use explicit local directory, the dialog includes the broker's own destination-consent sentence. It always asks visibly, even if a remembered start exists, and only an actual click marks the result as on-card consent for upstream's unchanged destination-grant processing. A changed destination/consent, including a symlink retargeted while the dialog is open, denies rather than saving a stale approval. No folder is silently added to a global trust list.
+
+### Explicit folders and how long they are remembered
+
+Upstream tracks the first use of a folder in memory, per asking session. A new asking session or an app restart therefore shows the dialog again for that folder: first-use folder consent always needs a real answer. The remembered `[project, folder]` approval only skips the dialog for later asks about the same project and folder within that situation (for example when a policy asks every time). Only the default destination (no `cwd`) is remembered across sessions and restarts.
+
+### Hooks
+
+An external PreToolUse ask hook is not guaranteed to keep the in-chat card. The Claude Code CLI folds several PreToolUse ask results into one (the last one wins), so when the CLI hands over only the first-use folder sentence, that ask is answered in the native dialog. The person is still asked. A remembered approval never skips a later hook ask: once the folder is no longer first use, a hook-type ask is refused by the gate again and the card shows. User ask rules and managed policy keep the card.
 
 ## Fail directions
 

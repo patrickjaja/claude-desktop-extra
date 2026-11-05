@@ -93,7 +93,7 @@
     lines.push("", "Prompt Claude wrote:", prompt, "",
       (target === undefined
         ? "\"Allow always\" remembers this for THIS project and the default destination only. "
-        : "\"Allow always\" remembers this for THIS asking project and ONLY the destination directory shown above. It does not trust other folders. ") +
+        : "\"Allow always\" remembers this for THIS asking project and ONLY the destination directory shown above, and only skips this dialog for later asks about that same pair while the app is running and the asking session stays the same. A new asking session or an app restart asks again for the folder. It does not trust other folders. ") +
       "Sessions started this way run in this session's permission mode (or a lower one) from a prompt Claude wrote; " +
       "nothing inside them is approved by this. Turn it off or forget remembered approvals under " +
       "Settings -> Extra -> Community Features.");
