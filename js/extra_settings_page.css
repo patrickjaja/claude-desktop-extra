@@ -234,6 +234,59 @@
   opacity: 0.45;
 }
 
+/* Community Features group headlines only (.cdbx-grouphdr, set in renderFeatures):
+ * accent-colored text with a periodic light sheen and a small accent bar, so they
+ * read as ours next to upstream's own muted section headings. The accent is the
+ * host's brand variable when present, else a fixed warm fallback; the sheen mixes
+ * toward white, so it reads in light and dark. */
+.cdbx-sec-h.cdbx-grouphdr {
+  --cdbx-hdr: hsl(var(--accent-brand, 15 63.1% 59.6%));
+  opacity: 1;
+  color: var(--cdbx-hdr);
+  background: linear-gradient(90deg, var(--cdbx-hdr) 0%, var(--cdbx-hdr) 40%,
+    color-mix(in srgb, var(--cdbx-hdr) 40%, #fff) 50%, var(--cdbx-hdr) 60%, var(--cdbx-hdr) 100%);
+  background-size: 250% 100%;
+  background-position: 100% 50%;
+  animation: cdbx-sheen 6s ease-in-out infinite;
+}
+
+.cdbx-sec-h.cdbx-grouphdr::before {
+  content: "";
+  flex: none;
+  width: 3px;
+  height: 0.9em;
+  border-radius: 2px;
+  background: var(--cdbx-hdr);
+}
+
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .cdbx-sec-h.cdbx-grouphdr {
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+}
+
+/* The Pull requests subgroup: same effect, quieter bar and a slower sheen. */
+.cdbx-sec-h.cdbx-grouphdr-sub {
+  animation-duration: 9s;
+}
+
+.cdbx-sec-h.cdbx-grouphdr-sub::before {
+  opacity: 0.55;
+}
+
+/* Holds the plain accent for the first half of the cycle, then one sweep. */
+@keyframes cdbx-sheen {
+  0%, 55% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cdbx-sec-h.cdbx-grouphdr { animation: none; }
+}
+
 .cdbx-sec-n {
   padding: 0 6px;
   font-size: 10px;

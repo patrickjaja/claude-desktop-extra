@@ -309,6 +309,16 @@ section("[6] every webContents keeps its own sheet");
      "the Extra headline gradient is animated");
   ok(/prefers-reduced-motion: reduce\) \{\s*\.cdbx-navgroup \{ animation: none/.test(css),
      "reduced motion turns the rainbow animation off");
+  ok(/\.cdbx-sec-h\.cdbx-grouphdr \{[^}]*hsl\(var\(--accent-brand[^}]*background-size: 250%[^}]*animation: cdbx-sheen[^}]*\}/.test(css),
+     "Community group headlines: accent text on a wide gradient with the sheen animation");
+  ok(/\.cdbx-sec-h\.cdbx-grouphdr::before \{[^}]*width: 3px[^}]*\}/.test(css),
+     "with a static 3px accent bar before the text");
+  ok(/@keyframes cdbx-sheen \{\s*0%, 55% \{[^}]*\}\s*100% \{[^}]*\}/.test(css),
+     "the sheen holds most of the cycle and sweeps once");
+  ok(/prefers-reduced-motion: reduce\) \{\s*\.cdbx-sec-h\.cdbx-grouphdr \{ animation: none/.test(css),
+     "reduced motion stops the sheen, accent and bar stay");
+  ok(/\.cdbx-sec-h\.cdbx-grouphdr-sub::before \{[^}]*opacity: 0\.55/.test(css),
+     "the Pull requests subheadline is quieter");
 }
 
 console.log("\n" + (fail ? `${pass} passed, ${fail} FAILED` : `ALL ${pass} CHECKS PASSED`));

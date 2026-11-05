@@ -3426,7 +3426,7 @@
     // filter can hide a headline whose rows are all hidden.
     function buildGroup(parent, group, nested) {
       var node = el("div", nested ? "cdbx-group cdbx-group-sub" : "cdbx-group");
-      node.appendChild(el("div", nested ? "cdbx-sec-h cdbx-sec-h2" : "cdbx-sec-h", group.title));
+      node.appendChild(el("div", nested ? "cdbx-sec-h cdbx-sec-h2 cdbx-grouphdr cdbx-grouphdr-sub" : "cdbx-sec-h cdbx-grouphdr", group.title));
       node.appendChild(el("div", "cdbx-sub", group.sub));
       parent.appendChild(node);
       var g = { node: node, rows: [], kids: [] };

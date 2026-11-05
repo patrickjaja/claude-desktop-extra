@@ -976,6 +976,12 @@ async function featuresPanel(featuresItem) {
     ok(subGroup.length === 1 && gtitle(subGroup[0]) === "Pull requests" && subGroup[0].parentElement === topGroups[0] &&
        subGroup[0].children[1].textContent === "Auto-fix and auto-archive for your GitHub PRs",
        "Pull requests is the one subgroup, inside Code, with its subtitle");
+    ok(groupNodes.every(function (g) { return g.firstElementChild.classList.contains("cdbx-grouphdr"); }) &&
+       subGroup[0].firstElementChild.classList.contains("cdbx-grouphdr-sub"),
+       "every Community group headline carries cdbx-grouphdr, the subgroup also cdbx-grouphdr-sub");
+    ok(Array.from(panel.querySelectorAll(".cdbx-grouphdr")).length === groupNodes.length &&
+       Array.from(panel.querySelectorAll(".cdbx-sec-h:not(.cdbx-grouphdr)")).every(function (h) { return !h.closest(".cdbx-group"); }),
+       "no other heading carries the class");
     const titlesIn = function (g, own) {
       return Array.from(g.querySelectorAll(".cdbx-row .cdbx-id")).filter(function (n) {
         return !own || n.closest(".cdbx-group") === g;
