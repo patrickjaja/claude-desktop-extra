@@ -547,12 +547,12 @@ async function featuresPanel(featuresItem) {
          "titled Native dialog with 'Allow always' for starting other sessions");
       ok(ssRow.parentElement.previousElementSibling.textContent === "Code", "under a Code heading");
       ok(ss.getAttribute("aria-checked") === "false" && !ss.disabled, "off by default (opt-in), not locked");
-      ok(/project and its default destination only/.test(ssNote) && /nothing inside/.test(ssNote) &&
+      ok(/asking project and the displayed local destination only/.test(ssNote) && /different folder asks separately/.test(ssNote) && /nothing inside/.test(ssNote) &&
          /Off \(the default\)/.test(ssNote) && /forgets every/.test(ssNote) && /Applies live/.test(ssNote),
          "the note states scope, default, switch-off forgets and live: " + ssNote);
       const forget = Array.from(ssRow.querySelectorAll("button")).find(function (b) { return b.textContent === "Forget remembered approvals"; });
       ok(!!forget && !forget.disabled, "two remembered approvals -> an enabled forget button");
-      ok(/2 projects have a remembered approval/.test(ssRow.textContent), "the row shows the count");
+      ok(/2 project\/destination approvals remembered/.test(ssRow.textContent), "the row counts scoped approvals, not distinct projects");
       if (forget) {
         forget.click();
         await sleep(60);

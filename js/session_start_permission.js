@@ -9,7 +9,17 @@
   // Upstream's own ranking (kR next to permission_mode's enum); an unknown mode
   // never qualifies for a remembered approval.
   var MODE_RANK = { plan: 0, "default": 1, dontAsk: 1, acceptEdits: 2, auto: 3, bypassPermissions: 4 };
-  var PLACE_FIELDS = ["host", "cwd", "environment", "preset", "repository"];
+  var PLACE_FIELDS = ["host", "environment", "preset", "repository"];
+
+  function destination(input) {
+    if (input.cwd === undefined) return;
+    if (typeof input.cwd !== "string" || !input.cwd.startsWith("/") ||
+        input.cwd.length > 4096 || /[\u0000-\u001f\u007f]/.test(input.cwd)) throw Error("Invalid local destination");
+    var fs = require("fs");
+    var resolved = fs.realpathSync(input.cwd);
+    if (!fs.statSync(resolved).isDirectory()) throw Error("Destination is not a directory");
+    return resolved;
+  }
 
   function has(obj, key) { return Object.prototype.hasOwnProperty.call(obj, key); }
 
@@ -64,13 +74,16 @@
     return typeof value === "string" && value.trim() ? clip(value.replace(/\s+/g, " ").trim(), max) : undefined;
   }
 
-  function describe(input, session, sessionId, key) {
+  function describe(input, session, sessionId, key, target, place) {
     var title = oneLine(input.title, 120);
     var from = oneLine(session && session.title, 120) || String(sessionId);
     var lines = [];
     lines.push("Asked by: " + from);
     lines.push("Project: " + key);
-    lines.push("Destination: this project, " + (input.use_worktree === false ? "sharing this session's checkout" : "its default checkout or worktree"));
+    lines.push(target === undefined
+      ? "Destination: this project, " + (input.use_worktree === false ? "sharing this session's checkout" : "its default checkout or worktree")
+      : "Destination directory: " + target);
+    if (place) lines.push("", place.sentence);
     lines.push("Permission mode: " + (typeof input.permission_mode === "string"
       ? oneLine(input.permission_mode, 40)
       : "this session's (" + (oneLine(session && session.permissionMode, 40) || "unknown") + ")"));
@@ -78,7 +91,9 @@
     if (oneLine(input.effort, 40)) lines.push("Effort: " + oneLine(input.effort, 40));
     var prompt = typeof input.prompt === "string" && input.prompt.trim() ? clip(input.prompt.trim(), 300) : "(none)";
     lines.push("", "Prompt Claude wrote:", prompt, "",
-      "\"Allow always\" remembers this for THIS project and the default destination only. " +
+      (target === undefined
+        ? "\"Allow always\" remembers this for THIS project and the default destination only. "
+        : "\"Allow always\" remembers this for THIS asking project and ONLY the destination directory shown above, and only skips this dialog for later asks about that same pair while the app is running and the asking session stays the same. A new asking session or an app restart asks again for the folder. It does not trust other folders. ") +
       "Sessions started this way run in this session's permission mode (or a lower one) from a prompt Claude wrote; " +
       "nothing inside them is approved by this. Turn it off or forget remembered approvals under " +
       "Settings -> Extra -> Community Features.");
@@ -103,12 +118,22 @@
       var session = ctx.session;
       var key = projectKey(session);
       if (key === undefined || !inScope(input, session)) return;
+      var target = destination(input);
+      var grantKey = target === undefined ? key : JSON.stringify([key, target]);
+      var place = typeof ctx.place === "function" ? await ctx.place() : undefined;
+      // A first-use destination still needs visible consent, even if an older
+      // remembered start exists. Only the real dialog may stamp that consent.
       if (signal && signal.aborted) return { behavior: "deny", message: "Request aborted" };
-      if (store.has(key) === true) return { behavior: "allow", updatedInput: input };
+      if (!place && store.has(grantKey) === true) {
+        if (destination(input) !== target || projectKey(ctx.session) !== key || enabled() !== true) {
+          return { behavior: "deny", message: "The remembered session-start destination changed. Nothing was started." };
+        }
+        return { behavior: "allow", updatedInput: input };
+      }
       var win = sessionWindow(ctx.mainWindow);
       if (!win) return;
       var revision = store.revision;
-      var text = describe(input, session, ctx.sessionId, key);
+      var text = describe(input, session, ctx.sessionId, key, target, place);
       win.show();
       win.focus();
       var answer = await require("electron").dialog.showMessageBox(win, {
@@ -140,13 +165,20 @@
       if (stale()) {
         return { behavior: "deny", message: "Session-start approval was cancelled, revoked or switched off. Nothing was started." };
       }
+      var currentPlace = typeof ctx.place === "function" ? await ctx.place() : undefined;
+      if (destination(input) !== target || projectKey(ctx.session) !== key ||
+          JSON.stringify(currentPlace) !== JSON.stringify(place) || stale() || !inScope(input, ctx.session)) {
+        return { behavior: "deny", message: "The session-start destination or consent changed. Nothing was started; request fresh approval." };
+      }
       if (answer.response === 2) {
-        var saved = store.grant(key);
+        var saved = store.grant(grantKey);
         if (!saved || saved.ok !== true) {
           return { behavior: "deny", message: "The remembered session-start approval could not be saved. Nothing was started; choose Allow once to continue." };
         }
       }
-      return { behavior: "allow", updatedInput: input };
+      var result = { behavior: "allow", updatedInput: input };
+      if (typeof ctx.onApproved === "function") ctx.onApproved(result);
+      return result;
     } catch (error) {
       // An unavailable store, window, dialog or host-policy check never approves.
       try { globalThis.__cdbDiag?.("[session-start-always-allow] " + String(error)); } catch (_) {}

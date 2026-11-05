@@ -3002,8 +3002,8 @@
       title: "Native dialog with 'Allow always' for starting other sessions",
       note: "When Claude asks to start another Code session, a native dialog replaces the in-chat card and " +
         "offers Deny, Allow once and Allow always (Deny is the default; Escape denies). Allow always " +
-        "remembers the approval for that project and its default destination only: a request for another " +
-        "folder, host, environment, preset, the cloud or a higher permission mode still asks. Sessions started " +
+        "remembers the approval for that asking project and the displayed local destination only. A different " +
+        "folder asks separately, and an explicit folder is asked again in a new asking session or after an app restart; host, environment, preset, cloud and higher-mode requests keep the in-chat card. Sessions started " +
         "this way run in this session's permission mode or lower from a prompt Claude wrote; nothing inside " +
         "them is approved by this. When the app window is hidden or minimized the in-chat card asks instead. " +
         "Off (the default) leaves Anthropic's in-chat card as shipped; turning it off also forgets every " +
@@ -3041,7 +3041,7 @@
       if (failed(res)) { count.textContent = ""; forget.disabled = true; return; }
       var n = typeof res.grants === "number" ? res.grants : 0;
       count.textContent = n === 0 ? "No remembered approvals."
-        : n === 1 ? "1 project has a remembered approval." : n + " projects have a remembered approval.";
+        : n === 1 ? "1 project/destination approval remembered." : n + " project/destination approvals remembered.";
       forget.disabled = n === 0;
     }
     function refresh() { api.sessionStartAlwaysAllowRead().then(show, function () { show({ ok: false }); }); }
