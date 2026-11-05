@@ -4,9 +4,9 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-05
 
-### Auto-fix notice receipts in batched turns
+### Auto-fix notices are confirmed in batched turns (thanks @alexx-ftw, #314)
 
-- A healthy turn that processes several queued messages now confirms its additional echoed user messages too, instead of only the first UUID. Ready-to-merge and post-merge notices later in the batch no longer remain pending after delivery. Unread, withdrawn and next-cycle messages are not confirmed; the existing health, query and adopted-turn guards stay intact.
+- With Settings -> Extra -> Community Features -> "Auto-fix notices: ready to merge, comments after merge" on, a ready-to-merge or post-merge notice that Claude reads later in a turn covering several queued messages is now confirmed when that turn completes, instead of staying pending (upstream confirms only the turn's first message). Unread, withdrawn and next-cycle messages are not confirmed.
 
 ### Auto-fix forwards comments that arrive after a merge (thanks @alexx-ftw, #310)
 

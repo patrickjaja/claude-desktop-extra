@@ -251,7 +251,7 @@ await test("compiled patch: gated, contained, idempotent wrapper over the real m
   try {
     const target = join(directory, "fixture.js");
     const binary = join(ROOT, "patches/community/add_feature_autofix_merge_ready");
-    const fixture = 'class Engine {async checkSession($s,p$){this.original=(this.original||0)+1;this.diffState=this.diffState||new Map;return "orig"}handleTurnCompleted($s,m$){try{this.completedOriginal=true}catch{}}handleSendsDroppedUnsent($s,m$,r$){try{this.droppedOriginal=r$}catch{}}}';
+    const fixture = 'class Engine {async checkSession($s,p$){this.original=(this.original||0)+1;this.diffState=this.diffState||new Map;return "orig"}handleTurnCompleted($s,m$){try{this.completedOriginal=true}catch{}}handleSendsDroppedUnsent($s,m$,r$){try{this.droppedOriginal=r$}catch{}}finish(c$,i$,e$,s$,p$,a$){c$&&i$.query===e$.queryObj&&s$!==void 0&&!s$.adoptedByStartedCommand&&p$.health==="healthy"&&this.deps.emit("turnCompleted",a$,s$.userMessageUuid)}}';
     writeFileSync(target, fixture);
     let result = spawnSync(binary, [target], { encoding: "utf8" }); assert.equal(result.status, 0, result.stderr);
     const patched = readFileSync(target, "utf8");

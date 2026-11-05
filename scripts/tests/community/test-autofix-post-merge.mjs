@@ -233,14 +233,17 @@ try {
       assert.equal(touched.length > 0, expectWork, `switch ${String(enabled)}: ${touched}`); assert.equal(e.__cdbPostMerge !== undefined, expectWork);
     }
     const readiness = path.join(root, 'patches/community/add_feature_autofix_merge_ready');
-    fs.writeFileSync(file, fixtureSource.replace('class Engine{', 'class Engine{async checkSession(s,p){return true}'));
+    // merge-ready sub-patch D also requires upstream's healthy completion emitter
+    // (a function replacement: the emitter's `c$&&` would be a $& pattern).
+    const BATCH_EMITTER = 'finish(c$,i$,e$,s$,p$,a$){c$&&i$.query===e$.queryObj&&s$!==void 0&&!s$.adoptedByStartedCommand&&p$.health==="healthy"&&this.deps.emit("turnCompleted",a$,s$.userMessageUuid)}';
+    fs.writeFileSync(file, fixtureSource.replace('class Engine{', () => 'class Engine{async checkSession(s,p){return true}' + BATCH_EMITTER));
     assert.equal(spawnSync(binary, [file]).status, 0);
     assert.equal(spawnSync(readiness, [file]).status, 0);
     const combined = fs.readFileSync(file, 'utf8');
     assert.equal(spawnSync(binary, [file]).status, 0); assert.equal(fs.readFileSync(file, 'utf8'), combined);
     assert.equal(spawnSync(readiness, [file]).status, 0); assert.equal(fs.readFileSync(file, 'utf8'), combined);
     // Basename order (merge_ready first, then post_merge), re-run twice: both stay idempotent.
-    fs.writeFileSync(file, fixtureSource.replace('class Engine{', 'class Engine{async checkSession(s,p){return true}'));
+    fs.writeFileSync(file, fixtureSource.replace('class Engine{', () => 'class Engine{async checkSession(s,p){return true}' + BATCH_EMITTER));
     assert.equal(spawnSync(readiness, [file]).status, 0); assert.equal(spawnSync(binary, [file]).status, 0);
     const ordered = fs.readFileSync(file, 'utf8'); assert.equal(spawnSync(process.execPath, ['--check', file]).status, 0);
     assert.match(ordered, /handleTurnCompleted\(\$s,m\$\)\{try\{this\.__cdbPostMerge\?\.completed\(\$s,m\$\)\}catch\(__cdbPmError\)\{[^}]*\}try\{this\.__cdbMergeReady\?\.completed\(/);
