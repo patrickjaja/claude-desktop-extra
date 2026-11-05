@@ -113,7 +113,7 @@
       return ipcRenderer.invoke("cdb-autofix-author:set", Array.isArray(entries) ? entries.slice(0, 51) : null);
     },
 
-    autoArchiveGraceRead: function () { return ipcRenderer.invoke("cdb-archive-grace:read"); },
+    autoArchiveGraceRead: function (sessionId) { return sessionId === undefined ? ipcRenderer.invoke("cdb-archive-grace:read") : ipcRenderer.invoke("cdb-archive-grace:read", sessionId); },
     autoArchiveGraceSet: function (minutes) { return ipcRenderer.invoke("cdb-archive-grace:set", minutes); },
 
     // Auto-fix notices (ready to merge, comments after merge). Fixed channels,

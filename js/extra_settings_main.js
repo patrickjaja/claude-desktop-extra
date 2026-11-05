@@ -3264,7 +3264,13 @@
       return { ok: true, enabled: enabled, path: res.path };
     },
 
-    "cdb-archive-grace:read": function () {
+    "cdb-archive-grace:read": function (sessionId) {
+      if (sessionId !== undefined) {
+        if (typeof sessionId !== "string" || sessionId.length < 1 || sessionId.length > 256)
+          return { ok: false, error: "invalid session id" };
+        if (__cdbEx_aagPref().value === 0) return { ok: true, active: false };
+        return globalThis.__cdbArchiveGraceStatus?.(sessionId) || { ok: true, active: true, ready: false };
+      }
       var s = __cdbEx_aagPref();
       return { ok: true, minutes: s.value, lockedByJsonc: s.locked ? true : null, warning: s.warning || null };
     },

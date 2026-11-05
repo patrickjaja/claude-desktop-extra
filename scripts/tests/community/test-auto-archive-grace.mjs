@@ -279,4 +279,246 @@ await test("narrow bridge forwards raw value for main validation", async () => {
   api.autoArchiveGraceRead(); api.autoArchiveGraceSet(42); api.autoArchiveGraceSet("bad");
   assert.deepEqual(calls, [["cdb-archive-grace:read"], ["cdb-archive-grace:set", 42], ["cdb-archive-grace:set", "bad"]]);
 });
+// ---- Renderer half (ion-dist, 3P mode): add_feature_auto_archive_grace_ion ----
+const ionBinary = path.join(ROOT, "patches/community/add_feature_auto_archive_grace_ion");
+const ION_TARGET = "This session will be archived automatically after you leave it.";
+// Shapes of upstream 4.16336.0's two target chunks; names, slot counts and
+// each chunk's local import aliases changed.
+const noticeFixture = [
+  'import{Ga as jx,Ka as jxs,Wa as Frag,To as st,go as eff,wo as rf}from"./vendor-frame-test.js";',
+  'function Pref(e){let $=Q7(4),[t,n]=st(),r,i;return J1($,0,e)?(r=()=>{if(!e)return;let t=e=>{n(e.ccAutoArchiveOnPrClose===!0)};return Zn?.getPreferences?.().then(t,lje),Zn?.onPreferencesChanged?.(t)},i=[e],K2($,0,e,r,i)):(r=$[1],i=$[2]),eff(r,i),t}',
+  'function Note(e){let $=Q7(8),{hold:t,sessionRef:n}=e,r=Vu();return jx("div",{role:"status","aria-live":"polite","data-find-omitted":"",className:`max-w-full ${gv} ${uv}`,children:"' + ION_TARGET + '"})}',
+  'function Row(e,t){let $=Q7(441),{repoKey:n,sessionRef:r,sessionRepo:i,isPrimary:a,inRail:D}=e;return J5($,434,u,d,c,p,m,g)?K5($,434,u,d,c,p,m,g,jxs(Frag,{children:[u,d,c,p,m,g]})):$[440]}'
+].join("\n");
+const railFixture = [
+  'import{Ga as o,Ka as c,Wa as u,To as l,go as h}from"./vendor-frame-test.js";',
+  'function Side(e){let $=Q7(124),{session:t,pullRequests:n,plan:r,artifacts:i,repoMenuItems:a,outputsSession:s,controls:k}=e;let x=o(Vb,{id:"environment",title:"Environment"}),z=o(Vb,{id:"pullRequests",title:"Changes"});if(!t)return null;let je="header",We="content";return J4($,118,ke,Ae,je,We)?K4($,118,ke,Ae,je,We,c("aside",{ref:De,"aria-label":ke,tabIndex:-1,onMouseDownCapture:Km,onClickCapture:Km,onDoubleClickCapture:Km,className:Ae,children:[je,We]})):$[122]}function After(){}'
+].join("\n");
+function runIon(notice, rail) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-grace-ion-")), assets = path.join(dir, "assets/v1");
+  fs.mkdirSync(assets, { recursive: true });
+  const noticeFile = path.join(assets, "notice.js"), railFile = path.join(assets, "rail.js");
+  fs.writeFileSync(noticeFile, notice); fs.writeFileSync(railFile, rail);
+  const run = spawnSync(ionBinary, [dir], { encoding: "utf8" });
+  return { dir, noticeFile, railFile, run };
+}
+function checkIon(notice, rail) {
+  const first = runIon(notice, rail);
+  try {
+    assert.equal(first.run.status, 0, first.run.stdout + first.run.stderr);
+    for (const file of [first.noticeFile, first.railFile]) execFileSync(process.execPath, ["--check", file]);
+    const out = { notice: fs.readFileSync(first.noticeFile, "utf8"), rail: fs.readFileSync(first.railFile, "utf8") };
+    const again = spawnSync(ionBinary, [first.dir], { encoding: "utf8" });
+    assert.equal(again.status, 0, again.stdout + again.stderr);
+    assert.equal(fs.readFileSync(first.noticeFile, "utf8"), out.notice, "second run must be byte-identical");
+    assert.equal(fs.readFileSync(first.railFile, "utf8"), out.rail, "second run must be byte-identical");
+    return out;
+  } finally { fs.rmSync(first.dir, { recursive: true, force: true }); }
+}
+const noImports = text => text.replace(/^import\{[^}]*\}from"[^"]*";/, "");
+await test("ion patch: applies to upstream's shapes with renamed aliases and slot counts, node --check, idempotent", async () => {
+  const out = checkIon(noticeFixture, railFixture);
+  assert.match(out.notice, /function Note\(e\)\{return jx\(__cdbArchiveGraceView,\{sessionRef:e\.sessionRef,hold:e\.hold,lineClass:`max-w-full \$\{gv\} \$\{uv\}`,children:jx\(__cdbArchiveNativeNotice,e\)\}\)\}/);
+  for (const alias of ["= st(null)", "eff(() =>", "jxs(Frag, {children:"]) assert.ok(out.notice.includes(alias), "notice helper uses " + alias);
+  // The rail chunk gets its own local names for the same vendor exports.
+  for (const alias of ["= l(null)", "h(() =>", "c(u, {children:"]) assert.ok(out.rail.includes(alias), "rail helper uses " + alias);
+  assert.match(out.rail, /return __cdbRail&&Array\.isArray\(__cdbRail\.props\?\.children\)\?c\(__cdbRail\.type,/);
+  for (const text of [out.notice, out.rail]) assert.ok(!/__cdb(ReactState|ReactEffect|JsxOne|JsxMany|Fragment)\b/.test(text));
+});
+await test("ion patch: fails closed on changed anchors, a missing chunk and a stale injection", async () => {
+  const out = checkIon(noticeFixture, railFixture);
+  const broken = [
+    [noticeFixture.replace("onPreferencesChanged", "onPrefs"), railFixture],
+    [noticeFixture.replace("{hold:t,sessionRef:n}", "{reason:t,sessionRef:n}"), railFixture],
+    [noticeFixture.replace("isPrimary:a", "primary:a"), railFixture],
+    [noticeFixture.replace("Ka as jxs", "Ka as jxz"), railFixture],
+    [noticeFixture, railFixture.replace("Ka as c,", "")],
+    [noticeFixture, railFixture.replace("vendor-frame-test", "vendor-frame-other")],
+    [noticeFixture, railFixture.replace("outputsSession:s", "changed:s")],
+    [noticeFixture, railFixture.replace('c("aside"', 'o("aside"')],
+    [noticeFixture, railFixture.replace("children:[je,We]", "children:je")],
+    [noticeFixture, railFixture.replace("if(!t)return null;", "if(!t)return t;")],
+    [noticeFixture, railFixture.replace('id:"pullRequests"', 'id:"prs"')],
+    [out.notice, out.rail.replace("rail:!0", "rail:!1")],
+    [out.notice.replace("setSessionAutoArchiveOnPrClose(id, false)", "changed(id, false)"), out.rail]
+  ];
+  for (const [notice, rail] of broken) {
+    const r = runIon(notice, rail);
+    try { assert.notEqual(r.run.status, 0, "must fail"); assert.match(r.run.stdout + r.run.stderr, /\[FAIL\]/); }
+    finally { fs.rmSync(r.dir, { recursive: true, force: true }); }
+  }
+});
+await test("ion wrappers: the keep control is appended inside the rail's aside, ref/key kept; the notice wrapper passes hold and class", async () => {
+  const out = checkIon(noticeFixture, railFixture);
+  const ctx = { o: (type, props, key) => ({ type, props, key: key ?? null }), c: (type, props, key) => ({ type, props, key: key ?? null }),
+    u: "Fragment", l: () => [null, () => {}], h: () => {}, Q7: () => [], J4: () => true, K4: (...a) => a.at(-1),
+    Vb: "section", De: { current: null }, ke: "Session details", Km() {}, Ae: "rail" };
+  vm.runInNewContext(noImports(out.rail) + "\nglobalThis.Side=Side;globalThis.setNative=f=>{__cdbArchiveNativeRail=f};", ctx);
+  const sessionRef = { type: "local", id: "s" };
+  const aside = ctx.Side({ session: {}, outputsSession: sessionRef });
+  assert.equal(aside.type, "aside"); assert.equal(aside.props.ref, ctx.De, "ref is a prop in React 19 and survives the clone");
+  assert.deepEqual(Array.from(aside.props.children.slice(0, 2)), ["header", "content"], "upstream children first, unchanged");
+  assert.equal(aside.props.children[2].props.sessionRef, sessionRef); assert.equal(aside.props.children[2].props.rail, true);
+  assert.equal(ctx.Side({ session: null, outputsSession: sessionRef }), null);
+  ctx.setNative(() => ({ type: "aside", props: { children: "single" }, key: null }));
+  assert.equal(ctx.Side({ outputsSession: sessionRef }).props.children, "single", "non-array children: returned as is");
+  ctx.setNative(() => ({ type: "aside", props: { children: ["a"] }, key: "k" }));
+  assert.equal(ctx.Side({ outputsSession: sessionRef }).key, "k");
+  const nctx = { jx: (type, props) => ({ type, props }), gv: "g", uv: "u", st: () => [null, () => {}], eff: () => {} };
+  vm.runInNewContext(noImports(out.notice) + "\nglobalThis.Note=Note;", nctx);
+  const note = nctx.Note({ hold: { reason: "pinned" }, sessionRef });
+  assert.deepEqual(note.props.hold, { reason: "pinned" }); assert.equal(note.props.lineClass, "max-w-full g u");
+  assert.equal(note.props.children.props.hold.reason, "pinned", "upstream's notice gets its own props");
+});
+// The real target chunks from a pristine extract: CDB_ION_DIST (an ion-dist
+// directory or ion-dist.asar), else tmp/extract's resources/ion-dist.asar.
+const isRailChunk = buf => buf.includes('id:"environment",title:') && buf.includes('id:"pullRequests",title:') && buf.includes("outputsSession:");
+function readAsarChunks(file) {
+  const fd = fs.openSync(file, "r"), found = {};
+  try {
+    const head = Buffer.alloc(16); fs.readSync(fd, head, 0, 16, 0);
+    const json = Buffer.alloc(head.readUInt32LE(12)); fs.readSync(fd, json, 0, json.length, 16);
+    const base = 8 + head.readUInt32LE(4);
+    const dir = JSON.parse(json.toString("utf8")).files?.assets?.files?.v1?.files || {};
+    for (const [name, entry] of Object.entries(dir)) {
+      if (!name.endsWith(".js") || entry.unpacked || !entry.size) continue;
+      const buf = Buffer.alloc(entry.size); fs.readSync(fd, buf, 0, entry.size, base + Number(entry.offset));
+      if (buf.includes(ION_TARGET)) found.notice = { name, buf };
+      if (isRailChunk(buf)) found.rail = { name, buf };
+    }
+  } finally { fs.closeSync(fd); }
+  return found;
+}
+function pristineIonChunks() {
+  const candidates = [process.env.CDB_ION_DIST, path.join(ROOT, "tmp/extract/usr/lib/claude-desktop/resources/ion-dist.asar")].filter(Boolean);
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) continue;
+    if (fs.statSync(candidate).isFile()) return { from: candidate, ...readAsarChunks(candidate) };
+    const assets = path.join(candidate, "assets/v1"), found = { from: candidate };
+    for (const name of fs.existsSync(assets) ? fs.readdirSync(assets) : []) {
+      if (!name.endsWith(".js")) continue;
+      const buf = fs.readFileSync(path.join(assets, name));
+      if (buf.includes(ION_TARGET)) found.notice = { name, buf };
+      if (isRailChunk(buf)) found.rail = { name, buf };
+    }
+    return found;
+  }
+  return null;
+}
+{
+  const real = pristineIonChunks();
+  if (!real || !real.notice || !real.rail) console.log("SKIP ion patch on the real chunks: " + (real ? "target chunks not found in " + real.from : "no pristine ion-dist (set CDB_ION_DIST or extract to tmp/extract)"));
+  else if (real.notice.buf.includes("__cdb") || real.rail.buf.includes("__cdb")) console.log("SKIP ion patch on the real chunks: " + real.from + " is already patched");
+  else await test(`ion patch: applies to the real pristine chunks (${real.notice.name}, ${real.rail.name}), node --check, idempotent`, async () => {
+    const out = checkIon(real.notice.buf, real.rail.buf);
+    for (const text of [out.notice, out.rail]) assert.equal(text.split("/*cdb-archive-grace-ui*/").length, 2);
+    assert.ok(out.notice.includes("function __cdbArchiveNativeNotice(") && out.rail.includes("function __cdbArchiveNativeRail("));
+  });
+}
+await test("status projects only the effective persisted deadline, from a fresh delay read", async () => {
+  const h = harness();
+  assert.equal((await h.api.status("s")).deadline, null);
+  await h.wait();
+  assert.equal((await h.api.status("s")).deadline, 1000000 + 15 * 60000);
+  h.minutes(30);
+  assert.equal((await h.api.status("s")).deadline, 1000000 + 30 * 60000);
+  h.api.begin(); h.minutes(45);
+  assert.equal((await h.api.status("s")).deadline, 1000000 + 45 * 60000, "not the sweep snapshot");
+  h.session.autoArchiveOnPrClose = false;
+  assert.equal((await h.api.status("s")).enabled, false);
+  h.session.autoArchiveOnPrClose = true; h.session.prs[0].state = "OPEN";
+  assert.equal((await h.api.status("s")).terminal, false);
+  h.minutes(0); assert.equal((await h.api.status("s")).active, false);
+});
+// A minimal hook host for js/auto_archive_grace_ui.js: slot state, effects
+// run by hand, counted intervals.
+function uiHost({ read, noBridge = false, noSessions = false } = {}) {
+  const ui = fs.readFileSync(path.join(ROOT, "js/auto_archive_grace_ui.js"), "utf8");
+  const host = { values: [], effects: [], intervals: new Map(), reads: [], saved: [], now: 1000000, nextId: 1 };
+  let slot = 0;
+  const context = {
+    __cdbReactState: initial => { const n = slot++; if (!(n in host.values)) host.values[n] = initial; return [host.values[n], value => { host.values[n] = value; }]; },
+    __cdbReactEffect: (fn, deps) => host.effects.push({ fn, deps }),
+    __cdbJsxOne: (type, props) => ({ type, props }),
+    __cdbJsxMany: (type, props) => ({ type, props, many: true }),
+    __cdbFragment: "Fragment",
+    Date: { now: () => host.now }, Number, Math, String,
+    setInterval: (fn, ms) => { const id = host.nextId++; host.intervals.set(id, { fn, ms }); return id; },
+    clearInterval: id => { host.intervals.delete(id); }
+  };
+  if (!noSessions) context["claude.web"] = { LocalSessions: { setSessionAutoArchiveOnPrClose: async (...args) => { host.saved.push(args); } } };
+  if (!noBridge) context.cdbExtra = { autoArchiveGraceRead: async id => { host.reads.push(id); return typeof read === "function" ? read() : read; } };
+  const view = vm.runInNewContext(ui + "\n__cdbArchiveGraceView", context);
+  host.render = (props = {}) => { slot = 0; host.effects = []; return view({ sessionRef: { type: "local", id: "s" }, lineClass: "notice-class", children: "native notice", ...props }); };
+  host.flush = () => new Promise(r => setImmediate(r));
+  host.mount = async (props = {}) => { host.render(props); const cleanup = host.effects[0].fn(); await host.flush(); return cleanup; };
+  host.poll = async () => { await [...host.intervals.values()][0].fn(); await host.flush(); };
+  return host;
+}
+const texts = node => node == null || typeof node !== "object" ? [String(node)] : [].concat(node.props?.children ?? []).flatMap(texts);
+const roles = node => node == null || typeof node !== "object" ? [] : [node.props?.role, ...[].concat(node.props?.children ?? []).flatMap(roles)].filter(Boolean);
+await test("renderer: delay Immediately, PR rule off or no bridge -> one read at most, no interval, upstream output unchanged", async () => {
+  for (const read of [{ ok: true, active: false }, { ok: true, active: true, enabled: false }, null, { ok: false, error: "x" }]) {
+    const h = uiHost({ read });
+    const cleanup = await h.mount({ hold: { reason: "on_screen" } });
+    assert.equal(h.reads.length, 1); assert.equal(h.intervals.size, 0, "no interval for " + JSON.stringify(read));
+    assert.equal(h.render({ hold: { reason: "on_screen" } }), "native notice");
+    assert.equal(h.render({ rail: true }), null);
+    cleanup();
+  }
+  const h = uiHost({ noBridge: true });
+  await h.mount(); assert.equal(h.intervals.size, 0); assert.equal(h.render(), "native notice");
+  const remote = uiHost({ read: { ok: true, active: true, enabled: true, terminal: true, deadline: 2000000 } });
+  await remote.mount({ sessionRef: { type: "remote", id: "r" } });
+  assert.equal(remote.reads.length, 0); assert.equal(remote.intervals.size, 0);
+  assert.equal(remote.render({ sessionRef: { type: "remote", id: "r" } }), "native notice");
+});
+await test("renderer: an open PR (enabled, not terminal) polls but leaves the notice and rail unchanged", async () => {
+  const h = uiHost({ read: { ok: true, active: true, enabled: true, terminal: false } });
+  const cleanup = await h.mount();
+  assert.equal(h.intervals.size, 1); assert.equal([...h.intervals.values()][0].ms, 30000);
+  assert.equal(h.render(), "native notice"); assert.equal(h.render({ rail: true }), null);
+  cleanup(); assert.equal(h.intervals.size, 0, "unmount clears the poll");
+});
+await test("renderer: terminal PR appends a coarse line after upstream's notice, outside any live region", async () => {
+  let answer = { ok: true, active: true, enabled: true, terminal: true, deadline: 1000000 + 12 * 60000 - 5000 };
+  const h = uiHost({ read: () => answer });
+  const cleanup = await h.mount({ hold: { reason: "pinned" } });
+  const out = h.render({ hold: { reason: "pinned" } });
+  assert.equal(out.type, "Fragment"); assert.equal(out.props.children[0], "native notice", "upstream notice first, unchanged");
+  const line = out.props.children[1];
+  assert.equal(line.props["aria-live"], "off"); assert.equal(line.props.className, "notice-class");
+  assert.deepEqual(roles(out), [], "no role=status in our output");
+  assert.match(texts(line).join(""), /about 12 min left/);
+  assert.equal(h.render({ sessionRef: { type: "local", id: "other" } }), "native notice", "never another session's status");
+  answer = { ...answer, deadline: 1000000 + 125 * 60000 }; await h.poll();
+  assert.match(texts(h.render().props.children[1]).join(""), /about 2 h 5 min left/);
+  h.now = answer.deadline; await h.poll();
+  assert.match(texts(h.render().props.children[1]).join(""), /delay has ended/);
+  answer = { ...answer, deadline: null }; await h.poll();
+  assert.match(texts(h.render().props.children[1]).join(""), /starts at the next archive sweep/);
+  assert.equal(h.intervals.size, 1, "one poll, no per-second tick");
+  answer = { ok: true, active: false }; await h.poll();
+  assert.equal(h.intervals.size, 0, "poll stops once the delay is Immediately");
+  assert.equal(h.render(), "native notice");
+  cleanup();
+});
+await test("renderer: keep control only when terminal, writes only this session's setting and stays hidden after a stale read", async () => {
+  const terminal = { ok: true, active: true, enabled: true, terminal: true, deadline: 2000000 };
+  const noApi = uiHost({ read: terminal, noSessions: true });
+  await noApi.mount({ rail: true }); assert.equal(noApi.render({ rail: true }), null);
+  const open = uiHost({ read: { ...terminal, terminal: false } });
+  await open.mount({ rail: true }); assert.equal(open.render({ rail: true }), null);
+  const h = uiHost({ read: terminal });
+  const cleanup = await h.mount({ rail: true });
+  const box = h.render({ rail: true });
+  assert.deepEqual(roles(box), [], "no role=status");
+  const button = box.props.children[0];
+  assert.equal(button.type, "button"); assert.match(button.props.title, /same setting/);
+  await button.props.onClick();
+  assert.deepEqual(h.saved, [["s", false]]);
+  await h.poll();
+  assert.equal(h.render({ rail: true }), null, "a read still reporting the old value cannot bring the button back");
+  cleanup();
+});
 console.log(`${passed} archive-grace tests passed`);
