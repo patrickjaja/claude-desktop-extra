@@ -234,12 +234,12 @@
   opacity: 0.45;
 }
 
-/* Community Features group headlines only (.cdbx-grouphdr, set in renderFeatures):
- * accent-colored text with a periodic light sheen and a small accent bar, so they
+/* Every section/group headline on every Extra page (.cdbx-sec-h; ours only, the
+ * sidebar .cdbx-navgroup keeps its rainbow): accent-colored text with a periodic light sheen and a small accent bar, so they
  * read as ours next to upstream's own muted section headings. The accent is the
  * host's brand variable when present, else a fixed warm fallback; the sheen mixes
  * toward white, so it reads in light and dark. */
-.cdbx-sec-h.cdbx-grouphdr {
+.cdbx-sec-h {
   --cdbx-hdr: hsl(var(--accent-brand, 15 63.1% 59.6%));
   opacity: 1;
   color: var(--cdbx-hdr);
@@ -250,7 +250,7 @@
   animation: cdbx-sheen 6s ease-in-out infinite;
 }
 
-.cdbx-sec-h.cdbx-grouphdr::before {
+.cdbx-sec-h:not(:empty)::before {
   content: "";
   flex: none;
   width: 3px;
@@ -260,7 +260,7 @@
 }
 
 @supports ((-webkit-background-clip: text) or (background-clip: text)) {
-  .cdbx-sec-h.cdbx-grouphdr {
+  .cdbx-sec-h {
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
@@ -283,11 +283,28 @@
   100% { background-position: 0% 50%; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .cdbx-sec-h.cdbx-grouphdr { animation: none; }
+/* On interaction the sweep plays right away instead of waiting for the hold:
+ * hover starts it, a click on the label replays it (.cdbx-sheen-play, JS). */
+@keyframes cdbx-sheen-now {
+  from { background-position: 100% 50%; }
+  to { background-position: 0% 50%; }
 }
 
+.cdbx-sec-h:hover,
+.cdbx-sec-h.cdbx-sheen-play {
+  animation: cdbx-sheen-now 1.2s ease-in-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cdbx-sec-h,
+  .cdbx-sec-h:hover,
+  .cdbx-sec-h.cdbx-sheen-play { animation: none; }
+}
+
+/* The count badge keeps its own look: solid accent text, no sheen. */
 .cdbx-sec-n {
+  color: var(--cdbx-hdr, currentColor);
+  -webkit-text-fill-color: var(--cdbx-hdr, currentColor);
   padding: 0 6px;
   font-size: 10px;
   font-weight: 600;

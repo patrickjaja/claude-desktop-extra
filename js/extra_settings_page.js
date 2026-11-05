@@ -5315,6 +5315,19 @@
       mounted.paneDisplay = pane.style.display;
       pane.style.display = "none";
       mounted.panel = el("div", "cdbx-panel");
+      // A click on a headline label replays the quick sheen sweep; nothing else.
+      mounted.panel.addEventListener("click", function (ev) {
+        var t = ev.target;
+        var h = t && t.closest ? t.closest(".cdbx-sec-h") : null;
+        if (!h || !mounted.panel.contains(h) || (t.closest(".cdbx-sec-n, button, input, select, a"))) return;
+        h.classList.remove("cdbx-sheen-play");
+        void h.offsetWidth;
+        h.classList.add("cdbx-sheen-play");
+        h.addEventListener("animationend", function done() {
+          h.classList.remove("cdbx-sheen-play");
+          h.removeEventListener("animationend", done);
+        });
+      });
       pane.parentElement.insertBefore(mounted.panel, pane.nextSibling);
       // Only possible once the panel is IN the document: it measures the modal.
       paintSurface(mounted.panel);

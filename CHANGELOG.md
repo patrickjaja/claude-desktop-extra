@@ -11,7 +11,7 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ### Community Features grouped by where they apply
 
-- Settings -> Extra -> Community Features now groups its rows under **Code** (with a **Pull requests** subgroup), **App and window** and **Models and 3P**. Each row starts with one sentence on what it does; search still matches every detail. The group headlines are in the theme's accent color with an accent bar and an occasional light sheen, and the **Extra** headline in the settings sidebar has a slowly moving rainbow (both still when the system asks for reduced motion).
+- Settings -> Extra -> Community Features now groups its rows under **Code** (with a **Pull requests** subgroup), **App and window** and **Models and 3P**. Each row starts with one sentence on what it does; search still matches every detail. Section headlines on every Extra page are in the theme's accent color with an accent bar and an occasional light sheen (replayed on hover and click), and the **Extra** headline in the settings sidebar has a slowly moving rainbow (both still when the system asks for reduced motion).
 
 ### PR auto-archive delay: remaining time and keep button in 3P mode (thanks @alexx-ftw, #316)
 

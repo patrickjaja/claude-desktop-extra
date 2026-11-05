@@ -255,6 +255,18 @@ function labelSpans(control) {
 
 // The Themes panel: the 91 real palettes are grouped, so a built-in like mario
 // cannot get lost in the middle of the community ones.
+
+// Headline contract shared by every Extra page: the label sits in .cdbx-sec-t on a
+// .cdbx-sec-h (the one selector the accent/sheen style hangs on), and a count
+// badge is a separate .cdbx-sec-n span, never the label itself.
+function headlineContract(root, what) {
+  const heads = Array.from(root.querySelectorAll(".cdbx-sec-h")).filter(function (h) { return h.querySelector(".cdbx-sec-t"); });
+  ok(heads.length > 0 && heads.every(function (h) {
+    return h.firstElementChild.classList.contains("cdbx-sec-t") &&
+      Array.from(h.querySelectorAll(".cdbx-sec-n")).every(function (n) { return !n.classList.contains("cdbx-sec-t") && n.parentElement === h; });
+  }), what + ": headlines are .cdbx-sec-h > .cdbx-sec-t (+ separate .cdbx-sec-n badge), " + heads.length + " checked");
+}
+
 function sections() {
   const host = document.querySelector(".cdbx-sections");
   const out = [];
@@ -1483,6 +1495,7 @@ async function cusPanel(cuItem) {
   // display, then read app controls.
   const heads = Array.prototype.map.call(panel.querySelectorAll(".cdbx-sec-t"), function (n) { return n.textContent; });
   ok(heads.join("|") === "Status|Options", "two headings, Status then Options: " + heads.join("|"));
+  headlineContract(panel, "Computer Use page");
   const optsHead = Array.prototype.filter.call(panel.querySelectorAll(".cdbx-sec-h"), function (h) { return h.textContent === "Options"; })[0];
   const bg = panel.querySelector(BG_SW);
   const ax = panel.querySelector(AX_SW);
@@ -2353,6 +2366,7 @@ async function deployPanel(deployItem) {
   const clearAll = panel.querySelector(".cdbx-sec-act");
   ok(!!clearAll, "the configuration section has a clear-all button");
   ok(!clearAll.classList.contains("cdbx-hide"), "shown, because keys are set");
+  headlineContract(panel, "Deployment page");
   const count = panel.querySelector(".cdbx-sec-h .cdbx-sec-n").textContent;
   ok(/^\d+ set$/.test(count), "next to how many keys are set: " + count);
   clearAll.click();
@@ -2445,6 +2459,17 @@ async function themesPanel(themesItem) {
   ok(!document.querySelector(".cdbx-panel .cdbx-switch[aria-label=\"show the Code tab's side panels as tabs instead of a split layout\"]"),
      "the panel tabs switch is NOT in the Themes panel");
 
+  headlineContract(document.querySelector(".cdbx-sections"), "Themes gallery");
+  {
+    const h = document.querySelector(".cdbx-sections .cdbx-sec-h");
+    const before = document.querySelector(".cdbx-panel").innerHTML.replace(/ cdbx-sheen-play/g, "");
+    h.querySelector(".cdbx-sec-t").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    ok(h.classList.contains("cdbx-sheen-play"), "a click on a headline label adds cdbx-sheen-play");
+    ok(document.querySelector(".cdbx-panel").innerHTML.replace(/ cdbx-sheen-play/g, "") === before &&
+       document.querySelectorAll(".cdbx-sheen-play").length === 1, "and changes nothing else");
+    h.dispatchEvent(new window.Event("animationend"));
+    ok(!h.classList.contains("cdbx-sheen-play"), "animationend removes it again");
+  }
   const secs = sections();
   ok(labels() === "Your themes:1 | Gaming:3 | Common:5 | More:1",
      "section order and counts: " + labels());
