@@ -1,0 +1,5 @@
+# claude-desktop-extra: KVM access for the active seat user (see cdb-kvm-access)
+# Local Cowork runs a QEMU VM that needs /dev/kvm and /dev/vhost-vsock. Give the
+# user at the active local seat an ACL on these two nodes only.
+SUBSYSTEM=="misc", KERNEL=="kvm", ACTION!="remove", TAG+="uaccess"
+SUBSYSTEM=="misc", KERNEL=="vhost-vsock", ACTION!="remove", TAG+="uaccess"

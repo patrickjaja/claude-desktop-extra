@@ -185,20 +185,25 @@ EOF
     fi
     install -pDm644 "$_mime" "$pkgdir/usr/share/mime/packages/com.anthropic.Claude.xml"
 
-    # Opt-in TPM access (cloud Cowork / Dispatch Computer Use): the rule and its
-    # root helper stay disabled inside the tree; the helper's polkit action is a
-    # package file so pkexec shows our prompt. The .install hook does not touch them.
+    # Opt-in TPM access (cloud Cowork / Dispatch Computer Use) and KVM access
+    # (local Cowork VM): the rules, the vhost_vsock modules-load file and their
+    # root helpers stay disabled inside the tree; the helpers' polkit actions are
+    # package files so pkexec shows our prompts. The .install hook does not touch them.
     local _udev="$pkgdir/usr/lib/claude-desktop/resources/linux-udev"
     local _policy=io.github.patrickjaja.claude-desktop-extra.tpm-access.policy
-    for _f in 70-claude-desktop-extra-tpm.rules cdb-tpm-access "$_policy"; do
+    local _kvm_policy=io.github.patrickjaja.claude-desktop-extra.kvm-access.policy
+    for _f in 70-claude-desktop-extra-tpm.rules cdb-tpm-access "$_policy" \
+            70-claude-desktop-extra-kvm.rules claude-desktop-extra-vsock.conf cdb-kvm-access "$_kvm_policy"; do
         if [ ! -f "$_udev/$_f" ]; then
             echo "ERROR: resources/linux-udev/$_f missing from the tarball - rebuild it" >&2
             return 1
         fi
     done
-    chmod 755 "$_udev" "$_udev/cdb-tpm-access"
-    chmod 644 "$_udev/70-claude-desktop-extra-tpm.rules" "$_udev/$_policy"
+    chmod 755 "$_udev" "$_udev/cdb-tpm-access" "$_udev/cdb-kvm-access"
+    chmod 644 "$_udev/70-claude-desktop-extra-tpm.rules" "$_udev/$_policy" \
+        "$_udev/70-claude-desktop-extra-kvm.rules" "$_udev/claude-desktop-extra-vsock.conf" "$_udev/$_kvm_policy"
     install -pDm644 "$_udev/$_policy" "$pkgdir/usr/share/polkit-1/actions/$_policy"
+    install -pDm644 "$_udev/$_kvm_policy" "$pkgdir/usr/share/polkit-1/actions/$_kvm_policy"
 
     # Upstream license notice (the official .deb's usr/share/doc copyright file,
     # placed at the tarball root by scripts/build-patched-tarball.sh).

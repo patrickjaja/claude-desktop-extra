@@ -35,19 +35,33 @@
         };
       }
     ) // {
-      # NixOS module. Off by default; enabling it adds the udev rule that gives
-      # the user at the active local seat access to /dev/tpmrm0, where Claude
-      # Desktop keeps its device identity key (cloud Cowork and Dispatch only
-      # offer Computer Use to a device with that key). The rule is read from this
-      # flake, so it does not depend on which package version is installed.
+      # NixOS module. Both options are off by default.
+      #
+      # tpmAccess adds the udev rule that gives the user at the active local seat
+      # access to /dev/tpmrm0, where Claude Desktop keeps its device identity key
+      # (cloud Cowork and Dispatch only offer Computer Use to a device with that
+      # key).
+      #
+      # kvmAccess adds the udev rule that gives the user at the active local seat
+      # access to /dev/kvm and /dev/vhost-vsock, and loads vhost_vsock at boot,
+      # so the local Cowork VM can start without joining the kvm group.
+      #
+      # The rules are read from this flake, so they do not depend on which
+      # package version is installed.
       #   imports = [ claude-desktop-extra.nixosModules.default ];
       #   programs.claude-desktop-extra.tpmAccess.enable = true;
+      #   programs.claude-desktop-extra.kvmAccess.enable = true;
       nixosModules.default = { config, lib, pkgs, ... }:
         let
           cfg = config.programs.claude-desktop-extra.tpmAccess;
+          kvmCfg = config.programs.claude-desktop-extra.kvmAccess;
           rule = pkgs.runCommand "claude-desktop-extra-tpm-udev-rule" { } ''
             install -Dm644 ${./packaging/udev/70-claude-desktop-extra-tpm.rules} \
               $out/lib/udev/rules.d/70-claude-desktop-extra-tpm.rules
+          '';
+          kvmRule = pkgs.runCommand "claude-desktop-extra-kvm-udev-rule" { } ''
+            install -Dm644 ${./packaging/udev/70-claude-desktop-extra-kvm.rules} \
+              $out/lib/udev/rules.d/70-claude-desktop-extra-kvm.rules
           '';
         in
         {
@@ -67,9 +81,28 @@
               set one first (tpm2_changeauth -c lockout, -c owner).
             '';
           };
-          config = lib.mkIf cfg.enable {
-            services.udev.packages = [ rule ];
+          options.programs.claude-desktop-extra.kvmAccess.enable = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = ''
+              Give read/write access to /dev/kvm and /dev/vhost-vsock through a
+              udev uaccess rule, and load the vhost_vsock kernel module at boot,
+              so the local Cowork VM (QEMU) can start without adding anyone to
+              the kvm group. It applies to every account that logs in at this
+              computer's screen (the active local seat), and any program such an
+              account runs can then create KVM virtual machines and vhost-vsock
+              host/guest sockets. Cloud Cowork does not need this.
+            '';
           };
+          config = lib.mkMerge [
+            (lib.mkIf cfg.enable {
+              services.udev.packages = [ rule ];
+            })
+            (lib.mkIf kvmCfg.enable {
+              services.udev.packages = [ kvmRule ];
+              boot.kernelModules = [ "vhost_vsock" ];
+            })
+          ];
         };
     };
 }

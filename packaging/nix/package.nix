@@ -294,11 +294,21 @@ stdenvNoCC.mkDerivation {
     # the store's sh). The polkit action is dropped: its exec.path names the
     # /usr/lib install, and polkit on a non-NixOS host does not read the store.
     # Guarded: release tarballs before this change do not ship linux-udev/.
+    # Opt-in KVM access (local Cowork VM) follows the same shape: the rule, the
+    # vhost_vsock modules-load file and cdb-kvm-access stay in the tree,
+    # disabled; programs.claude-desktop-extra.kvmAccess.enable is the NixOS
+    # path. Each KVM file is guarded on its own: older release tarballs ship
+    # linux-udev/ without them.
     udev=$out/lib/claude-desktop/resources/linux-udev
     if [ -d $udev ]; then
       rm -f $udev/io.github.patrickjaja.claude-desktop-extra.tpm-access.policy
+      rm -f $udev/io.github.patrickjaja.claude-desktop-extra.kvm-access.policy
       chmod 755 $udev $udev/cdb-tpm-access
       chmod 644 $udev/70-claude-desktop-extra-tpm.rules
+      if [ -f $udev/cdb-kvm-access ]; then chmod 755 $udev/cdb-kvm-access; fi
+      for f in 70-claude-desktop-extra-kvm.rules claude-desktop-extra-vsock.conf; do
+        if [ -f $udev/$f ]; then chmod 644 $udev/$f; fi
+      done
     fi
 
     # Release stamp for the in-app update check: the release tag (releaseTag,

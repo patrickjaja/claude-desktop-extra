@@ -211,20 +211,25 @@ if [ ! -f "$MIME_SRC" ]; then
 fi
 install -pDm644 "$MIME_SRC" "$DEB_ROOT/usr/share/mime/packages/com.anthropic.Claude.xml"
 
-# Opt-in TPM access (cloud Cowork / Dispatch Computer Use): the rule and its
-# root helper stay disabled inside the tree; the helper's polkit action is a
-# package file so pkexec shows our prompt. No maintainer script touches them.
+# Opt-in TPM access (cloud Cowork / Dispatch Computer Use) and KVM access (local
+# Cowork VM): the rules, the vhost_vsock modules-load file and their root helpers
+# stay disabled inside the tree; the helpers' polkit actions are package files so
+# pkexec shows our prompts. No maintainer script touches them.
 UDEV_DIR="$DEB_ROOT/usr/lib/claude-desktop/resources/linux-udev"
 UDEV_POLICY="io.github.patrickjaja.claude-desktop-extra.tpm-access.policy"
-for f in 70-claude-desktop-extra-tpm.rules cdb-tpm-access "$UDEV_POLICY"; do
+UDEV_KVM_POLICY="io.github.patrickjaja.claude-desktop-extra.kvm-access.policy"
+for f in 70-claude-desktop-extra-tpm.rules cdb-tpm-access "$UDEV_POLICY" \
+        70-claude-desktop-extra-kvm.rules claude-desktop-extra-vsock.conf cdb-kvm-access "$UDEV_KVM_POLICY"; do
     if [ ! -f "$UDEV_DIR/$f" ]; then
         log_error "resources/linux-udev/$f missing from the tarball - rebuild it with scripts/build-patched-tarball.sh"
         exit 1
     fi
 done
-chmod 0755 "$UDEV_DIR" "$UDEV_DIR/cdb-tpm-access"
-chmod 0644 "$UDEV_DIR/70-claude-desktop-extra-tpm.rules" "$UDEV_DIR/$UDEV_POLICY"
+chmod 0755 "$UDEV_DIR" "$UDEV_DIR/cdb-tpm-access" "$UDEV_DIR/cdb-kvm-access"
+chmod 0644 "$UDEV_DIR/70-claude-desktop-extra-tpm.rules" "$UDEV_DIR/$UDEV_POLICY" \
+    "$UDEV_DIR/70-claude-desktop-extra-kvm.rules" "$UDEV_DIR/claude-desktop-extra-vsock.conf" "$UDEV_DIR/$UDEV_KVM_POLICY"
 install -pDm644 "$UDEV_DIR/$UDEV_POLICY" "$DEB_ROOT/usr/share/polkit-1/actions/$UDEV_POLICY"
+install -pDm644 "$UDEV_DIR/$UDEV_KVM_POLICY" "$DEB_ROOT/usr/share/polkit-1/actions/$UDEV_KVM_POLICY"
 
 # Debian policy: ship a copyright file under usr/share/doc/<pkg>/. The tarball
 # carries the upstream notice at its root (extracted from the official .deb by

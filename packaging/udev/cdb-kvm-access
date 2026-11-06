@@ -1,0 +1,377 @@
+#!/bin/sh
+# cdb-kvm-access - claude-desktop-extra: turn the opt-in KVM access rule on or off.
+#
+# Local Cowork runs a QEMU VM that needs /dev/kvm and /dev/vhost-vsock. The rule
+# next to this helper (70-claude-desktop-extra-kvm.rules) gives the user at the
+# active local seat an ACL on those two nodes; the modules-load file next to it
+# (claude-desktop-extra-vsock.conf) loads vhost_vsock at boot. "enable" links
+# both into the admin directories and loads vhost_vsock now, "disable" removes
+# only those two links (it never unloads the module and never touches /dev);
+# both then reload udev and re-trigger the two misc nodes, so the ACL follows
+# now (no relogin):
+#
+#   /etc/udev/rules.d/70-claude-desktop-extra-kvm.rules -> <this dir>/70-claude-desktop-extra-kvm.rules
+#   /etc/modules-load.d/claude-desktop-extra-vsock.conf  -> <this dir>/claude-desktop-extra-vsock.conf
+#
+# Run as root: pkexec (Settings -> Extra -> Cowork (Linux), Enable/Disable KVM
+# access) or sudo. "status" needs no root and changes nothing.
+#
+# Usage:  cdb-kvm-access enable|disable|status
+# Exit:   0 done (also when it was already in that state; always for status)
+#         1 not root
+#         2 usage
+#         3 udev not reachable here (no /run/udev/control socket, container, chroot)
+#         4 a link path was left alone (not ours, NixOS, or the system manages
+#           /etc/udev or /etc/modules-load.d) or a file operation failed;
+#           every link is classified first, so a foreign one changes nothing
+#         5 this helper is not at a known install path, or the rule or conf
+#           next to it is missing, unsafe, or not byte-identical to RULE_TEXT /
+#           CONF_TEXT below
+#         6 enable: both links are in place, but modprobe vhost_vsock failed
+#           (kernel without vhost-vsock); /dev/kvm still gets its ACL
+# Output: exactly one "cdb-kvm-access: ..." line, on stdout on success, on
+#         stderr (and nothing on stdout) on failure. status prints
+#         "cdb-kvm-access: status rule=<s> modules=<s>", each <s> one of
+#           current           ours, pointing at this helper's file, which exists
+#           current-dangling  ours, pointing at this helper's file, which is gone
+#           stale             ours, pointing at another install's file, which exists
+#           stale-dangling    ours, pointing at another install's file, which is gone
+#                             (uninstalled, Nix garbage-collected): not in effect
+#           absent            no entry at the link path
+#           foreign           anything else there, or a link that cannot be read
+#         enable re-points every ours-but-not-current link; disable removes it.
+#
+# Nothing is read from the environment: PATH is reset, and every tool runs by
+# an absolute path resolved from the fixed system directories below.
+#
+# Known source paths (known_src), for <file> = the rule or the conf: the
+# deb/rpm/pacman install path
+#   /usr/lib/claude-desktop/resources/linux-udev/<file>
+# or a Nix store install path (Nix package on a non-NixOS host)
+#   /nix/store/<32-char hash>-<name>/lib/claude-desktop/resources/linux-udev/<file>
+# The helper links only its own two files, and only when they are at one of
+# these paths: a link into any other tree (a build tree or extracted AppImage
+# under /tmp) dangles once that tree is deleted, and then whoever can recreate
+# the path writes a rule udevd runs as root, or a module list systemd loads as
+# root. A known path is recreated only by the package manager or the Nix
+# daemon. Both files and their ancestors must also be root-owned and not
+# group/world writable; the one exception is /nix/store itself (root-owned,
+# sticky, group nixbld), whose entries only the daemon adds.
+# A link counts as ours only when its raw target (readlink, not -f) is the
+# known source path of that link's own file, dangling or not. The files linked
+# must also equal RULE_TEXT / CONF_TEXT below byte for byte.
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+LC_ALL=C
+export LC_ALL
+IFS='
+'
+umask 022
+# modprobe reads extra options from the environment; none may reach it.
+unset MODPROBE_OPTIONS
+set -eu
+
+ME=cdb-kvm-access
+RULE=70-claude-desktop-extra-kvm.rules
+CONF=claude-desktop-extra-vsock.conf
+MODULE=vhost_vsock
+# Fixed system paths, each defined once on its own line
+# (scripts/tests/linux/test-kvm-access-helper.mjs re-points them into a temp root).
+PKG_DIR=/usr/lib/claude-desktop/resources/linux-udev
+ETC_DIR=/etc
+ETC_UDEV=/etc/udev
+RULES_DIR=/etc/udev/rules.d
+MODULES_DIR=/etc/modules-load.d
+NIXOS_MARKER=/etc/NIXOS
+UDEV_CONTROL=/run/udev/control
+# Where system tools are looked up, one per line, in this order.
+TOOL_DIRS='/usr/bin
+/bin
+/usr/sbin
+/sbin'
+LINK=$RULES_DIR/$RULE
+MLINK=$MODULES_DIR/$CONF
+PKG_SRC=$PKG_DIR/$RULE
+PKG_CONF=$PKG_DIR/$CONF
+# The rule, byte for byte (trailing newline included). Single source checks:
+# packaging/udev/70-claude-desktop-extra-kvm.rules and __cdbEx_KVM_RULE_TEXT in
+# js/extra_settings_main.js must stay identical (scripts/tests/linux/test-kvm-access-helper.mjs).
+RULE_TEXT='# claude-desktop-extra: KVM access for the active seat user (see cdb-kvm-access)
+# Local Cowork runs a QEMU VM that needs /dev/kvm and /dev/vhost-vsock. Give the
+# user at the active local seat an ACL on these two nodes only.
+SUBSYSTEM=="misc", KERNEL=="kvm", ACTION!="remove", TAG+="uaccess"
+SUBSYSTEM=="misc", KERNEL=="vhost-vsock", ACTION!="remove", TAG+="uaccess"
+'
+# The modules-load file, byte for byte (packaging/udev/claude-desktop-extra-vsock.conf,
+# __cdbEx_KVM_MCONF_TEXT in js/extra_settings_main.js).
+CONF_TEXT='# claude-desktop-extra: load vhost_vsock at boot for local Cowork (see cdb-kvm-access)
+vhost_vsock
+'
+# Container markers (systemd, Docker, Podman, Flatpak), one per line. The same
+# list, in this order, as __cdbEx_CUS_CONTAINER in js/extra_settings_main.js.
+CONTAINER_MARKERS='/run/systemd/container
+/.dockerenv
+/run/.containerenv
+/.flatpak-info'
+
+fail() { # <exit code> <reason>
+    printf '%s: %s\n' "$ME" "$2" >&2
+    exit "$1"
+}
+
+tool() { # <name>: absolute path of a system tool, never from the caller's PATH
+    for _d in $TOOL_DIRS; do
+        if [ -x "$_d/$1" ] && [ ! -d "$_d/$1" ]; then
+            printf '%s\n' "$_d/$1"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# --- usage (checked first, so it can be tested without root) -----------------
+[ "$#" -eq 1 ] || fail 2 "usage: $ME enable|disable|status"
+case "$1" in
+    enable|disable|status) ACTION=$1 ;;
+    *) fail 2 "usage: $ME enable|disable|status" ;;
+esac
+
+# --- where this helper lives (string checks, so they run before the root check)
+known_src() { # <path> <file name>: is it the known source path of that file (see the header)?
+    case "$2" in
+        "$RULE"|"$CONF") ;;
+        *) return 1 ;;
+    esac
+    case "$1" in
+        "$PKG_DIR/$2") return 0 ;;
+        /nix/store/*) ;;
+        *) return 1 ;;
+    esac
+    _rest=${1#/nix/store/}
+    _seg=${_rest%%/*}
+    [ "$_rest" = "$_seg/lib/claude-desktop/resources/linux-udev/$2" ] || return 1
+    _hash=${_seg%%-*}
+    _name=${_seg#*-}
+    [ "$_hash" != "$_seg" ] && [ "${#_hash}" -eq 32 ] && [ -n "$_name" ] || return 1
+    case "$_hash" in *[!0123456789abcdfghijklmnpqrsvwxyz]*) return 1 ;; esac
+    case "$_name" in *[!A-Za-z0-9+._?=-]*) return 1 ;; esac
+    return 0
+}
+
+READLINK=$(tool readlink) || fail 4 "missing tool: readlink"
+SELF=$("$READLINK" -f -- "$0") || fail 5 "cannot resolve the helper's own path"
+case "$SELF" in /*) ;; *) fail 5 "cannot resolve the helper's own path" ;; esac
+DIR=${SELF%/*}
+SRC=$DIR/$RULE
+MSRC=$DIR/$CONF
+
+read_target() { # <link>: sets TARGET to its raw target, trailing newlines kept
+    _t=$("$READLINK" -- "$1" && printf x) || return 1
+    _t=${_t%x}
+    TARGET=${_t%?}
+}
+
+classify() { # <link> <file name> <our source>: sets CLASS (see "status" in the header)
+    if [ -L "$1" ]; then
+        if ! read_target "$1"; then
+            CLASS=foreign
+        elif known_src "$TARGET" "$2"; then
+            if [ "$TARGET" = "$3" ]; then CLASS=current; else CLASS=stale; fi
+            # -e follows the link: false when its target is gone.
+            [ -e "$1" ] || CLASS=$CLASS-dangling
+        else
+            CLASS=foreign
+        fi
+    elif [ -e "$1" ]; then
+        CLASS=foreign
+    else
+        CLASS=absent
+    fi
+}
+
+# --- status: unprivileged, read-only -----------------------------------------
+if [ "$ACTION" = status ]; then
+    classify "$LINK" "$RULE" "$SRC"
+    _rs=$CLASS
+    classify "$MLINK" "$CONF" "$MSRC"
+    printf '%s: status rule=%s modules=%s\n' "$ME" "$_rs" "$CLASS"
+    exit 0
+fi
+
+known_src "$SRC" "$RULE" \
+    || fail 5 "refused: $SRC is not an installed claude-desktop-extra rule ($PKG_SRC or a Nix store install)"
+known_src "$MSRC" "$CONF" \
+    || fail 5 "refused: $MSRC is not an installed claude-desktop-extra file ($PKG_CONF or a Nix store install)"
+
+# --- root ---------------------------------------------------------------------
+ID=$(tool id) || fail 1 "cannot find id(1) to check for root"
+[ "$("$ID" -u)" = 0 ] || fail 1 "must run as root (pkexec or sudo)"
+
+STAT=$(tool stat) || fail 4 "missing tool: stat"
+LN=$(tool ln) || fail 4 "missing tool: ln"
+RM=$(tool rm) || fail 4 "missing tool: rm"
+MKDIR=$(tool mkdir) || fail 4 "missing tool: mkdir"
+MV=$(tool mv) || fail 4 "missing tool: mv"
+CAT=$(tool cat) || fail 5 "missing tool: cat"
+if [ "$ACTION" = enable ]; then
+    MODPROBE=$(tool modprobe) || fail 4 "missing tool: modprobe"
+fi
+
+# --- udev must be the host's ---------------------------------------------------
+# A container's /etc is not what the host's udevd reads, even when /run/udev is
+# shared into it.
+for _c in $CONTAINER_MARKERS; do
+    if [ -e "$_c" ]; then fail 3 "running inside a container ($_c): run this on the host"; fi
+done
+[ -S "$UDEV_CONTROL" ] || fail 3 "udev is not running here ($UDEV_CONTROL is not a socket)"
+UDEVADM=$(tool udevadm) || fail 3 "missing tool: udevadm"
+
+# --- our own two files ----------------------------------------------------------
+safe() { # <path> <file|dir>: root-owned, not group/world writable (/nix/store: sticky)
+    _om=$("$STAT" -c '%u %a' -- "$1" 2>/dev/null) || return 1
+    _uid=${_om%% *}
+    _mode=${_om#* }
+    [ "$_uid" = 0 ] || return 1
+    case "$_mode" in ''|*[!0-7]*) return 1 ;; esac
+    _m=$((0$_mode))
+    if [ $((_m & 022)) -ne 0 ]; then
+        [ "$2" = dir ] && [ "$1" = /nix/store ] && [ $((_m & 01000)) -ne 0 ] || return 1
+    fi
+    return 0
+}
+
+check_file() { # <path> <expected text> <what>: regular, safe, byte-identical
+    if [ -L "$1" ] || [ ! -f "$1" ]; then
+        fail 5 "$1 is missing or not a regular file"
+    fi
+    safe "$1" file || fail 5 "$1 must be owned by root and not group/world writable"
+    # Content, byte for byte: same size (so no NUL byte hides in it) and same text.
+    _size=$("$STAT" -c '%s' -- "$1") || fail 5 "cannot read $1"
+    _have=$("$CAT" -- "$1" && printf x) || fail 5 "cannot read $1"
+    _have=${_have%x}
+    if [ "$_size" != "${#2}" ] || [ "$_have" != "$2" ]; then
+        fail 5 "refused: $1 does not match the $3 this helper ships"
+    fi
+}
+
+check_file "$SRC" "$RULE_TEXT" rule
+check_file "$MSRC" "$CONF_TEXT" "modules-load file"
+_p=$DIR
+while [ -n "$_p" ]; do
+    safe "$_p" dir || fail 5 "$_p must be owned by root and not group/world writable"
+    _p=${_p%/*}
+done
+safe / dir || fail 5 "/ must be owned by root and not group/world writable"
+
+# --- the links (both classified before anything changes) ------------------------
+if [ -e "$NIXOS_MARKER" ]; then
+    fail 4 "left alone: NixOS manages /etc/udev and /etc/modules-load.d - set programs.claude-desktop-extra.kvmAccess.enable = true; instead"
+fi
+if [ -L "$ETC_DIR" ]; then
+    fail 4 "left alone: $ETC_DIR is a symlink"
+fi
+if [ -L "$ETC_UDEV" ] || [ -L "$RULES_DIR" ]; then
+    fail 4 "left alone: $RULES_DIR is a symlink managed by the system configuration"
+fi
+if [ -L "$MODULES_DIR" ]; then
+    fail 4 "left alone: $MODULES_DIR is a symlink managed by the system configuration"
+fi
+
+classify "$LINK" "$RULE" "$SRC"
+RSTATE=$CLASS
+classify "$MLINK" "$CONF" "$MSRC"
+MSTATE=$CLASS
+[ "$RSTATE" != foreign ] \
+    || fail 4 "left alone: $LINK exists and is not a claude-desktop-extra link (nothing changed)"
+[ "$MSTATE" != foreign ] \
+    || fail 4 "left alone: $MLINK exists and is not a claude-desktop-extra link (nothing changed)"
+
+DONE=
+udev_apply() { # reload rules and re-run them for both nodes (output to stderr)
+    "$UDEVADM" control --reload >&2 || return 1
+    "$UDEVADM" trigger --action=change --subsystem-match=misc --sysname-match=kvm --sysname-match=vhost-vsock >&2 || return 1
+    "$UDEVADM" settle --timeout=10 >&2 || :
+}
+
+fail_partial() { # <reason>: a link op failed; apply what is already done, then exit 4
+    if [ -n "$DONE" ]; then
+        if udev_apply; then
+            fail 4 "$1 (already done and applied: $DONE)"
+        fi
+        fail 4 "$1 (already done, but udev reload/trigger failed: $DONE)"
+    fi
+    fail 4 "$1"
+}
+
+put_link() { # <link> <source> <dir> <file name> <class>
+    case "$5" in
+        absent)
+            "$MKDIR" -p -- "$3" || fail_partial "cannot create $3"
+            "$LN" -s -- "$2" "$1" || fail_partial "cannot create the link $1"
+            ;;
+        current-dangling|stale|stale-dangling)
+            # A new link under a name udev and modules-load ignore (not *.rules /
+            # *.conf), then an atomic rename over the old one: neither ever sees
+            # the path missing or half-made.
+            _tmp=$3/.$4.tmp.$$
+            "$RM" -f -- "$_tmp" || fail_partial "cannot remove $_tmp"
+            "$LN" -s -- "$2" "$_tmp" || fail_partial "cannot create the link $_tmp"
+            "$MV" -T -- "$_tmp" "$1" \
+                || { "$RM" -f -- "$_tmp"; fail_partial "cannot re-point the link $1"; }
+            ;;
+        *) return 0 ;;
+    esac
+    DONE=${DONE:+$DONE, }$1
+}
+
+drop_link() { # <link> <class>
+    case "$2" in
+        current|current-dangling|stale|stale-dangling)
+            "$RM" -f -- "$1" || fail_partial "cannot remove the link $1"
+            DONE=${DONE:+$DONE, }$1
+            ;;
+    esac
+}
+
+PAIRS="$LINK -> $SRC; $MLINK -> $MSRC"
+case "$ACTION" in
+    enable)
+        put_link "$LINK" "$SRC" "$RULES_DIR" "$RULE" "$RSTATE"
+        put_link "$MLINK" "$MSRC" "$MODULES_DIR" "$CONF" "$MSTATE"
+        if [ "$RSTATE:$MSTATE" = current:current ]; then
+            MSG="already enabled"
+        elif [ "$RSTATE" = absent ] || [ "$MSTATE" = absent ]; then
+            MSG="enabled ($PAIRS)"
+        else
+            MSG="re-pointed ($PAIRS)"
+        fi
+        ;;
+    disable)
+        if [ "$RSTATE:$MSTATE" = absent:absent ]; then
+            printf '%s: %s\n' "$ME" "already disabled"
+            exit 0
+        fi
+        drop_link "$LINK" "$RSTATE"
+        drop_link "$MLINK" "$MSTATE"
+        MSG="disabled"
+        ;;
+esac
+
+# --- apply now: load the module, reload rules, re-run them for both nodes -------
+# Also on "already enabled", so the ACL reaches the current seat session. The
+# module load comes first: /dev/vhost-vsock gets its add event when it loads.
+MOD_OK=1
+if [ "$ACTION" = enable ]; then
+    "$MODPROBE" "$MODULE" >&2 || MOD_OK=0
+fi
+"$UDEVADM" control --reload >&2 \
+    || fail 3 "$MSG, but udevadm control --reload failed"
+"$UDEVADM" trigger --action=change --subsystem-match=misc --sysname-match=kvm --sysname-match=vhost-vsock >&2 \
+    || fail 3 "$MSG, but udevadm trigger for kvm and vhost-vsock failed"
+"$UDEVADM" settle --timeout=10 >&2 || :
+[ "$MOD_OK" = 1 ] \
+    || fail 6 "$MSG, but modprobe $MODULE failed: this kernel may lack vhost-vsock (local Cowork needs it)"
+
+printf '%s: %s\n' "$ME" "$MSG"
+exit 0
