@@ -80,6 +80,7 @@ const P = {
   MODULES_DIR: join(R, "etc", "modules-load.d"),
   NIXOS_MARKER: join(R, "etc", "NIXOS"),
   UDEV_CONTROL: join(R, "run", "udev", "control"),
+  DEV_DIR: join(R, "dev"),
 };
 const ORIG = {
   PKG_DIR: "/usr/lib/claude-desktop/resources/linux-udev",
@@ -89,11 +90,12 @@ const ORIG = {
   MODULES_DIR: "/etc/modules-load.d",
   NIXOS_MARKER: "/etc/NIXOS",
   UDEV_CONTROL: "/run/udev/control",
+  DEV_DIR: "/dev",
 };
 const STUBS = join(base, "stubs");
 const LOG = join(base, "tools.log");
 const MARKERS = ["/run/systemd/container", "/.dockerenv", "/run/.containerenv", "/.flatpak-info"];
-for (const d of [P.PKG_DIR, P.RULES_DIR, P.MODULES_DIR, dirname(P.UDEV_CONTROL), STUBS, join(R, "run", "systemd")]) mkdirSync(d, { recursive: true });
+for (const d of [P.DEV_DIR, P.PKG_DIR, P.RULES_DIR, P.MODULES_DIR, dirname(P.UDEV_CONTROL), STUBS, join(R, "run", "systemd")]) mkdirSync(d, { recursive: true });
 
 // Stub tools. The helper resets PATH, so the stubs reach real tools by name.
 const stub = (name, body) => { const f = join(STUBS, name); writeFileSync(f, "#!/bin/sh\n" + body); chmodSync(f, 0o755); };
@@ -105,7 +107,12 @@ stub("modprobe", 'printf \'modprobe %s\\n\' "$*" >> "$FAKE_LOG"\n' +
 stub("readlink", 'for a; do last=$a; done\n' +
   'if [ "$1" = -- ] && [ -n "${FAKE_READLINK_FAIL-}" ] && [ "$last" = "$FAKE_READLINK_FAIL" ]; then exit 1; fi\n' +
   'exec readlink "$@"\n');
-stub("udevadm", 'printf \'udevadm %s\\n\' "$*" >> "$FAKE_LOG"\nexit "${FAKE_UDEVADM_RC-0}"\n');
+// udevadm info --query=property prints sticky TAGS and FAKE_CURRENT_TAGS (default :systemd:;
+// "none" = an old udev without CURRENT_TAGS). setfacl only logs.
+stub("udevadm", 'printf \'udevadm %s\\n\' "$*" >> "$FAKE_LOG"\n' +
+  'if [ "$1" = info ]; then echo TAGS=:seat:systemd:uaccess:; c=${FAKE_CURRENT_TAGS-:systemd:}; [ "$c" = none ] || echo "CURRENT_TAGS=$c"; fi\n' +
+  'exit "${FAKE_UDEVADM_RC-0}"\n');
+stub("setfacl", 'printf \'setfacl %s\\n\' "$*" >> "$FAKE_LOG"\nexit "${FAKE_SETFACL_RC-0}"\n');
 // stat -c '%u %a' -- <p>: root-owned, 755/644, unless <p> is listed in FAKE_UNSAFE.
 stub("stat", [
   'if [ "$1" = -c ] && [ "$2" = "%u %a" ]; then',
@@ -248,7 +255,7 @@ section("disable");
   ok(r.status === 0 && r.stdout === "cdb-kvm-access: disabled\n" && target(LINK) === null && target(MLINK) === null && r.log === RELOAD,
     "disabled: both removed, reload + trigger, module never unloaded", J(r));
   r = run(["disable"]);
-  ok(r.status === 0 && r.stdout === "cdb-kvm-access: already disabled\n" && r.log === "", "already disabled: exit 0, no tool run", J(r));
+  ok(r.status === 0 && r.stdout === "cdb-kvm-access: already disabled\n" && r.log === RELOAD, "already disabled: exit 0, udev re-applied (no vhost-vsock node: no ACL step)", J(r));
   symlinkSync(nix("cdb-old", RULE), LINK);
   r = run(["disable"]);
   ok(r.status === 0 && r.stdout === "cdb-kvm-access: disabled\n" && target(LINK) === null, "a stale rule link alone: removed", J(r));
@@ -332,6 +339,54 @@ section("R1: partial enable/disable still applies udev; MODPROBE_OPTIONS dropped
   ok(r.status === 4 && r.stderr === "cdb-kvm-access: left alone: " + P.ETC_DIR + " is a symlink\n" && r.log === "" &&
     target(LINK) === null && target(MLINK) === null, "/etc a symlink: exit 4, nothing changed", J(r));
   rmSync(P.ETC_DIR); renameSync(P.ETC_DIR + ".real", P.ETC_DIR);
+}
+
+section("disable clears the /dev/vhost-vsock ACL unless another rule still grants uaccess; /dev/kvm never");
+{
+  // Char devices cannot be made unprivileged: the fake nodes are links to /dev/null ([ -c ] follows them).
+  const VS = join(P.DEV_DIR, "vhost-vsock");
+  symlinkSync("/dev/null", VS); symlinkSync("/dev/null", join(P.DEV_DIR, "kvm"));
+  const INFO = "udevadm info --query=property --name=" + VS + "\n";
+  const SETF = "setfacl -b -- " + VS + "\n";
+  clean(); run(["enable"]);
+  let r = run(["disable"]);
+  ok(r.status === 0 && r.stdout === "cdb-kvm-access: disabled (acl cleared: " + VS + ")\n" && r.log === RELOAD + INFO + SETF,
+    "CURRENT_TAGS without uaccess: removed, reload + trigger, then setfacl -b on vhost-vsock only", J(r));
+  ok(!/setfacl[^\n]*\/kvm\b|name=[^\n]*\/kvm\n/.test(r.log), "/dev/kvm neither queried nor touched", J(r.log));
+  run(["enable"]);
+  r = run(["disable"], { FAKE_CURRENT_TAGS: ":seat:uaccess:systemd:" });
+  ok(r.status === 0 && r.stdout === "cdb-kvm-access: disabled (acl kept, another udev rule grants it: " + VS + ")\n" && r.log === RELOAD + INFO,
+    "another rule still tags uaccess: ACL kept, no setfacl", J(r));
+  r = run(["disable"], { FAKE_CURRENT_TAGS: "none" });
+  ok(r.status === 0 && r.stdout === "cdb-kvm-access: already disabled (acl kept, udev reports no CURRENT_TAGS: " + VS + ")\n" && r.log === RELOAD + INFO,
+    "udev without CURRENT_TAGS: ACL kept, said so", J(r));
+  r = run(["disable"]);
+  ok(r.status === 0 && r.stdout === "cdb-kvm-access: already disabled (acl cleared: " + VS + ")\n" && r.log === RELOAD + INFO + SETF,
+    "already disabled still clears an ACL left behind earlier", J(r));
+  run(["enable"]);
+  r = run(["disable"], { FAKE_SETFACL_RC: "1" });
+  ok(r.status === 4 && r.stdout === "" && /^cdb-kvm-access: disabled, but setfacl -b .*vhost-vsock failed \(the ACL stays until reboot\)$/m.test(r.stderr),
+    "setfacl fails: exit 4, says so", J(r));
+  // No setfacl on the system: refused before the links change.
+  run(["enable"]);
+  // A helper copy whose tool dirs are the stubs plus links to the real tools it needs, setfacl not among them.
+  rmSync(join(STUBS, "setfacl"));
+  const SYS = join(base, "sys");
+  mkdirSync(SYS, { recursive: true });
+  for (const t of ["readlink", "ln", "rm", "mkdir", "mv", "cat"]) {
+    const real = ["/usr/bin", "/bin"].map((d) => d + "/" + t).find((f) => existsSync(f));
+    if (real && !existsSync(join(SYS, t))) symlinkSync(real, join(SYS, t));
+  }
+  writeFileSync(FHELPER, fake.replace(/^TOOL_DIRS='[^']*'$/m, "TOOL_DIRS='" + STUBS + "\n" + SYS + "'"));
+  r = run(["disable"]);
+  ok(r.status === 4 && r.stdout === "" && /missing tool: setfacl \(install the acl package\); nothing changed/.test(r.stderr) &&
+    target(LINK) === SRC && target(MLINK) === MSRC && r.log === "", "no setfacl: exit 4 before any change", J(r));
+  writeFileSync(FHELPER, fake);
+  stub("setfacl", 'printf \'setfacl %s\\n\' "$*" >> "$FAKE_LOG"\nexit "${FAKE_SETFACL_RC-0}"\n');
+  // enable never runs the ACL step.
+  r = run(["enable"]);
+  ok(r.status === 0 && !/setfacl|udevadm info/.test(r.log), "enable: no ACL step", J(r.log));
+  clean(); rmSync(VS); rmSync(join(P.DEV_DIR, "kvm"));
 }
 
 section("refusals before any change");

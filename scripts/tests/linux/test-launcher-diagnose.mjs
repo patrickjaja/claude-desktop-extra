@@ -835,10 +835,14 @@ safe("D13", () => {
     ['[ "$("$ID" -u)" = 0 ]', `[ "$("$ID" -u)" = ${uid} ]`],
     ['[ "$_uid" = 0 ] || return 1', `{ [ "$_uid" = 0 ] || [ "$_uid" = ${uid} ]; } || return 1`],
     ["CONTAINER_MARKERS='/run/systemd/container\n/.dockerenv\n/run/.containerenv\n/.flatpak-info'", `CONTAINER_MARKERS='${root}/nothing-here\n${root}/containerenv'`],
-    ['[ -S /run/udev/control ]', `[ -e ${root}/udev-control ]`],
+    ['UDEV_CONTROL=/run/udev/control', `UDEV_CONTROL=${root}/udev-control`],
+    ['[ -S "$UDEV_CONTROL" ]', '[ -e "$UDEV_CONTROL" ]'],
+    // No tpmrm node in the scratch /dev: disable has no ACL step here
+    // (scripts/tests/linux/test-tpm-access-helper.mjs covers it).
+    ['DEV_DIR=/dev', `DEV_DIR=${root}/dev`],
     ['UDEVADM=$(tool udevadm)', `UDEVADM=${fakeUdevadm}`],
-    ['[ -e /etc/NIXOS ]', `[ -e ${etc}/NIXOS ]`],
-    ['[ -L /etc/udev ]', `[ -L ${etc}/udev ]`],
+    ['NIXOS_MARKER=/etc/NIXOS', `NIXOS_MARKER=${etc}/NIXOS`],
+    ['ETC_UDEV=/etc/udev', `ETC_UDEV=${etc}/udev`],
   ];
   const known = ['"$PKG_SRC") return 0 ;;', `"$PKG_SRC"|'${inst}/'"$RULE") return 0 ;;`];
   const stickyOk = ['[ "$1" = /nix/store ]', `{ ${["/nix/store", ...sticky].map((d) => `[ "$1" = '${d}' ]`).join(" || ")}; }`];
@@ -899,7 +903,7 @@ safe("D13", () => {
   check("disable: reload + trigger", udevCalls().split("\n").slice(0, 2).join("|"), "control --reload|trigger --action=change --subsystem-match=tpmrm");
   rmSync(calls, { force: true });
   r = run("disable");
-  check("disable again: already disabled, udev untouched", `${r.rc}|${r.out.trim()}|${udevCalls()}`, "0|cdb-tpm-access: already disabled|");
+  check("disable again: already disabled, udev re-applied (clears a left-behind ACL)", `${r.rc}|${r.out.trim()}|${udevCalls().split("\n").length}`, "0|cdb-tpm-access: already disabled|3");
 
   // Dangling link to the deb/rpm/pacman path (uninstalled package) is ours.
   spawnSync("ln", ["-s", "/usr/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules", link]);
