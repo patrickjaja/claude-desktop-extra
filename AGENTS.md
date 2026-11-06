@@ -39,10 +39,10 @@ node --check <patched.js>
 ```
 
 Where each check runs:
-- **Commit:** `.githooks/pre-commit` runs `nph --check`, `nim check` and `shellcheck -S error` on staged files.
+- **Commit:** `.githooks/pre-commit` runs `nph --check`, `nim check` and `shellcheck -S error` on staged files, and the landing-page catalogue sync when `docs/patches.md`, `site/index.html` or `js/extra_settings_page.js` is staged.
 - **Task end** (any change under `patches/` or `js/`, budget under 90 s): `make`, the absorption probe against a fresh extract, and the feature tests for the touched category.
 - **Build** (local + CI): `scripts/build-patched-tarball.sh` runs the probe, the orchestrator, and `node --check` per chunk.
-- **CI:** all of the above plus the full harness suite, sibling-noop check, jsonc template sync, `desktop-file-validate`, and the smoke test. After a release, `verify-install-channels` runs the README install commands (apt, dnf, pacman, AUR, nix) in fresh containers via `scripts/verify-install-channel.sh`; changing an install command in the README changes what CI tests.
+- **CI:** all of the above plus the full harness suite, sibling-noop check, jsonc template sync, the landing-page patch catalogue sync (`scripts/check-site-catalog-sync.sh`: `site/index.html` renders every row of `docs/patches.md`; after editing that file run `python3 -I scripts/gen-site-patch-catalog.py --write`), `desktop-file-validate`, and the smoke test. After a release, `verify-install-channels` runs the README install commands (apt, dnf, pacman, AUR, nix) in fresh containers via `scripts/verify-install-channel.sh`; changing an install command in the README changes what CI tests.
 
 ## Adding a feature
 

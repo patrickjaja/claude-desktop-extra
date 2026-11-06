@@ -418,6 +418,13 @@ jobs:
           # browsable flag catalog cannot drift from what the app produces.
           bash scripts/check-jsonc-template-sync.sh
 
+      - name: Guard landing-page patch catalogue is in sync with docs/patches.md
+        run: |
+          # site/index.html renders every patch from docs/patches.md between the
+          # patch-catalog markers; fail if the generated block drifted or a
+          # table no longer matches patches/<dir>/*.nim.
+          bash scripts/check-site-catalog-sync.sh
+
       - name: Verify Anthropic apt signing key fingerprint
         run: |
           # The committed key (packaging/claude-desktop-archive-keyring.asc) is

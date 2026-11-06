@@ -23,3 +23,16 @@ if [ -n "$STAGED_SH" ] && command -v shellcheck &>/dev/null; then
     echo "Running shellcheck on staged scripts..."
     shellcheck -S error $STAGED_SH
 fi
+
+# Landing-page patch catalogue: site/index.html renders docs/patches.md between
+# the patch-catalog markers. CI checks this too, but the workflow skips
+# docs-only pushes, so a reworded docs/patches.md row committed straight to
+# master would only fail the next automatic upstream release. Catch it here.
+STAGED_CATALOG=$(git diff --cached --name-only --diff-filter=ACM -- 'docs/patches.md' 'site/index.html' 'js/extra_settings_page.js')
+if [ -n "$STAGED_CATALOG" ]; then
+    echo "Checking the landing-page patch catalogue against docs/patches.md..."
+    if ! bash scripts/check-site-catalog-sync.sh; then
+        echo "Regenerate it:  bash scripts/check-site-catalog-sync.sh --write   (then git add site/index.html)" >&2
+        exit 1
+    fi
+fi
