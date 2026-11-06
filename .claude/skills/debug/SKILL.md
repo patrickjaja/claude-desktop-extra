@@ -94,12 +94,12 @@ grep -a 'Permission.*denied' "$CFG"/logs/main.log | tail -10
 ```
 
 ## 3. Cowork backend (if Cowork/Dispatch is implicated)
-Cowork runs on the `.deb`'s bundled native VM backend (cowork-linux-helper + virtiofsd + smol-bin + QEMU/OVMF; requires `/dev/kvm`). The old `claude-cowork-service` Go daemon is deprecated - there is no separate socket/systemd unit to poke. The backend's Electron-side lifecycle log is `cowork_vm_node.log`:
+Cowork runs on the `.deb`'s bundled native VM backend (cowork-linux-helper + virtiofsd + smol-bin + QEMU/OVMF; the local VM requires `/dev/kvm`). Cowork has two backends: cloud Cowork (1P only; no KVM, desktop tools need a keyed device = TPM access) and the local Cowork VM (optional in 1P, the only Cowork in 3P). Settings -> Extra -> Cowork (Linux) shows both. The old `claude-cowork-service` Go daemon is deprecated - there is no separate socket/systemd unit to poke. The backend's Electron-side lifecycle log is `cowork_vm_node.log`:
 ```bash
 grep -a 'Using Claude VM spawn\|Spawn succeeded\|vmStarted\|disallowedTools\|virtualization_not_available' \
   "$CFG"/logs/cowork_vm_node.log 2>/dev/null | tail -20
 ```
-If Cowork won't start, confirm the host has `/dev/kvm` + `/dev/vhost-vsock` (the backend hard-requires both).
+If the local Cowork VM won't start, confirm the host has `/dev/kvm` + `/dev/vhost-vsock` (the backend hard-requires both; Settings -> Extra -> Cowork (Linux) -> Enable KVM access grants them). If a cloud Cowork task has no computer tools, check the device key (TPM access) instead; `claude-desktop --diagnose` has a section for each.
 
 ## 4. Ask the user for what you can't collect
 Based on "$ARGUMENTS", use `AskUserQuestion` to request anything missing - only ask for what the task actually needs. Examples to consider:

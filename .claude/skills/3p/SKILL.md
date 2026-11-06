@@ -41,7 +41,7 @@ Schema is documented in memory `project_enterprise_json_schema` - the load-beari
 ## Cowork under 3p: works the same as 1p, on the official native backend
 
 Cowork runs on the **official native Cowork VM backend** bundled in the Linux `.deb` (cowork-linux-helper
-+ QEMU/OVMF; requires `/dev/kvm`) - the same backend 1p uses. There is no separate daemon (the old
++ QEMU/OVMF; requires `/dev/kvm` and `/dev/vhost-vsock`) - the same local VM 1p offers optionally (3p has no cloud Cowork; Settings -> Extra -> Cowork (Linux) -> Enable KVM access). There is no separate daemon (the old
 `claude-cowork-service` is deprecated). The 3p OAuth bounce (issue #142 / `session_stale_relogin`) only
 fires for a genuinely broken token; a logged-in account with credits + valid Anthropic models does **not**
 bounce. (Provider model names matter: `inferenceModels` must be Anthropic models or the config-health gate

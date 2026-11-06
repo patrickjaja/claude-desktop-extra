@@ -493,7 +493,7 @@ esac
   });
   const out = r.stdout || "";
   check("exit status", r.status, 0);
-  const sec = out.slice(out.indexOf("--- Computer Use bridges (CLI contract) ---"), out.indexOf("--- Cowork VM"));
+  const sec = out.slice(out.indexOf("--- Computer Use bridges (CLI contract) ---"), out.indexOf("--- Local Cowork VM"));
   check("section present", sec.length > 0, true);
   const g = sec.slice(sec.indexOf("[gnome-portal-bridge]"), sec.indexOf("[kwin-portal-bridge]"));
   const k = sec.slice(sec.indexOf("[kwin-portal-bridge]"));
@@ -747,7 +747,7 @@ safe("D12", () => {
     const owner = spawnSync("stat", ["-c", "%U:%G", devDenied], { encoding: "utf8" }).stdout.trim();
     check("denied line names owner, group and octal mode", lines(o)[0], `device key (TPM) = NOT ACCESSIBLE (${owner} 0000)`);
     check("denied: the fix problem", problems(o)[0],
-      `cloud Cowork and Dispatch get no Computer Use: the device key needs ${devDenied} - Settings -> Extra -> Computer Use, or sudo ${udev}/cdb-tpm-access enable; without logind: sudo usermod -aG tss $USER and log in again`);
+      `cloud Cowork and Dispatch get no Computer Use: the device key needs ${devDenied} - Settings -> Extra -> Cowork (Linux) -> Enable TPM access, or sudo ${udev}/cdb-tpm-access enable; without logind: sudo usermod -aG tss $USER and log in again`);
     o = dk(devDenied, link, fixture, "CLAUDE_APPIMAGE_PATH=/x/Claude.AppImage;");
     check("denied on AppImage: the copy command instead of the image's helper",
       problems(o)[0].includes(`or sudo install -m 0644 ${rule} ${link} && sudo udevadm control --reload && sudo udevadm trigger --action=change --subsystem-match=tpmrm;`), true);
@@ -794,7 +794,7 @@ safe("D12", () => {
   check("regular file: not managed", l, "TPM access rule = enabled (file, not managed by claude-desktop-extra)");
   rmSync(link, { force: true });
 
-  // The real --diagnose prints the three lines inside --- Computer Use ---.
+  // The real --diagnose prints the three lines inside --- Cloud Cowork device key ---.
   const home = join(root, "home");
   mkdirSync(join(home, ".config", "Claude", "logs"), { recursive: true });
   writeFileSync(join(home, ".config", "Claude", "logs", "main.log"), readFileSync(fixture));
@@ -804,8 +804,8 @@ safe("D12", () => {
            DISPLAY: ":0", XDG_SESSION_TYPE: "x11" }, encoding: "utf8", timeout: 90000 });
   const d = r.stdout || "";
   check("diagnose: exit 0", r.status, 0);
-  const cu = d.slice(d.indexOf("--- Computer Use ---"), d.indexOf("--- Computer Use bridges"));
-  check("diagnose: device key line in the Computer Use section", /^device key \(TPM\) = (ok \(\/dev\/tpmrm0 rw\)|NOT ACCESSIBLE \(.+ [0-7]{4}\)|absent \(no TPM 2\.0 resource manager\))$/m.test(cu), true);
+  const cu = d.slice(d.indexOf("--- Cloud Cowork device key ---"), d.indexOf("--- Computer Use bridges"));
+  check("diagnose: device key line in the Cloud Cowork device key section", /^device key \(TPM\) = (ok \(\/dev\/tpmrm0 rw\)|NOT ACCESSIBLE \(.+ [0-7]{4}\)|absent \(no TPM 2\.0 resource manager\))$/m.test(cu), true);
   check("diagnose: rule line follows", /^device key \(TPM\) = .*\nTPM access rule = .*\nlast remote-device connect = /m.test(cu), true);
   check("diagnose: last connect read from the profile's main.log", cu.includes("last remote-device connect = keyed (2026-11-03 12:21:03)"), true);
 });

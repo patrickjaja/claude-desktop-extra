@@ -9,7 +9,7 @@ when_to_use: When the user asks what the project does, how the pieces fit, what 
 Repackages Anthropic's **official Claude Desktop Linux `.deb`** for the distros Anthropic does not ship (Arch via our own pacman repo, Fedora/RHEL, NixOS, AppImage) and for our own Debian/Ubuntu `.deb`, while layering a small set of **Linux-only value-adds** that the official build does not provide. See `/linux` for compat specifics.
 
 ## What we start from: the official Linux .deb
-Anthropic publishes an official Claude Desktop build for Linux as a `.deb` in an apt repo (`https://downloads.claude.ai/claude-desktop/apt`). It bundles its own Electron (44.9.3 as of v4.23118.0; authoritative: the deb's `usr/lib/claude-desktop/version`) and ships a **native Cowork VM backend** (cowork-linux-helper + virtiofsd + smol-bin + QEMU/OVMF; requires `/dev/kvm`). The official build natively supports Chat, Code and Cowork, ships a staged Linux Computer Use rollout (portal-based, GNOME 46+ / current Plasma, no wlroots), and reads managed config from `/etc/claude-desktop/managed-settings.json`. We do **not** patch the Windows MSIX any more - that pipeline is gone.
+Anthropic publishes an official Claude Desktop build for Linux as a `.deb` in an apt repo (`https://downloads.claude.ai/claude-desktop/apt`). It bundles its own Electron (44.9.3 as of v4.23118.0; authoritative: the deb's `usr/lib/claude-desktop/version`) and ships a **native Cowork VM backend** (cowork-linux-helper + virtiofsd + smol-bin + QEMU/OVMF; the local VM requires `/dev/kvm` and `/dev/vhost-vsock`). The official build natively supports Chat, Code and Cowork, ships a staged Linux Computer Use rollout (portal-based, GNOME 46+ / current Plasma, no wlroots), and reads managed config from `/etc/claude-desktop/managed-settings.json`. We do **not** patch the Windows MSIX any more - that pipeline is gone.
 
 ## What this repo does: ingest -> patch -> repackage
 **Ingest:** download the official `.deb` (apt repo, or `--deb PATH`/`--version X`) -> verify GPG + SHA256 -> `dpkg-deb -x` -> locate `usr/lib/claude-desktop/resources/app.asar` -> `asar extract`.
@@ -27,7 +27,7 @@ Several patches that used to *enable* Cowork on Linux (the "cowork-wiring" clust
 **Features the app exposes that the official build already provides (we just preserve them through the repackage):**
 - **Chat** - main conversational UI.
 - **Claude Code** - auto-detects system `claude` CLI; Code tab + integrated terminal.
-- **Cowork** - delegate a goal to a sandboxed Claude Code agent that reads/edits/creates files and returns a deliverable. Runs on the **official native Cowork VM backend** bundled in the `.deb` (no separate daemon needed). Requires `/dev/kvm`.
+- **Cowork** - delegate a goal to a sandboxed Claude Code agent that reads/edits/creates files and returns a deliverable. Runs on the **official native Cowork VM backend** bundled in the `.deb` (no separate daemon needed) for its local VM; the local VM requires `/dev/kvm`. Cowork has two backends: cloud Cowork (1P only; no KVM, desktop tools need a keyed device = TPM access) and the local Cowork VM (optional in 1P, the only Cowork in 3P). Settings -> Extra -> Cowork (Linux) shows both.
 - **Browser Tools** - Chrome automation via the Claude-in-Chrome extension/MCP.
 - **3P / Enterprise gateway** - configure external inference (Bedrock/Vertex/Azure/gateway); managed config from `/etc/claude-desktop/managed-settings.json`; ion-dist 3P-config SPA.
 - **Imagine** - in-Cowork image generation.

@@ -1187,7 +1187,10 @@ None. All 167 previously catalogued store-consulted flag IDs are still present i
 | `3366735351` | Auto-update on ready state | No |
 | `2940196192` | coworkArtifacts — persistent HTML artifact storage in cowork sessions | No — force retired 2026-07-13; follows server rollout, opt-in via .jsonc growthbookOverrides |
 | `3444158716` | Cowork resources MCP ("visualize" — show_widget tool) | No |
-| `1143815894` | hostLoopMode — non-VM cowork (bare SDK loop, no cowork service spawn) | **No** — must NOT be forced ON; doing so bypasses the cowork service, breaking skills/plugins |
+| `1143815894` | hostLoopMode - the agent loop runs in the app process (always on in 3P); shell commands still run inside the local Cowork VM, so it is not a "no VM" mode and still needs the VM probe to pass (verified 4.23118.0) | **No** - must NOT be forced ON; doing so bypasses the cowork service, breaking skills/plugins |
+| `yukon_silver_dramatic_shrimp` | claude.ai SPA (remote, not the desktop merger): `canChooseBackend`, lets a 1P user pick per task between cloud Cowork ("This task will run in the cloud", `cse_...` sessions) and the local VM ("on your computer"); local needs `yukonSilver` supported on the desktop (4.23118.0) | No - server rollout |
+| `dramatic_shrimp_enabled` | claude.ai account setting that turns cloud Cowork on for the account (4.23118.0) | No - account setting |
+| `dramatic_shrimp_force_local` | claude.ai account setting that forces tasks onto the local VM instead of the cloud (4.23118.0) | No - account setting |
 | `3558849738` | Dispatch/Spaces feature (RBe constant) | No — was forced ON in `fix_dispatch_linux.nim`; **patch removed** (defaults ON upstream on Linux) |
 | `3572572142` | Sessions-bridge init (Dispatch) | No — was forced ON in `fix_dispatch_linux.nim`; **patch removed** (inits natively on Linux) |
 | `3691521536` | Stealth updater — nudge updates when no active sessions | No |

@@ -14,7 +14,7 @@ Example prompt: *"Can you use computer use MCP to explain me the PhpStorm applic
 
 ## Approving apps
 
-Settings -> Extra -> Computer Use -> **Ask before Computer Use controls an app** (on by default). Claude names the apps it wants in `request_access`, and you approve them in the approval card in the chat, as on macOS. Approved apps get full control: clicks, typing and key presses, also for terminals, editors and browsers (macOS limits those to "read" or "click"). The card still offers the clipboard and system key combo checkboxes, and warns for terminals and file managers.
+Settings -> Extra -> Cowork (Linux) -> **Ask before Computer Use controls an app** (on by default). Claude names the apps it wants in `request_access`, and you approve them in the approval card in the chat, as on macOS. Approved apps get full control: clicks, typing and key presses, also for terminals, editors and browsers (macOS limits those to "read" or "click"). The card still offers the clipboard and system key combo checkboxes, and warns for terminals and file managers.
 
 The switch governs Code sessions (the Code tab and local Cowork) on X11, wlroots, GNOME and the background display. Sessions that upstream runs itself already ask, whatever the switch says: cloud Cowork, Dispatch and teach mode pass their own approved apps to Computer Use, and their screenshots are masked by that list where the session can mask (see the table). Approved apps get full control in all of them on these sessions, also with the switch off. On KDE Plasma Wayland upstream handles everything.
 
@@ -43,7 +43,7 @@ On sessions without a hit test (the app in front only), a click lands on whateve
 
 Masking needs a bundled bridge that supports it; an older or custom bridge (`*_BRIDGE_BIN`) without it gives the whole screen, and the status line says so. When the bridge cannot say whether it can mask (its `doctor` failed) or a masked capture fails, the screenshot is refused; it is never taken unmasked in its place.
 
-Where screenshots show the whole screen, Claude is told so in the tool descriptions and with the first such screenshot of each task. Settings -> Extra -> Computer Use shows a line under **This desktop** saying which case applies to your session, from what the last screenshot actually did ("Screenshots show only approved apps", with what the mask does not cover on Sway and Hyprland, or "On this session (...) screenshots show the whole screen, including apps you did not approve").
+Where screenshots show the whole screen, Claude is told so in the tool descriptions and with the first such screenshot of each task. Settings -> Extra -> Cowork (Linux) shows a line under **This desktop** saying which case applies to your session, from what the last screenshot actually did ("Screenshots show only approved apps", with what the mask does not cover on Sway and Hyprland, or "On this session (...) screenshots show the whole screen, including apps you did not approve").
 
 **Turn it off** with the switch, or with `"computerUseAskBeforeControl": false` in `claude-desktop-extra.jsonc` in the profile's userData directory (`~/.config/Claude/`; a value there locks the switch). Off, every app can be controlled without asking in Code sessions: `request_access` answers at once, nothing is checked and screenshots show the whole screen, as in earlier versions. Cloud Cowork, Dispatch and teach mode keep upstream's own approval and masking. The change applies from Claude's next Computer Use call; tool descriptions follow in the next session.
 
@@ -61,16 +61,16 @@ On Wayland, with one of the bundled bridges (KWin, GNOME or wlroots) in use, the
 
 **Check.** Any of:
 
-- Settings -> Extra -> Computer Use (three rows: this desktop, device key (TPM), cloud Cowork and Dispatch).
-- `claude-desktop --diagnose`: the `device key (TPM)`, `TPM access rule` and `last remote-device connect` lines in the Computer Use section.
+- Settings -> Extra -> Cowork (Linux) (the Cloud Cowork section shows the device key (TPM) and whether cloud Cowork and Dispatch can use this computer; the Computer Use section shows this desktop).
+- `claude-desktop --diagnose`: the `device key (TPM)`, `TPM access rule` and `last remote-device connect` lines in the Cloud Cowork device key section.
 - `~/.config/Claude/logs/main.log`: `connect frame sent: device_id keyed` (works) or `keyless` (no computer tools).
-- The Cowork task header: on a keyless desktop a cloud task has no linked computer, so the header shows a laptop icon with a warning dot; its popover says "This desktop has no device key, so Computer Use is not available in Cowork." Keyed desktops and linked tasks show the upstream icon and text.
+- The chat header: every claude.ai chat and Cowork session (`/chat/...` and `/cowork/...`) shows a device icon. On a desktop without a device key it is a laptop with an X, and its popover says this computer has no device key, so cloud tasks cannot use it, with a link that opens Settings -> Extra -> Cowork (Linux). Keyed but not linked to this chat: laptop with an amber dot. Device key state not known yet: a plain laptop. Linked chats and chats that run in the local VM show the upstream icon with an added "Linux details" row that opens the same page.
 
 **Fix.**
 
 | Install | Action |
 |---|---|
-| `.deb`, `.rpm`, pacman | Settings -> Extra -> Computer Use -> **Enable TPM access** (shows the exact command; asks you to confirm, then for an administrator password) |
+| `.deb`, `.rpm`, pacman | Settings -> Extra -> Cowork (Linux) -> **Enable TPM access** (shows the exact command; asks you to confirm, then for an administrator password) |
 | AppImage, or no logind session | Run the command the panel shows |
 | NixOS | `programs.claude-desktop-extra.tpmAccess.enable = true;` with `imports = [ claude-desktop-extra.nixosModules.default ];`, then rebuild |
 | Any | Alternative: `sudo usermod -aG tss $USER`, then log out and back in |
@@ -81,7 +81,7 @@ Then restart Claude and start a **new** Cowork task; a running task keeps the to
 
 ## Read app controls through accessibility (experimental)
 
-Settings -> Extra -> Computer Use -> **Computer Use: read app controls (accessibility)** (off by default) gives Claude the app-scoped tools `app_list_windows`, `app_ax_find`, `app_click` and `app_type`. `app_ax_find` lists a window's controls (role, name, states, position) from the desktop accessibility bus (AT-SPI), and `app_click` / `app_type` press a control or set a text field by its `[N]` index, so Claude finds controls by name instead of by screenshot coordinates. With the switch off the tools do not exist and nothing touches the accessibility bus.
+Settings -> Extra -> Cowork (Linux) -> **Computer Use: read app controls (accessibility)** (off by default) gives Claude the app-scoped tools `app_list_windows`, `app_ax_find`, `app_click` and `app_type`. `app_ax_find` lists a window's controls (role, name, states, position) from the desktop accessibility bus (AT-SPI), and `app_click` / `app_type` press a control or set a text field by its `[N]` index, so Claude finds controls by name instead of by screenshot coordinates. With the switch off the tools do not exist and nothing touches the accessibility bus.
 
 While a Computer Use session uses it, Claude turns the desktop accessibility service on, and turns it back off when the session ends (a crash is healed at the next start). A running screen reader is never touched. The text of password fields and terminals is never read. It needs `at-spi2-core` (installed with every common desktop). Switching the desktop accessibility setting on or off yourself during a Computer Use session is overridden: Claude Desktop switches it on when the tools are used and back to the previous value afterwards.
 
@@ -94,7 +94,7 @@ GTK, Qt, Firefox and LibreOffice apps expose their controls. Electron and Chromi
 
 ## Computer Use on a background display (experimental)
 
-By default Computer Use acts on your own desktop: Claude's mouse and keyboard are yours, so you cannot work while it runs. The **Computer Use on a background display** switch (Settings -> Extra -> Computer Use, marked **Experimental**) moves it to a second display.
+By default Computer Use acts on your own desktop: Claude's mouse and keyboard are yours, so you cannot work while it runs. The **Computer Use on a background display** switch (Settings -> Extra -> Cowork (Linux), marked **Experimental**) moves it to a second display.
 
 - **Display 1** is your desktop - where you chat with Claude and keep working.
 - **Display 2** is a separate display that you start yourself: an invisible X server (Xvfb), an X server in a window (Xephyr), or a headless or nested wlroots compositor (sway, labwc). Claude opens apps there, clicks, types and takes screenshots there. It never moves your mouse or takes your focus.
@@ -105,7 +105,7 @@ Use it to let Claude work in the background while you keep your desktop, to keep
 
 ### Start display 2
 
-Pick one. The setup panel (Settings -> Extra -> Computer Use -> the row's setup page) shows these recipes with a free display number filled in, and installs hints for what is missing on your machine.
+Pick one. The setup panel (Settings -> Extra -> Cowork (Linux) -> the row's setup page) shows these recipes with a free display number filled in, and installs hints for what is missing on your machine.
 
 **Xvfb plus a window manager** (invisible; the window manager lets Claude switch between windows):
 
@@ -141,7 +141,7 @@ On immutable distros (Bazzite, Silverblue, SteamOS) install the tools in a distr
 
 ### Turn it on
 
-Open Settings -> Extra -> Computer Use -> **Computer Use on a background display**. The setup page lists the displays it finds (your own is labelled "your desktop" and cannot be chosen), each with size, outputs, whether it is supported and a live preview, shows the restrictions that apply on this machine right now, and has a **Test** button that takes a screenshot and moves the pointer on the chosen display. Choose a display, switch it on; it applies from Claude's next Computer Use action.
+Open Settings -> Extra -> Cowork (Linux) -> **Computer Use on a background display**. The setup page lists the displays it finds (your own is labelled "your desktop" and cannot be chosen), each with size, outputs, whether it is supported and a live preview, shows the restrictions that apply on this machine right now, and has a **Test** button that takes a screenshot and moves the pointer on the chosen display. Choose a display, switch it on; it applies from Claude's next Computer Use action.
 
 The same setting is the `computerUseBackgroundDisplay` key in `claude-desktop-extra.jsonc` in the profile's userData directory (`~/.config/Claude/`; per profile, so a named profile has its own). A key set in the `.jsonc` wins over the page and makes the page read-only:
 

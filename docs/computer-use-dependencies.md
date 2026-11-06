@@ -68,7 +68,7 @@ curl -fsSL https://raw.githubusercontent.com/patrickjaja/claude-desktop-extra/ma
 
 ## TPM access (optional, cloud Cowork and Dispatch)
 
-Cloud Cowork and Dispatch offer this computer's Computer Use only when the desktop can use the TPM 2.0 resource manager (`/dev/tpmrm0`) for its device key. Code sessions do not need it. On `.deb`, `.rpm` and pacman installs, Settings -> Extra -> Computer Use -> **Enable TPM access** does this through polkit (`pkexec` and a polkit agent in your session, which desktop environments provide). Without a polkit agent, or on AppImage, the panel shows a command to run with `sudo`. NixOS: `programs.claude-desktop-extra.tpmAccess.enable = true;` (module `nixosModules.default`). Any distro: `sudo usermod -aG tss $USER` and log in again. See [Computer Use in cloud Cowork and Dispatch](computer-use.md#computer-use-in-cloud-cowork-and-dispatch).
+Cloud Cowork and Dispatch offer this computer's Computer Use only when the desktop can use the TPM 2.0 resource manager (`/dev/tpmrm0`) for its device key. Code sessions do not need it. On `.deb`, `.rpm` and pacman installs, Settings -> Extra -> Cowork (Linux) -> **Enable TPM access** does this through polkit (`pkexec` and a polkit agent in your session, which desktop environments provide). Without a polkit agent, or on AppImage, the panel shows a command to run with `sudo`. NixOS: `programs.claude-desktop-extra.tpmAccess.enable = true;` (module `nixosModules.default`). Any distro: `sudo usermod -aG tss $USER` and log in again. See [Computer Use in cloud Cowork and Dispatch](computer-use.md#computer-use-in-cloud-cowork-and-dispatch).
 
 <a id="nixos"></a>
 ## NixOS

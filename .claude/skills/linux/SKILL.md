@@ -7,7 +7,7 @@ paths: patches/**, scripts/**, js/**, baseline/PLATFORM_GATE_BASELINE.md
 
 # Linux compatibility - claude-desktop-extra
 
-Repackages Anthropic's **official Claude Desktop Linux `.deb`** (bundles Electron 44.4.3 as of v2.7032.0 - read the deb tree's `usr/lib/claude-desktop/version` for the current one - plus a native Cowork VM backend) for the distros Anthropic does not ship, patching its `app.asar` to add Linux value-adds (Computer Use, themes, multi-profile, Quick Entry) and Linux fixes. **Linux only** - never add macOS/Windows code. Minified JS identifiers change every upstream release, so patterns must use `[\w$]+` wildcards anchored on stable strings (feature names, log messages, `process.platform==="darwin"`). For a clean unpatched bundle to test patterns against, see `/fresh-upstream`.
+Repackages Anthropic's **official Claude Desktop Linux `.deb`** (bundles Electron 44.4.3 as of v2.7032.0 - read the deb tree's `usr/lib/claude-desktop/version` for the current one - plus a native local Cowork VM backend; cloud Cowork needs no KVM, only a keyed device - Settings -> Extra -> Cowork (Linux) covers both) for the distros Anthropic does not ship, patching its `app.asar` to add Linux value-adds (Computer Use, themes, multi-profile, Quick Entry) and Linux fixes. **Linux only** - never add macOS/Windows code. Minified JS identifiers change every upstream release, so patterns must use `[\w$]+` wildcards anchored on stable strings (feature names, log messages, `process.platform==="darwin"`). For a clean unpatched bundle to test patterns against, see `/fresh-upstream`.
 
 ## Support matrix (must validate every change against ALL rows)
 

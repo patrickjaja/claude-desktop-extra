@@ -117,7 +117,9 @@ grep -aoE '.{0,60}processPlatform\(\).{0,60}' "$NEW" | sort -u   # injected gate
 Classify each: PATCHED (maps to a patch) / NATIVE (real Apple/Win API) / STUB (disabled on all platforms) / **PORTABLE** (mac/win-only, no native dep, not patched - the only actionable class). **Verify before reporting:** trace every PORTABLE candidate yourself and quote the verbatim snippet; past sub-agent audits hallucinated removed features and fake UUIDs. Update the baseline's `Last audited`, counts and rows.
 
 ## Step 7 - Cowork backend
-Cowork runs on the `.deb`'s bundled native VM backend (cowork-linux-helper + virtiofsd + smol-bin + QEMU/OVMF; requires `/dev/kvm`). Nothing to update on a bump.
+Cowork runs on the `.deb`'s bundled native VM backend (cowork-linux-helper + virtiofsd + smol-bin + QEMU/OVMF; the local VM requires `/dev/kvm`). Nothing to update on a bump. Cowork has two backends: cloud Cowork (1P only; no KVM, desktop tools need a keyed device = TPM access) and the local Cowork VM (optional in 1P, the only Cowork in 3P). Settings -> Extra -> Cowork (Linux) shows both.
+
+Re-check on every bump: `baseline/COWORK_HEADER_ICON_ANCHORS.md` (the claude.ai header icon anchors of `fix_cowork_device_icon_web.nim`) and the two core captures in `add_feature_extra_settings.nim` (`globalThis.__cdbNavigation`, `globalThis.__cdbCoworkVmProbe`) that the Cowork (Linux) page uses.
 
 ## Step 8 - docs
 Update only what changed:

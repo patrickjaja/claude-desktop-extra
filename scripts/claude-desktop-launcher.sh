@@ -2064,7 +2064,7 @@ _diag_last_connect() {
     esac
 }
 
-# The three device-key lines of --- Computer Use --- and their Problems.
+# The three device-key lines of --- Cloud Cowork device key --- and their Problems.
 # <tpm device> <rule link> <resources dir> <main.log>
 _diag_device_key() {
     local dev="$1" link="$2" res="$3" log="$4" helper fix
@@ -2081,7 +2081,7 @@ _diag_device_key() {
         fix="sudo install -m 0644 $res/linux-udev/70-claude-desktop-extra-tpm.rules $link && sudo udevadm control --reload && sudo udevadm trigger --action=change --subsystem-match=tpmrm"
     fi
     if [[ "$_diag_tpm" == denied ]]; then
-        _diag_problems+=("cloud Cowork and Dispatch get no Computer Use: the device key needs $dev - Settings -> Extra -> Computer Use, or $fix; without logind: sudo usermod -aG tss \$USER and log in again")
+        _diag_problems+=("cloud Cowork and Dispatch get no Computer Use: the device key needs $dev - Settings -> Extra -> Cowork (Linux) -> Enable TPM access, or $fix; without logind: sudo usermod -aG tss \$USER and log in again")
     elif [[ "$_diag_tpm" == ok && "$_diag_connect" == keyless ]]; then
         _diag_problems+=("device registered keyless${_diag_connect_reason:+ ($_diag_connect_reason)} although $dev is accessible: restart Claude; if it stays keyless, attach this report to an issue")
     fi
@@ -2433,13 +2433,15 @@ _diagnose() {
     local _cu_log="$config_dir/logs/main.log"
     [[ -f "${config_dir}-3p/logs/main.log" && ( ! -f "$_cu_log" || "${config_dir}-3p/logs/main.log" -nt "$_cu_log" ) ]] \
         && _cu_log="${config_dir}-3p/logs/main.log"
+    echo
+    echo '--- Cloud Cowork device key ---'
     _diag_device_key /dev/tpmrm0 /etc/udev/rules.d/70-claude-desktop-extra-tpm.rules "$_cu_res" "$_cu_log"
     echo
     echo '--- Computer Use bridges (CLI contract) ---'
     # doctor + screens per bridge; neither opens a portal session (contract).
     _diag_bridges
     echo
-    echo '--- Cowork VM capability (replicates the app probe) ---'
+    echo '--- Local Cowork VM (replicates the app probe) ---'
     # Mirrors the native Cowork backend's capability probe. If any of qemuPath /
     # firmwarePath / virtiofsdPath / kvm is missing, the app reports "VM not
     # supported" and the workspace Download does nothing. The resource base is
@@ -2506,13 +2508,13 @@ _diagnose() {
     echo "helperBinaryPath = $([[ -x $_res_base/cowork-linux-helper ]] && echo "$_res_base/cowork-linux-helper" || echo MISSING)"
     echo "smolBinPath = $([[ -r $_res_base/smol-bin.$_arch.img ]] && echo "$_res_base/smol-bin.$_arch.img" || echo MISSING)"
     # kvm + vsock (app checks R_OK|W_OK)
-    echo "/dev/kvm = $([[ -r /dev/kvm && -w /dev/kvm ]] && echo ok || { [[ -e /dev/kvm ]] && echo 'NO PERMISSION (add user to kvm group + relogin)' || echo 'MISSING (enable virtualization in BIOS)'; })"
-    echo "/dev/vhost-vsock = $([[ -r /dev/vhost-vsock && -w /dev/vhost-vsock ]] && echo ok || { [[ -e /dev/vhost-vsock ]] && echo 'NO PERMISSION' || echo 'MISSING (sudo modprobe vhost_vsock)'; })"
+    echo "/dev/kvm = $([[ -r /dev/kvm && -w /dev/kvm ]] && echo ok || { [[ -e /dev/kvm ]] && echo 'NO PERMISSION (Settings -> Extra -> Cowork (Linux) -> Enable KVM access, or add your user to the kvm group and log in again)' || echo 'MISSING (enable virtualization in BIOS)'; })"
+    echo "/dev/vhost-vsock = $([[ -r /dev/vhost-vsock && -w /dev/vhost-vsock ]] && echo ok || { [[ -e /dev/vhost-vsock ]] && echo 'NO PERMISSION (Settings -> Extra -> Cowork (Linux) -> Enable KVM access)' || echo 'MISSING (sudo modprobe vhost_vsock)'; })"
     if [[ -n $_qemu_path && -n $_fw && -n $_vfs && -r /dev/kvm && -w /dev/kvm && -r /dev/vhost-vsock && -w /dev/vhost-vsock ]]; then
-        echo "=> capability probe SHOULD pass (Cowork supported)"
+        echo "=> capability probe SHOULD pass (local Cowork VM supported)"
     else
         echo "=> capability probe WOULD FAIL - fix the NOT-FOUND/MISSING item(s) above"
-        _diag_problems+=("Cowork VM unavailable: the capability probe would fail (see the Cowork section: qemu, firmware, virtiofsd, /dev/kvm, /dev/vhost-vsock)")
+        _diag_problems+=("local Cowork VM unavailable (cloud Cowork is not affected): the capability probe would fail (see the Local Cowork VM section: qemu, firmware, virtiofsd, /dev/kvm, /dev/vhost-vsock)")
     fi
     echo
     echo '--- Host capabilities (what the app execs, resolved the way it does) ---'

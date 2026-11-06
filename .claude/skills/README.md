@@ -61,7 +61,7 @@ fresh-upstream ──▶ update ──▶ deploy        new-version pipeline
 **Why:** The hard part of this project is the combinatorial matrix (5 session types × 8 distros × arch). This keeps those edge cases in front of Claude instead of rediscovered each time.
 
 ### `/architecture` - what the project is
-**What:** Explains the purpose and user-facing features of the repo, how the official `.deb` and our patches fit together, the `.deb`'s bundled native Cowork VM backend, and our Linux-only value-adds.
+**What:** Explains the purpose and user-facing features of the repo, how the official `.deb` and our patches fit together, the two Cowork backends (cloud, and the `.deb`'s bundled native local VM), and our Linux-only value-adds.
 **When:** Onboarding, writing docs/READMEs, or any time you're reasoning about how the official build and our patches fit together.
 **Why:** Grounds explanations in the real design (official build + patches) rather than guesses.
 

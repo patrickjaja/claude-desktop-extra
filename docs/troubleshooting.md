@@ -13,7 +13,7 @@ cat ~/.config/Claude/logs/claude-patches.log
 
 In 3P mode the log is under `~/.config/Claude-3p/logs/`, for a named profile under `~/.config/Claude-<profile>/logs/` (3P: `~/.config/Claude-<profile>-3p/logs/`).
 
-`--diagnose` prints the session type, portal and hotkey state, a **Host capabilities** section (each host tool the app runs, whether it is found, and what stops working without it), a **Computer Use** section (package version, a run check of every bundled bridge, and on KDE Wayland the KWin 6.6 check plus a portal-free self-test; window titles are never printed) and a closing **Problems found** list. Together with `claude-patches.log` this makes most reports diagnosable without follow-up questions.
+`--diagnose` prints the session type, portal and hotkey state, a **Host capabilities** section (each host tool the app runs, whether it is found, and what stops working without it), a **Cloud Cowork device key** section (TPM access, the opt-in rule and the last remote-device connect), a **Local Cowork VM** section (the app's own probe: QEMU, firmware, virtiofsd, `/dev/kvm`, `/dev/vhost-vsock`), a **Computer Use** section (package version, a run check of every bundled bridge, and on KDE Wayland the KWin 6.6 check plus a portal-free self-test; window titles are never printed) and a closing **Problems found** list. Together with `claude-patches.log` this makes most reports diagnosable without follow-up questions.
 
 ## Logs
 
@@ -144,11 +144,21 @@ A healthy window has a textarea about 40 px tall, `focused` and `docFocus` true,
 
 Cloud Cowork and Dispatch offer this computer's Computer Use only to a desktop that registered with a TPM-backed device key. Without access to `/dev/tpmrm0` it registers keyless and the session gets no computer tools. Code tab sessions are unaffected.
 
-1. Check: Settings -> Extra -> Computer Use, or `claude-desktop --diagnose`, or `grep 'connect frame sent' ~/.config/Claude/logs/main.log` (`device_id keyed` is good, `keyless` is the problem).
+1. Check: Settings -> Extra -> Cowork (Linux), or `claude-desktop --diagnose`, or `grep 'connect frame sent' ~/.config/Claude/logs/main.log` (`device_id keyed` is good, `keyless` is the problem).
 2. Fix: click **Enable TPM access** on that page (`.deb`, `.rpm`, pacman), run the command it shows (AppImage, no logind), set `programs.claude-desktop-extra.tpmAccess.enable = true;` (NixOS), or `sudo usermod -aG tss $USER` and log in again.
 3. Restart Claude and start a new Cowork task.
 
 No TPM 2.0 on the machine: cloud Cowork and Dispatch cannot use Computer Use there; Code sessions still can. Security implications and how to turn it off: [Computer Use in cloud Cowork and Dispatch](computer-use.md#computer-use-in-cloud-cowork-and-dispatch).
+
+On a keyless desktop every claude.ai Cowork chat header shows a laptop icon with an X; clicking it opens the Cloud Cowork section of that page. A keyed desktop whose chat is not linked to it shows an amber dot instead.
+
+## Cowork has no "run on your computer" option
+
+The local Cowork VM is optional with a claude.ai account: when the app's probe fails it hides the local option and only cloud Cowork is offered (third-party inference has no cloud Cowork, so Cowork is unavailable there). The probe needs `/dev/kvm` and `/dev/vhost-vsock` access plus QEMU, OVMF firmware and virtiofsd, and runs once at app start.
+
+1. Check: Settings -> Extra -> Cowork (Linux) -> Local Cowork VM, or the **Local Cowork VM** section of `claude-desktop --diagnose`.
+2. Fix the item it names: click **Enable KVM access** (`.deb`, `.rpm`, pacman), run the command the page shows (AppImage, no polkit agent), set `programs.claude-desktop-extra.kvmAccess.enable = true;` (NixOS), or `sudo usermod -aG kvm $USER` and log in again; install the missing VM tools per [Cowork setup](cowork.md#local-cowork-vm-setup).
+3. Restart the app so it probes again (no relogin after Enable KVM access).
 
 ## Known limitations
 
