@@ -166,7 +166,7 @@ The package replaces itself on the next regular upgrade, and your config is migr
 
 Cowork has two backends:
 
-- **Cloud Cowork** (claude.ai accounts only) runs in Anthropic's cloud and needs no KVM. For desktop tools (Computer Use, files) this computer must be a keyed device: Settings -> Extra -> Cowork (Linux) -> **Enable TPM access** (one administrator prompt).
+- **Cloud Cowork** (claude.ai accounts only) runs in Anthropic's cloud and needs no KVM. Files and commands on this computer run in its local Cowork VM; Computer Use (screen and input) additionally needs a keyed device: Settings -> Extra -> Cowork (Linux) -> **Enable TPM access** (one administrator prompt).
 - **Local Cowork VM** (optional with a claude.ai account, the only Cowork in third-party inference mode) runs on the official native VM backend bundled in the package. The host needs QEMU + UEFI firmware + virtiofsd and access to `/dev/kvm` and `/dev/vhost-vsock`: Settings -> Extra -> Cowork (Linux) -> **Enable KVM access** (no relogin; restart the app so it probes again), or join the `kvm` group once (`sudo usermod -aG kvm "$USER"`, then log out and in). NixOS: `programs.claude-desktop-extra.kvmAccess.enable = true;`.
 
 Per-distro commands and troubleshooting: [docs/cowork.md](docs/cowork.md).

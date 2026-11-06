@@ -1717,8 +1717,8 @@
       if (act.undoManual) say(kvm ? "or remove the links by hand:" : "or remove the link by hand:", String(act.undoManual));
     } else {
       what2.appendChild(el("div", "cdbx-note", kvm
-        ? "Access this session already has lasts until you log out, and the module stays loaded. To turn it on again: Enable KVM access."
-        : "Access this session already has lasts until you log out. To turn it on again: Enable TPM access."));
+        ? "Disable removes the rule and clears the access entry right away; it takes effect after restarting Claude, no relogin or reboot. The vhost_vsock module stays loaded. To turn it on again: Enable KVM access."
+        : "Disable removes the rule and clears the access entry right away; it takes effect after restarting Claude, no relogin or reboot. To turn it on again: Enable TPM access."));
     }
     box.appendChild(what2);
     host.appendChild(box);
@@ -1789,7 +1789,7 @@
       call().then(function (r) {
         setBusy(false);
         if (!failed(r)) {
-          toast(r.changed ? "Done: " + r.message : "No change needed: " + r.message);
+          toast((r.changed ? "Done: " + r.message : "No change needed: " + r.message) + (r.note ? " " + r.note : ""));
           load(null);
           return;
         }
@@ -1847,8 +1847,8 @@
       if (dis && typeof dis === "object") {
         if (dis.kind === "pkexec" && hasCall) {
           var disable = cusButton("Disable " + name + " access", on === "kvm"
-            ? "Removes this package's KVM rule and module links; access already granted lasts until you log out"
-            : "Removes this package's TPM rule link; access already granted lasts until you log out");
+            ? "Removes this package's KVM rule and module links and clears the access entry; takes effect after restarting Claude"
+            : "Removes this package's TPM rule link and clears the access entry; takes effect after restarting Claude");
           disable.addEventListener("click", function () { accessAction(on, "disable"); });
           offBtn(disable, dis);
           row.aside.appendChild(disable);
@@ -1959,7 +1959,7 @@
   ];
   var CUS_HELP_LOCAL = "Local: the VM on this computer. It needs KVM (see Local Cowork VM below), and it is the only option in 3P mode.";
   var CUS_HELP_1P = [
-    "Cloud: Anthropic's cloud VM. It reaches this computer's files and apps only through the device link, which needs the device key (see Cloud Cowork below).",
+    "Cloud: Anthropic's cloud VM. It reaches this computer's files and commands through the device link; Computer Use (screen and input) also needs the device key (see Cloud Cowork below).",
     CUS_HELP_LOCAL,
     "The header icon tells you which: a laptop marked \"Connected\" is a cloud task linked to this computer; a slashed cloud, \"Only on this computer\", is a local task.",
     "Switching: if your organization offers the choice, a cloud / local toggle (Beta) sits above the composer of a new task. Otherwise the app decides: a task with a local folder or Space, Dispatch, or an Auto or Skip-approvals mode the cloud cannot run runs locally; plain chats and tasks run in the cloud. A running task can be moved with \"Continue in cloud...\" or back to this computer.",

@@ -266,7 +266,7 @@ step(function (go) {
       ok(trail.innerHTML === before, "bound: upstream's trailing slot is unchanged");
       t.d.querySelector('[data-testid="cowork-computer-link-indicator"]').setAttribute("data-popup-open", "");
       var p = addPortal(t, portal(LINK_CARD));
-      waitFor(function () { return t.d.querySelector(".cdb-cowork-icon-row"); }, function () {
+      waitFor(function () { var m = t.d.querySelector(".cdb-cowork-icon-mode"); return m && /\\(ready\\)$/.test(m.textContent); }, function () {
         var rows = t.d.querySelectorAll(".cdb-cowork-icon-row");
         var manage = t.d.getElementById("manage");
         ok(rows.length === 1, "bound: one details row in the popover", rows.length);
@@ -281,16 +281,19 @@ step(function (go) {
         ok(manage.textContent === "\ue001Manage devices" && t.d.querySelectorAll('[data-testid="cowork-computer-link-manage"]').length === 1,
           "bound: upstream's manage button is untouched");
         ok(rows[0].getAttribute("data-cdb-cowork-icon") === "details", "bound: row is marked data-cdb-cowork-icon=details");
-        var ml = rows[0].querySelector(".cdb-cowork-icon-line");
-        ok(ml && ml.textContent === "Runs in the cloud - uses jajapc through the device link" && ml.nextSibling === b,
-          "bound: one mode line above Linux details, computer name from the card title", ml && ml.textContent);
+        var ml = t.d.querySelector(".cdb-cowork-icon-mode");
+        var det = t.d.querySelector('[data-testid="cowork-computer-link-status-detail"]');
+        ok(ml && ml.textContent === "Runs in the cloud - files and commands on jajapc run in its local Cowork VM (ready)", "bound: mode line names the computer and its local VM state", ml && ml.textContent);
+        ok(ml && det.nextSibling === ml && !t.d.getElementById("actions").contains(ml),
+          "bound: the mode line sits in the status block right after the status detail, above the divider");
         ok(ml && /text-footnote text-muted-as-secondary/.test(ml.className), "bound: the mode line borrows the status-detail classes", ml && ml.className);
-        ok(rows[0].querySelectorAll(".cdb-cowork-icon-line").length === 1, "bound: exactly one mode line");
+        ok(t.d.querySelectorAll(".cdb-cowork-icon-mode").length === 1 && rows[0].children.length === 1 && rows[0].firstChild === b,
+          "bound: exactly one mode line; the row holds only the cloned Linux details button");
         b.click();
         ok(t.opens.join() === "cu/cloud", "bound: Linux details -> __cdbExtraOpen(cu, cloud)", t.opens.join());
         t.mutate(); t.mutate();
         settle(function () {
-          ok(t.d.querySelectorAll(".cdb-cowork-icon-row").length === 1, "bound: rescans add no second row");
+          ok(t.d.querySelectorAll(".cdb-cowork-icon-row").length === 1 && t.d.querySelectorAll(".cdb-cowork-icon-mode").length === 1, "bound: rescans add no second row or line");
           ok(t.icons().length === 0, "bound: still no icon of ours");
           ok(t.warns.length === 0, "bound: no warnings", t.warns.join(" | "));
           p.remove();
@@ -314,10 +317,13 @@ step(function (go) {
       waitFor(function () { var l = t.d.querySelector(".cdb-cowork-icon-line"); return l && l.textContent === "Runs in the local VM on this computer - ready"; }, function () {
         var rows = t.d.querySelectorAll(".cdb-cowork-icon-row");
         ok(rows.length === 1, "local: one details row", rows.length);
-        ok(rows[0] && rows[0].parentNode === t.d.getElementById("col"), "local: the row goes into the card's padded column");
+        ok(rows[0] && rows[0].parentNode === t.d.getElementById("col") && rows[0].firstChild.className === "my-1 h-px bg-border",
+          "local: the row (divider + button) goes last into the card's padded column");
         var line = t.d.querySelector(".cdb-cowork-icon-line");
+        ok(line && line.parentNode === t.d.getElementById("col").firstChild && line.previousElementSibling.textContent === "Runs here" &&
+          /text-footnote text-muted-as-secondary/.test(line.className), "local: the mode line sits in the title block after upstream's detail, same classes");
         ok(line && line.textContent === "Runs in the local VM on this computer - ready", "local: one merged mode + readiness line from cuStatusIcon()", line && line.textContent);
-        ok(rows[0].querySelectorAll(".cdb-cowork-icon-line").length === 1, "local: no second line");
+        ok(t.d.querySelectorAll(".cdb-cowork-icon-line").length === 1, "local: no second line");
         ok(t.icon === 1, "local: cuStatusIcon called once per open", t.icon);
         var b = rows[0] && rows[0].querySelector("button");
         ok(b && b.textContent === "Linux details", "local: Linux details button");
@@ -367,9 +373,12 @@ step(function (go) {
     b.click();
     var pop = t.d.querySelector(".cdb-cowork-icon-pop");
     ok(pop && pop.getAttribute("role") === "dialog" && pop.getAttribute("aria-labelledby"), "keyless: click opens a labelled role=dialog popover");
-    ok(pop && /Not connected - this computer has no device key, cloud tasks and chats can't use it/.test(pop.textContent), "keyless: popover text");
+    ok(pop && pop.querySelector(".cdb-cowork-icon-pop-title").textContent === "No device key", "keyless: title No device key");
     ok(pop && pop.querySelector(".cdb-cowork-icon-pop-mode").textContent === "Runs in the cloud" &&
-      pop.querySelector(".cdb-cowork-icon-pop-mode").nextSibling.textContent.indexOf("Not connected") === 0, "keyless: Runs in the cloud line first, then the X text");
+      pop.querySelector(".cdb-cowork-icon-pop-mode").nextSibling.textContent === "Cloud tasks can't use Computer Use (screen and input) on this computer. Files and commands still work.",
+      "keyless: Runs in the cloud, then only Computer Use is lost");
+    ok(pop && !/can't use it|not connected/i.test(pop.textContent), "keyless: no claim that the computer is unusable");
+    ok(pop && pop.lastChild.tagName === "BUTTON", "keyless: the action comes last");
     ok(b.getAttribute("aria-expanded") === "true" && b.getAttribute("aria-controls") === (pop && pop.id), "keyless: aria-expanded=true + aria-controls");
     var act = pop && pop.querySelector("button");
     ok(act && act.textContent === "Set up" && t.d.activeElement === act, "keyless: focus moves to Set up");
@@ -579,7 +588,7 @@ step(function (go) {
     b.click();
     var pop = t.d.querySelector(".cdb-cowork-icon-pop");
     var ids = pop ? pop.getAttribute("aria-describedby").split(" ") : [];
-    ok(ids.length === 2 && /Runs in the cloud/.test(t.d.getElementById(ids[0]).textContent) && /no device key/.test(t.d.getElementById(ids[1]).textContent),
+    ok(ids.length === 2 && /Runs in the cloud/.test(t.d.getElementById(ids[0]).textContent) && /Computer Use/.test(t.d.getElementById(ids[1]).textContent),
       "a11y: aria-describedby names the mode and text lines");
     var top0 = pop.style.top;
     w.scrollTo(0, 300); w.dispatchEvent(new w.Event("scroll"));
@@ -637,17 +646,42 @@ step(function (go) {
         addPortal(t2, portal(LOCAL_CARD));
         waitFor(function () { var l = t2.d.querySelector(".cdb-cowork-icon-line"); return l && /not available/.test(l.textContent); }, function () {
           ok(t2.d.querySelector(".cdb-cowork-icon-line").textContent ===
-            "Runs in the local VM on this computer - not available (Local VM unavailable: no access to /dev/kvm or /dev/vhost-vsock)", "local: not available, with main's reason");
+            "Runs in the local VM on this computer - not available (no access to /dev/kvm or /dev/vhost-vsock)", "local: not available, with main's reason");
           frame(header(LINK), function (w3) {
             var t3 = setup(w3, { device: { connected: true, idSource: "keyed" } });
             fib(t3.d.getElementById("split"), {}, seat("c13").return);
             t3.run();
             t3.d.querySelector('[data-testid="cowork-computer-link-indicator"]').setAttribute("data-popup-open", "");
             addPortal(t3, portal(LINK_CARD.replace('id="pt" ', 'id="other" ')));
-            waitFor(function () { return t3.d.querySelector(".cdb-cowork-icon-line"); }, function () {
-              ok(t3.d.querySelector(".cdb-cowork-icon-line").textContent === "Runs in the cloud - uses jajapc through the device link",
+            waitFor(function () { var m = t3.d.querySelector(".cdb-cowork-icon-mode"); return m && /\\)$/.test(m.textContent); }, function () {
+              ok(t3.d.querySelector(".cdb-cowork-icon-mode").textContent === "Runs in the cloud - files and commands on jajapc run in its local Cowork VM (ready)",
                 "bound: computer name from the indicator aria-label when the title id does not resolve");
-              go();
+              var NA = { ok: true, mode: "1p", vm: { now: "missing", tools: "unknown", running: null }, line: "Local VM unavailable: /dev/kvm is missing (virtualization off in the firmware?)" };
+              frame(header(LINK), function (w4) {
+                var t4 = setup(w4, { device: { connected: true, idSource: "keyed" }, vm: NA });
+                fib(t4.d.getElementById("split"), {}, seat("c14").return);
+                t4.run();
+                t4.d.querySelector('[data-testid="cowork-computer-link-indicator"]').setAttribute("data-popup-open", "");
+                addPortal(t4, portal(LINK_CARD));
+                waitFor(function () { var m = t4.d.querySelector(".cdb-cowork-icon-mode"); return m && /not available/.test(m.textContent); }, function () {
+                  ok(t4.d.querySelector(".cdb-cowork-icon-mode").textContent ===
+                    "Runs in the cloud - jajapc is linked, but its local Cowork VM is not available (/dev/kvm is missing (virtualization off in the firmware?))",
+                    "bound: VM not available -> says so with main's reason");
+                  frame(header(LINK), function (w5) {
+                    var t5 = setup(w5, { device: { connected: true, idSource: "keyed" },
+                      vm: { ok: true, mode: "1p", vm: { now: "ok", tools: "ok", running: true }, line: "Local VM ready - running" } });
+                    fib(t5.d.getElementById("split"), {}, seat("c15").return);
+                    t5.run();
+                    t5.d.querySelector('[data-testid="cowork-computer-link-indicator"]').setAttribute("data-popup-open", "");
+                    addPortal(t5, portal(LINK_CARD));
+                    waitFor(function () { var m = t5.d.querySelector(".cdb-cowork-icon-mode"); return m && /\\(running\\)$/.test(m.textContent); }, function () {
+                      ok(t5.d.querySelector(".cdb-cowork-icon-mode").textContent === "Runs in the cloud - files and commands on jajapc run in its local Cowork VM (running)",
+                        "bound: VM running");
+                      go();
+                    });
+                  });
+                });
+              });
             });
           });
         });

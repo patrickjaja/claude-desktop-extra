@@ -150,7 +150,7 @@ Cloud Cowork and Dispatch offer this computer's Computer Use only to a desktop t
 
 No TPM 2.0 on the machine: cloud Cowork and Dispatch cannot use Computer Use there; Code sessions still can. Security implications and how to turn it off: [Computer Use in cloud Cowork and Dispatch](computer-use.md#computer-use-in-cloud-cowork-and-dispatch).
 
-On a keyless desktop every claude.ai Cowork chat header shows a laptop icon with an X; clicking it opens the Cloud Cowork section of that page. A keyed desktop whose chat is not linked to it shows an amber dot instead.
+On a keyless desktop every claude.ai chat and Cowork session header (`/chat/...`, `/cowork/...`) shows a laptop icon with an X ("No device key": no Computer Use for cloud tasks, files and commands still work); clicking it opens the Cloud Cowork section of that page. A keyed desktop whose chat is not linked to it shows an amber dot instead.
 
 ## Cowork has no "run on your computer" option
 

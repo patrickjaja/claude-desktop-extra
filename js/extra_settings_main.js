@@ -3211,7 +3211,7 @@
   var __cdbEx_ACCESS = {
     tpm: {
       id: "tpm", what: "TPM", helper: "cdb-tpm-access", helperPath: __cdbEx_cusHelper, maxExit: 5,
-      changedRe: /^cdb-tpm-access: (enabled|re-pointed|disabled)\b/,
+      changedRe: /^cdb-tpm-access: (?:(?:enabled|re-pointed|disabled)\b|already disabled \(acl cleared)/,
       confirm: __cdbEx_CUS_TPM_CONFIRM,
       question: "Let Claude Desktop use this computer's TPM for its device identity key?",
       lock: { busy: false, holdUntil: 0, disHoldUntil: 0 },
@@ -3229,7 +3229,7 @@
     },
     kvm: {
       id: "kvm", what: "KVM", helper: "cdb-kvm-access", helperPath: __cdbEx_cusKvmHelper, maxExit: 6,
-      changedRe: /^cdb-kvm-access: (enabled|re-pointed|disabled)\b/,
+      changedRe: /^cdb-kvm-access: (?:(?:enabled|re-pointed|disabled)\b|already disabled \(acl cleared)/,
       confirm: __cdbEx_CUS_KVM_CONFIRM,
       question: "Let Claude Desktop use this computer's virtualization devices for the local Cowork VM?",
       lock: { busy: false, holdUntil: 0, disHoldUntil: 0 },
@@ -3488,8 +3488,13 @@
           var out = String(stdout || "").split("\n").map(function (l) { return l.trim(); }).filter(Boolean)[0] || "";
           var errLine = String(stderr || "").split("\n").map(function (l) { return l.trim(); }).filter(Boolean)[0] || "";
           if (!err) {
-            resolve({ ok: true, changed: acc.changedRe.test(out),
-              message: out || acc.helper + ": finished without a status line" });
+            // Disable keeps the access entry when another udev rule still
+            // grants it: say so, the change alone does not end the access.
+            var kept = /acl kept, another udev rule grants it: ([^;)]+)/.exec(out);
+            var res = { ok: true, changed: acc.changedRe.test(out),
+              message: out || acc.helper + ": finished without a status line" };
+            if (kept) res.note = "Access stays on " + kept[1].trim() + ": another udev rule on this computer grants it.";
+            resolve(res);
             return;
           }
           var code;

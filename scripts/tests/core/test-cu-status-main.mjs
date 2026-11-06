@@ -141,6 +141,9 @@ case "$m" in
   enabled) printf 'cdb-tpm-access: enabled (%s -> %s)\\n' '${LINK}' '${SRC}' ;;
   already) printf 'cdb-tpm-access: already enabled\\n' ;;
   disabled) printf 'cdb-tpm-access: disabled\\n' ;;
+  aclcleared) printf 'cdb-tpm-access: already disabled (acl cleared: /dev/tpmrm0)\\n' ;;
+  aclkept) printf 'cdb-tpm-access: disabled (acl kept, another udev rule grants it: /dev/tpmrm0)\\n' ;;
+  alreadydis) printf 'cdb-tpm-access: already disabled\\n' ;;
   e3) printf 'cdb-tpm-access: /run/udev/control is not a socket\\n' >&2; exit 3 ;;
   e4) printf 'cdb-tpm-access: left alone: not our link\\n' >&2; exit 4 ;;
   e5) printf 'cdb-tpm-access: rule missing or unsafe\\n' >&2; exit 5 ;;
@@ -153,6 +156,7 @@ case "$m" in
   enabled) printf 'cdb-kvm-access: enabled (%s -> %s; %s -> %s)\\n' '${KLINK}' '${KSRC}' '${MLINK}' '${MSRC}' ;;
   already) printf 'cdb-kvm-access: already enabled\\n' ;;
   disabled) printf 'cdb-kvm-access: disabled\\n' ;;
+  aclcleared) printf 'cdb-kvm-access: already disabled (acl cleared: /dev/vhost-vsock)\\n' ;;
   e4) printf 'cdb-kvm-access: left alone: not our link\\n' >&2; exit 4 ;;
   e6) printf 'cdb-kvm-access: links done, but modprobe vhost_vsock failed\\n' >&2; exit 6 ;;
 esac
@@ -649,6 +653,16 @@ section("Enable / Disable: pkexec and exit mapping");
   reset(); setLink("ours"); mode("helper", "disabled");
   r = await m.call("cdb-cu-status:tpm-disable");
   ok(r.ok === true && r.changed === true && /pkexec .* disable/.test(log()), "disable: our link -> pkexec <helper> disable", J(r));
+  reset(); setLink("ours"); mode("helper", "aclcleared");
+  r = await m.call("cdb-cu-status:tpm-disable");
+  ok(r.ok === true && r.changed === true && !("note" in r), "already disabled (acl cleared ...): a change that needs a restart", J(r));
+  reset(); setLink("ours"); mode("helper", "aclkept");
+  r = await m.call("cdb-cu-status:tpm-disable");
+  ok(r.ok === true && r.changed === true && r.note === "Access stays on /dev/tpmrm0: another udev rule on this computer grants it.",
+    "acl kept, another udev rule grants it: changed + an info note naming the node", J(r));
+  reset(); setLink("ours"); mode("helper", "alreadydis");
+  r = await m.call("cdb-cu-status:tpm-disable");
+  ok(r.ok === true && r.changed === false && !("note" in r), "plain already disabled: no change", J(r));
   for (const st of ["absent", "foreign", "file"]) {
     reset(); setLink(st);
     r = await m.call("cdb-cu-status:tpm-disable");
@@ -1329,6 +1343,9 @@ section("Cowork (Linux): KVM access actions");
   reset(); resetKvm(); setKLinks("ours", "ours"); mode("khelper", "disabled");
   r = await m.call("cdb-cu-status:kvm-disable");
   ok(r.ok === true && r.changed === true && DIALOG.calls.length === 0 && /pkexec .*cdb-kvm-access disable/.test(log()), "disable: no dialog, pkexec <kvm helper> disable", J(r));
+  reset(); resetKvm(); setKLinks("ours", "ours"); mode("khelper", "aclcleared");
+  r = await m.call("cdb-cu-status:kvm-disable");
+  ok(r.ok === true && r.changed === true, "kvm already disabled (acl cleared ...): a change", J(r));
   reset(); resetKvm(); setKLinks("ours", "ours");
   r = await m.call("cdb-cu-status:kvm-enable");
   ok(r.code === "nothing-to-do" && r.error === K_NOOP_EN && log() === "" && DIALOG.calls.length === 0, "enable with both links ours: nothing to do, no dialog", J(r));

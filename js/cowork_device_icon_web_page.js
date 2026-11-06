@@ -61,7 +61,7 @@
   var CARD = '[data-cds="PreviewCard"]';
   var MANAGE = 'button[data-testid="cowork-computer-link-manage"]';
   var ATTR = "data-cdb-cowork-icon";
-  var OURS = ".cdb-cowork-icon,.cdb-cowork-icon-slot,.cdb-cowork-icon-pop,.cdb-cowork-icon-row";
+  var OURS = ".cdb-cowork-icon,.cdb-cowork-icon-slot,.cdb-cowork-icon-pop,.cdb-cowork-icon-row,.cdb-cowork-icon-mode";
   var SVGNS = "http://www.w3.org/2000/svg";
   var MAX_HOPS = 40;
   var DEBOUNCE_MS = 50;
@@ -69,9 +69,11 @@
 
   var TEXT = {
     keyless: {
-      label: "This computer: not connected, no device key",
-      title: "Not connected",
-      text: "Not connected - this computer has no device key, cloud tasks and chats can't use it",
+      label: "This computer: no device key, no Computer Use for cloud tasks",
+      title: "No device key",
+      // Measured: a keyless desktop still links chats and runs their files and
+      // commands; what it loses is Computer Use (screen and input tools).
+      text: "Cloud tasks can't use Computer Use (screen and input) on this computer. Files and commands still work.",
       action: "Set up", section: "cloud"
     },
     "keyed-unbound": {
@@ -209,19 +211,36 @@
   // ---- readiness line (local) ----------------------------------------------------
   // One line: the mode plus the VM state (running / ready / not available,
   // with main's reason). cuStatusIcon() once per call.
-  var LOCAL_MODE = "Runs in the local VM on this computer";
-  function readiness(target) {
-    target.textContent = LOCAL_MODE + " - checking...";
-    function set(r) {
-      var line = r && r.ok === true && typeof r.line === "string" ? r.line.slice(0, 200) : "";
-      var st = !line ? "status unavailable"
-        : r.vm && r.vm.running === true ? "running"
-        : line.indexOf("Local VM ready") === 0 ? "ready"
-        : "not available (" + line + ")";
-      target.textContent = LOCAL_MODE + " - " + st;
-    }
+  // The local VM's state from main's cached icon facts (cuStatusIcon, one
+  // call per popover): {kind:"checking"|"running"|"ready"|"na"|"unknown", reason}.
+  function vmState(r) {
+    var line = r && r.ok === true && typeof r.line === "string" ? r.line.slice(0, 200) : "";
+    if (!line) return { kind: "unknown", reason: "" };
+    if (r.vm && r.vm.running === true) return { kind: "running", reason: "" };
+    if (line.indexOf("Local VM ready") === 0) return { kind: "ready", reason: "" };
+    return { kind: "na", reason: line.replace(/^Local VM( unavailable)?:\s*/, "") };
+  }
+  function withVm(target, text) {
+    target.textContent = text({ kind: "checking", reason: "" });
+    function set(r) { target.textContent = text(vmState(r)); }
     if (typeof api.cuStatusIcon !== "function") { set(null); return; }
     Promise.resolve().then(function () { return api.cuStatusIcon(); }).then(set, function () { set(null); });
+  }
+  var LOCAL_MODE = "Runs in the local VM on this computer";
+  function localText(v) {
+    return LOCAL_MODE + " - " + (v.kind === "checking" ? "checking..." : v.kind === "running" ? "running"
+      : v.kind === "ready" ? "ready" : v.kind === "na" ? "not available (" + v.reason + ")" : "status unavailable");
+  }
+  function readiness(target) { withVm(target, localText); }
+  // A linked chat's files and commands run in the linked computer's local
+  // Cowork VM (measured: [remote-bash] / [vmOneShot] in the VM for a linked
+  // cloud chat).
+  function linkedText(name) {
+    return function (v) {
+      if (v.kind === "na") return "Runs in the cloud - " + name + " is linked, but its local Cowork VM is not available (" + v.reason + ")";
+      var tail = v.kind === "running" ? " (running)" : v.kind === "ready" ? " (ready)" : v.kind === "checking" ? " (checking...)" : "";
+      return "Runs in the cloud - files and commands on " + name + " run in its local Cowork VM" + tail;
+    };
   }
   // The computer a linked chat uses: the card's title, else the indicator's
   // aria-label up to the comma ("jajapc, Connected"), else "this computer".
@@ -237,10 +256,27 @@
     return name ? name.slice(0, 80) : "this computer";
   }
   var MODE_CLS = "px-md py-xs text-footnote text-secondary";
-  function modeClass(card) {
-    var d = card && card.querySelector('[data-testid="cowork-computer-link-status-detail"]');
-    var c = d ? String(d.className || "").trim() : "";
-    return "cdb-cowork-icon-line " + (c || MODE_CLS);
+  // The mode line sits in upstream's status block (above its divider), right
+  // after the last status line, styled like that line so the inset matches.
+  // Returns false when there is no status block to join.
+  function placeMode(card, line, kind) {
+    var after = null;
+    if (kind === "cloud") {
+      after = card.querySelector('[data-testid="cowork-computer-link-status-detail"]') ||
+        card.querySelector('[data-testid="cowork-computer-link-status"]');
+      if (after && after.nextElementSibling && after.nextElementSibling.matches('[data-testid="cowork-computer-link-status-detail"]')) after = after.nextElementSibling;
+    } else {
+      var title = card.querySelector("span");
+      var block = title && title.parentNode;
+      if (block && block !== card && card.contains(block)) after = block.lastElementChild;
+    }
+    if (!after || !after.parentNode) return false;
+    var model = kind === "cloud" ? card.querySelector('[data-testid="cowork-computer-link-status-detail"]')
+      : (after !== card.querySelector("span") ? after : null);
+    var cls = model ? String(model.className || "").trim() : "";
+    line.className = "cdb-cowork-icon-mode cdb-cowork-icon-line " + (cls || "text-footnote text-secondary");
+    after.parentNode.insertBefore(line, after.nextSibling);
+    return true;
   }
 
   // ---- our icon -----------------------------------------------------------------
@@ -477,25 +513,27 @@
     });
     return b;
   }
+  // The mode line goes into upstream's status block; the row (the "Linux
+  // details" button, after a divider when there is no upstream button to sit
+  // next to) is returned for the caller to place. Without a status block the
+  // mode line heads the row instead.
   function detailsRow(kind, model, card) {
     var row = document.createElement("div");
     row.className = "cdb-cowork-icon-row flex flex-col";
     row.setAttribute(ATTR, "details");
     row.setAttribute("data-cdb-kind", kind);
-    if (kind === "local") {
+    var mode = document.createElement("span");
+    if (kind === "local") readiness(mode);
+    else withVm(mode, linkedText(computerName(card)));
+    if (!model) {
       var hr = document.createElement("div");
       hr.className = "my-1 h-px bg-border";
       hr.setAttribute("aria-hidden", "true");
       row.appendChild(hr);
-      var line = document.createElement("span");
-      line.className = "cdb-cowork-icon-line " + MODE_CLS;
-      readiness(line);
-      row.appendChild(line);
-    } else {
-      var mode = document.createElement("span");
-      mode.className = modeClass(card);
-      mode.textContent = "Runs in the cloud - uses " + computerName(card) + " through the device link";
-      row.appendChild(mode);
+    }
+    if (!placeMode(card, mode, kind)) {
+      mode.className = "cdb-cowork-icon-mode cdb-cowork-icon-line " + MODE_CLS;
+      row.insertBefore(mode, row.firstChild);
     }
     row.appendChild(detailsButton(model, kind === "local" ? "local" : "cloud"));
     return row;
@@ -549,7 +587,7 @@
     // when upstream dropped "Manage devices".
     if (localOpen) {
       var lc = cardOf(localOpen, bare, true);
-      if (lc) localContainer(lc).appendChild(detailsRow("local", null));
+      if (lc) { var lrow = detailsRow("local", null, lc); localContainer(lc).appendChild(lrow); }
       else if (!cardOf(localOpen, cards, true)) {
         warn("no-popup", "the local-session indicator is open but no PreviewCard is titled with its aria-label");
       }

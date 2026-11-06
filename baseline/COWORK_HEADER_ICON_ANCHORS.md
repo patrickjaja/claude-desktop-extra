@@ -27,7 +27,7 @@ Desktop-side preconditions: the `cdbExtra` bridge in `.vite/build/mainView.js` (
 | `cowork-computer-link-indicator` (chat linked to a computer, any `data-status`) | any | nothing in the row; its popover gets a "Linux details" row -> `("cu","cloud")` |
 | `cowork-local-session-indicator` (`/cowork/local_<uuid>`, incl. Dispatch-local) | any | nothing in the row; its popover gets the local VM readiness line + "Linux details" -> `("cu","local")` |
 | `cowork-computer-link-indicator-slot` (binding not loaded yet) | any | nothing |
-| none, cloud session (`/chat/<id>`, `/cowork/<id>` not `local_`) | `idSource` exactly `keyless` or `none` | laptop with X badge, "Set up" -> `("cu","cloud")` |
+| none, cloud session (`/chat/<id>`, `/cowork/<id>` not `local_`) | `idSource` exactly `keyless` or `none` | laptop with X badge, popover "No device key" (Computer Use lost, files and commands still work), "Set up" -> `("cu","cloud")` |
 | none, cloud session | `idSource` `keyed` | laptop with amber dot, "Linux details" -> `("cu","cloud")` |
 | none, cloud session | no store, no `idSource`, or an unknown value | plain laptop (`neutral`), popover "This computer" + "Linux details" -> `("cu","cloud")`, no claim |
 | none, local session (upstream's local icon missing) | any | plain laptop, readiness line, "Linux details" -> `("cu","local")` |
@@ -37,7 +37,13 @@ Pure state function: `window.__cdbCoworkIconState({upstream, cloud, device})`.
 
 ## Mode lines
 
-Every popover we touch carries one mode line above our action: linked chat "Runs in the cloud - uses <computer> through the device link"; local "Runs in the local VM on this computer - running|ready|not available (<main's reason>)" (one line, from `cuStatusIcon()`); our own icon "Runs in the cloud" above its X / amber / neutral text. `textContent` only.
+Every popover we touch carries one mode line (`.cdb-cowork-icon-mode`), from main's cached `cuStatusIcon()` VM state, `textContent` only:
+
+- Linked chat (measured 2026-11-06: a linked cloud chat's shell commands run in this computer's local Cowork VM, `[remote-bash] vmUser=rcw-<id>` in main.log, `[vmOneShot] ... as rcw-<id>` in cowork_vm_node.log, VM started for it): "Runs in the cloud - files and commands on <computer> run in its local Cowork VM (running|ready)", or "Runs in the cloud - <computer> is linked, but its local Cowork VM is not available (<reason>)".
+- Local session: "Runs in the local VM on this computer - running|ready|not available (<reason>)".
+- Our own icon: title, then "Runs in the cloud", then the variant text, action last. Keyless: title "No device key", text "Cloud tasks can't use Computer Use (screen and input) on this computer. Files and commands still work." (measured: a keyless desktop still links chats and runs their commands; it loses only the computer tools).
+
+Placement: in upstream's cards the mode line joins the status block, right after the last status line (link card: after `cowork-computer-link-status-detail`, else `-status`; local card: after the title block's last span), with that line's classes so the inset matches. The "Linux details" row stays last: a sibling right after "Manage devices" (cloned button only), or in the local card a divider plus our button at the end of the padded column. Without a status block the mode line heads our row.
 
 ## Anchors
 
@@ -53,7 +59,7 @@ Every popover we touch carries one mode line above our action: linked chat "Runs
 | Popover `[data-cds="PreviewCard"]` in `#portal-root > [data-base-ui-portal] > [data-cds-portal] > [role=presentation]` | page `decorateCards` | `[role=group][aria-labelledby]`, opens on click (trigger gets `data-popup-open`), closes on focus loss | `no-popup` when an indicator is open and no card is in the document |
 | `button[data-testid="cowork-computer-link-manage"]` ("Manage devices") | page `MANAGE` | last row of the link card: `div.flex.flex-col.p-1 > [title block, div.flex.flex-col > (divider, ..., manage)]`; ghost `data-cds="Button"` with `w-full justify-start` | `no-popup`; the row goes to the end of the card's padded column, unstyled own button |
 | Local card title = the trigger's `aria-label` | page `cardOf` | `div.flex.flex-col.p-1 > div.flex.flex-col.gap-0.5.px-md.py-sm > (span title "Only on this computer", span detail)` | `no-popup` ("no PreviewCard is titled with its aria-label"); no row |
-| Link card title `#<aria-labelledby>` (the computer name) and `[data-testid="cowork-computer-link-status-detail"]` classes | page `computerName` / `modeClass` | card `aria-labelledby` -> `span.truncate` with the computer name; status detail span styled `text-footnote ...` | No warning: the name falls back to the indicator's `aria-label` before the comma, then "this computer"; the mode line falls back to `px-md py-xs text-footnote text-secondary` |
+| Link card title `#<aria-labelledby>` (the computer name) and `[data-testid="cowork-computer-link-status-detail"]` classes | page `computerName` / `placeMode` | card `aria-labelledby` -> `span.truncate` with the computer name; status detail span styled `text-footnote ...` | No warning: the name falls back to the indicator's `aria-label` before the comma, then "this computer"; without a status line the mode line heads our row (`px-md py-xs text-footnote text-secondary`) |
 | `globalThis["claude.web"].WindowState.deviceLinkStore` | page `deviceState` | `getStateSync()` -> `{appStartedMs, connected:true, idSource:"keyed", presentedDeviceId, recentGaps}`; `onStateChange(cb)` returns an unsubscribe (mainView preload, sync IPC `WindowState_$_deviceLink_$store$_getStateSync`) | `no-device-store`; the neutral plain laptop (no warning) on every unlinked chat |
 | `__reactFiber$` expando | page `fiberOf` | React 19 production | `no-seat` |
 

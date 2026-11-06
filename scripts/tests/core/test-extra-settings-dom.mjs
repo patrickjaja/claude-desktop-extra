@@ -1785,8 +1785,8 @@ async function cusPanel(cuItem) {
   const dpk = row("tpm").querySelector('.cdbx-cus-pk[data-verb="disable"]');
   const dwhat = dpk && dpk.querySelector("details.cdbx-cus-what");
   ok(!!dpk && pres(dpk)[0] === PK_DIS.command && !!dwhat && dwhat.open === false &&
-     pres(dwhat).indexOf(PK_DIS.link) >= 0 && pres(dwhat).indexOf(PK_DIS.apply) >= 0 && /until you log out/.test(dwhat.textContent),
-     "Disable: main's exact command, and What this does names the link it removes, the udev reload and that access lasts until logout");
+     pres(dwhat).indexOf(PK_DIS.link) >= 0 && pres(dwhat).indexOf(PK_DIS.apply) >= 0 && /clears the access entry right away; it takes effect after restarting Claude, no relogin or reboot/.test(dwhat.textContent),
+     "Disable: main's exact command, and What this does names the link it removes, the udev reload and that the access entry is cleared (restart, no relogin)");
   if (dis) { dis.click(); await sleep(60); }
   ok(window.__cusCalls.disable === 1 && toastText() === "Done: cdb-tpm-access: disabled", "Disable calls its channel once: " + toastText());
   setState(okRows, { tpmDisable: { kind: "command", text: "sudo rm -f /etc/udev/rules.d/x", where: "here" } });
