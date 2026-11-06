@@ -213,11 +213,11 @@ const FIXTURE_BARE = dialog(`
 const DRIVER = String.raw`
 var SVGNS = "http://www.w3.org/2000/svg";
 var ICON_SEL = '[data-cds="Icon"]';
-var LABELS = ["Themes", "Community", "Computer Use", "Models", "Anthropic", "Deployment"];
+var LABELS = ["Themes", "Community", "Cowork (Linux)", "Models", "Anthropic", "Deployment"];
 // Upstream's nav column is narrow and truncates, so the long names are
 // shortened there and carried in a tooltip instead. The panels keep the full
 // name in their h1 - asserted in featuresPanel()/modelsPanel()/flagsPanel() below.
-var TOOLTIPS = { Community: "Community Features", Models: "Custom models", Anthropic: "Anthropic Features" };
+var TOOLTIPS = { Community: "Community Features", "Cowork (Linux)": "Cowork and Computer Use on Linux", Models: "Custom models", Anthropic: "Anthropic Features" };
 
 function navbox() { return document.getElementById("navbox"); }
 
@@ -1463,11 +1463,11 @@ async function cubgPanel(cuItem) {
   ok(!!st2 && /not running/.test(st2.textContent) && /refuses to act/.test(st2.textContent) && st2.classList.contains("cdbx-warn"),
      "on but not running: the status says Computer Use refuses: " + (st2 ? st2.textContent : ""));
 
-  ok(document.querySelector(".cdbx-cubg-back").textContent === "Back to Computer Use", "the setup page's Back says where it goes");
+  ok(document.querySelector(".cdbx-cubg-back").textContent === "Back to Cowork (Linux)", "the setup page's Back says where it goes");
   document.querySelector(".cdbx-cubg-back").click();
   await sleep(40);
-  ok(!!document.querySelector(".cdbx-panel " + SW) && document.querySelector(".cdbx-panel .cdbx-h1").textContent === "Computer Use",
-     "Back returns to the Computer Use page");
+  ok(!!document.querySelector(".cdbx-panel " + SW) && document.querySelector(".cdbx-panel .cdbx-h1").textContent === "Cowork (Linux)",
+     "Back returns to the Cowork (Linux) page");
 }
 
 // Computer Use: its own Extra entry. Pinned here: the page is the status
@@ -1510,9 +1510,20 @@ async function cusPanel(cuItem) {
   window.__cubgState = Object.assign({}, window.__cubgBase);
   setState(window.__cusRows(), { tpmEnable: PK_EN });
   let panel = await remount();
-  ok(!!panel && !!panel.querySelector(".cdbx-cus"), "the Computer Use entry opens the status block directly");
+  ok(!!panel && !!panel.querySelector(".cdbx-cus"), "the Cowork (Linux) entry opens the status block directly");
   if (!panel || !panel.querySelector(".cdbx-cus")) return;
-  ok(panel.querySelector(".cdbx-h1").textContent === "Computer Use", "titled Computer Use");
+  ok(panel.querySelector(".cdbx-h1").textContent === "Cowork (Linux)", "titled Cowork (Linux)");
+  {
+    const secs = Array.prototype.map.call(panel.querySelectorAll("[data-cdbx-section]"), function (n) {
+      return n.getAttribute("data-cdbx-section") + ":" + n.querySelector(".cdbx-sec-t").textContent; });
+    ok(secs.join("|") === "cloud:Cloud Cowork|local:Local Cowork VM|cu:Computer Use",
+       "three sections in order, each with its heading: " + secs.join("|"));
+    const inSec = function (key) { const r = row(key); const w = r && r.closest("[data-cdbx-section]"); return w ? w.getAttribute("data-cdbx-section") : null; };
+    ok(inSec("tpm") === "cloud" && inSec("cloud") === "cloud" && inSec("desktop") === "cu",
+       "device key and cloud rows under Cloud Cowork, this desktop under Computer Use");
+    ok(!!panel.querySelector('[data-cdbx-section="local"] .cdbx-cus-old'),
+       "an older main side without local VM rows: one line saying so, no invented rows");
+  }
   ok(!!btn(panel, "Re-check") && !panel.querySelector(".cdbx-cubg-back") && !btn(panel, "Details"),
      "it has Re-check, and no Back or Details button");
   ok(window.__cusCalls.read === 1,
@@ -1575,14 +1586,18 @@ async function cusPanel(cuItem) {
   // Order: status block, then the one Options heading, then background
   // display, then read app controls.
   const heads = Array.prototype.map.call(panel.querySelectorAll(".cdbx-sec-t"), function (n) { return n.textContent; });
-  ok(heads.join("|") === "Status|Options", "two headings, Status then Options: " + heads.join("|"));
-  headlineContract(panel, "Computer Use page");
+  ok(heads.join("|") === "Cloud Cowork|Local Cowork VM|Computer Use|Options",
+     "the three section headings, then Options: " + heads.join("|"));
+  headlineContract(panel, "Cowork (Linux) page");
   const optsHead = Array.prototype.filter.call(panel.querySelectorAll(".cdbx-sec-h"), function (h) { return h.textContent === "Options"; })[0];
   const bg = panel.querySelector(BG_SW);
   const ax = panel.querySelector(AX_SW);
   const before = function (a, b) { return !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING); };
-  ok(before(row("cloud"), optsHead) && before(optsHead, bg) && before(bg, ax),
+  ok(before(row("cloud"), optsHead) && before(row("desktop"), optsHead) && before(optsHead, bg) && before(bg, ax),
      "status rows, then Options, then the background display switch, then the read app controls switch");
+  ok(!!optsHead && optsHead.closest("[data-cdbx-section]") && optsHead.closest("[data-cdbx-section]").getAttribute("data-cdbx-section") === "cu" &&
+     !!bg && bg.closest("[data-cdbx-section]") === optsHead.closest("[data-cdbx-section]"),
+     "Options and the switches sit inside the Computer Use section");
   ok(!!ax && ax.closest(".cdbx-row").querySelector(".cdbx-id .cdbx-exp").textContent === "Experimental",
      "read app controls renders here with its Experimental badge");
 
@@ -1842,6 +1857,193 @@ async function cusPanel(cuItem) {
   ok(!!panel.querySelector(BG_SW) && Array.prototype.some.call(panel.querySelectorAll(".cdbx-sec-t"), function (n) { return n.textContent === "Options"; }),
      "and the switches still render under Options");
   window.cdbExtra.cuStatusRead = savedRead;
+
+  // --- Local Cowork VM: the four rows, the KVM actions, 3P ------------------
+  const LOCAL = function (kvm, vsock, tools, vmr) {
+    return Object.assign(window.__cusRows(), {
+      kvm: kvm || { status: "ok", fact: "/dev/kvm accessible", note: "k" },
+      vsock: vsock || { status: "ok", fact: "/dev/vhost-vsock accessible", note: "v" },
+      vmTools: tools || { status: "ok", fact: "QEMU, OVMF and virtiofsd found", note: "t" },
+      vm: vmr || { status: "na", fact: "not running", note: "m" } });
+  };
+  const KPK_EN = window.__cusKvmPkEnable;
+  const KPK_DIS = window.__cusKvmPkDisable;
+  const inLocal = function (key) { const r = row(key); return !!r && !!r.closest('[data-cdbx-section="local"]'); };
+  setState(LOCAL(), {});
+  panel = await remount();
+  ok(["kvm", "vsock", "vmTools", "vm"].every(inLocal), "four local VM rows under Local Cowork VM");
+  ok(row("kvm").querySelector(".cdbx-id").firstChild.textContent === "KVM (/dev/kvm)" &&
+     row("vsock").querySelector(".cdbx-id").firstChild.textContent === "VM socket (/dev/vhost-vsock)" &&
+     row("vmTools").querySelector(".cdbx-id").firstChild.textContent === "QEMU, OVMF and virtiofsd" &&
+     row("vm").querySelector(".cdbx-id").firstChild.textContent === "Local VM", "with their titles");
+  ok(!panel.querySelector('[data-cdbx-section="local"] .cdbx-cus-old'), "no 'older main side' line when the rows are there");
+  // The four KVM states the main side reports.
+  const kstates = [
+    ["missing", { status: "na", fact: "missing - enable virtualization (VT-x / AMD-V) in the firmware settings", note: "k" }, null, "Not available"],
+    ["no_permission", { status: "action", fact: "no permission (root:kvm 660)", note: "k" }, null, "Needs action"],
+    ["vsock_module_missing", null, { status: "action", fact: "module not loaded (vhost_vsock)", note: "v" }, "OK"],
+    ["ok", null, null, "OK"]
+  ];
+  for (const [n, k, v, kw] of kstates) {
+    setState(LOCAL(k, v), n === "vsock_module_missing" ? { vsockCommand: "sudo modprobe vhost_vsock" } : {});
+    window.__cusState.vm = { atStart: null, now: n, running: false };
+    panel = await remount();
+    ok(word("kvm") === kw && row("kvm").querySelector(".cdbx-cus-fact").textContent === (k ? k.fact : "/dev/kvm accessible"),
+       n + ": the KVM row says " + kw + " with main's fact");
+    if (n === "vsock_module_missing") {
+      ok(word("vsock") === "Needs action" && pres(row("vsock")).indexOf("sudo modprobe vhost_vsock") >= 0,
+         n + ": the vhost-vsock row offers the modprobe command");
+    }
+  }
+  // Enable KVM access: button, security text, exact command, What this does.
+  window.__cusCalls.kvmEnable = 0; window.__cusCalls.kvmDisable = 0;
+  setState(LOCAL({ status: "action", fact: "no permission (root:kvm 660)", note: "k" }),
+    { kvmEnable: KPK_EN, kvmDisable: Object.assign({}, KPK_DIS, { disabled: "Nothing to remove - no link from this package is installed" }),
+      kvmGroupCommand: "sudo usermod -aG kvm \"$USER\"" });
+  panel = await remount();
+  const ken = btn(row("kvm"), "Enable KVM access");
+  const kdis = btn(row("kvm"), "Disable KVM access");
+  ok(!!ken && !ken.disabled && !!kdis && kdis.disabled, "Enable KVM access live, Disable greyed with its reason");
+  ok(/only to \/dev\/kvm and \/dev\/vhost-vsock/.test(row("kvm").querySelector(".cdbx-cus-sec").textContent) &&
+     /docs\/cowork\.md/.test(row("kvm").querySelector(".cdbx-cus-sec").textContent), "with the KVM security text");
+  const kpk = row("kvm").querySelector('.cdbx-cus-pk[data-verb="enable"][data-access="kvm"]');
+  const kwhat = kpk && kpk.querySelector("details.cdbx-cus-what");
+  const kwp = kwhat ? pres(kwhat) : [];
+  ok(!!kpk && pres(kpk)[0] === KPK_EN.command && /^Enable KVM access runs this command/.test(kpk.querySelector(".cdbx-note").textContent),
+     "the exact KVM command main runs");
+  ok(!!kwhat && kwhat.open === false && kwp.indexOf(KPK_EN.link + " -> " + KPK_EN.target) >= 0 && kwp.indexOf(KPK_EN.rule) >= 0 &&
+     kwp.indexOf(KPK_EN.mlink + " -> " + KPK_EN.mtarget) >= 0 && kwp.indexOf(KPK_EN.apply) >= 0 && kwp.indexOf(KPK_EN.undo) >= 0 &&
+     kwp.indexOf(KPK_EN.undoManual) >= 0 && /restart it afterwards/.test(kwhat.textContent),
+     "What this does: both links, the rule, modprobe + udev, the restart note and the undo: " + kwp.join(" || ").replace(/\n/g, " / "));
+  ok(pres(row("kvm")).indexOf("sudo usermod -aG kvm \"$USER\"") >= 0 && /no logind/.test(row("kvm").textContent),
+     "the kvm group as the manual alternative without a local seat");
+  ok(!btn(row("tpm"), "Enable KVM access") && !!row("tpm"), "the KVM actions never appear on the TPM row");
+  window.__cusKvmEnable = { ok: true, changed: true, message: "cdb-kvm-access: enabled (a -> b; c -> d)" };
+  const readsBeforeK = window.__cusCalls.read;
+  ken.click();
+  await sleep(60);
+  ok(window.__cusCalls.kvmEnable === 1 && window.__cusCalls.enable === 0, "Enable calls cuStatusKvmEnable once, with no argument, not the TPM channel");
+  ok(window.__cusCalls.read === readsBeforeK + 1 && /cdb-kvm-access: enabled/.test(toastText()), "then re-reads and toasts the helper's line: " + toastText());
+  window.__cusKvmEnable = { ok: false, code: "declined", error: "Enable was not confirmed", command: null };
+  btn(row("kvm"), "Enable KVM access").click();
+  await sleep(60);
+  ok(toastText() === "Not changed: Enable KVM access was not confirmed" && !panel.querySelector(".cdbx-cus-fail"), "declined: says so, no command block");
+  window.__cusKvmEnable = { ok: false, code: "helper-6", error: "cdb-kvm-access: links done, but modprobe vhost_vsock failed",
+    command: "sudo /usr/lib/claude-desktop/resources/linux-udev/cdb-kvm-access enable" };
+  btn(row("kvm"), "Enable KVM access").click();
+  await sleep(60);
+  const kfail = row("kvm").querySelector(".cdbx-cus-fail");
+  ok(!!kfail && /modprobe vhost_vsock failed/.test(kfail.textContent) && !row("tpm").querySelector(".cdbx-cus-fail") &&
+     pres(row("kvm")).indexOf("sudo /usr/lib/claude-desktop/resources/linux-udev/cdb-kvm-access enable") >= 0,
+     "a failed KVM Enable: the error and the command under the KVM row, not the TPM row");
+  // Restart after access was fixed (upstream caches its probe per run).
+  setState(LOCAL({ status: "action", fact: "accessible now - restart Claude so local Cowork can use it", note: "k" }), { vmRestart: true });
+  panel = await remount();
+  ok(!!btn(row("kvm"), "Restart now") && !btn(row("tpm"), "Restart now"), "vmRestart: Restart now on the KVM row only");
+  // NixOS / command variants, and an older preload without the KVM methods.
+  setState(LOCAL(), { kvmEnable: { kind: "nixos", text: "programs.claude-desktop-extra.kvmAccess.enable = true;" } });
+  panel = await remount();
+  ok(pres(row("kvm")).indexOf("programs.claude-desktop-extra.kvmAccess.enable = true;") >= 0 && !btn(panel, "Enable KVM access"), "NixOS: the module option, no button");
+  const savedKE = window.cdbExtra.cuStatusKvmEnable;
+  delete window.cdbExtra.cuStatusKvmEnable;
+  setState(LOCAL(), { kvmEnable: KPK_EN });
+  panel = await remount();
+  ok(!btn(panel, "Enable KVM access") && pres(row("kvm")).indexOf(KPK_EN.command) >= 0 && !!row("tpm"),
+     "an older preload without the KVM methods: the command to run, no button, the rest of the page intact");
+  window.cdbExtra.cuStatusKvmEnable = savedKE;
+  // 3P: main marks the device key and cloud rows; nothing TPM is offered.
+  setState(LOCAL(), {});
+  window.__cusState.mode = "3p";
+  window.__cusState.rows.tpm = { status: "na", fact: "Not used in 3P mode", note: "n" };
+  window.__cusState.rows.cloud = { status: "na", fact: "Not used in 3P mode", note: "n" };
+  panel = await remount();
+  ok(word("tpm") === "Not available" && row("tpm").querySelector(".cdbx-cus-fact").textContent === "Not used in 3P mode" &&
+     row("cloud").querySelector(".cdbx-cus-fact").textContent === "Not used in 3P mode" && !btn(panel, "Enable TPM access") &&
+     word("kvm") === "OK", "3P: Not used in 3P mode on the cloud section, the local VM section live");
+  window.__cusState = { ok: true, rows: window.__cusRows(), actions: { tpmEnable: PK_EN } };
+}
+
+// The deep link (window.__cdbExtraOpen, used by the Cowork header icon): with
+// the settings dialog mounted it opens Cowork (Linux) at the asked section;
+// without it, it asks main to navigate (cdb-extra:open-settings) and the next
+// mount within 10 s finishes the job; a stale pending entry is dropped; a
+// failed navigation says where to go by hand.
+async function deepLink() {
+  function toastText() { const t = document.querySelector(".cdbx-toast"); return t ? t.textContent : ""; }
+  function h1() { const n = document.querySelector(".cdbx-panel .cdbx-h1"); return n ? n.textContent : ""; }
+  function focusedSection() {
+    const a = document.activeElement;
+    const w = a && a.closest ? a.closest("[data-cdbx-section]") : null;
+    return a && a.classList && a.classList.contains("cdbx-sec-h") && w ? w.getAttribute("data-cdbx-section") : null;
+  }
+  ok(typeof window.__cdbExtraOpen === "function", "the page defines window.__cdbExtraOpen");
+  if (typeof window.__cdbExtraOpen !== "function") return;
+  window.__cusState = { ok: true, rows: window.__cusRows(), actions: { tpmEnable: window.__cusPkEnable } };
+  window.__openCalls = 0;
+  window.cdbExtra.extraOpenSettings = function () { window.__openCalls += arguments.length ? 100 : 1; return Promise.resolve(window.__openAnswer || { ok: true }); };
+
+  // mounted: opens at once, scrolled to the section, its heading focused
+  document.getElementById("row-account").click();
+  await sleep(20);
+  let r = window.__cdbExtraOpen("cu", "local");
+  await sleep(60);
+  ok(r === true && h1() === "Cowork (Linux)" && focusedSection() === "local" && window.__openCalls === 0,
+     "mounted: opens Cowork (Linux) at the Local Cowork VM section without asking main: " + [r, h1(), focusedSection(), window.__openCalls].join("|"));
+  r = window.__cdbExtraOpen("cu", "cloud");
+  await sleep(60);
+  ok(r === true && focusedSection() === "cloud", "and at the Cloud Cowork section: " + focusedSection());
+  r = window.__cdbExtraOpen("cu", "<img src=x>");
+  await sleep(60);
+  ok(r === true && h1() === "Cowork (Linux)" && focusedSection() === null, "an unknown section opens the page at the top");
+  ok(window.__cdbExtraOpen("nope", "cu") === false && window.__cdbExtraOpen("", "") === false, "an unknown kind is refused");
+
+  // not mounted: main navigates, the next mount opens the section. Upstream
+  // renders a NEW dialog each time settings opens: a clean clone stands in.
+  document.getElementById("row-account").click();
+  await sleep(20);
+  let dlg = document.querySelector('[role="dialog"]');
+  const host = dlg.parentNode;
+  const blank = dlg.cloneNode(true);
+  Array.prototype.forEach.call(blank.querySelectorAll(".cdbx-group,.cdbx-item,.cdbx-panel"), function (n) { n.remove(); });
+  function close() { const d = document.querySelector('[role="dialog"]'); if (d) d.remove(); }
+  function mount() { host.appendChild(blank.cloneNode(true)); }
+  close();
+  await sleep(40);
+  window.cdbExtra.extraOpenSettings = function () {
+    window.__openCalls += arguments.length ? 100 : 1;
+    mount(); // what upstream's settings route does: a settings dialog mounts
+    return Promise.resolve({ ok: true });
+  };
+  r = window.__cdbExtraOpen("cu", "cu");
+  ok(r === true && !!window.__cdbExtraPending && window.__cdbExtraPending.kind === "cu" && window.__cdbExtraPending.section === "cu",
+     "not mounted: a pending entry is queued");
+  await sleep(400);
+  ok(window.__openCalls === 1 && h1() === "Cowork (Linux)" && focusedSection() === "cu" && window.__cdbExtraPending === null,
+     "main is asked once with no argument; the mount opens the Computer Use section and clears the entry: " +
+     [window.__openCalls, h1(), focusedSection()].join("|"));
+
+  // a stale pending entry is dropped on the next mount
+  close();
+  await sleep(40);
+  window.__cdbExtraPending = { kind: "cu", section: "local", at: Date.now() - 20000 };
+  mount();
+  await sleep(400);
+  ok(!!document.querySelector(".cdbx-item") && !document.querySelector(".cdbx-panel") && window.__cdbExtraPending === null,
+     "a pending entry older than 10 s is ignored and cleared");
+
+  // navigation unavailable: toast the manual path, clear the entry
+  close();
+  await sleep(40);
+  window.cdbExtra.extraOpenSettings = function () { return Promise.resolve({ ok: false, error: "settings navigation unavailable" }); };
+  r = window.__cdbExtraOpen("cu", "local");
+  await sleep(60);
+  ok(r === true && toastText() === "Open Settings -> Extra -> Cowork (Linux)" && window.__cdbExtraPending === null,
+     "navigation unavailable: the manual path as a toast: " + toastText());
+  delete window.cdbExtra.extraOpenSettings;
+  ok(window.__cdbExtraOpen("cu", "local") === false && toastText() === "Open Settings -> Extra -> Cowork (Linux)",
+     "an older preload without the bridge method: false, and the manual path");
+  mount();
+  await sleep(300);
 }
 
 async function modelsPanel(modelsItem) {
@@ -2965,6 +3167,8 @@ async function run() {
       await modelsPanel(items[3]);
       await flagsPanel(items[4]);
       await deployPanel(items[5]);
+      // Last: it re-mounts the nav, so the items above are stale afterwards.
+      await deepLink();
     }
     return;
   }
@@ -3321,12 +3525,29 @@ window.__cusPkDisable = { kind: "pkexec",
   command: "/usr/bin/pkexec /usr/lib/claude-desktop/resources/linux-udev/cdb-tpm-access disable",
   link: "/etc/udev/rules.d/70-claude-desktop-extra-tpm.rules",
   apply: "udevadm control --reload\\nudevadm trigger --action=change --subsystem-match=tpmrm" };
+window.__cusKvmPkEnable = { kind: "pkexec",
+  command: "/usr/bin/pkexec /usr/lib/claude-desktop/resources/linux-udev/cdb-kvm-access enable",
+  link: "/etc/udev/rules.d/70-claude-desktop-extra-kvm.rules",
+  apply: "modprobe vhost_vsock\\nudevadm control --reload\\nudevadm trigger --action=change --subsystem-match=misc --sysname-match=kvm --sysname-match=vhost-vsock",
+  mlink: "/etc/modules-load.d/claude-desktop-extra-vsock.conf",
+  target: "/usr/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-kvm.rules",
+  rule: 'SUBSYSTEM=="misc", KERNEL=="kvm", ACTION!="remove", TAG+="uaccess"\\nSUBSYSTEM=="misc", KERNEL=="vhost-vsock", ACTION!="remove", TAG+="uaccess"',
+  mtarget: "/usr/lib/claude-desktop/resources/linux-udev/claude-desktop-extra-vsock.conf",
+  mconf: "vhost_vsock",
+  undo: "/usr/bin/pkexec /usr/lib/claude-desktop/resources/linux-udev/cdb-kvm-access disable",
+  undoManual: "sudo rm -f /etc/udev/rules.d/70-claude-desktop-extra-kvm.rules /etc/modules-load.d/claude-desktop-extra-vsock.conf && sudo udevadm control --reload" };
+window.__cusKvmPkDisable = { kind: "pkexec",
+  command: "/usr/bin/pkexec /usr/lib/claude-desktop/resources/linux-udev/cdb-kvm-access disable",
+  link: "/etc/udev/rules.d/70-claude-desktop-extra-kvm.rules", apply: "udevadm control --reload",
+  mlink: "/etc/modules-load.d/claude-desktop-extra-vsock.conf" };
+window.__cusKvmEnable = { ok: true, changed: true, message: "cdb-kvm-access: enabled" };
+window.__cusKvmDisable = { ok: true, changed: true, message: "cdb-kvm-access: disabled" };
 window.__cuAxState = { ok: true, enabled: false, lockedByJsonc: null };
 window.__cuAskState = { ok: true, enabled: true, lockedByJsonc: null };
 window.__cuAskSets = [];
 window.__cusState = { ok: true, rows: window.__cusRows(), actions: { tpmEnable: window.__cusPkEnable, tpmDisable: null,
   restart: false, resetScreenSharing: false, tssCommand: null } };
-window.__cusCalls = { read: 0, enable: 0, disable: 0, reset: 0 };
+window.__cusCalls = { read: 0, enable: 0, disable: 0, reset: 0, kvmEnable: 0, kvmDisable: 0 };
 window.__cusEnable = { ok: true, changed: true, message: "cdb-tpm-access: enabled (/etc/udev/rules.d/70-claude-desktop-extra-tpm.rules -> /usr/lib/claude-desktop/resources/linux-udev/70-claude-desktop-extra-tpm.rules)" };
 window.__cusDisable = { ok: true, changed: true, message: "cdb-tpm-access: disabled" };
 window.__cusReset = { ok: true, lines: ["KWin screen sharing: forgot the remembered choice."] };
@@ -3525,6 +3746,8 @@ window.cdbExtra = {
   cuStatusTpmEnable: function () { window.__cusCalls.enable += arguments.length ? 100 : 1; return Promise.resolve(window.__cusEnable); },
   cuStatusTpmDisable: function () { window.__cusCalls.disable += arguments.length ? 100 : 1; return Promise.resolve(window.__cusDisable); },
   cuStatusResetScreenSharing: function () { window.__cusCalls.reset += arguments.length ? 100 : 1; return Promise.resolve(window.__cusReset); },
+  cuStatusKvmEnable: function () { window.__cusCalls.kvmEnable = (window.__cusCalls.kvmEnable || 0) + (arguments.length ? 100 : 1); return Promise.resolve(window.__cusKvmEnable); },
+  cuStatusKvmDisable: function () { window.__cusCalls.kvmDisable = (window.__cusCalls.kvmDisable || 0) + (arguments.length ? 100 : 1); return Promise.resolve(window.__cusKvmDisable); },
   diag: function (m) { diags.push(String(m)); return Promise.resolve({ ok: true }); }
 };
 </script>

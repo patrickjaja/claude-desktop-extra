@@ -384,9 +384,10 @@
       return ipcRenderer.invoke("cdb-cubg:tools");
     },
 
-    // Computer Use status (Settings -> Extra -> Computer Use). No channel
-    // takes an argument: the helper path, the launcher and the bridge are all
-    // decided on the main side, so the page can only name one of these actions.
+    // Cowork and Computer Use status (Settings -> Extra -> Cowork (Linux)). No
+    // channel takes an argument: the helper paths, the launcher and the bridge
+    // are all decided on the main side, so the page can only name one of these
+    // actions.
     cuStatusRead: function () {
       return ipcRenderer.invoke("cdb-cu-status:read");
     },
@@ -398,6 +399,21 @@
     },
     cuStatusResetScreenSharing: function () {
       return ipcRenderer.invoke("cdb-cu-status:reset-screen-sharing");
+    },
+    cuStatusKvmEnable: function () {
+      return ipcRenderer.invoke("cdb-cu-status:kvm-enable");
+    },
+    cuStatusKvmDisable: function () {
+      return ipcRenderer.invoke("cdb-cu-status:kvm-disable");
+    },
+    // The Cowork header icon's facts (device key, local VM): files only, cached.
+    cuStatusIcon: function () {
+      return ipcRenderer.invoke("cdb-cu-status:icon");
+    },
+    // Navigate this view to upstream's settings; the page then opens Extra ->
+    // Cowork (Linux). The route is fixed on the main side.
+    extraOpenSettings: function () {
+      return ipcRenderer.invoke("cdb-extra:open-settings");
     },
 
     // Open one of the files this package writes, or show it in the file manager.

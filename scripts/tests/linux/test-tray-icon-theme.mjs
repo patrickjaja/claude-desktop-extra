@@ -447,7 +447,10 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
     // (see test-deployment-main.mjs); never called here.
     writeFileSync(
       mod,
-      '"use strict";\nfunction FHa(e=[]){let t=G().type==="3p"&&ou()==="1p"?[...e,j$t]:e;a.app.isPackaged?Mj(!0,t):fj(t)}\n'
+      '"use strict";\nfunction FHa(e=[]){let t=G().type==="3p"&&ou()==="1p"?[...e,j$t]:e;a.app.isPackaged?Mj(!0,t):fj(t)}\n' +
+        // ...and the navigation / VM-probe capture anchors (sub-patches C, D).
+        'var Hrr,Urr;function Yrr(){return Urr??=(async()=>{let t,n,r,s;return Hrr={qemuPath:t,firmwarePath:n,virtiofsdPath:r,virtiofsdAptInstallable:!0,kvm:s},Hrr})(),Urr}function Xrr(){return Hrr}\n' +
+        'function nav0(){let Uy=go(Hy,"Navigation",Xy,{events:[["navigate",[["path",I]]]]});return Uy}\n'
     );
     try { chmodSync(EXTRA_BIN, 0o755); } catch {}
     execFileSync(EXTRA_BIN, [mod], { stdio: "ignore" });
@@ -613,8 +616,8 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
   const navKinds = ((/var NAV_ITEMS = \[([\s\S]*?)\n {2}\];/.exec(page) || [])[1] || "").match(/kind: "(\w+)"/g) || [];
   check("page: nav order themes, features, cu, models, flags, deploy", navKinds.join(","),
     'kind: "themes",kind: "features",kind: "cu",kind: "models",kind: "flags",kind: "deploy"');
-  check("page: the cu entry is labelled Computer Use and not carried on Windows",
-    /\{ kind: "cu", label: "Computer Use", icon: ICON_CU \}/.test(page) && /var WINDOWS_NAV = \{ models: true \};/.test(page) &&
+  check("page: the cu entry is labelled Cowork (Linux) and not carried on Windows",
+    /\{ kind: "cu", label: "Cowork \(Linux\)", icon: ICON_CU, tooltip: "Cowork and Computer Use on Linux" \}/.test(page) && /var WINDOWS_NAV = \{ models: true \};/.test(page) &&
     /cu: renderCu,/.test(page), true);
   check("page: CU_ROWS is ask before control, background display, then read app controls",
     /var CU_ROWS = \[\s*renderCuAskRow,\s*renderCuBackgroundRow,\s*renderCuAxRow\s*\];/.test(page), true);

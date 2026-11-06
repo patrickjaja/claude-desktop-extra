@@ -1,7 +1,7 @@
 # @patch-target: app.asar.contents/.vite/build/index.js
 # @patch-type: nim
 #
-# "Extra" area inside the claude.ai Settings modal (Themes + Community Features + Computer Use +
+# "Extra" area inside the claude.ai Settings modal (Themes + Community Features + Cowork (Linux) +
 # Models + Anthropic Features + Deployment).
 #
 # The Settings modal is rendered by the REMOTE claude.ai SPA inside the mainView
@@ -37,6 +37,26 @@
 # stack in reverse order, so this code RUNS BEFORE add_feature_custom_themes
 # installs globalThis.__cdbThemes. Handlers tolerate a missing registry.
 #
+# Sub-patches B, C and D publish three upstream internals onto globalThis so
+# js/extra_settings_main.js (a different chunk) can reach them; none of them
+# changes what upstream does (names below are 4.23118.0):
+#   B  globalThis.__cdbRelaunchApp     upstream's relaunchApp (see below).
+#   C  globalThis.__cdbNavigation      upstream's "Navigation" eIPC interface,
+#        Uy=go(Hy,"Navigation",Xy,{events:[["navigate",[["path",I]]]]})
+#      main navigates the SPA with Uy.getDispatcher(webContents)?.dispatchNavigate(path)
+#      (openSettings uses "/settings/desktop"). The registry is chunk-local, so
+#      the Cowork (Linux) deep link (cdb-extra:open-settings) has no other way in.
+#   D  globalThis.__cdbCoworkVmProbe   upstream's sync getter of the cached
+#      local Cowork VM probe,
+#        function Xrr(){return Hrr}
+#      where Yrr() memoizes Hrr={qemuPath,firmwarePath,virtiofsdPath,...,kvm}.
+#      The Cowork (Linux) page shows what the app found at start (the probe is
+#      cached per process, so a KVM permission fixed later needs a restart).
+#      D sits after the Yrr/Xrr pair, away from the Promise.all arguments that
+#      fix_cowork_firmware_paths_linux.nim rewrites.
+# Consumers tolerate each global being absent (one diagnostic line, then a
+# fallback), so a moved anchor fails the build here, never the app.
+#
 # Break risk: VERY LOW on the desktop side - no regex against minified app code,
 # only the stable "use strict"; prefix and standard Electron APIs. The real
 # fragility is the remote Settings markup: the page script anchors on semantics
@@ -69,7 +89,7 @@ const EXTRA_JS =
     "\"__CDB_EX_PAGE_CSS__\"", escapeJson(PAGE_CSS)
   )
 
-const EXPECTED_PATCHES = 2
+const EXPECTED_PATCHES = 4 # A IIFE, B relaunch, C navigation, D VM probe
 
 # Positive end-state markers (Rule 6): the build tag, one handler name per panel
 # from the main half, one class name from the page half, and the sender guard's
@@ -116,6 +136,14 @@ proc apply*(input: string): string =
   if EXTRA_JS.find(re2"""\}globalThis\.__cdbRelaunchApp=""", guardMatch):
     echo "  [FAIL] js/extra_settings_main.js contains the relaunch-capture end-state shape -- " &
       "sub-patch B's idempotency check would false-positive"
+    quit(1)
+
+  # Same for C and D: our payload reads both globals by name, but must never
+  # contain their end-state shapes.
+  if EXTRA_JS.find(re2"""[\w$]+=globalThis\.__cdbNavigation=[\w$]+\(""", guardMatch) or
+      EXTRA_JS.find(re2"""\}globalThis\.__cdbCoworkVmProbe=[\w$]+;""", guardMatch):
+    echo "  [FAIL] js/extra_settings_main.js contains a capture end-state shape (navigation / VM probe) -- " &
+      "sub-patch C or D's idempotency check would false-positive"
     quit(1)
 
   var patchesApplied = 0
@@ -225,6 +253,91 @@ proc apply*(input: string): string =
         fwd & "`) published as globalThis.__cdbRelaunchApp"
       patchesApplied.inc
 
+  # ── Sub-patch C: publish upstream's Navigation eIPC interface ──────────
+  # 4.23118.0: Uy=go(Hy,"Navigation",Xy,{events:[["navigate",[["path",I]]]]})
+  # -> Uy=globalThis.__cdbNavigation=go(Hy,"Navigation",...). The value is the
+  # same object; only a second reference to it is kept. The minifier has used
+  # double quotes and backticks for these strings, so both are accepted.
+  block:
+    let landedPat =
+      re2"""[\w$]+=globalThis\.__cdbNavigation=[\w$]+\([\w$]+,["`]Navigation["`],"""
+    let landed = findAll(result, landedPat)
+    if landed.len == 1:
+      echo "  [OK] navigation capture already present (idempotent)"
+      patchesApplied.inc
+    elif landed.len > 1:
+      echo "  [FAIL] navigation capture: " & $landed.len & " end-state hits (expected 1)"
+      quit(1)
+    else:
+      # Groups: 0 the interface variable, 1 the factory, 2 and 3 the two quote
+      # characters around Navigation (compared below: no backreferences here).
+      let navPat =
+        re2"""([\w$]+)=([\w$]+)\([\w$]+,(["`])Navigation(["`]),[\w$]+,\{events:\[\[["`]navigate["`]"""
+      let hits = findAll(result, navPat)
+      if hits.len != 1:
+        echo "  [FAIL] navigation capture: " & $hits.len &
+          " matches (expected exactly 1) -- re-audit the bundle"
+        quit(1)
+      let m = hits[0]
+      if result[m.group(2)] != result[m.group(3)]:
+        echo "  [FAIL] navigation capture: mismatched quotes around Navigation -- wrong site"
+        quit(1)
+      let varName = result[m.group(0)]
+      let at = m.group(0).b + 2 # after `X=`
+      result = result[0 ..< at] & "globalThis.__cdbNavigation=" & result[at .. ^1]
+      if findAll(result, landedPat).len != 1:
+        echo "  [FAIL] navigation capture did not land"
+        quit(1)
+      echo "  [OK] navigation capture: upstream Navigation interface `" & varName &
+        "` published as globalThis.__cdbNavigation"
+      patchesApplied.inc
+
+  # ── Sub-patch D: publish upstream's cached local Cowork VM probe ───────
+  # 4.23118.0 (tail of the memoized probe Yrr and its sync getter Xrr):
+  #   return Hrr={qemuPath:t,firmwarePath:n,virtiofsdPath:r,...,kvm:s},Hrr})(),Urr}function Xrr(){return Hrr}
+  # -> the same, followed by `globalThis.__cdbCoworkVmProbe=Xrr;`.
+  block:
+    let landedPat = re2"""\}globalThis\.__cdbCoworkVmProbe=[\w$]+;"""
+    let landed = findAll(result, landedPat)
+    if landed.len == 1:
+      echo "  [OK] VM probe capture already present (idempotent)"
+      patchesApplied.inc
+    elif landed.len > 1:
+      echo "  [FAIL] VM probe capture: " & $landed.len & " end-state hits (expected 1)"
+      quit(1)
+    else:
+      # Groups: 0 the cache assigned, 1 the cache the IIFE returns, 2 the memo,
+      # 3 the getter, 4 the cache the getter returns. 0, 1 and 4 must agree.
+      let probePat =
+        re2"""([\w$]+)=\{qemuPath:[\w$]+,firmwarePath:[\w$]+,virtiofsdPath:[\w$]+,[^{}]*,kvm:[\w$]+\},([\w$]+)\}\)\(\),([\w$]+)\}function ([\w$]+)\(\)\{return ([\w$]+)\}"""
+      let hits = findAll(result, probePat)
+      if hits.len != 1:
+        echo "  [FAIL] VM probe capture: " & $hits.len &
+          " matches (expected exactly 1) -- re-audit the bundle"
+        quit(1)
+      let m = hits[0]
+      let cache = result[m.group(0)]
+      let memo = result[m.group(2)]
+      let getter = result[m.group(3)]
+      if result[m.group(1)] != cache or result[m.group(4)] != cache:
+        echo "  [FAIL] VM probe capture: the getter `" & getter & "` returns `" &
+          result[m.group(4)] & "`, the probe caches `" & cache & "` -- wrong site"
+        quit(1)
+      if (memo & "??=(") notin result:
+        echo "  [FAIL] VM probe capture: memo `" & memo &
+          "` is not assigned with ??= -- wrong site"
+        quit(1)
+      let at = m.boundaries.b + 1
+      result =
+        result[0 ..< at] & "globalThis.__cdbCoworkVmProbe=" & getter & ";" &
+        result[at .. ^1]
+      if findAll(result, landedPat).len != 1:
+        echo "  [FAIL] VM probe capture did not land"
+        quit(1)
+      echo "  [OK] VM probe capture: upstream getter `" & getter & "` (cache `" & cache &
+        "`) published as globalThis.__cdbCoworkVmProbe"
+      patchesApplied.inc
+
   if patchesApplied < EXPECTED_PATCHES:
     echo "  [FAIL] Only " & $patchesApplied & "/" & $EXPECTED_PATCHES &
       " patches applied"
@@ -248,6 +361,6 @@ when isMainModule:
 
   if output != input:
     writeFile(filePath, output)
-    echo "  [PASS] Extra settings area (Themes + Community Features + Computer Use + Models + Anthropic Features + Deployment) added"
+    echo "  [PASS] Extra settings area (Themes + Community Features + Cowork (Linux) + Models + Anthropic Features + Deployment) added"
   else:
     echo "  [WARN] No changes made"

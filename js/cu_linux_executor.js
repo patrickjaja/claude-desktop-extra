@@ -32,7 +32,7 @@ function _gnomeBridgeBin(){return process.env.GNOME_PORTAL_BRIDGE_BIN||globalThi
 function _isWlrootsCovered(){return _tgt?_tgt.kind==="wlroots":_wayland&&_isWlroots()}
 function _isGnomeCovered(){return !_tgt&&_isGnomeWayland()}
 // ── Background display target (issue #300) ──
-// Settings -> Extra -> Computer Use -> "Computer Use on a background display" points
+// Settings -> Extra -> Cowork (Linux) -> "Computer Use on a background display" points
 // Computer Use at a second, invisible display (Xvfb/Xephyr -> x11-bridge,
 // headless/nested wlroots -> wlroots-bridge). globalThis.__cuTargetRead
 // (cu_mode_preamble.js) reads the setting; it is latched here at startup and on
@@ -44,7 +44,7 @@ function _isGnomeCovered(){return !_tgt&&_isGnomeWayland()}
 // ydotool, spectacle, desktopCapturer, GNOME portal session or host
 // clipboard - nothing ever falls back to the user's desktop.
 var _tgt=null;
-var _CU_TGT_OFF="turn off Settings -> Extra -> Computer Use -> Computer Use on a background display.";
+var _CU_TGT_OFF="turn off Settings -> Extra -> Cowork (Linux) -> Computer Use on a background display.";
 // Target clipboard. The Electron clipboard is the user's desktop clipboard and
 // is never touched in target mode; the target's own selection is read and
 // written with xclip (else xsel) on an x11 target, wl-copy / wl-paste on a

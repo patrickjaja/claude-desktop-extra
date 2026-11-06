@@ -2368,7 +2368,7 @@
     }).then(function (res) { res.ms = Date.now() - t0; return res; });
   }
 
-  // --- Computer Use status (Settings -> Extra -> Computer Use) -------------
+  // --- Computer Use status (Settings -> Extra -> Cowork (Linux)) -------------
   // Three rows: this desktop (the app's own startup decision + the bridge's
   // `doctor`), the device key (TPM) and cloud Cowork / Dispatch (this run's
   // remote-device lines in main.log). OK only from a fact observed here; any
@@ -2429,7 +2429,46 @@
   // The full risk text, the exact command, what it changes and how to undo it
   // are on the page (CUS_RISK and the "What this does" block in
   // js/extra_settings_page.js); the dialog only has to be the consent.
-  var __cdbEx_CUS_TPM_CONFIRM = "This adds a udev rule that grants access to the TPM, and asks for an administrator password. It applies to every account that logs in at this computer's screen. Details and the exact command: Settings -> Extra -> Computer Use.";
+  var __cdbEx_CUS_TPM_CONFIRM = "This adds a udev rule that grants access to the TPM, and asks for an administrator password. It applies to every account that logs in at this computer's screen. Details and the exact command: Settings -> Extra -> Cowork (Linux).";
+  // Local Cowork VM: the KVM sibling of the TPM pieces above. Upstream's own
+  // probe needs read/write access to both nodes (and a vhost-vsock module):
+  // without it the app offers no "run on your computer" (1P keeps cloud
+  // Cowork; 3P has no Cowork at all). cdb-kvm-access is cdb-tpm-access's
+  // sibling with two links: the udev rule and a modules-load.d entry.
+  var __cdbEx_KVM_DEV = "/dev/kvm";
+  var __cdbEx_VSOCK_DEV = "/dev/vhost-vsock";
+  var __cdbEx_KVM_RULE = "70-claude-desktop-extra-kvm.rules";
+  var __cdbEx_KVM_LINK = "/etc/udev/rules.d/70-claude-desktop-extra-kvm.rules";
+  var __cdbEx_KVM_MCONF = "claude-desktop-extra-vsock.conf";
+  var __cdbEx_KVM_MLINK = "/etc/modules-load.d/claude-desktop-extra-vsock.conf";
+  // Byte for byte packaging/udev/70-claude-desktop-extra-kvm.rules and
+  // claude-desktop-extra-vsock.conf, and RULE_TEXT / CONF_TEXT in
+  // packaging/udev/cdb-kvm-access (test-cu-status-main.mjs pins them).
+  var __cdbEx_KVM_RULE_TEXT = "# claude-desktop-extra: KVM access for the active seat user (see cdb-kvm-access)\n" +
+    "# Local Cowork runs a QEMU VM that needs /dev/kvm and /dev/vhost-vsock. Give the\n" +
+    "# user at the active local seat an ACL on these two nodes only.\n" +
+    "SUBSYSTEM==\"misc\", KERNEL==\"kvm\", ACTION!=\"remove\", TAG+=\"uaccess\"\n" +
+    "SUBSYSTEM==\"misc\", KERNEL==\"vhost-vsock\", ACTION!=\"remove\", TAG+=\"uaccess\"\n";
+  var __cdbEx_KVM_MCONF_TEXT = "# claude-desktop-extra: load vhost_vsock at boot for local Cowork (see cdb-kvm-access)\n" +
+    "vhost_vsock\n";
+  var __cdbEx_KVM_RULE_LINE = __cdbEx_KVM_RULE_TEXT.split("\n").filter(function (l) { return l && l.charAt(0) !== "#"; }).join("\n");
+  var __cdbEx_KVM_MCONF_LINE = __cdbEx_KVM_MCONF_TEXT.split("\n").filter(function (l) { return l && l.charAt(0) !== "#"; }).join("\n");
+  // What cdb-kvm-access runs after it changed the links (enable / disable).
+  var __cdbEx_KVM_APPLY = "modprobe vhost_vsock\nudevadm control --reload\n" +
+    "udevadm trigger --action=change --subsystem-match=misc --sysname-match=kvm --sysname-match=vhost-vsock";
+  var __cdbEx_KVM_APPLY_OFF = "udevadm control --reload";
+  var __cdbEx_KVM_NIXOS_OPT = "programs.claude-desktop-extra.kvmAccess.enable = true;";
+  // Upstream's probe tells "module not loaded" from "kernel without it" by this
+  // directory for the running kernel.
+  var __cdbEx_KVM_MODULES_DIR = "/lib/modules";
+  var __cdbEx_CUS_KVM_CONFIRM = "This adds a udev rule that grants access to /dev/kvm and /dev/vhost-vsock, loads the vhost_vsock module at boot, and asks for an administrator password. It applies to every account that logs in at this computer's screen. Details and the exact command: Settings -> Extra -> Cowork (Linux).";
+  // The processes of a running local VM are children of this app: the bundled
+  // cowork-linux-helper and the QEMU it starts.
+  var __cdbEx_CUS_PROC = "/proc";
+  var __cdbEx_CUS_ICON_MS = 2000;
+  // Upstream's settings route the deep link opens (fixed here, never the page's).
+  var __cdbEx_SETTINGS_ROUTE = "/settings/desktop";
+
   var __cdbEx_CUS_LOG_TAIL = 512 * 1024;
   var __cdbEx_CUS_LOG_SLACK_MS = 2000;
   var __cdbEx_CUS_FRAME_RE = /connect frame sent: device_id (keyed|keyless|none)(?: \((.*)\))?/;
@@ -2439,7 +2478,11 @@
   var __cdbEx_CUS_NOTES = {
     desktop: "Claude's Code sessions see and control your screen through this.",
     tpm: "Claude keeps this computer's device identity key in the TPM; cloud tasks trust only a device with that key.",
-    cloud: "Cloud tasks reach this screen only through a keyed device that offers computer tools."
+    cloud: "Cloud tasks reach this screen only through a keyed device that offers computer tools.",
+    kvm: "The local Cowork VM runs on KVM. Without access the app offers only cloud Cowork (in 3P mode, no Cowork at all).",
+    vsock: "The app talks to the local VM over vhost-vsock.",
+    vmTools: "What the app found when it checked for the local VM in this run: QEMU, OVMF firmware and virtiofsd.",
+    vm: "Whether the local Cowork VM is running now (it starts when you open Cowork or a scheduled task runs)."
   };
 
   function __cdbEx_cusRow(status, fact, which) {
@@ -2449,6 +2492,16 @@
 
   function __cdbEx_cusHelper() {
     return process.resourcesPath ? _path.join(process.resourcesPath, "linux-udev", "cdb-tpm-access") : "";
+  }
+  function __cdbEx_cusKvmHelper() {
+    return process.resourcesPath ? _path.join(process.resourcesPath, "linux-udev", "cdb-kvm-access") : "";
+  }
+  // __cdbEx_cusKnownRule for any of our files in the same directories.
+  function __cdbEx_cusKnownIn(p, name) {
+    if (typeof p !== "string" || _path.basename(p) !== name) return false;
+    var dir = p.slice(0, -(name.length + 1));
+    if (p !== dir + "/" + name) return false;
+    return __cdbEx_TPM_RULE_DIRS.indexOf(dir) >= 0 || __cdbEx_TPM_NIX_DIR_RE.test(dir);
   }
   // Is p (a rule path, compared as given) one of the known rule paths?
   function __cdbEx_cusKnownRule(p) {
@@ -2483,11 +2536,11 @@
     return _fs.promises.access(p, _fs.constants.F_OK).then(function () { return true; }, function () { return false; });
   }
 
-  // /dev/tpmrm0 and the rule link. dev: ok | denied | absent | error.
-  // link: absent | ours | stale | foreign | file | error.
-  function __cdbEx_cusTpm() {
-    var dev = _fs.promises.stat(__cdbEx_TPM_DEV).then(function (st) {
-      return _fs.promises.access(__cdbEx_TPM_DEV, _fs.constants.R_OK | _fs.constants.W_OK).then(function () {
+  // A device node: dev: ok | denied | absent | error (owner names added by
+  // __cdbEx_cusNamed).
+  function __cdbEx_cusDevOf(p) {
+    return _fs.promises.stat(p).then(function (st) {
+      return _fs.promises.access(p, _fs.constants.R_OK | _fs.constants.W_OK).then(function () {
         return { state: "ok", st: st };
       }, function (e) {
         var c = e && e.code;
@@ -2496,11 +2549,15 @@
     }, function (e) {
       return e && e.code === "ENOENT" ? { state: "absent" } : { state: "error", code: __cdbEx_cusErr(e) };
     });
-    var link = _fs.promises.lstat(__cdbEx_TPM_LINK).then(function (st) {
+  }
+  // A link we may own. link: absent | ours | stale | foreign | file | error;
+  // `known` says whether a raw link target is one of our installed files.
+  function __cdbEx_cusLinkOf(linkPath, known) {
+    return _fs.promises.lstat(linkPath).then(function (st) {
       if (st.isSymbolicLink()) {
-        return _fs.promises.readlink(__cdbEx_TPM_LINK).then(function (raw) {
-          if (!__cdbEx_cusKnownRule(raw)) return { state: "foreign", target: raw };
-          return _fs.promises.stat(__cdbEx_TPM_LINK).then(function () { return { state: "ours", target: raw }; },
+        return _fs.promises.readlink(linkPath).then(function (raw) {
+          if (!known(raw)) return { state: "foreign", target: raw };
+          return _fs.promises.stat(linkPath).then(function () { return { state: "ours", target: raw }; },
             function (e) {
               return e && e.code === "ENOENT" ? { state: "stale", target: raw } : { state: "error", code: __cdbEx_cusErr(e) };
             });
@@ -2510,16 +2567,24 @@
     }).then(null, function (e) {
       return e && e.code === "ENOENT" ? { state: "absent" } : { state: "error", code: __cdbEx_cusErr(e) };
     });
-    return Promise.all([dev, link, __cdbEx_cusIdNames(__cdbEx_CUS_PASSWD), __cdbEx_cusIdNames(__cdbEx_CUS_GROUP)]).then(function (a) {
-      var d = a[0];
-      if (d.st) {
-        d.owner = a[2][String(d.st.uid)] || String(d.st.uid);
-        d.group = a[3][String(d.st.gid)] || String(d.st.gid);
-        d.mode = (d.st.mode & 4095).toString(8);
-        d.gid = d.st.gid;
-        delete d.st;
-      }
-      return { dev: d, link: a[1] };
+  }
+  function __cdbEx_cusNamed(d, users, groups) {
+    if (d.st) {
+      d.owner = users[String(d.st.uid)] || String(d.st.uid);
+      d.group = groups[String(d.st.gid)] || String(d.st.gid);
+      d.mode = (d.st.mode & 4095).toString(8);
+      d.gid = d.st.gid;
+      delete d.st;
+    }
+    return d;
+  }
+
+  // /dev/tpmrm0 and the rule link. dev: ok | denied | absent | error.
+  // link: absent | ours | stale | foreign | file | error.
+  function __cdbEx_cusTpm() {
+    return Promise.all([__cdbEx_cusDevOf(__cdbEx_TPM_DEV), __cdbEx_cusLinkOf(__cdbEx_TPM_LINK, __cdbEx_cusKnownRule),
+      __cdbEx_cusIdNames(__cdbEx_CUS_PASSWD), __cdbEx_cusIdNames(__cdbEx_CUS_GROUP)]).then(function (a) {
+      return { dev: __cdbEx_cusNamed(a[0], a[2], a[3]), link: a[1] };
     });
   }
 
@@ -2529,8 +2594,8 @@
   // above it owned by root and not group/world-writable. The one exception is
   // /nix/store (root-owned, sticky, group nixbld): only the Nix daemon adds
   // entries there.
-  function __cdbEx_cusHelperCheck() {
-    var p = __cdbEx_cusHelper();
+  function __cdbEx_cusHelperCheck(acc) {
+    var p = acc ? acc.helperPath() : __cdbEx_cusHelper();
     if (!p) return Promise.resolve({ path: "", safe: false, why: "no resources path" });
     function trusted(st) { return __cdbEx_CUS_TRUSTED_UIDS.indexOf(st.uid) >= 0; }
     return _fs.promises.realpath(p).then(function (real) {
@@ -2580,14 +2645,15 @@
     return next();
   }
 
-  // Where Enable/Disable can run as a button, and what to show instead.
-  function __cdbEx_cusGate() {
+  // Where Enable/Disable can run as a button, and what to show instead. `acc`
+  // (an __cdbEx_ACCESS entry, TPM when absent) names the helper.
+  function __cdbEx_cusGate(acc) {
     return Promise.all([
       __cdbEx_cusExists(__cdbEx_CUS_NIXOS),
       Promise.all(__cdbEx_CUS_CONTAINER.map(__cdbEx_cusExists)),
       _fs.promises.stat(__cdbEx_CUS_UDEV_SOCK).then(function (st) { return st.isSocket(); }, function () { return false; }),
       __cdbEx_cusPkexec(),
-      __cdbEx_cusHelperCheck()
+      __cdbEx_cusHelperCheck(acc)
     ]).then(function (a) {
       var g = {
         appimage: !!process.env.CLAUDE_APPIMAGE_PATH,
@@ -2899,44 +2965,431 @@
     return out;
   }
 
-  function __cdbEx_cusState() {
-    return Promise.all([__cdbEx_cusDesktop(), __cdbEx_cusTpm(), __cdbEx_cusLog(), __cdbEx_cusGate()]).then(function (a) {
+  // --- Local Cowork VM (the KVM sibling of the TPM rows) --------------------
+  // `now` is a port of upstream's own VM probe (4.23118.0 Jrr()): the same two
+  // access(R_OK|W_OK) calls, the same order, the same answers. The paths
+  // (qemu, OVMF, virtiofsd) come only from upstream's cached probe, published
+  // by the core patch as globalThis.__cdbCoworkVmProbe: no second copy of its
+  // candidate lists lives here.
+  function __cdbEx_cusRw(p) {
+    return _fs.promises.access(p, _fs.constants.R_OK | _fs.constants.W_OK).then(function () { return "ok"; },
+      function (e) { return e && e.code === "EACCES" ? "no_permission" : "missing"; });
+  }
+  function __cdbEx_cusKnownKvmRule(p) { return __cdbEx_cusKnownIn(p, __cdbEx_KVM_RULE); }
+  function __cdbEx_cusKnownKvmConf(p) { return __cdbEx_cusKnownIn(p, __cdbEx_KVM_MCONF); }
+
+  function __cdbEx_cusKvm() {
+    var rel = "";
+    try { rel = String(require("os").release() || ""); } catch (e) { rel = ""; }
+    var modules = rel
+      ? _fs.promises.access(_path.posix.join(__cdbEx_KVM_MODULES_DIR, rel)).then(function () { return true; }, function () { return false; })
+      : Promise.resolve(false);
+    return Promise.all([
+      __cdbEx_cusDevOf(__cdbEx_KVM_DEV), __cdbEx_cusDevOf(__cdbEx_VSOCK_DEV),
+      __cdbEx_cusRw(__cdbEx_KVM_DEV), __cdbEx_cusRw(__cdbEx_VSOCK_DEV), modules,
+      __cdbEx_cusLinkOf(__cdbEx_KVM_LINK, __cdbEx_cusKnownKvmRule),
+      __cdbEx_cusLinkOf(__cdbEx_KVM_MLINK, __cdbEx_cusKnownKvmConf),
+      __cdbEx_cusIdNames(__cdbEx_CUS_PASSWD), __cdbEx_cusIdNames(__cdbEx_CUS_GROUP)
+    ]).then(function (a) {
+      var kvm = a[2];
+      var vs = a[3];
+      var now;
+      if (kvm === "missing") now = "missing";
+      else if (kvm === "no_permission" || vs === "no_permission") now = "no_permission";
+      else if (vs === "missing") now = a[4] ? "vsock_module_missing" : "vsock_kernel_unsupported";
+      else now = "ok";
+      return { kvm: __cdbEx_cusNamed(a[0], a[7], a[8]), vsock: __cdbEx_cusNamed(a[1], a[7], a[8]),
+        modules: a[4], now: now, link: a[5], mlink: a[6] };
+    });
+  }
+
+  // What upstream's probe found when the app first checked (it caches that for
+  // the whole run). null: the capture is missing, or nothing checked yet.
+  var __cdbEx_cusProbeWarned = false;
+  function __cdbEx_cusVmAtStart() {
+    var fn = globalThis.__cdbCoworkVmProbe;
+    if (typeof fn !== "function") {
+      if (!__cdbEx_cusProbeWarned) {
+        __cdbEx_cusProbeWarned = true;
+        __cdbEx_log("cu-status: the app's VM probe capture is missing (add_feature_extra_settings sub-patch D) - VM tools show unknown");
+      }
+      return { captured: false, value: null };
+    }
+    var v;
+    try { v = fn(); } catch (e) { v = null; }
+    if (!v || typeof v !== "object") return { captured: true, value: null };
+    function str(x) { return typeof x === "string" && x ? x : null; }
+    return { captured: true, value: { kvm: typeof v.kvm === "string" ? v.kvm : null,
+      qemuPath: str(v.qemuPath), firmwarePath: str(v.firmwarePath), virtiofsdPath: str(v.virtiofsdPath) } };
+  }
+  function __cdbEx_cusVmMissing(at) {
+    var out = [];
+    if (!at.qemuPath) out.push("QEMU");
+    if (!at.firmwarePath) out.push("OVMF firmware");
+    if (!at.virtiofsdPath) out.push("virtiofsd");
+    return out;
+  }
+
+  // Is a local VM running: a qemu-system-* process below this app's own pid.
+  // (The bundled cowork-linux-helper runs whenever the app does, VM or not, so
+  // it is not counted.) No shell, /proc only, read in batches of
+  // __cdbEx_CUS_PROC_BATCH; true | false | null (could not tell). A process
+  // that exits during the walk, or whose exe link we may not read, is not a VM.
+  var __cdbEx_CUS_PROC_BATCH = 64;
+  function __cdbEx_cusBatched(items, fn) {
+    var out = [];
+    var i = 0;
+    function next() {
+      if (i >= items.length) return Promise.resolve(out);
+      var chunk = items.slice(i, i + __cdbEx_CUS_PROC_BATCH);
+      i += chunk.length;
+      return Promise.all(chunk.map(fn)).then(function (r) { out = out.concat(r); return next(); });
+    }
+    return next();
+  }
+  function __cdbEx_cusVmRunningNow() {
+    var self = String(process.pid);
+    function gone(e) { return !!e && (e.code === "ENOENT" || e.code === "ESRCH"); }
+    return _fs.promises.readdir(__cdbEx_CUS_PROC).then(function (names) {
+      return __cdbEx_cusBatched(names.filter(function (n) { return /^\d+$/.test(n); }), function (pid) {
+        return _fs.promises.readFile(__cdbEx_CUS_PROC + "/" + pid + "/stat", "utf8").then(function (t) {
+          var i = t.lastIndexOf(")");
+          var f = i >= 0 ? t.slice(i + 2).split(" ") : [];
+          return f.length > 1 && /^\d+$/.test(f[1]) ? [pid, f[1]] : null;
+        }, function (e) { if (gone(e)) return null; throw e; });
+      });
+    }).then(function (pairs) {
+      var kids = {};
+      pairs.forEach(function (p) { if (p) (kids[p[1]] || (kids[p[1]] = [])).push(p[0]); });
+      var desc = [];
+      var seen = {};
+      var todo = [self];
+      while (todo.length) {
+        (kids[todo.pop()] || []).forEach(function (k) {
+          if (!seen[k]) { seen[k] = 1; desc.push(k); todo.push(k); }
+        });
+      }
+      return __cdbEx_cusBatched(desc, function (pid) {
+        return _fs.promises.readlink(__cdbEx_CUS_PROC + "/" + pid + "/exe").then(function (exe) {
+          return _path.basename(String(exe).replace(/ \(deleted\)$/, "")).indexOf("qemu-system-") === 0;
+        }, function (e) {
+          if (gone(e) || (e && (e.code === "EACCES" || e.code === "EPERM"))) return false;
+          throw e;
+        });
+      });
+    }).then(function (hits) { return hits.some(Boolean); }, function () { return null; });
+  }
+  // The read and the header icon share one answer for __cdbEx_CUS_ICON_MS.
+  var __cdbEx_cusRunP = null;
+  var __cdbEx_cusRunAt = 0;
+  var __cdbEx_cusRunV;
+  function __cdbEx_cusVmRunning() {
+    if (__cdbEx_cusRunAt && Date.now() - __cdbEx_cusRunAt < __cdbEx_CUS_ICON_MS) return Promise.resolve(__cdbEx_cusRunV);
+    if (__cdbEx_cusRunP) return __cdbEx_cusRunP;
+    var p = __cdbEx_cusVmRunningNow().then(function (v) {
+      __cdbEx_cusRunV = v;
+      __cdbEx_cusRunAt = Date.now();
+      return v;
+    });
+    __cdbEx_cusRunP = p;
+    function done() { if (__cdbEx_cusRunP === p) __cdbEx_cusRunP = null; }
+    p.then(done, done);
+    return p;
+  }
+
+  function __cdbEx_cusDevWho(d) { return "(" + d.owner + ":" + d.group + " " + d.mode + ")"; }
+  function __cdbEx_cusKvmRow(k, restart) {
+    var d = k.kvm;
+    if (d.state === "absent") return __cdbEx_cusRow("na", "missing - enable virtualization (VT-x / AMD-V) in the firmware settings", "kvm");
+    if (d.state === "error") return __cdbEx_cusRow("unknown", __cdbEx_KVM_DEV + ": " + d.code, "kvm");
+    var hasRule = k.link.state === "ours" || k.link.state === "file";
+    if (d.state === "ok") {
+      if (restart) return __cdbEx_cusRow("action", "accessible now - restart Claude so local Cowork can use it", "kvm");
+      if (hasRule) return __cdbEx_cusRow("ok", __cdbEx_KVM_DEV + " accessible - rule enabled", "kvm");
+      if (__cdbEx_cusInGroup(d)) return __cdbEx_cusRow("ok", __cdbEx_KVM_DEV + " accessible through the " + d.group + " group", "kvm");
+      return __cdbEx_cusRow("ok", __cdbEx_KVM_DEV + " accessible", "kvm");
+    }
+    if (k.link.state === "stale") return __cdbEx_cusRow("action", "no permission - the rule link is not in effect (the file it points at is gone)", "kvm");
+    if (hasRule) return __cdbEx_cusRow("action", "no permission " + __cdbEx_cusDevWho(d) + " - rule enabled, but this session got no access", "kvm");
+    return __cdbEx_cusRow("action", "no permission " + __cdbEx_cusDevWho(d), "kvm");
+  }
+  function __cdbEx_cusVsockRow(k) {
+    var d = k.vsock;
+    if (d.state === "ok") return __cdbEx_cusRow("ok", __cdbEx_VSOCK_DEV + " accessible", "vsock");
+    if (d.state === "denied") return __cdbEx_cusRow("action", "no permission " + __cdbEx_cusDevWho(d), "vsock");
+    if (d.state === "absent") {
+      return k.modules ? __cdbEx_cusRow("action", "module not loaded (vhost_vsock)", "vsock")
+        : __cdbEx_cusRow("na", "kernel without vhost-vsock", "vsock");
+    }
+    return __cdbEx_cusRow("unknown", __cdbEx_VSOCK_DEV + ": " + d.code, "vsock");
+  }
+  function __cdbEx_cusVmToolsRow(at) {
+    if (!at.captured) return __cdbEx_cusRow("unknown", "the app's own VM check is not reachable in this build", "vmTools");
+    if (!at.value) return __cdbEx_cusRow("unknown", "not checked yet in this run - open Cowork once, then Re-check", "vmTools");
+    var miss = __cdbEx_cusVmMissing(at.value);
+    if (!miss.length) return __cdbEx_cusRow("ok", "QEMU, OVMF and virtiofsd found", "vmTools");
+    return __cdbEx_cusRow("action", miss.join(", ") + " not found - install " + (miss.length > 1 ? "them" : "it") +
+      ", then restart Claude (docs/cowork.md lists the packages)", "vmTools");
+  }
+  function __cdbEx_cusVmRow(running) {
+    if (running === true) return __cdbEx_cusRow("ok", "running", "vm");
+    if (running === false) return __cdbEx_cusRow("na", "not running", "vm");
+    return __cdbEx_cusRow("unknown", "could not read the running processes", "vm");
+  }
+
+  // KVM access actions: the same gates and shapes as TPM, two links.
+  function __cdbEx_cusKvmTee(k) {
+    var link = __cdbEx_cusQuote(__cdbEx_KVM_LINK);
+    var mlink = __cdbEx_cusQuote(__cdbEx_KVM_MLINK);
+    function lines(t) { return t.replace(/\n$/, "").split("\n").map(__cdbEx_cusQuote).join(" "); }
+    return (k.link.state === "stale" ? "sudo rm -f " + link + "\n" : "") +
+      "printf '%s\\n' " + lines(__cdbEx_KVM_RULE_TEXT) + " | sudo tee " + link + " >/dev/null\n" +
+      (k.mlink.state === "stale" ? "sudo rm -f " + mlink + "\n" : "") +
+      "printf '%s\\n' " + lines(__cdbEx_KVM_MCONF_TEXT) + " | sudo tee " + mlink + " >/dev/null\n" +
+      "sudo modprobe vhost_vsock\n" +
+      "sudo udevadm control --reload\n" +
+      "sudo udevadm trigger --action=change --subsystem-match=misc --sysname-match=kvm --sysname-match=vhost-vsock";
+  }
+  function __cdbEx_cusKvmRm() {
+    return "sudo rm -f " + __cdbEx_cusQuote(__cdbEx_KVM_LINK) + " " + __cdbEx_cusQuote(__cdbEx_KVM_MLINK) +
+      "\nsudo udevadm control --reload";
+  }
+  function __cdbEx_cusKvmPkexecAct(g, verb) {
+    var enable = verb === "enable";
+    var act = { kind: "pkexec", command: __cdbEx_cusPkexecCmd(g, verb), link: __cdbEx_KVM_LINK,
+      apply: enable ? __cdbEx_KVM_APPLY : __cdbEx_KVM_APPLY_OFF, mlink: __cdbEx_KVM_MLINK };
+    if (enable) {
+      act.target = _path.dirname(g.helper.path) + "/" + __cdbEx_KVM_RULE;
+      act.rule = __cdbEx_KVM_RULE_LINE;
+      act.mtarget = _path.dirname(g.helper.path) + "/" + __cdbEx_KVM_MCONF;
+      act.mconf = __cdbEx_KVM_MCONF_LINE;
+      act.undo = __cdbEx_cusPkexecCmd(g, "disable");
+      act.undoManual = "sudo rm -f " + __cdbEx_cusQuote(__cdbEx_KVM_LINK) + " " + __cdbEx_cusQuote(__cdbEx_KVM_MLINK) +
+        " && sudo udevadm control --reload";
+    }
+    return act;
+  }
+  function __cdbEx_cusKvmEnableAct(g, k) {
+    if (g.nixos) return { kind: "nixos", text: __cdbEx_KVM_NIXOS_OPT };
+    if (g.container || !g.udev) return { kind: "command", text: __cdbEx_cusKvmTee(k), where: "host" };
+    if (g.appimage) return { kind: "command", text: __cdbEx_cusKvmTee(k), where: "here" };
+    if (g.button) return __cdbEx_cusKvmPkexecAct(g, "enable");
+    if (g.helper.safe) return { kind: "command", text: __cdbEx_cusHelperCmd(g, "enable"), where: "here" };
+    return { kind: "command", text: __cdbEx_cusKvmTee(k), where: "here" };
+  }
+  function __cdbEx_cusKvmDisableAct(g) {
+    if (g.container || !g.udev) return { kind: "command", text: __cdbEx_cusKvmRm(), where: "host" };
+    if (g.button) return __cdbEx_cusKvmPkexecAct(g, "disable");
+    if (g.helper.safe) return { kind: "command", text: __cdbEx_cusHelperCmd(g, "disable"), where: "here" };
+    return { kind: "command", text: __cdbEx_cusKvmRm(), where: "here" };
+  }
+  var __cdbEx_CUS_KVM_NOOP_ENABLE = "Already enabled - the rule and module links are installed";
+  var __cdbEx_CUS_KVM_NOOP_DISABLE = "Nothing to remove - no link from this package is installed";
+  // Both actions whenever /dev/kvm exists; one that can do nothing carries
+  // `disabled` (the reason) and still its command.
+  function __cdbEx_cusKvmActs(g, k) {
+    if (k.kvm.state === "absent") return { enable: null, disable: null };
+    function inst(l) { return l.state === "ours" || l.state === "file"; }
+    function live(l) { return l.state === "ours" || l.state === "stale" || (l.state === "file" && g.appimage); }
+    var en = __cdbEx_cusKvmEnableAct(g, k);
+    // A dangling link of ours (its target gone: this install's or another's)
+    // is "stale": not in effect, Enable re-points it. A link we could not read
+    // counts like a foreign one, never as enabled.
+    var foreign = k.link.state === "foreign" ? __cdbEx_KVM_LINK : k.mlink.state === "foreign" ? __cdbEx_KVM_MLINK : null;
+    var unread = k.link.state === "error" ? __cdbEx_KVM_LINK : k.mlink.state === "error" ? __cdbEx_KVM_MLINK : null;
+    if (inst(k.link) && inst(k.mlink)) en.disabled = __cdbEx_CUS_KVM_NOOP_ENABLE;
+    else if (foreign) en.disabled = "Another file is installed at " + foreign + " - it is not replaced";
+    else if (unread) en.disabled = "Could not read " + unread + " - it is not replaced";
+    var dis = __cdbEx_cusKvmDisableAct(g);
+    if (!live(k.link) && !live(k.mlink)) dis.disabled = __cdbEx_CUS_KVM_NOOP_DISABLE;
+    return { enable: en, disable: dis };
+  }
+
+  // The access descriptors the Enable/Disable code runs on: TPM (cloud
+  // Cowork's device key) and KVM (the local VM). TPM output is what it was
+  // before KVM existed, byte for byte.
+  var __cdbEx_ACCESS = {
+    tpm: {
+      id: "tpm", what: "TPM", helper: "cdb-tpm-access", helperPath: __cdbEx_cusHelper, maxExit: 5,
+      changedRe: /^cdb-tpm-access: (enabled|re-pointed|disabled)\b/,
+      confirm: __cdbEx_CUS_TPM_CONFIRM,
+      question: "Let Claude Desktop use this computer's TPM for its device identity key?",
+      lock: { busy: false, holdUntil: 0, disHoldUntil: 0 },
+      plan: function () {
+        return Promise.all([__cdbEx_cusTpm(), __cdbEx_cusGate()]).then(function (a) {
+          var t = a[0];
+          var g = a[1];
+          var row = __cdbEx_cusTpmRow(t, g);
+          return { g: g, enable: row.enable, disable: row.disable, fallback: function (verb) {
+            return g.helper.safe ? __cdbEx_cusHelperCmd(g, verb)
+              : (verb === "enable" ? __cdbEx_cusTee(t.link.state === "stale") : __cdbEx_cusRm());
+          } };
+        });
+      }
+    },
+    kvm: {
+      id: "kvm", what: "KVM", helper: "cdb-kvm-access", helperPath: __cdbEx_cusKvmHelper, maxExit: 6,
+      changedRe: /^cdb-kvm-access: (enabled|re-pointed|disabled)\b/,
+      confirm: __cdbEx_CUS_KVM_CONFIRM,
+      question: "Let Claude Desktop use this computer's virtualization devices for the local Cowork VM?",
+      lock: { busy: false, holdUntil: 0, disHoldUntil: 0 },
+      plan: function () {
+        return Promise.all([__cdbEx_cusKvm(), __cdbEx_cusGate(__cdbEx_ACCESS.kvm)]).then(function (a) {
+          var k = a[0];
+          var g = a[1];
+          var acts = __cdbEx_cusKvmActs(g, k);
+          return { g: g, enable: acts.enable, disable: acts.disable, fallback: function (verb) {
+            return g.helper.safe ? __cdbEx_cusHelperCmd(g, verb) : (verb === "enable" ? __cdbEx_cusKvmTee(k) : __cdbEx_cusKvmRm());
+          } };
+        });
+      }
+    }
+  };
+
+  // 1P or 3P: the sender's own origin is the fact (the 3P main window is
+  // app://localhost); without a sender, the relocated userData.
+  function __cdbEx_cusMode(sender) {
+    try {
+      var u = sender && typeof sender.getURL === "function" ? String(sender.getURL() || "") : "";
+      if (/^app:\/\/localhost(?:[\/?#]|$)/i.test(u)) return "3p";
+      if (/^https:\/\//i.test(u)) return "1p";
+    } catch (e) { /* fall through */ }
+    return __cdbEx_runningMode("1p");
+  }
+
+  function __cdbEx_cusState(mode) {
+    return Promise.all([__cdbEx_cusDesktop(), __cdbEx_cusTpm(), __cdbEx_cusLog(), __cdbEx_cusGate(),
+      __cdbEx_cusKvm(), __cdbEx_cusGate(__cdbEx_ACCESS.kvm), __cdbEx_cusVmRunning()]).then(function (a) {
       var d = __cdbEx_cusDecision();
       var tpm = __cdbEx_cusTpmRow(a[1], a[3]);
       var cloud = __cdbEx_cusCloudRow(a[2], tpm, d);
-      return { desktop: a[0], tpm: tpm, cloud: cloud, link: a[1].link, gate: a[3], decision: d };
+      if (mode === "3p") {
+        tpm = { row: __cdbEx_cusRow("na", "Not used in 3P mode", "tpm"), enable: null, disable: null, restart: false, tss: null, state: tpm.state };
+        cloud = __cdbEx_cusRow("na", "Not used in 3P mode", "cloud");
+      }
+      var k = a[4];
+      var at = __cdbEx_cusVmAtStart();
+      var restart = !!at.value && at.value.kvm !== "ok" && k.now === "ok";
+      var kacts = __cdbEx_cusKvmActs(a[5], k);
+      var vm = { atStart: at.value, now: k.now, running: a[6] };
+      return { desktop: a[0], tpm: tpm, cloud: cloud, link: a[1].link, gate: a[3], decision: d,
+        kvm: k, kvmActs: kacts, vm: vm, vmRestart: restart, vmAt: at };
     });
   }
 
   var __cdbEx_cusReadP = null;
-  var __cdbEx_cusTpmBusy = false;
-  // Date.now() before which Enable is refused (0 = no cooldown).
-  var __cdbEx_cusEnableHoldUntil = 0;
+  var __cdbEx_cusReadMode = null;
   var __cdbEx_cusResetBusy = false;
 
-  function __cdbEx_cusRead() {
-    if (__cdbEx_cusReadP) return __cdbEx_cusReadP;
-    var p = __cdbEx_cusState().then(function (s) {
+  function __cdbEx_cusRead(sender) {
+    var mode = __cdbEx_cusMode(sender);
+    if (__cdbEx_cusReadP && __cdbEx_cusReadMode === mode) return __cdbEx_cusReadP;
+    var p = __cdbEx_cusState(mode).then(function (s) {
+      var k = s.kvm;
+      var grp = k.kvm.group && /^[a-z_][a-z0-9_-]*$/.test(k.kvm.group) ? k.kvm.group : "kvm";
       var actions = {
         tpmEnable: s.tpm.enable,
         tpmDisable: s.tpm.disable,
         restart: s.tpm.restart,
         resetScreenSharing: !!(s.desktop.doctor && s.desktop.doctor.session_supported === true && process.env.CLAUDE_LAUNCHER),
-        tssCommand: s.tpm.tss
+        tssCommand: s.tpm.tss,
+        kvmEnable: s.kvmActs.enable,
+        kvmDisable: s.kvmActs.disable,
+        vmRestart: s.vmRestart,
+        // The manual alternative where the seat rule gives this session nothing
+        // (no logind seat): the device's group, then a new login.
+        kvmGroupCommand: k.kvm.state === "denied" ? "sudo usermod -aG " + grp + " \"$USER\"" : null,
+        vsockCommand: k.vsock.state === "absent" && k.modules ? "sudo modprobe vhost_vsock" : null
       };
-      return { ok: true, rows: { desktop: s.desktop.row, tpm: s.tpm.row, cloud: s.cloud }, actions: actions, screenshots: __cdbEx_cusShots() };
+      return { ok: true, mode: mode,
+        rows: { desktop: s.desktop.row, tpm: s.tpm.row, cloud: s.cloud,
+          kvm: __cdbEx_cusKvmRow(k, s.vmRestart), vsock: __cdbEx_cusVsockRow(k), vmTools: __cdbEx_cusVmToolsRow(s.vmAt),
+          vm: __cdbEx_cusVmRow(s.vm.running) },
+        actions: actions, screenshots: __cdbEx_cusShots(), vm: s.vm };
     });
     __cdbEx_cusReadP = p;
+    __cdbEx_cusReadMode = mode;
     function done() { if (__cdbEx_cusReadP === p) __cdbEx_cusReadP = null; }
     p.then(done, done);
     return p;
   }
 
+  // The header icon's facts (js/cowork_device_icon_web_page.js): files only,
+  // no doctor, no child process; single flight, answered from a 2 s cache.
+  var __cdbEx_cusIconP = null;
+  var __cdbEx_cusIconAt = 0;
+  var __cdbEx_cusIconV = null;
+  var __cdbEx_CUS_VM_LINES = {
+    ok: "Local VM ready",
+    missing: "Local VM unavailable: /dev/kvm is missing (virtualization off in the firmware?)",
+    no_permission: "Local VM unavailable: no access to /dev/kvm or /dev/vhost-vsock",
+    vsock_module_missing: "Local VM unavailable: the vhost_vsock module is not loaded",
+    vsock_kernel_unsupported: "Local VM unavailable: this kernel has no vhost-vsock"
+  };
+  function __cdbEx_cusIconFacts() {
+    if (__cdbEx_cusIconV && Date.now() - __cdbEx_cusIconAt < __cdbEx_CUS_ICON_MS) return Promise.resolve(__cdbEx_cusIconV);
+    if (__cdbEx_cusIconP) return __cdbEx_cusIconP;
+    var p = Promise.all([__cdbEx_cusDevOf(__cdbEx_TPM_DEV), __cdbEx_cusKvm(), __cdbEx_cusVmRunning()]).then(function (a) {
+      var t = a[0].state;
+      var k = a[1];
+      var at = __cdbEx_cusVmAtStart().value;
+      var miss = at ? __cdbEx_cusVmMissing(at) : null;
+      var tools = !at ? "unknown" : miss.length ? "missing" : "ok";
+      var line = __cdbEx_CUS_VM_LINES[k.now] || "Local VM: unknown";
+      if (k.now === "ok" && tools === "missing") line = "Local VM unavailable: " + miss.join(", ") + " not found";
+      if (k.now === "ok" && at && at.kvm !== "ok") line = "Local VM: access fixed - restart Claude to use it";
+      else if (k.now === "ok" && tools === "ok" && a[2] === true) line += " - running";
+      var v = { tpm: t === "ok" || t === "denied" || t === "absent" ? t : "unknown",
+        vm: { now: k.now, tools: tools, running: a[2] }, line: line };
+      __cdbEx_cusIconV = v;
+      __cdbEx_cusIconAt = Date.now();
+      return v;
+    });
+    __cdbEx_cusIconP = p;
+    function done() { if (__cdbEx_cusIconP === p) __cdbEx_cusIconP = null; }
+    p.then(done, done);
+    return p;
+  }
+  function __cdbEx_cusIcon(sender) {
+    var mode = __cdbEx_cusMode(sender);
+    return __cdbEx_cusIconFacts().then(function (v) {
+      return { ok: true, mode: mode, tpm: v.tpm, vm: { now: v.vm.now, tools: v.vm.tools, running: v.vm.running }, line: v.line };
+    });
+  }
+
+  // The deep link into Settings -> Extra -> Cowork (Linux): upstream's own
+  // settings navigation, on the sender only, to a fixed route. The page opens
+  // the panel once the settings dialog mounts (window.__cdbExtraOpen).
+  var __cdbEx_navWarned = false;
+  function __cdbEx_openSettings(sender) {
+    var nav = globalThis.__cdbNavigation;
+    var disp = null;
+    try {
+      disp = nav && typeof nav.getDispatcher === "function" && sender && !(typeof sender.isDestroyed === "function" && sender.isDestroyed())
+        ? nav.getDispatcher(sender) : null;
+    } catch (e) { disp = null; }
+    if (!disp || typeof disp.dispatchNavigate !== "function") {
+      if (!__cdbEx_navWarned) {
+        __cdbEx_navWarned = true;
+        __cdbEx_log("open-settings: " + (nav ? "no navigation dispatcher for this view" :
+          "the app's navigation capture is missing (add_feature_extra_settings sub-patch C)"));
+      }
+      return { ok: false, error: "settings navigation unavailable" };
+    }
+    try {
+      disp.dispatchNavigate(__cdbEx_SETTINGS_ROUTE);
+    } catch (e) {
+      return { ok: false, error: "settings navigation failed: " + __cdbEx_cusErr(e) };
+    }
+    return { ok: true };
+  }
+
   // Main's own consent for Enable: the page (remote code) can ask, only this
   // dialog decides. Disable has none: it only takes access away, and pkexec
   // still asks for the administrator password. Resolves true only for the
-  // "Enable TPM access" button; Cancel, Escape, closing it or any error is false.
-  function __cdbEx_cusConfirmEnable(sender) {
+  // "Enable <TPM|KVM> access" button; Cancel, Escape, closing it or any error is false.
+  function __cdbEx_cusConfirmEnable(sender, acc) {
+    acc = acc || __cdbEx_ACCESS.tpm;
     var dlg = _electron.dialog;
     if (!dlg || typeof dlg.showMessageBox !== "function") return Promise.resolve(false);
     var win;
@@ -2946,10 +3399,10 @@
     } catch (e) { win = undefined; }
     var opts = {
       type: "warning",
-      title: "Enable TPM access",
-      message: "Let Claude Desktop use this computer's TPM for its device identity key?",
-      detail: __cdbEx_CUS_TPM_CONFIRM,
-      buttons: ["Cancel", "Enable TPM access"],
+      title: "Enable " + acc.what + " access",
+      message: acc.question,
+      detail: acc.confirm,
+      buttons: ["Cancel", "Enable " + acc.what + " access"],
       defaultId: 0,
       cancelId: 0,
       noLink: true
@@ -2964,48 +3417,68 @@
 
   // pkexec <helper> enable|disable, only where the read offers that button.
   // Enable runs only after main's confirmation dialog; a declined, cancelled
-  // or failed Enable holds further Enable requests for the cooldown.
-  function __cdbEx_cusTpmAction(verb, sender) {
-    if (__cdbEx_cusTpmBusy) return Promise.resolve({ ok: false, code: "busy", error: "a TPM access change is already running", command: null });
-    if (verb === "enable" && Date.now() < __cdbEx_cusEnableHoldUntil) {
-      var left = Math.max(1, Math.ceil((__cdbEx_cusEnableHoldUntil - Date.now()) / 1000));
-      return Promise.resolve({ ok: false, code: "cooldown", error: "the last Enable was declined or failed - try again in " + left + " s", command: null });
+  // or failed Enable holds further Enable requests of that access for the
+  // cooldown. TPM and KVM each have their own busy flag and cooldown.
+  // One administrator prompt at a time across TPM and KVM: the access whose
+  // change is running (its confirmation dialog or pkexec), or null.
+  var __cdbEx_cusPromptOwner = null;
+  function __cdbEx_cusAccessAction(acc, verb, sender) {
+    var lock = acc.lock;
+    if (acc.id === "tpm" && __cdbEx_cusMode(sender) === "3p") {
+      return Promise.resolve({ ok: false, code: "not-allowed", error: "the device key is not used in 3P mode", command: null });
     }
-    __cdbEx_cusTpmBusy = true;
+    if (__cdbEx_cusPromptOwner) {
+      return Promise.resolve({ ok: false, code: "busy", error: __cdbEx_cusPromptOwner === acc
+        ? "a " + acc.what + " access change is already running"
+        : "a " + __cdbEx_cusPromptOwner.what + " access change is already running - finish its prompt first", command: null });
+    }
+    var hold = verb === "enable" ? lock.holdUntil : lock.disHoldUntil;
+    if (Date.now() < hold) {
+      var left = Math.max(1, Math.ceil((hold - Date.now()) / 1000));
+      return Promise.resolve({ ok: false, code: "cooldown", error: "the last " + (verb === "enable" ? "Enable was declined or failed" : "Disable was cancelled") +
+        " - try again in " + left + " s", command: null });
+    }
+    __cdbEx_cusPromptOwner = acc;
+    lock.busy = true;
     function release(v) {
-      __cdbEx_cusTpmBusy = false;
+      lock.busy = false;
+      __cdbEx_cusPromptOwner = null;
       if (verb === "enable" && v && v.ok === false && v.code !== "not-allowed" && v.code !== "nothing-to-do") {
-        __cdbEx_cusEnableHoldUntil = Date.now() + __cdbEx_CUS_ENABLE_COOLDOWN_MS;
+        lock.holdUntil = Date.now() + __cdbEx_CUS_ENABLE_COOLDOWN_MS;
+      }
+      // A Disable whose prompt was dismissed: no prompt loop either.
+      if (verb === "disable" && v && (v.code === "cancelled" || v.code === "no-agent")) {
+        lock.disHoldUntil = Date.now() + __cdbEx_CUS_ENABLE_COOLDOWN_MS;
       }
       return v;
     }
-    return Promise.all([__cdbEx_cusTpm(), __cdbEx_cusGate()]).then(function (a) {
-      var t = a[0];
-      var g = a[1];
-      var tpm = __cdbEx_cusTpmRow(t, g);
-      var act = verb === "enable" ? tpm.enable : tpm.disable;
+    return acc.plan().then(function (pl) {
+      var g = pl.g;
+      var act = verb === "enable" ? pl.enable : pl.disable;
       if (act && act.disabled) {
         return { ok: false, code: "nothing-to-do", error: act.disabled, command: null };
       }
-      var fallback = g.helper.safe ? __cdbEx_cusHelperCmd(g, verb)
-        : (verb === "enable" ? __cdbEx_cusTee(t.link.state === "stale") : __cdbEx_cusRm());
+      var fallback = pl.fallback(verb);
       if (!act || act.kind !== "pkexec") {
-        return { ok: false, code: "not-allowed", error: "TPM access cannot be " + verb + "d from here in this state",
+        return { ok: false, code: "not-allowed", error: acc.what + " access cannot be " + verb + "d from here in this state",
           command: act && act.text ? act.text : null };
       }
-      var asked = verb === "enable" ? __cdbEx_cusConfirmEnable(sender) : Promise.resolve(true);
+      var asked = verb === "enable" ? __cdbEx_cusConfirmEnable(sender, acc) : Promise.resolve(true);
       return asked.then(function (yes) {
         if (!yes) {
-          __cdbEx_log("cu-status: tpm enable -> declined in the confirmation dialog");
+          __cdbEx_log("cu-status: " + acc.id + " enable -> declined in the confirmation dialog");
           return { ok: false, code: "declined", error: "Enable was not confirmed", command: null };
         }
-        return __cdbEx_cusPkexecRun(g, verb, fallback);
+        return __cdbEx_cusPkexecRun(g, verb, fallback, acc);
       });
     }).then(release, function (e) {
       return release({ ok: false, code: "error", error: __cdbEx_cusErr(e), command: null });
     });
   }
-  function __cdbEx_cusPkexecRun(g, verb, fallback) {
+  function __cdbEx_cusTpmAction(verb, sender) { return __cdbEx_cusAccessAction(__cdbEx_ACCESS.tpm, verb, sender); }
+  function __cdbEx_cusKvmAction(verb, sender) { return __cdbEx_cusAccessAction(__cdbEx_ACCESS.kvm, verb, sender); }
+  function __cdbEx_cusPkexecRun(g, verb, fallback, acc) {
+    acc = acc || __cdbEx_ACCESS.tpm;
     __cdbEx_log("cu-status: pkexec " + g.helper.path + " " + verb);
     return new Promise(function (resolve) {
       try {
@@ -3015,15 +3488,15 @@
           var out = String(stdout || "").split("\n").map(function (l) { return l.trim(); }).filter(Boolean)[0] || "";
           var errLine = String(stderr || "").split("\n").map(function (l) { return l.trim(); }).filter(Boolean)[0] || "";
           if (!err) {
-            resolve({ ok: true, changed: /^cdb-tpm-access: (enabled|re-pointed|disabled)\b/.test(out),
-              message: out || "cdb-tpm-access: finished without a status line" });
+            resolve({ ok: true, changed: acc.changedRe.test(out),
+              message: out || acc.helper + ": finished without a status line" });
             return;
           }
           var code;
           if (err.killed) code = "timeout";
           else if (err.code === 126) code = "cancelled";
           else if (err.code === 127) code = "no-agent";
-          else if (err.code >= 1 && err.code <= 5) code = "helper-" + err.code;
+          else if (err.code >= 1 && err.code <= acc.maxExit) code = "helper-" + err.code;
           else code = "error";
           var msg = code === "timeout" ? "no answer within " + (__cdbEx_CUS_PKEXEC_MS / 1000) + " s"
             : code === "cancelled" ? "authentication was cancelled"
@@ -3035,7 +3508,7 @@
         resolve({ ok: false, code: "error", error: __cdbEx_cusErr(e), command: fallback });
       }
     }).then(function (r) {
-      __cdbEx_log("cu-status: tpm " + verb + " -> " + (r.ok ? r.message : r.code + " (" + r.error + ")"));
+      __cdbEx_log("cu-status: " + acc.id + " " + verb + " -> " + (r.ok ? r.message : r.code + " (" + r.error + ")"));
       return r;
     });
   }
@@ -3727,13 +4200,23 @@
     },
 
     // Computer Use status. No channel takes an argument (see the section above).
-    "cdb-cu-status:read": function () {
-      return __cdbEx_cusRead().then(null, function (e) { return { ok: false, error: (e && e.message) || String(e) }; });
-    },
-    // These two get the sender (see __cdbEx_withSender): Enable parents its
+    // Read and icon get the sender only for its origin (1P claude.ai or the 3P
+    // app://localhost window). Page arguments are dropped.
+    "cdb-cu-status:read": __cdbEx_withSender(function (ev) {
+      return __cdbEx_cusRead(ev && ev.sender).then(null, function (e) { return { ok: false, error: (e && e.message) || String(e) }; });
+    }),
+    // These get the sender (see __cdbEx_withSender): Enable parents its
     // confirmation dialog on the sender's window. Page arguments are dropped.
     "cdb-cu-status:tpm-enable": __cdbEx_withSender(function (ev) { return __cdbEx_cusTpmAction("enable", ev && ev.sender); }),
-    "cdb-cu-status:tpm-disable": __cdbEx_withSender(function () { return __cdbEx_cusTpmAction("disable"); }),
+    "cdb-cu-status:tpm-disable": __cdbEx_withSender(function (ev) { return __cdbEx_cusTpmAction("disable", ev && ev.sender); }),
+    "cdb-cu-status:kvm-enable": __cdbEx_withSender(function (ev) { return __cdbEx_cusKvmAction("enable", ev && ev.sender); }),
+    "cdb-cu-status:kvm-disable": __cdbEx_withSender(function (ev) { return __cdbEx_cusKvmAction("disable", ev && ev.sender); }),
+    "cdb-cu-status:icon": __cdbEx_withSender(function (ev) {
+      return __cdbEx_cusIcon(ev && ev.sender).then(null, function (e) { return { ok: false, error: (e && e.message) || String(e) }; });
+    }),
+    // Settings -> Extra -> Cowork (Linux) from anywhere in the app (the header
+    // icon): upstream's settings route on the sender's own view, nothing else.
+    "cdb-extra:open-settings": __cdbEx_withSender(function (ev) { return __cdbEx_openSettings(ev && ev.sender); }),
     "cdb-cu-status:reset-screen-sharing": function () {
       return __cdbEx_cusReset().then(null, function (e) { return { ok: false, error: (e && e.message) || String(e) }; });
     },
@@ -3837,6 +4320,9 @@
     Object.keys(__cdbEx_handlers).forEach(function (ch) {
       if (ch.indexOf("cdb-cubg:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use on a background display is Linux only" }; };
+      } else if (ch === "cdb-extra:open-settings") {
+        // Extra on win32 has only Models: there is no Cowork (Linux) to open.
+        __cdbEx_handlers[ch] = function () { return { ok: false, error: "Linux only" }; };
       } else if (ch.indexOf("cdb-cu-status:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use status is Linux only" }; };
       } else if (ch.indexOf("cdb-cu-ask:") === 0) {

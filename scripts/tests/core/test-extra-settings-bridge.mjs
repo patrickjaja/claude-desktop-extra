@@ -106,6 +106,14 @@ ok(calls[1][1][0] === "github.com/my-app[bot]" && calls[2][1] === null, "bridge 
   ok(JSON.stringify(calls) === '[["cdb-autofix-merge-ready:read"],["cdb-autofix-merge-ready:set",false],["cdb-autofix-merge-ready:set",true]]',
      "the Auto-fix ready-to-merge methods hit their fixed channels with a boolean only: " + JSON.stringify(calls));
 }
+{
+  // Cowork (Linux): KVM access, the header icon's facts and the settings deep
+  // link. Fixed channels, and every page argument is dropped.
+  calls.length = 0;
+  api.cuStatusKvmEnable("/bin/sh", "-c", "id"); api.cuStatusKvmDisable("x"); api.cuStatusIcon({ a: 1 }); api.extraOpenSettings("/settings/../admin");
+  ok(JSON.stringify(calls) === '[["cdb-cu-status:kvm-enable"],["cdb-cu-status:kvm-disable"],["cdb-cu-status:icon"],["cdb-extra:open-settings"]]',
+     "KVM access, icon and open-settings hit their fixed channels with no argument: " + JSON.stringify(calls));
+}
 ok(typeof api.invoke !== "function" && typeof api.send !== "function", "no generic passthrough to arbitrary channels");
 
 console.log(`\n${pass} passed, ${fail} failed`);

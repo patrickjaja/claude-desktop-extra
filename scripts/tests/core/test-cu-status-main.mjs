@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /*
  * test-cu-status-main.mjs - main-process tests for the Computer Use status block
- * (Settings -> Extra -> Computer Use): the
+ * (Settings -> Extra -> Cowork (Linux)): the
  * cdb-cu-status:* ipcMain handlers in js/extra_settings_main.js, their
  * cuStatus* wrappers in js/extra_settings_bridge.js, and the unprivileged
  * refusals of the root helper they run (packaging/udev/cdb-tpm-access).
@@ -30,6 +30,12 @@
  * root-owned). electron is shimmed. The main.log input is the fixture shared
  * with the launcher's --diagnose harness, re-timed to this process's start.
  *
+ * Cowork (Linux) additions: the local VM rows (/dev/kvm, /dev/vhost-vsock,
+ * the modules directory and /proc re-pointed into the temp dir, the app's pid
+ * fixed), the KVM access actions (a fake cdb-kvm-access next to the TPM one),
+ * the 1P/3P split by sender origin, the header icon's facts and the settings
+ * deep link (a fake upstream Navigation interface on globalThis).
+ *
  * Usage: node scripts/tests/core/test-cu-status-main.mjs
  */
 import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, chmodSync, symlinkSync, rmSync, existsSync, realpathSync, statSync } from "node:fs";
@@ -48,6 +54,9 @@ const GUARD_JS = join(ROOT, "js", "sender_guard.js");
 const BRIDGE_JS = process.env.CUS_BRIDGE_JS || join(ROOT, "js", "extra_settings_bridge.js");
 const PAGE_JS = join(ROOT, "js", "extra_settings_page.js");
 const HELPER = join(ROOT, "packaging", "udev", "cdb-tpm-access");
+const KVM_HELPER = join(ROOT, "packaging", "udev", "cdb-kvm-access");
+const KVM_RULE_FILE = join(ROOT, "packaging", "udev", "70-claude-desktop-extra-kvm.rules");
+const KVM_CONF_FILE = join(ROOT, "packaging", "udev", "claude-desktop-extra-vsock.conf");
 const FIXTURE = join(ROOT, "scripts", "tests", "fixtures", "main-log-device.txt");
 const RULE_PATHS = join(ROOT, "scripts", "tests", "fixtures", "tpm-rule-paths.tsv");
 const RULE_FILE = join(ROOT, "packaging", "udev", "70-claude-desktop-extra-tpm.rules");
@@ -90,6 +99,20 @@ const CONTAINER = join(base, "containerenv");
 const SOCK = join(base, "udev-control");
 const HELPER_FAKE = join(udevDir, "cdb-tpm-access");
 const MAINLOG = join(logs, "main.log");
+// Local Cowork VM (KVM access).
+const KDEV = join(base, "kvm");
+const VDEV = join(base, "vhost-vsock");
+const KETC = join(base, "etc", "udev", "rules.d-kvm");
+const METC = join(base, "etc", "modules-load.d");
+for (const d of [KETC, METC]) mkdirSync(d, { recursive: true });
+const KLINK = join(KETC, "70-claude-desktop-extra-kvm.rules");
+const MLINK = join(METC, "claude-desktop-extra-vsock.conf");
+const KSRC = join(udevDir, "70-claude-desktop-extra-kvm.rules");
+const MSRC = join(udevDir, "claude-desktop-extra-vsock.conf");
+const KHELPER_FAKE = join(udevDir, "cdb-kvm-access");
+const MODDIR = join(base, "modules");
+const PROC = join(base, "proc");
+const SELF_PID = "4000";
 const spawnLog = join(base, "spawn.log");
 writeFileSync(spawnLog, "");
 writeFileSync(SRC, "# claude-desktop-extra: TPM access for the active seat user\n");
@@ -124,6 +147,19 @@ case "$m" in
   e9) exit 9 ;;
 esac
 `);
+sh(KHELPER_FAKE, `printf 'khelper %s\\n' "$*" >> '${spawnLog}'
+read -r m < '${ctl}/khelper'
+case "$m" in
+  enabled) printf 'cdb-kvm-access: enabled (%s -> %s; %s -> %s)\\n' '${KLINK}' '${KSRC}' '${MLINK}' '${MSRC}' ;;
+  already) printf 'cdb-kvm-access: already enabled\\n' ;;
+  disabled) printf 'cdb-kvm-access: disabled\\n' ;;
+  e4) printf 'cdb-kvm-access: left alone: not our link\\n' >&2; exit 4 ;;
+  e6) printf 'cdb-kvm-access: links done, but modprobe vhost_vsock failed\\n' >&2; exit 6 ;;
+esac
+`);
+writeFileSync(KSRC, "# kvm rule\n");
+writeFileSync(MSRC, "vhost_vsock\n");
+mode("khelper", "enabled");
 mode("pkexec", "run");
 mode("helper", "enabled");
 // pkexec must be setuid; the kernel ignores the bit on a script, so this stays a user-run fake.
@@ -198,6 +234,13 @@ function load({ platform, trusted = true, known = true, sticky = true, pkexec = 
   if (trusted) src = subst(src, "var __cdbEx_CUS_TRUSTED_UIDS = [0];", "var __cdbEx_CUS_TRUSTED_UIDS = [0, " + UID + "];");
   if (known) src = subst(src, 'var __cdbEx_TPM_RULE_DIRS = ["/usr/lib/claude-desktop/resources/linux-udev"];',
     "var __cdbEx_TPM_RULE_DIRS = " + J(["/usr/lib/claude-desktop/resources/linux-udev", udevDir]) + ";");
+  src = subst(src, '"/dev/kvm"', J(KDEV));
+  src = subst(src, '"/dev/vhost-vsock"', J(VDEV));
+  src = subst(src, '"/etc/udev/rules.d/70-claude-desktop-extra-kvm.rules"', J(KLINK));
+  src = subst(src, '"/etc/modules-load.d/claude-desktop-extra-vsock.conf"', J(MLINK));
+  src = subst(src, '"/lib/modules"', J(MODDIR));
+  src = subst(src, 'var __cdbEx_CUS_PROC = "/proc";', "var __cdbEx_CUS_PROC = " + J(PROC) + ";");
+  src = subst(src, "var self = String(process.pid);", "var self = " + J(SELF_PID) + ";");
   if (sticky) src = subst(src, 'var __cdbEx_CUS_STICKY_DIRS = ["/nix/store"];', "var __cdbEx_CUS_STICKY_DIRS = " + J(["/nix/store", ...STICKY_ANC]) + ";");
   src = subst(src, 'var __cdbEx_CUS_PKEXEC = ["/usr/bin/pkexec", "/bin/pkexec"];', "var __cdbEx_CUS_PKEXEC = " + J(pkexec) + ";");
   for (const [a, b] of edits) src = subst(src, a, b);
@@ -323,7 +366,7 @@ section("registration and source");
   ok(CH.every((c) => typeof m.handlers[c] === "function"), "all four cdb-cu-status channels are registered", CH.filter((c) => !m.handlers[c]).join(","));
   ok(log() === "", "loading the module spawns nothing");
   const src = readFileSync(MAIN_JS, "utf8");
-  const a = src.indexOf("// --- Computer Use status (Settings -> Extra -> Computer Use)");
+  const a = src.indexOf("// --- Computer Use status (Settings -> Extra -> Cowork (Linux))");
   const b = src.indexOf("// --- handlers ---", a);
   const part = a >= 0 && b > a ? src.slice(a, b) : "";
   ok(part.length > 5000 && !/Sync\(/.test(part), "no sync call in the status helpers", (part.match(/\w*Sync\(/g) || []).join(","));
@@ -636,7 +679,7 @@ section("Enable consent: main's confirmation dialog, then pkexec");
   const mainConfirm = JSON.parse((readFileSync(MAIN_JS, "utf8").match(/^ {2}var __cdbEx_CUS_TPM_CONFIRM = (".*");$/m) || ["", "null"])[1]);
   ok(typeof mainConfirm === "string" && /udev rule/.test(mainConfirm) && /administrator password/.test(mainConfirm) &&
     /every account that logs in at this computer's screen/.test(mainConfirm) &&
-    /Details and the exact command: Settings -> Extra -> Computer Use\.$/.test(mainConfirm) &&
+    /Details and the exact command: Settings -> Extra -> Cowork \(Linux\)\.$/.test(mainConfirm) &&
     (mainConfirm.match(/[.!?](\s|$)/g) || []).length <= 3 && !/\u2014/.test(mainConfirm),
     "the dialog text is short (at most 3 sentences): the udev rule, the administrator password, every seat account, where the details are", mainConfirm);
   reset(); DIALOG.answer = 0;
@@ -1052,6 +1095,373 @@ section("ask before Computer Use controls an app: switch and screenshot facts");
   const w = load({ platform: "win32" });
   r = await w.call("cdb-cu-ask:read");
   ok(r.ok === false && /Linux only/.test(r.error), "win32: cdb-cu-ask answers Linux only", J(r));
+}
+
+
+// --- Cowork (Linux): local VM rows, KVM access, icon facts, settings deep link ---------
+const RELEASE = (await import("node:os")).release();
+function setNode(path, state) {
+  rmSync(path, { force: true });
+  if (state === "absent") return;
+  writeFileSync(path, "");
+  chmodSync(path, state === "ok" ? 0o600 : 0o040);
+}
+function setKLinks(rule, conf) {
+  for (const [lnk, src, st] of [[KLINK, KSRC, rule], [MLINK, MSRC, conf]]) {
+    rmSync(lnk, { force: true });
+    if (st === "ours") symlinkSync(src, lnk);
+    else if (st === "stale") symlinkSync("/nix/store/0000000000000000000000000000000z-cdb-gone/lib/claude-desktop/resources/linux-udev/" + src.split("/").pop(), lnk);
+    else if (st === "foreign") symlinkSync("/dev/null", lnk);
+    else if (st === "file") writeFileSync(lnk, "x\n");
+  }
+}
+function setModules(present) {
+  rmSync(MODDIR, { recursive: true, force: true });
+  if (present) mkdirSync(join(MODDIR, RELEASE), { recursive: true });
+}
+// A fake /proc: the app (SELF_PID) -> a zygote-like child -> the VM helper -> QEMU,
+// plus a QEMU that belongs to someone else (parent 1). comm may hold spaces and ")".
+function setProc(tree) {
+  rmSync(PROC, { recursive: true, force: true });
+  if (tree === "none") return;
+  mkdirSync(PROC, { recursive: true });
+  writeFileSync(join(PROC, "uptime"), "1 1\n");
+  const procs = [["1", "0", "systemd", "/usr/lib/systemd/systemd"], [SELF_PID, "1", "claude", "/usr/lib/claude-desktop/claude"],
+    ["4001", SELF_PID, "claude (x) y", "/usr/lib/claude-desktop/claude"], ["5000", "1", "qemu-system-x86", "/usr/bin/qemu-system-x86_64"]];
+  // The bundled helper runs whenever the app does; only its QEMU child means a VM.
+  if (tree !== "plain") procs.push(["4002", "4001", "cowork-linux-he", "/usr/lib/claude-desktop/resources/cowork-linux-helper"]);
+  if (tree === "qemu" || tree === "many") procs.push(["4003", "4002", "qemu-system-x86", "/usr/bin/qemu-system-x86_64 (deleted)"]);
+  if (tree === "eacces") procs.push(["4005", "4002", "qemu-system-x86", "/usr/bin/qemu-system-x86_64"]);
+  // Enough unrelated processes that the walk needs several batches.
+  if (tree === "many") for (let i = 0; i < 300; i++) procs.push([String(6000 + i), "1", "bash", "/usr/bin/bash"]);
+  for (const [pid, ppid, comm, exe] of procs) {
+    mkdirSync(join(PROC, pid));
+    writeFileSync(join(PROC, pid, "stat"), pid + " (" + comm + ") S " + ppid + " " + ppid + " 0 0 -1\n");
+    symlinkSync(exe, join(PROC, pid, "exe"));
+  }
+}
+const PROBE_OK = { qemuPath: "/usr/bin/qemu-system-x86_64", firmwarePath: "/usr/share/OVMF/OVMF_CODE_4M.fd",
+  virtiofsdPath: "/usr/libexec/virtiofsd", virtiofsdAptInstallable: false, helperBinaryPath: "/x", smolBinPath: "/y",
+  helperSocketPeerCredentialCheckAvailable: true, kvm: "ok" };
+function setProbe(v) {
+  if (v === undefined) { delete globalThis.__cdbCoworkVmProbe; return; }
+  globalThis.__cdbCoworkVmProbe = function () { return v; };
+}
+function resetKvm() {
+  setNode(KDEV, "ok"); setNode(VDEV, "ok"); setKLinks("absent", "absent"); setModules(true); setProc("none");
+  setProbe(PROBE_OK); mode("khelper", "enabled");
+  delete globalThis.__cdbNavigation;
+}
+const sender3p = { sender: { isFake: true, isDestroyed: () => false, getURL: () => "app://localhost/settings" }, senderFrame: { parent: null } };
+const kpkAct = (verb, off) => {
+  const a = { kind: "pkexec", command: PKEXEC_FAKE + " " + KHELPER_FAKE + " " + verb, link: KLINK,
+    apply: verb === "enable" ? "modprobe vhost_vsock\nudevadm control --reload\nudevadm trigger --action=change --subsystem-match=misc --sysname-match=kvm --sysname-match=vhost-vsock"
+      : "udevadm control --reload", mlink: MLINK };
+  if (verb === "enable") {
+    Object.assign(a, { target: KSRC, rule: 'SUBSYSTEM=="misc", KERNEL=="kvm", ACTION!="remove", TAG+="uaccess"\nSUBSYSTEM=="misc", KERNEL=="vhost-vsock", ACTION!="remove", TAG+="uaccess"',
+      mtarget: MSRC, mconf: "vhost_vsock", undo: PKEXEC_FAKE + " " + KHELPER_FAKE + " disable",
+      undoManual: "sudo rm -f " + KLINK + " " + MLINK + " && sudo udevadm control --reload" });
+  }
+  if (off) a.disabled = off;
+  return J(a);
+};
+const K_NOOP_EN = "Already enabled - the rule and module links are installed";
+const K_NOOP_DIS = "Nothing to remove - no link from this package is installed";
+
+section("Cowork (Linux): 1P / 3P by the sender's origin");
+{
+  reset(); resetKvm();
+  let r = await read();
+  ok(r.ok && r.mode === "1p" && r.rows.tpm.fact !== "Not used in 3P mode" && !!r.actions.tpmEnable, "a claude.ai sender: 1P, the TPM rows as before", J([r.mode, r.rows.tpm]));
+  r = await m.callAs(sender3p, "cdb-cu-status:read");
+  ok(r.ok && r.mode === "3p" && J(r.rows.tpm) === J({ status: "na", fact: "Not used in 3P mode", note: r.rows.tpm.note }) && r.rows.tpm.note.length > 20 &&
+    r.rows.cloud.status === "na" && r.rows.cloud.fact === "Not used in 3P mode" &&
+    r.actions.tpmEnable === null && r.actions.tpmDisable === null && r.actions.restart === false && r.actions.tssCommand === null,
+    "the 3P window (app://localhost): device key and cloud rows Not used in 3P mode, no TPM action", J([r.rows.tpm, r.rows.cloud, r.actions]));
+  ok(r.rows.kvm.status === "ok" && r.rows.desktop && typeof r.rows.desktop.status === "string", "3P: the local VM and desktop rows stay live", J(r.rows.kvm));
+}
+
+section("Cowork (Linux): the local VM probe, ported from upstream (vm.now and the rows)");
+{
+  const cases = [
+    // kvm, vsock, modules, now, kvm row, vsock row
+    ["absent", "ok", true, "missing", ["na", /^missing - enable virtualization/], ["ok", /accessible$/]],
+    ["denied", "ok", true, "no_permission", ["action", /^no permission \(.+:.+ 40\)$/], ["ok", /accessible$/]],
+    ["ok", "denied", true, "no_permission", ["ok", /accessible/], ["action", /^no permission \(/]],
+    ["ok", "absent", true, "vsock_module_missing", ["ok", /accessible/], ["action", /^module not loaded \(vhost_vsock\)$/]],
+    ["ok", "absent", false, "vsock_kernel_unsupported", ["ok", /accessible/], ["na", /^kernel without vhost-vsock$/]],
+    ["absent", "absent", false, "missing", ["na", /missing/], ["na", /kernel without/]],
+    ["ok", "ok", true, "ok", ["ok", /accessible/], ["ok", /accessible$/]]
+  ];
+  for (const [kv, vs, mods, now, kr, vr] of cases) {
+    reset(); resetKvm(); setNode(KDEV, kv); setNode(VDEV, vs); setModules(mods);
+    const r = await read();
+    const tag = "kvm " + kv + ", vsock " + vs + ", modules " + (mods ? "present" : "absent") + ": ";
+    ok(r.vm && r.vm.now === now, tag + "now " + now, J(r.vm));
+    ok(r.rows.kvm.status === kr[0] && kr[1].test(r.rows.kvm.fact), tag + "kvm row " + kr[0] + " / " + r.rows.kvm.fact, J(r.rows.kvm));
+    ok(r.rows.vsock.status === vr[0] && vr[1].test(r.rows.vsock.fact), tag + "vsock row " + vr[0] + " / " + r.rows.vsock.fact, J(r.rows.vsock));
+    ok((r.actions.vsockCommand === "sudo modprobe vhost_vsock") === (vs === "absent" && mods), tag + "the modprobe command only when the module is not loaded", J(r.actions.vsockCommand));
+    ok((kv === "absent") === (r.actions.kvmEnable === null && r.actions.kvmDisable === null), tag + "KVM actions only where /dev/kvm exists", J([r.actions.kvmEnable && r.actions.kvmEnable.kind]));
+    ok((kv === "denied") === /^sudo usermod -aG \S+ "\$USER"$/.test(r.actions.kvmGroupCommand || ""), tag + "the group command only without access", J(r.actions.kvmGroupCommand));
+  }
+}
+
+section("Cowork (Linux): what the app found at start (core capture D) and the restart flag");
+{
+  reset(); resetKvm();
+  let r = await read();
+  ok(J(r.vm.atStart) === J({ kvm: "ok", qemuPath: PROBE_OK.qemuPath, firmwarePath: PROBE_OK.firmwarePath, virtiofsdPath: PROBE_OK.virtiofsdPath }) &&
+    r.rows.vmTools.status === "ok" && r.rows.vmTools.fact === "QEMU, OVMF and virtiofsd found" && r.actions.vmRestart === false,
+    "probe ok: atStart carries the paths only, VM tools OK, no restart", J([r.vm.atStart, r.rows.vmTools]));
+  setProbe(Object.assign({}, PROBE_OK, { firmwarePath: null, virtiofsdPath: null }));
+  r = await read();
+  ok(r.rows.vmTools.status === "action" && /^OVMF firmware, virtiofsd not found - install them/.test(r.rows.vmTools.fact), "missing tools are named", r.rows.vmTools.fact);
+  setProbe(Object.assign({}, PROBE_OK, { kvm: "no_permission" }));
+  r = await read();
+  ok(r.actions.vmRestart === true && r.rows.kvm.status === "action" && /restart Claude/.test(r.rows.kvm.fact),
+    "no permission at start, ok now: Restart offered (upstream caches its probe per run)", J([r.actions.vmRestart, r.rows.kvm]));
+  setNode(KDEV, "denied");
+  r = await read();
+  ok(r.actions.vmRestart === false, "no permission at start and now: no restart", J(r.actions.vmRestart));
+  setNode(KDEV, "ok");
+  setProbe(undefined);
+  DIAGS.length = 0;
+  r = await read();
+  await read();
+  ok(r.vm.atStart === null && r.rows.vmTools.status === "unknown" && /not reachable/.test(r.rows.vmTools.fact) && r.actions.vmRestart === false,
+    "capture missing: atStart null, VM tools Unknown, never OK", J([r.vm.atStart, r.rows.vmTools]));
+  ok(DIAGS.filter((d) => /VM probe capture is missing/.test(d)).length <= 1, "and at most one diagnostic line for it", J(DIAGS));
+  setProbe(null);
+  r = await read();
+  ok(r.vm.atStart === null && r.rows.vmTools.status === "unknown" && /not checked yet/.test(r.rows.vmTools.fact), "probe not run yet: Unknown, not checked yet", J(r.rows.vmTools));
+  globalThis.__cdbCoworkVmProbe = () => { throw new Error("boom"); };
+  r = await read();
+  ok(r.ok && r.rows.vmTools.status === "unknown", "a throwing getter: Unknown, the read still answers", J(r.rows.vmTools));
+}
+
+section("Cowork (Linux): VM running, from /proc below the app's pid");
+{
+  // An exe link we may not read (EACCES) is "not a VM" for that process, not an unknown row.
+  const RL = '_fs.promises.readlink(__cdbEx_CUS_PROC + "/" + pid + "/exe")';
+  const nc = load({ edits: [["var __cdbEx_CUS_ICON_MS = 2000;", "var __cdbEx_CUS_ICON_MS = 0;"],
+    [RL, '(pid === "4005" ? Promise.reject(Object.assign(new Error("denied"), { code: "EACCES" })) : ' + RL + ')']] });
+  for (const [tree, want, st] of [["helper", false, "na"], ["qemu", true, "ok"], ["many", true, "ok"], ["plain", false, "na"],
+    ["eacces", false, "na"], ["none", null, "unknown"]]) {
+    reset(); resetKvm(); setProc(tree);
+    const r = await nc.call("cdb-cu-status:read");
+    ok(r.vm.running === want && r.rows.vm.status === st, tree + ": running " + want + ", row " + st, J([r.vm.running, r.rows.vm]));
+  }
+  ok(log().split("\n").filter(Boolean).every((l) => l === "bridge doctor"), "no process is spawned for it (the desktop row's doctor only)", log());
+  const src = readFileSync(MAIN_JS, "utf8");
+  ok(/var __cdbEx_CUS_PROC_BATCH = 64;/.test(src), "the /proc walk is read in batches of 64");
+  // The read reuses the icon's 2 s answer for the running fact.
+  const cached = load();
+  reset(); resetKvm(); setProc("qemu");
+  const r1 = await cached.call("cdb-cu-status:read");
+  setProc("plain");
+  const r2 = await cached.call("cdb-cu-status:icon");
+  const r3 = await cached.call("cdb-cu-status:read");
+  ok(r1.vm.running === true && r2.vm.running === true && r3.vm.running === true, "within 2 s read and icon share one running answer", J([r1.vm, r2.vm, r3.vm]));
+  reset(); resetKvm();
+}
+
+section("Cowork (Linux): KVM access actions");
+{
+  reset(); resetKvm(); setNode(KDEV, "denied");
+  let r = await read();
+  ok(J(r.actions.kvmEnable) === kpkAct("enable") && J(r.actions.kvmDisable) === kpkAct("disable", K_NOOP_DIS),
+    "every gate holds: Enable by pkexec with both links, the rule, the module line, apply and undo; Disable shown but disabled", J([r.actions.kvmEnable, r.actions.kvmDisable]));
+  setKLinks("ours", "ours");
+  r = await read();
+  ok(r.actions.kvmEnable.disabled === K_NOOP_EN && !r.actions.kvmDisable.disabled && /rule enabled, but this session got no access/.test(r.rows.kvm.fact),
+    "both links ours: Enable disabled, Disable live", J([r.actions, r.rows.kvm]));
+  setKLinks("ours", "absent");
+  r = await read();
+  ok(!r.actions.kvmEnable.disabled && !r.actions.kvmDisable.disabled, "one link missing: Enable live (it adds the other), Disable live");
+  setKLinks("absent", "foreign");
+  r = await read();
+  ok(r.actions.kvmEnable.disabled === "Another file is installed at " + MLINK + " - it is not replaced" && r.actions.kvmDisable.disabled === K_NOOP_DIS,
+    "a foreign modules-load file: Enable disabled with the path (the helper would refuse), Disable disabled", J(r.actions));
+  setKLinks("stale", "absent");
+  r = await read();
+  ok(!r.actions.kvmEnable.disabled && !r.actions.kvmDisable.disabled && /not in effect/.test(r.rows.kvm.fact),
+    "a dangling link to another install (helper: stale-dangling): not in effect, both live", J([r.actions, r.rows.kvm]));
+  // current-dangling: our links point at this install's files, which are gone.
+  setKLinks("ours", "ours");
+  rmSync(KSRC); rmSync(MSRC);
+  r = await read();
+  ok(!r.actions.kvmEnable.disabled && !r.actions.kvmDisable.disabled && /not in effect/.test(r.rows.kvm.fact) &&
+    !/rule enabled/.test(r.rows.kvm.fact), "links to this install's missing files (helper: current-dangling): not in effect, Enable offered", J([r.actions, r.rows.kvm]));
+  writeFileSync(KSRC, "# kvm rule\n"); writeFileSync(MSRC, "vhost_vsock\n");
+  // A link we cannot read (helper: foreign): never enabled, never replaced.
+  setKLinks("ours", "absent");
+  chmodSync(KETC, 0o000);
+  r = await read();
+  chmodSync(KETC, 0o755);
+  ok(r.actions.kvmEnable.disabled === "Could not read " + KLINK + " - it is not replaced" && !/rule enabled/.test(r.rows.kvm.fact),
+    "an unreadable rule link: Enable disabled with the reason, never shown as enabled", J([r.actions.kvmEnable, r.rows.kvm]));
+
+  // pkexec runs, after main's own dialog
+  reset(); resetKvm(); setNode(KDEV, "denied");
+  r = await m.call("cdb-cu-status:kvm-enable", "/bin/sh", ["-c", "id"]);
+  ok(r.ok === true && r.changed === true && /^cdb-kvm-access: enabled \(/.test(r.message), "enable: ok, changed, the helper's line", J(r));
+  ok(log().split("\n").filter(Boolean).join("|") === "pkexec " + KHELPER_FAKE + " enable|khelper enable", "pkexec ran the KVM helper with exactly [enable]", log());
+  const kConfirm = JSON.parse((readFileSync(MAIN_JS, "utf8").match(/^ {2}var __cdbEx_CUS_KVM_CONFIRM = (".*");$/m) || ["", "null"])[1]);
+  const [kwin, kopts] = DIALOG.calls[0] || [];
+  ok(kwin === FAKE_WIN && kopts && kopts.title === "Enable KVM access" && J(kopts.buttons) === J(["Cancel", "Enable KVM access"]) &&
+    kopts.defaultId === 0 && kopts.cancelId === 0 && kopts.detail === kConfirm && /virtualization/.test(kopts.message),
+    "the dialog: Enable KVM access, Cancel default, the KVM consent text", J(DIALOG.calls[0]));
+  ok(typeof kConfirm === "string" && /\/dev\/kvm/.test(kConfirm) && /administrator password/.test(kConfirm) &&
+    /every account that logs in at this computer's screen/.test(kConfirm) && /Settings -> Extra -> Cowork \(Linux\)\.$/.test(kConfirm) &&
+    (kConfirm.match(/[.!?](\s|$)/g) || []).length <= 3 && !/\u2014/.test(kConfirm), "the KVM dialog text is short and points at Cowork (Linux)", kConfirm);
+  reset(); resetKvm(); setNode(KDEV, "denied"); DIALOG.answer = 0;
+  r = await m.call("cdb-cu-status:kvm-enable");
+  ok(r.code === "declined" && log() === "", "Cancel: declined, pkexec never runs", J(r));
+  for (const [hp, code] of [["e4", "helper-4"], ["e6", "helper-6"]]) {
+    reset(); resetKvm(); setNode(KDEV, "denied"); mode("khelper", hp);
+    r = await m.call("cdb-cu-status:kvm-enable");
+    ok(r.ok === false && r.code === code && r.command === "sudo " + KHELPER_FAKE + " enable" && /^cdb-kvm-access: /.test(r.error),
+      "helper exit " + hp.slice(1) + " -> " + code + " + the sudo command", J(r));
+  }
+  reset(); resetKvm(); setNode(KDEV, "denied"); mode("pkexec", "cancel");
+  r = await m.call("cdb-cu-status:kvm-enable");
+  ok(r.code === "cancelled" && r.command === null, "cancelled polkit prompt", J(r));
+  reset(); resetKvm(); setKLinks("ours", "ours"); mode("khelper", "disabled");
+  r = await m.call("cdb-cu-status:kvm-disable");
+  ok(r.ok === true && r.changed === true && DIALOG.calls.length === 0 && /pkexec .*cdb-kvm-access disable/.test(log()), "disable: no dialog, pkexec <kvm helper> disable", J(r));
+  reset(); resetKvm(); setKLinks("ours", "ours");
+  r = await m.call("cdb-cu-status:kvm-enable");
+  ok(r.code === "nothing-to-do" && r.error === K_NOOP_EN && log() === "" && DIALOG.calls.length === 0, "enable with both links ours: nothing to do, no dialog", J(r));
+  reset(); resetKvm(); setNode(KDEV, "absent");
+  r = await m.call("cdb-cu-status:kvm-enable");
+  ok(r.code === "not-allowed" && r.command === null && log() === "", "no /dev/kvm: not allowed, nothing runs", J(r));
+  reset(); resetKvm(); process.env.CLAUDE_APPIMAGE_PATH = "/x.AppImage";
+  r = await m.call("cdb-cu-status:kvm-enable");
+  ok(r.code === "not-allowed" && /sudo tee /.test(r.command || "") && log() === "", "AppImage: refused with the command", J(r));
+  reset(); resetKvm(); writeFileSync(NIXOS, "");
+  r = await read();
+  ok(J(r.actions.kvmEnable) === J({ kind: "nixos", text: "programs.claude-desktop-extra.kvmAccess.enable = true;" }), "NixOS: the module option", J(r.actions.kvmEnable));
+
+  // TPM and KVM are separate: own busy flag and own cooldown.
+  const held = load({ cooldownMs: 30000 });
+  reset(); resetKvm(); setNode(KDEV, "denied"); DIALOG.answer = 0;
+  r = await held.call("cdb-cu-status:kvm-enable");
+  reset(); resetKvm(); setNode(KDEV, "denied");
+  const kr2 = await held.call("cdb-cu-status:kvm-enable");
+  const tr2 = await held.call("cdb-cu-status:tpm-enable");
+  ok(r.code === "declined" && kr2.code === "cooldown" && tr2.ok === true, "a declined KVM Enable holds KVM only, TPM Enable still runs", J([r, kr2, tr2]));
+  reset(); resetKvm(); setNode(KDEV, "denied"); mode("pkexec", "slow");
+  const pr = await Promise.all([m.call("cdb-cu-status:tpm-enable"), m.call("cdb-cu-status:kvm-enable"), m.call("cdb-cu-status:kvm-disable")]);
+  ok(pr[0].ok === true && pr[1].code === "busy" && /TPM access change is already running - finish its prompt first/.test(pr[1].error) &&
+    pr[2].code === "busy" && log().split("\n").filter((l) => /^pkexec /.test(l)).length === 1,
+    "one administrator prompt at a time: a KVM change while a TPM one runs is busy", J(pr));
+
+  // A cancelled (or agent-less) Disable holds further Disables for the cooldown.
+  const dheld = load({ cooldownMs: 30000 });
+  reset(); resetKvm(); setKLinks("ours", "ours"); mode("pkexec", "cancel");
+  r = await dheld.call("cdb-cu-status:kvm-disable");
+  reset(); resetKvm(); setKLinks("ours", "ours"); mode("khelper", "disabled");
+  let r2d = await dheld.call("cdb-cu-status:kvm-disable");
+  ok(r.code === "cancelled" && r2d.code === "cooldown" && /Disable was cancelled - try again in \d+ s/.test(r2d.error) && log() === "",
+    "a cancelled Disable: the next Disable waits for the cooldown, no prompt", J([r, r2d]));
+  reset(); setLink("ours"); mode("pkexec", "noagent");
+  r = await dheld.call("cdb-cu-status:tpm-disable");
+  reset(); setLink("ours"); mode("helper", "disabled");
+  r2d = await dheld.call("cdb-cu-status:tpm-disable");
+  ok(r.code === "no-agent" && r2d.code === "cooldown", "so does a TPM Disable without a polkit agent", J([r, r2d]));
+  reset(); resetKvm(); setNode(KDEV, "denied");
+  r = await dheld.call("cdb-cu-status:kvm-enable");
+  ok(r.ok === true, "the Disable cooldown does not hold Enable", J(r));
+
+  // 3P: the device key is not used, so its actions are refused whatever the page asks.
+  for (const verb of ["enable", "disable"]) {
+    reset(); resetKvm(); setLink("ours");
+    r = await m.callAs(sender3p, "cdb-cu-status:tpm-" + verb);
+    ok(r.ok === false && r.code === "not-allowed" && log() === "" && DIALOG.calls.length === 0, "3P: tpm-" + verb + " refused, nothing runs", J(r));
+  }
+
+  // The AppImage command writes the shipped rule and conf, byte for byte.
+  reset(); resetKvm(); process.env.CLAUDE_APPIMAGE_PATH = "/x.AppImage";
+  const en = (await read()).actions.kvmEnable;
+  const prs = en && en.kind === "command" ? en.text.split("\n").filter((l) => l.startsWith("printf ")) : [];
+  const outs = prs.map((l) => spawnSync("/bin/sh", ["-c", l.slice(0, l.indexOf(" | sudo tee "))], { encoding: "utf8" }).stdout);
+  ok(prs.length === 2 && outs[0] === readFileSync(KVM_RULE_FILE, "utf8") && outs[1] === readFileSync(KVM_CONF_FILE, "utf8") &&
+    /\nsudo modprobe vhost_vsock\n/.test(en.text) && /sysname-match=vhost-vsock$/.test(en.text),
+    "AppImage: the tee commands write the shipped rule and modules-load file, then modprobe and trigger", J(en));
+  reset(); resetKvm();
+}
+
+section("Cowork (Linux): single sources for the KVM texts");
+{
+  const msrc = readFileSync(MAIN_JS, "utf8");
+  const ev = (name) => { const mm = msrc.match(new RegExp("^ {2}var " + name + " = ([\\s\\S]*?);$", "m")); return mm ? vm.runInNewContext("(" + mm[1] + ")") : undefined; };
+  ok(ev("__cdbEx_KVM_RULE_TEXT") === readFileSync(KVM_RULE_FILE, "utf8"), "__cdbEx_KVM_RULE_TEXT is the shipped rule file, byte for byte");
+  ok(ev("__cdbEx_KVM_MCONF_TEXT") === readFileSync(KVM_CONF_FILE, "utf8"), "__cdbEx_KVM_MCONF_TEXT is the shipped modules-load file, byte for byte");
+  if (!existsSync(KVM_HELPER)) {
+    console.log("  SKIP the KVM helper's RULE_TEXT / CONF_TEXT: packaging/udev/cdb-kvm-access not present yet");
+  } else {
+    const ht = readFileSync(KVM_HELPER, "utf8");
+    ok((ht.match(/^RULE_TEXT='([^']*)'$/m) || [])[1] === readFileSync(KVM_RULE_FILE, "utf8") &&
+      (ht.match(/^CONF_TEXT='([^']*)'$/m) || [])[1] === readFileSync(KVM_CONF_FILE, "utf8"), "and the helper's RULE_TEXT / CONF_TEXT are the same");
+  }
+  const helperDecl = /function __cdbEx_cusKvmHelper\(\) \{\s*return process\.resourcesPath \? _path\.join\(process\.resourcesPath, "linux-udev", "cdb-kvm-access"\) : "";/;
+  ok(helperDecl.test(msrc) && !/process\.env\.[A-Z_]*(KVM|VSOCK|PROC)/.test(msrc), "the KVM helper path comes from process.resourcesPath only");
+}
+
+section("Cowork (Linux): the header icon's facts");
+{
+  reset(); resetKvm(); setDev("ok"); setProc("qemu");
+  const im = load();
+  let r = await im.call("cdb-cu-status:icon", "anything");
+  ok(J(Object.keys(r)) === J(["ok", "mode", "tpm", "vm", "line"]) && r.ok && r.mode === "1p" && r.tpm === "ok" &&
+    J(r.vm) === J({ now: "ok", tools: "ok", running: true }) && r.line === "Local VM ready - running",
+    "the shape, and a ready running VM", J(r));
+  setNode(KDEV, "denied"); setDev("denied");
+  const cached = await im.call("cdb-cu-status:icon");
+  ok(cached.vm.now === "ok" && cached.tpm === "ok", "a second call within 2 s answers from the cache", J(cached));
+  const fresh = load({ edits: [["var __cdbEx_CUS_ICON_MS = 2000;", "var __cdbEx_CUS_ICON_MS = 0;"]] });
+  r = await fresh.call("cdb-cu-status:icon");
+  ok(r.tpm === "denied" && r.vm.now === "no_permission" && /no access to \/dev\/kvm/.test(r.line), "uncached: the new state", J(r));
+  setNode(KDEV, "ok"); setProbe(Object.assign({}, PROBE_OK, { qemuPath: null }));
+  r = await fresh.call("cdb-cu-status:icon");
+  ok(r.vm.tools === "missing" && r.line === "Local VM unavailable: QEMU not found", "missing tools named in the line", J(r));
+  setProbe(undefined); setDev("absent");
+  r = await fresh.callAs(sender3p, "cdb-cu-status:icon");
+  ok(r.mode === "3p" && r.tpm === "absent" && r.vm.tools === "unknown", "3P sender, no TPM, no capture", J(r));
+  ok(log() === "", "the icon spawns nothing (no doctor, no child)", log());
+  reset(); resetKvm();
+}
+
+section("Cowork (Linux): settings deep link (core capture C)");
+{
+  reset(); resetKvm();
+  DIAGS.length = 0;
+  let r = await m.call("cdb-extra:open-settings", "/admin");
+  ok(J(r) === J({ ok: false, error: "settings navigation unavailable" }), "no capture: unavailable", J(r));
+  await m.call("cdb-extra:open-settings");
+  ok(DIAGS.filter((d) => /open-settings: /.test(d)).length === 1, "one diagnostic line, not one per click", J(DIAGS));
+  const navs = [];
+  const seen = [];
+  globalThis.__cdbNavigation = { getDispatcher: (wc) => { seen.push(wc); return wc && wc.isFake ? { dispatchNavigate: (p) => navs.push(p) } : undefined; } };
+  r = await m.call("cdb-extra:open-settings", "/settings/../admin", { path: "/x" });
+  ok(r.ok === true && J(navs) === J(["/settings/desktop"]) && seen.length === 1 && seen[0].isFake === true,
+    "with the capture: the sender's own view goes to the fixed route, page arguments ignored", J([r, navs]));
+  r = await m.callAs({ sender: { isDestroyed: () => false, getURL: () => "https://claude.ai/new" }, senderFrame: { parent: null } }, "cdb-extra:open-settings");
+  ok(r.ok === false && navs.length === 1, "a view without a dispatcher: unavailable, nothing navigates", J(r));
+  r = await m.callAs({ sender: { isFake: true, isDestroyed: () => false, getURL: () => "https://evil.example/" }, senderFrame: { parent: null } }, "cdb-extra:open-settings");
+  ok(r.ok === false && /unrecognized sender/.test(r.error) && navs.length === 1, "a foreign origin is refused", J(r));
+  r = await m.callAs({ sender: { isFake: true, isDestroyed: () => false, getURL: () => "https://claude.ai/" }, senderFrame: { parent: {} } }, "cdb-extra:open-settings");
+  ok(r.ok === false && navs.length === 1, "a subframe is refused", J(r));
+  delete globalThis.__cdbNavigation;
+}
+
+section("Cowork (Linux): win32 refusals");
+{
+  const w = load({ platform: "win32" });
+  const outs = await Promise.all(["kvm-enable", "kvm-disable", "icon"].map((c) => w.call("cdb-cu-status:" + c)));
+  ok(outs.every((o) => J(o) === J({ ok: false, error: "Computer Use status is Linux only" })), "the new cdb-cu-status channels answer Linux only", J(outs));
+  const o = await w.call("cdb-extra:open-settings");
+  ok(J(o) === J({ ok: false, error: "Linux only" }), "open-settings answers Linux only", J(o));
 }
 
 server.close();

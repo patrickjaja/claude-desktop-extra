@@ -3,7 +3,7 @@
 // and fail-closed gates in js/cu_linux_executor.js (+ the setting reader in
 // js/cu_mode_preamble.js and the gate in js/cu_handler_injection.js).
 //
-// Settings -> Extra -> Computer Use -> "Computer Use on a background display"
+// Settings -> Extra -> Cowork (Linux) -> "Computer Use on a background display"
 // stores computerUseBackgroundDisplay = {enabled, kind: "x11"|"wlroots",
 // display, env?} in <userData>/claude-desktop-extra.jsonc (wins) or .json.
 // When it is on, Computer Use acts on that display only:
@@ -281,7 +281,7 @@ console.log("\n[wlroots target with env.DISPLAY keeps it]");
 }
 
 // ------------------------------------------------------- 3. refusal (fail closed)
-const DOWN = "Computer Use is set to the background display :99, which is not running. Start it, or turn off Settings -> Extra -> Computer Use -> Computer Use on a background display.";
+const DOWN = "Computer Use is set to the background display :99, which is not running. Start it, or turn off Settings -> Extra -> Cowork (Linux) -> Computer Use on a background display.";
 for (const [label, files, screens, rx] of [
   ["display down (screens fails)", { "claude-desktop-extra.json": cfg({ enabled: true, kind: "x11", display: ":99" }) }, () => new Error("Command failed: x11-bridge screens\nError: cannot open display :99"), null],
   ["display answers no monitors", { "claude-desktop-extra.json": cfg({ enabled: true, kind: "x11", display: ":99" }) }, () => [], null],
@@ -768,7 +768,7 @@ for (const target of [{ kind: "x11", display: ":99" }, { kind: "wlroots", displa
     r.state.dead = true;
     r.reset();
     const o = await settle(r.ex.openApp("gedit"));
-    const DOWN_T = "Computer Use is set to the background display " + target.display + ", which is not running. Start it, or turn off Settings -> Extra -> Computer Use -> Computer Use on a background display.";
+    const DOWN_T = "Computer Use is set to the background display " + target.display + ", which is not running. Start it, or turn off Settings -> Extra -> Cowork (Linux) -> Computer Use on a background display.";
     check(o.e && o.e.message === DOWN_T && !r.spawns.some((x) => x.kind === "spawn"), target.kind + ": openApp refuses and never spawns the app", JSON.stringify({ e: o.e && o.e.message, v: o.v, sp: r.spawns.filter((x) => x.kind === "spawn").map((x) => x.bin + " " + x.args) }));
     const c1 = r.ex.__targetAfterError ? await r.ex.__targetAfterError(new Error("x")) : null;
     const c2 = r.ex.__targetCheck ? await r.ex.__targetCheck("left_click") : null;

@@ -977,9 +977,10 @@
 .cdbx-cubg-code .cdbx-cubg-copy { flex: 0 0 auto; margin-top: 0; }
 
 /* --- Computer Use status ------------------------------------------------- *
- * The status block at the top of the Computer Use panel: three status rows,
- * each a word pill, a fact line and an explanation, with only the actions that
- * apply. Commands wrap instead of widening the panel (.cdbx-cubg-code).
+ * The status rows of the Cowork (Linux) panel (kind "cu"), in three sections
+ * (Cloud Cowork, Local Cowork VM, Computer Use): each row a word pill, a fact
+ * line and an explanation, with only the actions that apply. Commands wrap
+ * instead of widening the panel (.cdbx-cubg-code).
  */
 .cdbx-cus-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .cdbx-cus .cdbx-row { flex-wrap: wrap; }
@@ -1016,6 +1017,11 @@
 .cdbx-cus-cmd { margin-top: 6px; }
 .cdbx-cus-fail { margin-top: 6px; }
 .cdbx-cus-foot { margin-top: 12px; }
+/* A section of the page; a deep link scrolls it into view (scroll-margin keeps
+ * its heading clear of the dialog's top edge). */
+.cdbx-cus-section { scroll-margin-top: 12px; }
+.cdbx-cus-status:empty { display: none; }
+.cdbx-cus-old { margin-top: 6px; }
 /* "What this does" under an Enable/Disable command: closed by default. */
 .cdbx-cus-what { margin-top: 6px; }
 .cdbx-cus-what > summary { cursor: pointer; user-select: none; }

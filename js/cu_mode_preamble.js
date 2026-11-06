@@ -169,7 +169,7 @@ try{
     });
   }
   // ── background display (issue #300) ────────────────────────────────────────
-  // Settings -> Extra -> Computer Use -> "Computer Use on a background display":
+  // Settings -> Extra -> Cowork (Linux) -> "Computer Use on a background display":
   // key computerUseBackgroundDisplay in <userData>/claude-desktop-extra.jsonc
   // (wins per key) or .json. __cuTargetRead() -> null (off / key absent),
   // {kind,display,env} (valid), or {invalid:why,display} (on but unusable: CU

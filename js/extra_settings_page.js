@@ -567,9 +567,11 @@
     // Short labels: upstream's nav column is narrow and truncates anything
     // longer, so the full name lives in a tooltip and in the panel's own h1.
     { kind: "features", label: "Community", icon: ICON_FEATURES, tooltip: "Community Features" },
-    // Computer Use is upstream's feature, not a community add-on: its status
-    // and our switches for it get their own entry.
-    { kind: "cu", label: "Computer Use", icon: ICON_CU },
+    // Cowork and Computer Use are upstream's features, not community add-ons:
+    // their Linux status and our switches get their own entry. The kind stays
+    // "cu" (deep links and tests name it); the label must never be exactly
+    // upstream's own "Cowork" (NAV_LABELS), and it is not.
+    { kind: "cu", label: "Cowork (Linux)", icon: ICON_CU, tooltip: "Cowork and Computer Use on Linux" },
     { kind: "models", label: "Models", icon: ICON_MODELS, tooltip: "Custom models" },
     { kind: "flags", label: "Anthropic", icon: ICON_FLAGS, tooltip: "Anthropic Features" },
     { kind: "deploy", label: "Deployment", icon: ICON_DEPLOY }
@@ -1496,12 +1498,15 @@
     return (kind === "x11" ? "X11 display " : "Wayland display ") + display;
   }
 
-  function renderCuBackgroundRow(panel) {
+  // `host` takes the row (the Computer Use section); `panel` is the whole
+  // panel the setup page replaces (defaults to host).
+  function renderCuBackgroundRow(host, panel) {
+    panel = panel || host;
     // The setup page needs every channel; an older preload gets no row at all.
     if (!cubgApiOk()) return;
     var lastRes = null;
     var noteNode = null;
-    var row = renderToggleRow(panel, {
+    var row = renderToggleRow(host, {
       section: "Options",
       title: "Computer Use on a background display",
       // Under the Options heading renderCu draws.
@@ -1550,27 +1555,39 @@
   }
 
   // --- Computer Use (its own Extra entry) -----------------------------------
-  // Computer Use is an upstream feature everyone expects to work, so it has its
-  // own page rather than rows among the community add-ons: the status block
-  // (this desktop, the device key (TPM), cloud Cowork and Dispatch, with only
-  // the actions that apply) at the top, then our Computer Use switches. Opening
-  // the page, Re-check and the end of each action are the only status reads;
-  // nothing here polls.
+  // The "Cowork (Linux)" page (nav kind "cu"). Cowork and Computer Use are
+  // upstream features everyone expects to work, so they have their own page
+  // rather than rows among the community add-ons. Three sections: Cloud Cowork
+  // (the device key (TPM), cloud Cowork and Dispatch), Local Cowork VM (KVM,
+  // vhost-vsock, the VM tools, whether the VM runs) and Computer Use (this
+  // desktop, then our Computer Use switches), each with only the actions that
+  // apply. Opening the page, Re-check and the end of each action are the only
+  // status reads; nothing here polls.
   // Main side: cdb-cu-status:* in js/extra_settings_main.js. No call takes an
   // argument; the main side decides every path it runs, and the pkexec actions
   // carry the exact command it runs and what that changes, shown before
   // anything runs.
   var CUS_API = ["cuStatusRead", "cuStatusTpmEnable", "cuStatusTpmDisable", "cuStatusResetScreenSharing"];
   var CUS_WORD = { ok: "OK", action: "Needs action", na: "Not available", unknown: "Unknown" };
-  var CUS_TITLES = { desktop: "This desktop", tpm: "Device key (TPM)", cloud: "Cloud Cowork and Dispatch" };
+  var CUS_TITLES = { desktop: "This desktop", tpm: "Device key (TPM)", cloud: "Cloud Cowork and Dispatch",
+    kvm: "KVM (/dev/kvm)", vsock: "VM socket (/dev/vhost-vsock)", vmTools: "QEMU, OVMF and virtiofsd", vm: "Local VM" };
+  // KVM access: the same buttons as TPM; an older preload without these gets
+  // the command to run instead of a button.
+  var CUS_KVM_API = ["cuStatusKvmEnable", "cuStatusKvmDisable"];
   // What enabling exposes, shown in full next to Enable. Main's confirmation
   // dialog (__cdbEx_CUS_TPM_CONFIRM) is the consent and stays short: it points
   // here for this text and the exact command.
   var CUS_RISK = "This applies to every account that logs in at this computer's screen (the active local seat), and only to /dev/tpmrm0, never /dev/tpm0. Any program such an account runs can then use the TPM, including clearing it (which destroys TPM-sealed keys such as LUKS/systemd-cryptenroll or BitLocker keys), triggering its dictionary-attack lockout, or setting its owner or lockout password. If the TPM's lockout or owner authorization is empty, set one first: tpm2_changeauth -c lockout and tpm2_changeauth -c owner.";
   var CUS_SECURITY = CUS_RISK + " Details: docs/computer-use.md in the claude-desktop-extra repository.";
+  // The same for Enable KVM access (main's dialog: __cdbEx_CUS_KVM_CONFIRM).
+  var CUS_KVM_RISK = "This applies to every account that logs in at this computer's screen (the active local seat), and only to /dev/kvm and /dev/vhost-vsock. Any program such an account runs can then start hardware-accelerated virtual machines, which exposes the kernel's KVM code to it; many distributions already grant /dev/kvm to every local user. It does not give root access.";
+  var CUS_KVM_SECURITY = CUS_KVM_RISK + " Details: docs/cowork.md in the claude-desktop-extra repository.";
 
   function cuStatusApiOk() {
     return !!api && CUS_API.every(function (n) { return typeof api[n] === "function"; });
+  }
+  function cusKvmApiOk() {
+    return !!api && CUS_KVM_API.every(function (n) { return typeof api[n] === "function"; });
   }
 
   // The Computer Use switches, below the status block. Same keys, same rows as
@@ -1648,48 +1665,72 @@
   // (main's own string, never rebuilt here), and in "What this does" the file
   // it changes, the rule, the udev reload and how to undo it. Every command is
   // copyable, so a user can run them in a terminal instead of clicking.
-  function cusPkexecInfo(host, verb, act) {
+  // `what` is "TPM" (default) or "KVM"; KVM adds its modules-load.d link.
+  function cusPkexecInfo(host, verb, act, what) {
     if (typeof act.command !== "string" || !act.command) return;
+    var kvm = what === "KVM";
+    var name = kvm ? "KVM" : "TPM";
     var enable = verb === "enable";
     var box = el("div", "cdbx-cus-cmd cdbx-cus-pk");
     box.setAttribute("data-verb", verb);
+    if (kvm) box.setAttribute("data-access", "kvm");
     box.appendChild(el("div", "cdbx-note", (enable ? "Enable" : "Disable") +
-      " TPM access runs this command, which you can also run in a terminal yourself:"));
+      " " + name + " access runs this command, which you can also run in a terminal yourself:"));
     box.appendChild(codeBlock(act.command));
-    var what = el("details", "cdbx-cus-what");
-    what.appendChild(el("summary", "cdbx-note", "What this does"));
+    var what2 = el("details", "cdbx-cus-what");
+    what2.appendChild(el("summary", "cdbx-note", "What this does"));
     function say(text, code) {
-      what.appendChild(el("div", "cdbx-note", text));
-      if (code) what.appendChild(codeBlock(code));
+      what2.appendChild(el("div", "cdbx-note", text));
+      if (code) what2.appendChild(codeBlock(code));
     }
     if (enable) {
       say("It links this package's udev rule into udev's rules directory (link -> rule file):",
         String(act.link || "") + " -> " + String(act.target || ""));
-      say("The rule gives the user at the active local seat access to the TPM resource manager, and nothing else:",
+      say(kvm ? "The rule gives the user at the active local seat access to /dev/kvm and /dev/vhost-vsock, and nothing else:"
+        : "The rule gives the user at the active local seat access to the TPM resource manager, and nothing else:",
         String(act.rule || ""));
+      if (kvm && act.mlink) {
+        say("It also links this package's modules-load.d entry, so the vhost_vsock module loads at every boot (link -> file):",
+          String(act.mlink) + " -> " + String(act.mtarget || ""));
+      }
+    } else if (kvm) {
+      say("It removes these links, and only while they point at claude-desktop-extra files:",
+        String(act.link || "") + (act.mlink ? "\n" + String(act.mlink) : ""));
     } else {
       say("It removes this link, and only while it points at a claude-desktop-extra rule:", String(act.link || ""));
     }
     if (act.apply) {
-      say("Then it reloads udev and re-applies the rules to the TPM device" +
-        (enable ? ", so access applies now without logging out:" : ":"), String(act.apply));
+      if (kvm) {
+        say(enable ? "Then it loads vhost_vsock now, reloads udev and re-applies the rules to both devices, so access applies now without logging out:"
+          : "Then it reloads udev:", String(act.apply));
+      } else {
+        say("Then it reloads udev and re-applies the rules to the TPM device" +
+          (enable ? ", so access applies now without logging out:" : ":"), String(act.apply));
+      }
     }
     if (enable) {
-      say("To undo it: Disable TPM access on this page, or run:", String(act.undo || ""));
-      if (act.undoManual) say("or remove the link by hand:", String(act.undoManual));
+      if (kvm) {
+        what2.appendChild(el("div", "cdbx-note",
+          "Claude checks for the local VM once per run: restart it afterwards (Restart now appears on this page)."));
+      }
+      say("To undo it: Disable " + name + " access on this page, or run:", String(act.undo || ""));
+      if (act.undoManual) say(kvm ? "or remove the links by hand:" : "or remove the link by hand:", String(act.undoManual));
     } else {
-      what.appendChild(el("div", "cdbx-note",
-        "Access this session already has lasts until you log out. To turn it on again: Enable TPM access."));
+      what2.appendChild(el("div", "cdbx-note", kvm
+        ? "Access this session already has lasts until you log out, and the module stays loaded. To turn it on again: Enable KVM access."
+        : "Access this session already has lasts until you log out. To turn it on again: Enable TPM access."));
     }
-    box.appendChild(what);
+    box.appendChild(what2);
     host.appendChild(box);
   }
 
-  // The status block: the three rows and their actions, drawn into `page`.
-  // `scope` is the element whose buttons a running action disables; `recheck`
-  // the page's Re-check button.
-  function renderCuStatusBlock(scope, page, recheck) {
+  // The status block: the rows and their actions, drawn into the section
+  // hosts (`hosts.status` takes the wait line and a failed read, the others
+  // their section's rows). `scope` is the element whose buttons a running
+  // action disables; `recheck` the page's Re-check button.
+  function renderCuStatusBlock(scope, hosts, recheck) {
     var running = false;
+    var all = [hosts.status, hosts.cloud, hosts.local, hosts.cu];
     function setBusy(on) {
       running = on;
       Array.prototype.forEach.call(scope.querySelectorAll(".cdbx-cus .cdbx-btn, .cdbx-cus-top .cdbx-btn"), function (b) {
@@ -1697,20 +1738,21 @@
       });
     }
 
-    // failure: the last Enable/Disable that did not change anything, shown
-    // under the TPM row until the next Re-check.
+    // failure: the last Enable/Disable that did not change anything,
+    // {on: "tpm" | "kvm", r}, shown under that row until the next Re-check.
     var slowTimer = null;
     function stopSlowTimer() { if (slowTimer !== null) { clearTimeout(slowTimer); slowTimer = null; } }
+    function clearAll() { all.forEach(clear); }
     function load(failure) {
       stopSlowTimer();
-      clear(page);
+      clearAll();
       var wait = el("div", "cdbx-empty cdbx-cus-wait");
       wait.setAttribute("role", "status");
       wait.setAttribute("aria-busy", "true");
       wait.appendChild(el("span", "cdbx-spin"));
       var waitText = el("span", "cdbx-cus-wait-t", "Checking this desktop...");
       wait.appendChild(waitText);
-      page.appendChild(wait);
+      hosts.status.appendChild(wait);
       // One timer: the bridge check normally answers at once; only a hung
       // portal makes it run to main's 8 s timeout.
       slowTimer = setTimeout(function () {
@@ -1721,24 +1763,29 @@
       api.cuStatusRead().then(function (st) {
         stopSlowTimer();
         recheck.disabled = false;
-        clear(page);
+        clearAll();
         if (failed(st)) {
-          page.appendChild(el("div", "cdbx-error", "The status is unavailable: " + reason(st)));
+          hosts.status.appendChild(el("div", "cdbx-error", "The status is unavailable: " + reason(st)));
           return;
         }
         draw(st, failure);
       }, function (err) {
         stopSlowTimer();
         recheck.disabled = false;
-        clear(page);
-        page.appendChild(el("div", "cdbx-error", "The status is unavailable: " + (err && err.message ? err.message : String(err))));
+        clearAll();
+        hosts.status.appendChild(el("div", "cdbx-error", "The status is unavailable: " + (err && err.message ? err.message : String(err))));
       });
     }
 
-    function tpmAction(which) {
+    // Enable/Disable TPM or KVM access. Main asks for consent and runs pkexec;
+    // the page only names the action.
+    function accessAction(on, which) {
       if (running) return;
+      var name = on === "kvm" ? "KVM" : "TPM";
+      var call = on === "kvm" ? (which === "enable" ? api.cuStatusKvmEnable : api.cuStatusKvmDisable)
+        : (which === "enable" ? api.cuStatusTpmEnable : api.cuStatusTpmDisable);
+      if (typeof call !== "function") return;
       setBusy(true);
-      var call = which === "enable" ? api.cuStatusTpmEnable : api.cuStatusTpmDisable;
       call().then(function (r) {
         setBusy(false);
         if (!failed(r)) {
@@ -1750,9 +1797,9 @@
         // a quick retry): a toast only, no command block under the row.
         var quiet = r && (r.code === "cancelled" || r.code === "declined" || r.code === "cooldown");
         if (r && r.code === "cancelled") toast("Not changed: authentication was cancelled", true);
-        else if (r && r.code === "declined") toast("Not changed: Enable TPM access was not confirmed", true);
+        else if (r && r.code === "declined") toast("Not changed: Enable " + name + " access was not confirmed", true);
         else toast("Not changed: " + reason(r), true);
-        load(quiet ? null : r);
+        load(quiet ? null : { on: on, r: r });
       }, function (err) {
         setBusy(false);
         toast("Not changed: " + (err && err.message ? err.message : String(err)), true);
@@ -1760,12 +1807,112 @@
       });
     }
 
+    // Off-state: the button is greyed with its reason; the command block stays.
+    function offNote(row, verb, act) {
+      if (typeof act.disabled !== "string" || !act.disabled) return;
+      var n = el("div", "cdbx-note cdbx-cus-off", act.disabled);
+      n.setAttribute("data-verb", verb);
+      row.main.appendChild(n);
+    }
+    function offBtn(b, act) {
+      if (typeof act.disabled === "string" && act.disabled) { b.disabled = true; b.setAttribute("data-off", "1"); b.title = act.disabled; }
+    }
+    // The Enable / Disable pair of one access (TPM or KVM) on its row.
+    function accessActs(row, on, en, dis, security) {
+      var name = on === "kvm" ? "KVM" : "TPM";
+      var what = on === "kvm" ? "KVM" : undefined;
+      var hasCall = on === "kvm" ? cusKvmApiOk() : true;
+      if (en && typeof en === "object") {
+        row.main.appendChild(el("div", "cdbx-note cdbx-cus-sec", security));
+        if (en.kind === "pkexec" && hasCall) {
+          var enable = cusButton("Enable " + name + " access", on === "kvm"
+            ? "Asks you to confirm, then for an administrator password, then lets this session use /dev/kvm and /dev/vhost-vsock"
+            : "Asks you to confirm, then for an administrator password, then lets this session use the TPM");
+          enable.addEventListener("click", function () { accessAction(on, "enable"); });
+          offBtn(enable, en);
+          row.aside.appendChild(enable);
+          offNote(row, "enable", en);
+          cusPkexecInfo(row.main, "enable", en, what);
+        } else if (en.kind === "pkexec") {
+          offNote(row, "enable", en);
+          cusCommand(row.main, "Run this in a terminal:", String(en.command || ""));
+        } else if (en.kind === "nixos") {
+          offNote(row, "enable", en);
+          cusCommand(row.main, "Add this to your NixOS configuration, then rebuild and restart Claude:", String(en.text || ""));
+        } else if (en.kind === "command") {
+          offNote(row, "enable", en);
+          cusCommand(row.main, cusWhere(en), String(en.text || ""));
+        }
+      }
+      if (dis && typeof dis === "object") {
+        if (dis.kind === "pkexec" && hasCall) {
+          var disable = cusButton("Disable " + name + " access", on === "kvm"
+            ? "Removes this package's KVM rule and module links; access already granted lasts until you log out"
+            : "Removes this package's TPM rule link; access already granted lasts until you log out");
+          disable.addEventListener("click", function () { accessAction(on, "disable"); });
+          offBtn(disable, dis);
+          row.aside.appendChild(disable);
+          offNote(row, "disable", dis);
+          cusPkexecInfo(row.main, "disable", dis, what);
+        } else if (dis.kind === "pkexec") {
+          offNote(row, "disable", dis);
+          cusCommand(row.main, "To turn " + name + " access off again - run this in a terminal:", String(dis.command || ""));
+        } else if (dis.kind === "command") {
+          offNote(row, "disable", dis);
+          cusCommand(row.main, "To turn " + name + " access off again - " + cusWhere(dis).charAt(0).toLowerCase() + cusWhere(dis).slice(1),
+            String(dis.text || ""));
+        }
+      }
+    }
+    function failBlock(row, failure, on) {
+      if (!failure || failure.on !== on) return;
+      row.main.appendChild(el("div", "cdbx-error cdbx-cus-fail", "Not changed: " + reason(failure.r)));
+      if (typeof failure.r.command === "string" && failure.r.command) {
+        cusCommand(row.main, "Run this in a terminal instead:", failure.r.command);
+      }
+    }
+
     function draw(st, failure) {
       var rows = st.rows || {};
       var acts = st.actions || {};
-      var restartOk = acts.restart === true && typeof api.appRelaunch === "function";
+      var canRestart = typeof api.appRelaunch === "function";
+      var restartOk = acts.restart === true && canRestart;
 
-      var desk = cusRow(page, "desktop", rows.desktop);
+      // Cloud Cowork: the device key (TPM) and this run's device state.
+      var tpm = cusRow(hosts.cloud, "tpm", rows.tpm);
+      accessActs(tpm, "tpm", acts.tpmEnable, acts.tpmDisable, CUS_SECURITY);
+      if (typeof acts.tssCommand === "string" && acts.tssCommand) {
+        cusCommand(tpm.main, "This session did not get access from the rule (not the active local seat, or no logind). " +
+          "Add yourself to the TPM group instead, then log out and back in:", acts.tssCommand);
+      }
+      if (restartOk) tpm.aside.appendChild(restartButton());
+      failBlock(tpm, failure, "tpm");
+      var cloud = cusRow(hosts.cloud, "cloud", rows.cloud);
+      if (restartOk) cloud.aside.appendChild(restartButton());
+
+      // Local Cowork VM: KVM, vhost-vsock, the VM tools and whether it runs.
+      if (rows.kvm || rows.vsock || rows.vmTools || rows.vm) {
+        var kvm = cusRow(hosts.local, "kvm", rows.kvm);
+        accessActs(kvm, "kvm", acts.kvmEnable, acts.kvmDisable, CUS_KVM_SECURITY);
+        if (typeof acts.kvmGroupCommand === "string" && acts.kvmGroupCommand) {
+          cusCommand(kvm.main, "Without a local seat (remote login, no logind) the rule gives this session nothing. " +
+            "Add yourself to the device's group instead, then log out and back in:", acts.kvmGroupCommand);
+        }
+        if (acts.vmRestart === true && canRestart) kvm.aside.appendChild(restartButton());
+        failBlock(kvm, failure, "kvm");
+        var vsock = cusRow(hosts.local, "vsock", rows.vsock);
+        if (typeof acts.vsockCommand === "string" && acts.vsockCommand) {
+          cusCommand(vsock.main, "Load the module now (Enable KVM access also loads it at every boot):", acts.vsockCommand);
+        }
+        cusRow(hosts.local, "vmTools", rows.vmTools);
+        cusRow(hosts.local, "vm", rows.vm);
+      } else {
+        hosts.local.appendChild(el("div", "cdbx-note cdbx-cus-old",
+          "This build's main side does not report the local VM - reinstall to pick it up."));
+      }
+
+      // Computer Use: this desktop.
+      var desk = cusRow(hosts.cu, "desktop", rows.desktop);
       var shots = cusShotsLine(st.screenshots);
       if (shots) {
         var sl = el("div", "cdbx-note cdbx-cus-shots", shots);
@@ -1790,104 +1937,71 @@
         });
         desk.aside.appendChild(reset);
       }
-
-      var tpm = cusRow(page, "tpm", rows.tpm);
-      // Off-state: the button is greyed with its reason; the command block stays.
-      function offNote(verb, act) {
-        if (typeof act.disabled !== "string" || !act.disabled) return;
-        var n = el("div", "cdbx-note cdbx-cus-off", act.disabled);
-        n.setAttribute("data-verb", verb);
-        tpm.main.appendChild(n);
-      }
-      function offBtn(b, act) {
-        if (typeof act.disabled === "string" && act.disabled) { b.disabled = true; b.setAttribute("data-off", "1"); b.title = act.disabled; }
-      }
-      var en = acts.tpmEnable;
-      if (en && typeof en === "object") {
-        tpm.main.appendChild(el("div", "cdbx-note cdbx-cus-sec", CUS_SECURITY));
-        if (en.kind === "pkexec") {
-          var enable = cusButton("Enable TPM access", "Asks you to confirm, then for an administrator password, then lets this session use the TPM");
-          enable.addEventListener("click", function () { tpmAction("enable"); });
-          offBtn(enable, en);
-          tpm.aside.appendChild(enable);
-          offNote("enable", en);
-          cusPkexecInfo(tpm.main, "enable", en);
-        } else if (en.kind === "nixos") {
-          offNote("enable", en);
-          cusCommand(tpm.main, "Add this to your NixOS configuration, then rebuild and restart Claude:", String(en.text || ""));
-        } else if (en.kind === "command") {
-          offNote("enable", en);
-          cusCommand(tpm.main, cusWhere(en), String(en.text || ""));
-        }
-      }
-      var dis = acts.tpmDisable;
-      if (dis && typeof dis === "object") {
-        if (dis.kind === "pkexec") {
-          var disable = cusButton("Disable TPM access", "Removes this package's TPM rule link; access already granted lasts until you log out");
-          disable.addEventListener("click", function () { tpmAction("disable"); });
-          offBtn(disable, dis);
-          tpm.aside.appendChild(disable);
-          offNote("disable", dis);
-          cusPkexecInfo(tpm.main, "disable", dis);
-        } else if (dis.kind === "command") {
-          offNote("disable", dis);
-          cusCommand(tpm.main, "To turn TPM access off again - " + cusWhere(dis).charAt(0).toLowerCase() + cusWhere(dis).slice(1),
-            String(dis.text || ""));
-        }
-      }
-      if (typeof acts.tssCommand === "string" && acts.tssCommand) {
-        cusCommand(tpm.main, "This session did not get access from the rule (not the active local seat, or no logind). " +
-          "Add yourself to the TPM group instead, then log out and back in:", acts.tssCommand);
-      }
-      if (restartOk) tpm.aside.appendChild(restartButton());
-      if (failure) {
-        tpm.main.appendChild(el("div", "cdbx-error cdbx-cus-fail", "Not changed: " + reason(failure)));
-        if (typeof failure.command === "string" && failure.command) {
-          cusCommand(tpm.main, "Run this in a terminal instead:", failure.command);
-        }
-      }
-
-      var cloud = cusRow(page, "cloud", rows.cloud);
-      if (restartOk) cloud.aside.appendChild(restartButton());
     }
 
     recheck.addEventListener("click", function () { if (!running) load(null); });
     load(null);
   }
 
+  // The page's three sections, in order. `id` is the data-cdbx-section value
+  // a deep link scrolls to.
+  var CUS_SECTIONS = [
+    { id: "cloud", title: "Cloud Cowork" },
+    { id: "local", title: "Local Cowork VM" },
+    { id: "cu", title: "Computer Use" }
+  ];
+
   function renderCu(panel) {
     clear(panel);
     var top = el("div", "cdbx-cus-top");
-    top.appendChild(el("div", "cdbx-h1", "Computer Use"));
+    top.appendChild(el("div", "cdbx-h1", "Cowork (Linux)"));
     var recheck = cusButton("Re-check", "Run the checks again");
     top.appendChild(recheck);
     panel.appendChild(top);
     panel.appendChild(el("div", "cdbx-sub",
-      "Code sessions use Computer Use on this desktop. Cloud Cowork and Dispatch tasks reach it only when this " +
-      "computer connects as a device with a key kept in its TPM, and offers the computer tools."));
+      "Cowork runs each task in Anthropic's cloud or in a VM on this computer. Cloud tasks reach this desktop only " +
+      "when it connects as a device with a key kept in its TPM; the local VM needs KVM. Code sessions use Computer " +
+      "Use on this desktop directly."));
 
-    var head = el("div", "cdbx-sec-h");
-    head.appendChild(el("span", "cdbx-sec-t", "Status"));
-    panel.appendChild(head);
-    if (cuStatusApiOk()) {
-      var page = el("div", "cdbx-cus");
-      panel.appendChild(page);
-      panel.appendChild(el("div", "cdbx-note cdbx-cus-foot",
-        "Full report for an issue: run claude-desktop --diagnose in a terminal."));
-      renderCuStatusBlock(panel, page, recheck);
+    var apiOk = cuStatusApiOk();
+    var hosts = {};
+    if (apiOk) {
+      hosts.status = el("div", "cdbx-cus cdbx-cus-status");
+      panel.appendChild(hosts.status);
     } else {
       recheck.remove();
       panel.appendChild(el("div", "cdbx-error",
         "This build's preload does not expose the Computer Use status bridge - reinstall to pick it up."));
     }
+    var cuWrap = null;
+    CUS_SECTIONS.forEach(function (sec) {
+      var wrap = el("div", "cdbx-cus-section");
+      wrap.setAttribute("data-cdbx-section", sec.id);
+      var head = el("div", "cdbx-sec-h");
+      head.appendChild(el("span", "cdbx-sec-t", sec.title));
+      wrap.appendChild(head);
+      if (apiOk) {
+        hosts[sec.id] = el("div", "cdbx-cus");
+        wrap.appendChild(hosts[sec.id]);
+      }
+      panel.appendChild(wrap);
+      if (sec.id === "cu") cuWrap = wrap;
+    });
+    if (apiOk) {
+      cuWrap.appendChild(el("div", "cdbx-note cdbx-cus-foot",
+        "Full report for an issue: run claude-desktop --diagnose in a terminal."));
+      renderCuStatusBlock(panel, hosts, recheck);
+    }
 
-    // The switches share one "Options" heading, drawn here (each row passes
-    // sharedSection); it goes again when no switch row is there to carry it.
+    // The switches share one "Options" heading inside the Computer Use
+    // section, drawn here (each row passes sharedSection); it goes again when
+    // no switch row is there to carry it. The background-display row opens
+    // its setup page in the whole panel.
     var opts = el("div", "cdbx-sec-h");
     opts.appendChild(el("span", "cdbx-sec-t", "Options"));
-    panel.appendChild(opts);
+    cuWrap.appendChild(opts);
     var rows = 0;
-    CU_ROWS.forEach(function (render) { if (render(panel)) rows++; });
+    CU_ROWS.forEach(function (render) { if (render(cuWrap, panel)) rows++; });
     if (!rows) opts.remove();
     jsoncFootnote(panel);
   }
@@ -2024,7 +2138,7 @@
   // one slow probe never holds up the rest.
   function renderCuBackground(panel) {
     clear(panel);
-    var back = el("button", "cdbx-btn cdbx-cubg-back", "Back to Computer Use");
+    var back = el("button", "cdbx-btn cdbx-cubg-back", "Back to Cowork (Linux)");
     back.type = "button";
     back.addEventListener("click", function () { renderCu(panel); });
     panel.appendChild(back);
@@ -5482,8 +5596,77 @@
         built.label === "#structure" ? "cloned from the group found by structure, not by label" :
           built.label === "#last-group" ? "cloned from the last group, found by structure" :
             "cloned from the \"" + built.label + "\" group") + ")");
+    openPending();
     return true;
   }
+
+  // --- deep link: window.__cdbExtraOpen(kind, section) -----------------------
+  // Opens one of our panels (a NAV_ITEMS kind) and, for "cu", scrolls to one of
+  // its sections ("cloud" | "local" | "cu"; anything else: the top). Used by the
+  // Cowork header icon. With the settings dialog mounted it opens at once;
+  // otherwise it asks main to navigate this view to upstream's settings
+  // (cdb-extra:open-settings, a fixed route) and leaves a pending entry the next
+  // successful install() honours within PENDING_MS. No timers: the mount is
+  // what finishes it.
+  var PENDING_MS = 10000;
+  var SECTIONS = { cu: { cloud: true, local: true, cu: true } };
+  function navItemOf(kind) {
+    for (var i = 0; i < NAV_ITEMS.length; i++) if (NAV_ITEMS[i].kind === kind) return NAV_ITEMS[i];
+    return null;
+  }
+  function manualPath(kind) {
+    var it = navItemOf(kind);
+    return "Open Settings -> Extra -> " + (it ? it.label : "Extra");
+  }
+  function openAt(kind, section) {
+    if (!mounted) return false;
+    var item = null;
+    for (var i = 0; i < mounted.items.length; i++) {
+      if (mounted.items[i].kind === kind) { item = mounted.items[i]; break; }
+    }
+    if (!item) return false;
+    show(kind, item);
+    var ok = SECTIONS[kind] && SECTIONS[kind][section] === true;
+    var node = ok && mounted.panel ? mounted.panel.querySelector('[data-cdbx-section="' + section + '"]') : null;
+    if (node) {
+      try { node.scrollIntoView({ block: "start" }); } catch (e) { /* older engines */ }
+      var head = node.querySelector(".cdbx-sec-h");
+      if (head) {
+        head.setAttribute("tabindex", "-1");
+        try { head.focus({ preventScroll: true }); } catch (e2) { head.focus(); }
+      }
+    }
+    return true;
+  }
+  function openPending() {
+    var p = window.__cdbExtraPending;
+    if (!p || typeof p !== "object") return;
+    window.__cdbExtraPending = null;
+    if (typeof p.at !== "number" || Date.now() - p.at > PENDING_MS || Date.now() < p.at) return;
+    if (!openAt(p.kind, p.section)) toast(manualPath(p.kind), true);
+  }
+  window.__cdbExtraOpen = function (kind, section) {
+    kind = String(kind || "");
+    section = String(section || "");
+    if (!navItemOf(kind)) return false;
+    if (attached() && openAt(kind, section)) return true;
+    if (!api || typeof api.extraOpenSettings !== "function") {
+      toast(manualPath(kind), true);
+      return false;
+    }
+    window.__cdbExtraPending = { kind: kind, section: section, at: Date.now() };
+    Promise.resolve().then(function () { return api.extraOpenSettings(); }).then(function (r) {
+      if (!failed(r)) return;
+      window.__cdbExtraPending = null;
+      diag("deeplink-failed", "[ExtraSettings] deep link: settings navigation failed: " + reason(r));
+      toast(manualPath(kind), true);
+    }, function (err) {
+      window.__cdbExtraPending = null;
+      diag("deeplink-failed", "[ExtraSettings] deep link: settings navigation failed: " + ((err && err.message) || String(err)));
+      toast(manualPath(kind), true);
+    });
+    return true;
+  };
 
   // Our rows are clones, so they carry no React handler: these are the only ones.
   // A cloned <button> activates on Enter and Space by itself; anything else needs

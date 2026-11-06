@@ -73,6 +73,11 @@ function buildModule() {
     // are evaluated. This is the pre-v3.1623.0 shape (both arms forward the
     // parameter directly); test-deployment-main.mjs carries the newer shape with
     // a `let` local, so both branches of the capture regex stay covered.
+    // Stand-ins for the anchors of the navigation and VM-probe capture
+    // sub-patches (C and D, 4.23118.0 shapes), which the patch also strictly
+    // requires. Declarations only: neither function is ever called here.
+    "var Hrr,Urr;function Yrr(){return Urr??=(async()=>{let t,n,r,s;return Hrr={qemuPath:t,firmwarePath:n,virtiofsdPath:r,virtiofsdAptInstallable:!0,kvm:s},Hrr})(),Urr}function Xrr(){return Hrr}\n" +
+    "function nav0(){let Uy=go(Hy,\"Navigation\",Xy,{events:[[\"navigate\",[[\"path\",I]]]]});return Uy}\n" +
     "function nfi(e=[]){a.app.isPackaged?sA(!0,e):Uk(e)}\n");
   execFileSync(PATCH_BIN, [mod], { stdio: "ignore" });
   const src = readFileSync(mod, "utf8");

@@ -3,7 +3,7 @@
  "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <!--
-  claude-desktop-extra: lets Settings -> Extra -> Computer Use
+  claude-desktop-extra: lets Settings -> Extra -> Cowork (Linux)
   run cdb-tpm-access (enable | disable) through pkexec. The action matches only
   the helper's absolute path; each change asks for an administrator password.
 -->

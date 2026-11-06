@@ -1,6 +1,6 @@
 (function(){
 // ── Computer Use: ask before controlling an app (regular-mode Linux) ─────────
-// Settings -> Extra -> Computer Use -> "Ask before Computer Use controls an
+// Settings -> Extra -> Cowork (Linux) -> "Ask before Computer Use controls an
 // app", read through globalThis.__cdbCuAskBeforeControl() (js/
 // extra_settings_main.js; on by default, only an explicit false is off).
 //
