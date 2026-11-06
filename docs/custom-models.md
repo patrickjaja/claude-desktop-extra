@@ -45,7 +45,7 @@ Each can also point at another Claude model.
 
 The Models page writes providers and models to `claude-desktop-extra.json` in the profile directory (`~/.config/Claude`, or `~/.config/Claude-<name>` for a [profile](profiles.md)), and the keys to `custom-models/secrets.json` (mode 0600, in a 0700 directory). A key is never shown again once saved.
 
-The Models page also works in [3P mode](third-party-inference.md) (a managed or gateway deployment), where the main window is served from `app://localhost`.
+The Models page can be used in [3P mode](third-party-inference.md) (a managed or gateway deployment) too, and the routing files land in the 3P profile, but custom models reach the Code tab's picker only with a claude.ai login: in 3P the picker is the gateway's own model list (`inferenceModels`), and the app's non-Anthropic model-id filter applies there (see [Allow non-Anthropic models](cookbook/opper-gateway.md)). To use another provider's models in 3P, list them in the gateway configuration instead.
 
 The same settings can be written by hand under `customModels` in `claude-desktop-extra.jsonc`. A provider defined there shows as locked on the page, and `enabled` set there locks the switch. Both files are read together: providers come from both, and a `.jsonc` provider wins over a `.json` one with the same id.
 
@@ -188,7 +188,7 @@ SSH and WSL sessions start without any of this, since their CLI runs on another 
 
 ### Limits
 
-- Local Code sessions only. Cowork, Dispatch and SSH sessions keep Anthropic's models.
+- Local Code sessions only, with a claude.ai login (1P). Cowork, Dispatch and SSH sessions keep Anthropic's models, and in 3P mode the picker lists the gateway's models.
 - What a provider's endpoint supports (images, tools, web search) is up to the provider. Its errors are passed back to the session and logged.
 - The Code tab shows no model name on a custom sub-agent's card. That part of the app is claude.ai's own code and only names Anthropic's models.
 

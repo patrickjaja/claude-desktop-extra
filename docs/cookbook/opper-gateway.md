@@ -108,7 +108,7 @@ Both files are `0600` in a `0700` directory because they hold the key.
 
 ## 4. Turn on "Allow non-Anthropic models" and restart
 
-Open **Settings -> Extra -> Community Features**, scroll to the **Models and 3P** group (next to the *Custom models* row, which belongs to the separate **Extra -> Models** page and is not needed here) and turn on **Allow non-Anthropic models**, then fully quit and restart Claude Desktop. The model list is built at startup, so the switch has no effect until the restart.
+Open **Settings -> Extra -> Community Features**, scroll to the **Models and 3P** group (next to the *Custom models* row, which belongs to the separate **Extra -> Models** page: that page adds providers next to a claude.ai subscription and does not add models to the 3P picker, so it is not needed here) and turn on **Allow non-Anthropic models**, then fully quit and restart Claude Desktop. The model list is built at startup, so the switch has no effect until the restart.
 
 ![Settings -> Extra -> Community Features, Models and 3P group, with "Allow non-Anthropic models" switched on](img/allow-non-anthropic-models-switch.png)
 
