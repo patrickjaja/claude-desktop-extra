@@ -170,6 +170,7 @@ These embed assumptions about upstream internals and **must be challenged on eve
 | `baseline/PANEL_TABS_ANCHORS.md` | Panel-tabs DOM/fiber anchors and the `[cdb-tabs]` warning keys that mean an anchor moved | Re-run the console recipes in that file against the new build |
 | `baseline/FILES_QUICK_OPEN_ANCHORS.md` | Files quick-open anchors and the `[cdb-qopen]` warning keys | Re-run its console recipes; `grep -o 'of this\.index\.search(' fileIndexWorker.js` must hit exactly once |
 | `baseline/AUTO_ARCHIVE_GRACE_WEB_ANCHORS.md` | 1P archive-grace UI: the claude.ai hold-notice and session-rail anchors (fiber props `{hold, sessionRef}` / `{session, pullRequests, outputsSession}`) and the `[archive-grace-ui]` warning keys | Re-run its console recipes on the Code tab; the debug hook renders without a merged PR |
+| `baseline/COWORK_HEADER_ICON_ANCHORS.md` | Cowork device icon in the claude.ai chat header (`fix_cowork_device_icon_web.nim`): the title-row indicator testids, the device store and the upstream popover, all remote claude.ai code, and the `[cdb-cowork-icon]` warning keys | Re-run its console recipes on a cloud task and a local task; also re-check the `__cdbNavigation` / `__cdbCoworkVmProbe` captures in `add_feature_extra_settings.nim` |
 | `baseline/CUSTOM_MODELS_ANCHORS.md` | Custom models: the build-time anchors of `add_feature_custom_models.nim` (sub-patches B, C, D and C's transport-shape asserts), and the run-time assumptions no build can check - the claude.ai bootstrap and `model_selector_state` APIs, and Claude Code CLI internals (`BUN_OPTIONS` preload, `fetch(string, {body})`, the `claude-<id>`/`[1m]` ids, threads, the web-search sub-request, `diagnostics.previous_message_id`) | Re-grep the local shapes listed there; after a CLI or claude.ai change, read `logs/custom-models.log` and the `[custom-models]` lines that file maps to the anchor that moved |
 | `baseline/ION.md` | ion-dist SPA bundle stats, patched patterns, config key schema | ion-dist audit (`/update` skill) |
 | `baseline/PLATFORM_GATE_BASELINE.md` | darwin/win32 conditional counts, gate classifications (PATCHED/NATIVE/STUB/PORTABLE) | Platform gate re-audit (`/update` skill) |
@@ -223,7 +224,7 @@ Runtime logs are in `~/.config/Claude/logs/`. When 3P mode is active (an `infere
 
 ```
 patches/           # Nim patch sources (.nim) + Makefile, compiled to native binaries (ls patches/*/*.nim)
-patches/linux/     #   Linux compatibility - always on, not user-configurable (36)
+patches/linux/     #   Linux compatibility - always on, not user-configurable (37)
 patches/community/ #   Opt-in features, each with a switch in Settings -> Extra -> Community Features (23)
 patches/core/      #   Always-on infrastructure: Extra settings pages, theme engine, GrowthBook overrides, multi-profile (7)
 js/                # Shared JS snippets embedded by Nim patches via staticRead ("../../js/..." from a patch)

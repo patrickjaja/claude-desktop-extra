@@ -56,6 +56,9 @@ community/add_feature_auto_archive_grace_ion: ../js/auto_archive_grace_ui.js
 community/add_feature_auto_archive_grace_web: \
   ../js/auto_archive_grace_web_main.js \
   ../js/auto_archive_grace_web_page.js
+linux/fix_cowork_device_icon_web: \
+  ../js/cowork_device_icon_web_main.js \
+  ../js/cowork_device_icon_web_page.js
 
 community/add_feature_autofix_merge_ready: ../js/autofix_merge_ready.js
 

@@ -756,8 +756,8 @@
   </div>
 
   <div class="stat-line">
-    <span class="stat"><strong data-count="total">66</strong> <a href="#patches">patches on the official build, and growing</a></span>
-    <span class="stat"><strong data-count="core">43</strong> core: where Anthropic lacks compatibility</span>
+    <span class="stat"><strong data-count="total">67</strong> <a href="#patches">patches on the official build, and growing</a></span>
+    <span class="stat"><strong data-count="core">44</strong> core: where Anthropic lacks compatibility</span>
     <span class="stat"><strong data-count="community">23</strong> community: improvements and features</span>
   </div>
 </div>
@@ -794,7 +794,7 @@ curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install.sh | sudo 
 <span class="comment"># Install</span>
 sudo apt install claude-desktop-extra</pre>
     </div>
-    <div class="install-note">Requires Ubuntu 22.04+ / Debian 12+ (glibc 2.34+); amd64 and arm64. Replaces Anthropic's own <code>claude-desktop</code> package if installed (same files). Cowork packages come in as <code>Recommends</code>. Updates arrive through <code>apt upgrade</code>.</div>
+    <div class="install-note">Requires Ubuntu 22.04+ / Debian 12+ (glibc 2.34+); amd64 and arm64. Replaces Anthropic's own <code>claude-desktop</code> package if installed (same files). The local Cowork VM tools come in as <code>Recommends</code>. Updates arrive through <code>apt upgrade</code>.</div>
   </div>
 
   <div class="tab-panel" id="tab-fedora">
@@ -806,7 +806,7 @@ curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-rpm.sh | s
 <span class="comment"># Install</span>
 sudo dnf install claude-desktop-extra</pre>
     </div>
-    <div class="install-note">x86_64 and aarch64. Cowork packages come in as weak deps. Updates arrive through <code>dnf upgrade</code>.</div>
+    <div class="install-note">x86_64 and aarch64. The local Cowork VM tools come in as weak deps. Updates arrive through <code>dnf upgrade</code>.</div>
   </div>
 
   <div class="tab-panel" id="tab-nix">
@@ -818,7 +818,7 @@ nix run github:patrickjaja/claude-desktop-extra
 <span class="comment"># Or install persistently</span>
 nix profile install github:patrickjaja/claude-desktop-extra</pre>
     </div>
-    <div class="install-note">x86_64 only. Flake users: add <code>inputs.claude-desktop.url = "github:patrickjaja/claude-desktop-extra";</code>, update with <code>nix flake update</code>. Cowork tools are baked into the closure. <a href="https://github.com/patrickjaja/claude-desktop-extra#nixos--nix">NixOS details &rarr;</a></div>
+    <div class="install-note">x86_64 only. Flake users: add <code>inputs.claude-desktop.url = "github:patrickjaja/claude-desktop-extra";</code>, update with <code>nix flake update</code>. Local Cowork VM tools are baked into the closure. <a href="https://github.com/patrickjaja/claude-desktop-extra#nixos--nix">NixOS details &rarr;</a></div>
   </div>
 
   <div class="tab-panel" id="tab-appimage">
@@ -831,7 +831,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
   </div>
 
   <div class="install-note" style="margin-top: 1.25rem;">
-    <strong>Cowork</strong> (the agent VM) is optional and needs QEMU/KVM: <a href="#cowork">setup below</a>.
+    <strong>Cowork</strong> has two backends: cloud Cowork needs no KVM (desktop tools need a TPM device key), the optional local Cowork VM needs QEMU/KVM: <a href="#cowork">setup below</a>.
     Repository signing key (APT, DNF and pacman): <code>825A 7D15 D78B ABE4 5646  D5DF 3824 09F5 9790 8867</code>,
     check it with <code>curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/gpg-key.asc | gpg --show-keys --with-fingerprint</code>.
     Also available: <a href="https://github.com/patrickjaja/claude-desktop-extra#from-source">from source</a> and <a href="https://github.com/patrickjaja/claude-desktop-extra#migrating-from-claude-desktop-bin">migrating from claude-desktop-bin</a>.
@@ -942,7 +942,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
       </div>
       <h3>Cowork</h3>
-      <p>Delegate a goal to a sandboxed Claude Code agent that reads, edits and creates files and returns a deliverable. Optional, needs QEMU/KVM. <a href="#cowork">Setup &rarr;</a></p>
+      <p>Delegate a goal to a sandboxed Claude Code agent that reads, edits and creates files and returns a deliverable. Cloud by default, no KVM; desktop tools need the TPM device key. The local VM is optional and needs KVM (required in third-party mode). <a href="#cowork">Setup &rarr;</a></p>
     </div>
 
     <div class="feature-card">
@@ -1145,7 +1145,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
       <p>Claude reads and presses app controls by name through the accessibility bus instead of by screenshot. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md#read-app-controls-through-accessibility-experimental">Details</a></p>
     </div>
   </div>
-  <div class="more-link">Settings &rarr; Extra &rarr; <strong>Computer Use</strong> shows whether it works here and holds its switches. Cloud Cowork and Dispatch reach it only with TPM access for the device key (one click on that page): <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md#computer-use-in-cloud-cowork-and-dispatch">details</a>. Full guide: <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md">docs/computer-use.md</a>.</div>
+  <div class="more-link">Settings &rarr; Extra &rarr; <strong>Cowork (Linux)</strong> shows whether it works here and holds its switches. Cloud Cowork and Dispatch reach it only with TPM access for the device key (one click on that page): <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md#computer-use-in-cloud-cowork-and-dispatch">details</a>. Full guide: <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md">docs/computer-use.md</a>.</div>
 </section>
 
 <!-- COMMUNITY FEATURES -->
@@ -1260,7 +1260,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
 <!-- PATCHES -->
 <section id="patches" class="fade-in">
   <div class="section-label">How it works</div>
-  <h2><span data-count="total">66</span> patches on the official build, and growing</h2>
+  <h2><span data-count="total">67</span> patches on the official build, and growing</h2>
   <p>We start from Anthropic's official Claude Desktop Linux <code>.deb</code>, apply small JavaScript patches to its <code>app.asar</code>, and repackage the result for each distro.</p>
 
   <div class="steps-grid">
@@ -1281,9 +1281,9 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
   <div class="cowork-box">
     <div class="cowork-mode">
       <div class="badge badge-default">Always on</div>
-      <div class="tier-count" data-count="core">43</div>
+      <div class="tier-count" data-count="core">44</div>
       <h3>Core patches</h3>
-      <p>Where Anthropic lacks compatibility: general Linux patches for the tray, portals, Wayland and X11, the sandbox, Cowork on non-Debian distros and more, plus the shared infrastructure the features build on (the Extra settings pages, the theme engine, profiles). In the repo they are split into <span data-count="linux">36</span> Linux fixes (<code>patches/linux/</code>) and <span data-count="coreplumbing">7</span> core plumbing patches (<code>patches/core/</code>).</p>
+      <p>Where Anthropic lacks compatibility: general Linux patches for the tray, portals, Wayland and X11, the sandbox, Cowork on non-Debian distros and more, plus the shared infrastructure the features build on (the Extra settings pages, the theme engine, profiles). In the repo they are split into <span data-count="linux">37</span> Linux fixes (<code>patches/linux/</code>) and <span data-count="coreplumbing">7</span> core plumbing patches (<code>patches/core/</code>).</p>
     </div>
     <div class="cowork-mode">
       <div class="badge badge-exp">Switchable</div>
@@ -1300,12 +1300,12 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
   <!-- Generated by scripts/gen-site-patch-catalog.py from docs/patches.md - do not edit by hand. -->
   <div class="pc-controls" id="pc-controls" hidden>
     <div class="cf-search">
-      <input type="search" id="pc-filter" placeholder="Filter 66 patches by name or description" aria-label="Filter patches" autocomplete="off">
+      <input type="search" id="pc-filter" placeholder="Filter 67 patches by name or description" aria-label="Filter patches" autocomplete="off">
       <button type="button" class="cf-clear" id="pc-clear" aria-label="Clear filter" hidden>&times;</button>
     </div>
     <div class="pc-tiers" role="group" aria-label="Patch tier">
-      <button type="button" class="pc-tier active" data-tier="all" aria-pressed="true">All (66)</button>
-      <button type="button" class="pc-tier" data-tier="core" aria-pressed="false">Core (43)</button>
+      <button type="button" class="pc-tier active" data-tier="all" aria-pressed="true">All (67)</button>
+      <button type="button" class="pc-tier" data-tier="core" aria-pressed="false">Core (44)</button>
       <button type="button" class="pc-tier" data-tier="community" aria-pressed="false">Community (23)</button>
     </div>
   </div>
@@ -1443,7 +1443,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
       </div>
     </div>
     <div class="cf-group pc-group" id="pc-linux" data-tier="core">
-      <h3 class="pc-group-h">Linux compatibility <span class="pc-group-n">36</span></h3>
+      <h3 class="pc-group-h">Linux compatibility <span class="pc-group-n">37</span></h3>
       <div class="cf-group-sub">Always on: where Anthropic lacks compatibility on Linux. <code>patches/linux/</code></div>
       <div class="cf-list">
         <div class="cf-row pc-row" id="patch-enable_local_agent_mode" data-tier="core">
@@ -1474,6 +1474,10 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
           <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/linux/fix_cowork_firmware_paths_linux.nim">fix_cowork_firmware_paths_linux.nim</a> <span class="cf-hint badge-default">Core: Linux fix</span></div>
           <div class="cf-note">Finds QEMU, its firmware and virtiofsd outside Debian&#x27;s paths, so Cowork stops reporting &quot;Download failed&quot; or &quot;requires QEMU&quot; on Fedora, RHEL, Arch and NixOS (<a href="https://github.com/patrickjaja/claude-desktop-extra/issues/177">#177</a>). QEMU is looked up as <code>CLAUDE_QEMU_PATH</code>, then <code>/usr/bin/qemu-system-&lt;arch&gt;</code>, then on <code>$PATH</code></div>
         </div>
+        <div class="cf-row pc-row" id="patch-fix_cowork_device_icon_web" data-tier="core">
+          <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/linux/fix_cowork_device_icon_web.nim">fix_cowork_device_icon_web.nim</a> <span class="cf-hint badge-default">Core: Linux fix</span></div>
+          <div class="cf-note">Shows this computer&#x27;s Cowork state in every chat header. Upstream shows a device icon only for a chat linked to a computer or a session that runs on this one, and nothing otherwise, so a desktop without a device key (no <code>/dev/tpmrm0</code> access) never learns why its chats cannot use it. Where upstream shows no icon, a laptop icon appears: with an X when this computer has no device key, with an amber dot when it has one but the chat is not linked, plain while the key state is not known. Upstream&#x27;s own device popovers get a <strong>Linux details</strong> row (the local one also a local VM readiness line). Every variant opens Settings -&gt; Extra -&gt; Cowork (Linux). The page anchors are checked at run time and logged as <code>[cdb-cowork-icon]</code> lines; see <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/baseline/COWORK_HEADER_ICON_ANCHORS.md">baseline/COWORK_HEADER_ICON_ANCHORS.md</a></div>
+        </div>
         <div class="cf-row pc-row" id="patch-fix_cowork_font" data-tier="core">
           <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/linux/fix_cowork_font.nim">fix_cowork_font.nim</a> <span class="cf-hint badge-default">Core: Linux fix</span></div>
           <div class="cf-note">Applies your chat font to the Cowork tab, which fell back to a serif face because upstream sets the font only when the Chat view mounts</div>
@@ -1492,7 +1496,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
         </div>
         <div class="cf-row pc-row" id="patch-fix_ion_dist_linux" data-tier="core">
           <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/linux/fix_ion_dist_linux.nim">fix_ion_dist_linux.nim</a> <span class="cf-hint badge-default">Core: Linux fix</span></div>
-          <div class="cf-note">Adds the Linux org-plugins path to the third-party configuration app, which knew only macOS and Windows locations; when this desktop connected without a device key (no <code>/dev/tpmrm0</code> access), the Cowork task header shows the device icon anyway, with a warning dot and a popover that points at Settings -&gt; Extra -&gt; Computer Use (upstream shows no icon for such a task)</div>
+          <div class="cf-note">Adds the Linux org-plugins path to the third-party configuration app, which knew only macOS and Windows locations</div>
         </div>
         <div class="cf-row pc-row" id="patch-fix_keep_awake_linux" data-tier="core">
           <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/linux/fix_keep_awake_linux.nim">fix_keep_awake_linux.nim</a> <span class="cf-hint badge-default">Core: Linux fix</span></div>
@@ -1678,18 +1682,18 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
 <section id="cowork" class="fade-in">
   <div class="section-label">Agentic workspace</div>
   <h2>Cowork</h2>
-  <p>Claude Desktop's agentic workspace: delegate a goal to a sandboxed Claude Code agent that reads, edits and creates files and returns a deliverable. Optional on every install path.</p>
+  <p>Claude Desktop's agentic workspace: delegate a goal to a sandboxed Claude Code agent that reads, edits and creates files and returns a deliverable. It has two backends, and Settings &rarr; Extra &rarr; <strong>Cowork (Linux)</strong> shows the state of both.</p>
 
   <div class="cowork-box">
     <div class="cowork-mode">
-      <div class="badge badge-default">Bundled</div>
-      <h3>Official native backend</h3>
-      <p>Cowork and Dispatch run on the native VM backend Anthropic ships in the official Linux build, bundled in the package. The <code>.deb</code> and <code>.rpm</code> pull in the host tools as recommended / weak deps, and Nix bakes them into the closure.</p>
+      <div class="badge badge-default">Cloud - no KVM</div>
+      <h3>Cloud Cowork and the TPM device key</h3>
+      <p>Runs in Anthropic's cloud with a claude.ai account. For desktop tools (Computer Use, files) this computer must be a keyed device: click <strong>Enable TPM access</strong> on that page (one administrator prompt). Every Cowork chat header shows a device icon with the state and a link to the fix. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md#computer-use-in-cloud-cowork-and-dispatch">Details &rarr;</a></p>
     </div>
     <div class="cowork-mode">
-      <div class="badge badge-exp">Host setup</div>
-      <h3>QEMU, firmware, virtiofsd and /dev/kvm</h3>
-      <p>The host needs QEMU, UEFI firmware and virtiofsd, and access to <code>/dev/kvm</code>: join the <code>kvm</code> group once (<code>sudo usermod -aG kvm "$USER"</code>, then log out and in). <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/cowork.md">Per-distro commands &rarr;</a></p>
+      <div class="badge badge-exp">Local - needs KVM</div>
+      <h3>Local Cowork VM: QEMU, firmware, virtiofsd, /dev/kvm</h3>
+      <p>The native VM backend Anthropic ships in the official Linux build, bundled in the package; optional with a claude.ai account and the only Cowork in third-party mode. The host needs QEMU, UEFI firmware and virtiofsd (the <code>.deb</code> and <code>.rpm</code> pull them in as recommended / weak deps, Nix bakes them in) and access to <code>/dev/kvm</code> and <code>/dev/vhost-vsock</code>: click <strong>Enable KVM access</strong> on that page (no relogin, restart the app), or join the <code>kvm</code> group (<code>sudo usermod -aG kvm "$USER"</code>, then log out and in). <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/cowork.md">Per-distro commands &rarr;</a></p>
     </div>
   </div>
 </section>

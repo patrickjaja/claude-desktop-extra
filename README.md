@@ -24,7 +24,7 @@ Everything else - Chat, Cowork, Claude Code, Browser Tools, 3P inference - is An
 | NixOS / Nix | `nix run github:patrickjaja/claude-desktop-extra` |
 | Any distro | [AppImage from the latest release](https://github.com/patrickjaja/claude-desktop-extra/releases/latest) |
 
-x86_64 and aarch64 are supported everywhere except Nix (x86_64 only). **Cowork** (the agent VM) is optional and needs QEMU/KVM, see [Cowork setup](#cowork-setup-needs-devkvm). Details per distro:
+x86_64 and aarch64 are supported everywhere except Nix (x86_64 only). **Cowork** has two backends: cloud Cowork needs no KVM (for desktop tools this computer needs a TPM device key), and the optional local Cowork VM needs QEMU/KVM. See [Cowork setup](#cowork-setup-needs-devkvm). Details per distro:
 
 <a name="arch-linux--manjaro-pacman-repository"></a>
 <a id="install-pacman"></a>
@@ -44,7 +44,7 @@ curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-pacman.sh 
 sudo pacman -Syu claude-desktop-extra
 ```
 
-**Optional deps** (not installed automatically): QEMU/KVM for Cowork ([setup](docs/cowork.md)), `bubblewrap` + `socat` (Claude Code shell sandbox), `openssh` (Claude Code SSH sessions over the system ssh client), `nodejs` (system MCP servers), `gjs` (GNOME search provider), `claude-code`.
+**Optional deps** (not installed automatically): QEMU/KVM for the local Cowork VM ([setup](docs/cowork.md)), `bubblewrap` + `socat` (Claude Code shell sandbox), `openssh` (Claude Code SSH sessions over the system ssh client), `nodejs` (system MCP servers), `gjs` (GNOME search provider), `claude-code`.
 
 <details>
 <summary>Manual <code>pacman.conf</code> setup (without the install script)</summary>
@@ -94,7 +94,7 @@ curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install.sh | sudo 
 sudo apt install claude-desktop-extra
 ```
 
-It replaces Anthropic's own `claude-desktop` package if installed (same files). Cowork packages come in as `Recommends`; only the `kvm` group step remains ([Cowork setup](docs/cowork.md)).
+It replaces Anthropic's own `claude-desktop` package if installed (same files). The local Cowork VM tools come in as `Recommends`; the remaining step is Settings -> Extra -> Cowork (Linux) -> Enable KVM access, or the `kvm` group ([Cowork setup](docs/cowork.md)).
 
 Without the repo: `wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/claude-desktop-extra_4.23118.0-5_amd64.deb && sudo dpkg -i claude-desktop-extra_*_amd64.deb`
 </details>
@@ -109,7 +109,7 @@ curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-rpm.sh | s
 sudo dnf install claude-desktop-extra
 ```
 
-Cowork packages come in as weak deps; only the `kvm` group step remains ([Cowork setup](docs/cowork.md)).
+The local Cowork VM tools come in as weak deps; the remaining step is Settings -> Extra -> Cowork (Linux) -> Enable KVM access, or the `kvm` group ([Cowork setup](docs/cowork.md)).
 
 Without the repo: `wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/claude-desktop-extra-4.23118.0-5.x86_64.rpm && sudo dnf install ./claude-desktop-extra-*.x86_64.rpm`
 </details>
@@ -121,7 +121,7 @@ Without the repo: `wget https://github.com/patrickjaja/claude-desktop-extra/rele
 
 Try it with `nix run github:patrickjaja/claude-desktop-extra`, install with `nix profile install github:patrickjaja/claude-desktop-extra`. Flake: add `inputs.claude-desktop.url = "github:patrickjaja/claude-desktop-extra";` and put `inputs.claude-desktop.packages.x86_64-linux.default` in `environment.systemPackages`. Update with `nix flake update`. "Start at login" and profile shortcuts run through the package wrapper, so they survive a garbage collection.
 
-Cowork tools (`qemu`, `virtiofsd`, OVMF) are baked into the closure (`.override { qemu = null; }` drops them). Host steps: `users.users.<you>.extraGroups = [ "kvm" ];` and, outside GNOME, `services.gnome.gnome-keyring.enable = true;` to keep sign-in. The GNOME/KDE Computer Use bridges need an override on NixOS, see [Computer Use dependencies](docs/computer-use-dependencies.md#nixos).
+Local Cowork VM tools (`qemu`, `virtiofsd`, OVMF) are baked into the closure (`.override { qemu = null; }` drops them). Host steps: `programs.claude-desktop-extra.kvmAccess.enable = true;` (or `users.users.<you>.extraGroups = [ "kvm" ];`) for the local VM and, outside GNOME, `services.gnome.gnome-keyring.enable = true;` to keep sign-in. The GNOME/KDE Computer Use bridges need an override on NixOS, see [Computer Use dependencies](docs/computer-use-dependencies.md#nixos).
 </details>
 
 <a name="appimage-any-distro"></a>
@@ -136,7 +136,7 @@ wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/downloa
 chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage
 ```
 
-Delta updates: `appimageupdatetool Claude_Desktop-*.AppImage`. Works with AppImageLauncher and Gear Lever. Needs the host's PipeWire client library (`libpipewire-0.3.so.0`, present on every desktop with PipeWire). For Cowork, install QEMU + UEFI firmware + virtiofsd from your distro ([Cowork setup](docs/cowork.md)); for the Claude Code shell sandbox, `bubblewrap` and `socat`. First launch also registers `.mcpb`/`.dxt` extensions and `.skill` files for your user.
+Delta updates: `appimageupdatetool Claude_Desktop-*.AppImage`. Works with AppImageLauncher and Gear Lever. Needs the host's PipeWire client library (`libpipewire-0.3.so.0`, present on every desktop with PipeWire). For the local Cowork VM, install QEMU + UEFI firmware + virtiofsd from your distro ([Cowork setup](docs/cowork.md)); for the Claude Code shell sandbox, `bubblewrap` and `socat`. First launch also registers `.mcpb`/`.dxt` extensions and `.skill` files for your user.
 </details>
 
 <a name="from-source"></a>
@@ -162,9 +162,14 @@ The package replaces itself on the next regular upgrade, and your config is migr
 
 <a name="cowork-setup-needs-devkvm"></a>
 <details>
-<summary><b>Cowork setup (needs /dev/kvm)</b> - optional, every install path</summary>
+<summary><b>Cowork setup</b> - cloud Cowork needs no KVM; the local Cowork VM needs /dev/kvm</summary>
 
-Cowork and Dispatch run on the official native VM backend bundled in the package. The host needs QEMU + UEFI firmware + virtiofsd and access to `/dev/kvm`: join the `kvm` group once (`sudo usermod -aG kvm "$USER"`, then log out and in). Per-distro commands and troubleshooting: [docs/cowork.md](docs/cowork.md).
+Cowork has two backends:
+
+- **Cloud Cowork** (claude.ai accounts only) runs in Anthropic's cloud and needs no KVM. For desktop tools (Computer Use, files) this computer must be a keyed device: Settings -> Extra -> Cowork (Linux) -> **Enable TPM access** (one administrator prompt).
+- **Local Cowork VM** (optional with a claude.ai account, the only Cowork in third-party inference mode) runs on the official native VM backend bundled in the package. The host needs QEMU + UEFI firmware + virtiofsd and access to `/dev/kvm` and `/dev/vhost-vsock`: Settings -> Extra -> Cowork (Linux) -> **Enable KVM access** (no relogin; restart the app so it probes again), or join the `kvm` group once (`sudo usermod -aG kvm "$USER"`, then log out and in). NixOS: `programs.claude-desktop-extra.kvmAccess.enable = true;`.
+
+Per-distro commands and troubleshooting: [docs/cowork.md](docs/cowork.md).
 </details>
 
 <a name="verifying-the-repository-signing-key"></a>
@@ -216,7 +221,7 @@ Off by default; turn them on in Settings → Extra → Community. Details: [docs
 
 ## Computer Use
 
-Desktop automation (screenshot, click, type, scroll, teach mode), on for every account and every session type. The official build's own Linux Computer Use is a staged rollout that needs a RemoteDesktop portal (GNOME 46+, current Plasma) and skips wlroots; our bundled bridges take precedence and cover X11, XWayland, Sway / Hyprland / Niri, GNOME Wayland (PipeWire >= 1.0.5) and KDE Plasma 6.6+, with nothing to install. Details: [docs/computer-use.md](docs/computer-use.md), per-session matrix: [dependencies](docs/computer-use-dependencies.md). Settings → Extra → **Computer Use** shows whether it works here and holds its switches. An experimental one points it at a second display you start yourself (Xvfb, Xephyr or a headless sway), so Claude works there while you keep your desktop: [background display](docs/computer-use.md#computer-use-on-a-background-display-experimental). A second experimental switch lets Claude read and press app controls by name through the accessibility bus instead of by screenshot: [read app controls](docs/computer-use.md#read-app-controls-through-accessibility-experimental). Cloud Cowork and Dispatch reach it only with TPM access for the device key (one click on that page): [docs/computer-use.md](docs/computer-use.md#computer-use-in-cloud-cowork-and-dispatch).
+Desktop automation (screenshot, click, type, scroll, teach mode), on for every account and every session type. The official build's own Linux Computer Use is a staged rollout that needs a RemoteDesktop portal (GNOME 46+, current Plasma) and skips wlroots; our bundled bridges take precedence and cover X11, XWayland, Sway / Hyprland / Niri, GNOME Wayland (PipeWire >= 1.0.5) and KDE Plasma 6.6+, with nothing to install. Details: [docs/computer-use.md](docs/computer-use.md), per-session matrix: [dependencies](docs/computer-use-dependencies.md). Settings → Extra → **Cowork (Linux)** shows whether it works here and holds its switches. An experimental one points it at a second display you start yourself (Xvfb, Xephyr or a headless sway), so Claude works there while you keep your desktop: [background display](docs/computer-use.md#computer-use-on-a-background-display-experimental). A second experimental switch lets Claude read and press app controls by name through the accessibility bus instead of by screenshot: [read app controls](docs/computer-use.md#read-app-controls-through-accessibility-experimental). Cloud Cowork and Dispatch reach it only with TPM access for the device key (one click on that page): [docs/computer-use.md](docs/computer-use.md#computer-use-in-cloud-cowork-and-dispatch).
 
 ## Custom Themes
 
@@ -248,7 +253,7 @@ Override Anthropic's server-side feature flags in `~/.config/Claude/claude-deskt
 
 ## Patches
 
-We patch the official `app.asar` at repackage time: [`patches/community/`](docs/patches.md#community-features) (23 patches, opt-in features), [`patches/core/`](docs/patches.md#core-infrastructure) (7, infrastructure) and [`patches/linux/`](docs/patches.md#linux-compatibility) (36, Linux fixes). A patch that stops matching fails the build, and a patch is removed once upstream ships the behavior. Catalog: [docs/patches.md](docs/patches.md).
+We patch the official `app.asar` at repackage time: [`patches/community/`](docs/patches.md#community-features) (23 patches, opt-in features), [`patches/core/`](docs/patches.md#core-infrastructure) (7, infrastructure) and [`patches/linux/`](docs/patches.md#linux-compatibility) (37, Linux fixes). A patch that stops matching fails the build, and a patch is removed once upstream ships the behavior. Catalog: [docs/patches.md](docs/patches.md).
 
 ## Command-line flags
 
