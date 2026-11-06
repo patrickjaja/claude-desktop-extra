@@ -1022,6 +1022,9 @@
 .cdbx-cus-section { scroll-margin-top: 12px; }
 .cdbx-cus-status:empty { display: none; }
 .cdbx-cus-old { margin-top: 6px; }
+/* "How Cowork chooses where a task runs": closed by default, above the sections. */
+.cdbx-cus-help { margin: 8px 0 4px; }
+.cdbx-cus-help-link { color: inherit; text-decoration: underline; }
 /* "What this does" under an Enable/Disable command: closed by default. */
 .cdbx-cus-what { margin-top: 6px; }
 .cdbx-cus-what > summary { cursor: pointer; user-select: none; }

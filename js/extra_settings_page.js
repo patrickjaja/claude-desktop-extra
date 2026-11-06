@@ -1873,6 +1873,8 @@
     }
 
     function draw(st, failure) {
+      var help = scope.querySelector(".cdbx-cus-help");
+      if (help) fillCusHelp(help, st.mode);
       var rows = st.rows || {};
       var acts = st.actions || {};
       var canRestart = typeof api.appRelaunch === "function";
@@ -1945,6 +1947,48 @@
 
   // The page's three sections, in order. `id` is the data-cdbx-section value
   // a deep link scrolls to.
+  // "How Cowork chooses where a task runs": a closed help block at the top of
+  // the page (facts as of 4.23118.0). Links are fixed URLs on plain anchors
+  // that open a new window (upstream's window-open handling decides where);
+  // nothing here hands a URL to main. In 3P only the local line applies.
+  var CUS_HELP_DOC = "https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/cowork.md#how-cowork-chooses-cloud-or-local";
+  var CUS_HELP_LINKS_1P = [
+    ["Admin settings - Cowork", "https://claude.ai/admin-settings/cowork"],
+    ["Admin settings - Capabilities", "https://claude.ai/admin-settings/capabilities"],
+    ["docs/cowork.md", CUS_HELP_DOC]
+  ];
+  var CUS_HELP_LOCAL = "Local: the VM on this computer. It needs KVM (see Local Cowork VM below), and it is the only option in 3P mode.";
+  var CUS_HELP_1P = [
+    "Cloud: Anthropic's cloud VM. It reaches this computer's files and apps only through the device link, which needs the device key (see Cloud Cowork below).",
+    CUS_HELP_LOCAL,
+    "The header icon tells you which: a laptop marked \"Connected\" is a cloud task linked to this computer; a slashed cloud, \"Only on this computer\", is a local task.",
+    "Switching: if your organization offers the choice, a cloud / local toggle (Beta) sits above the composer of a new task. Otherwise the app decides: a task with a local folder or Space, Dispatch, or an Auto or Skip-approvals mode the cloud cannot run runs locally; plain chats and tasks run in the cloud. A running task can be moved with \"Continue in cloud...\" or back to this computer.",
+    "Organization admins control this in claude.ai Admin settings: Cowork -> \"Cowork in the cloud\" (and \"Chat and Cowork unified\": when on, chat and Cowork are one surface and no separate toggle is shown), and Capabilities -> Remote sessions -> \"Computer access\" and \"Require trusted devices\" (trusted devices = the device key)."
+  ];
+  var CUS_HELP_3P = [CUS_HELP_LOCAL, "Cloud Cowork is not available in 3P mode."];
+
+  // Fills the help block for "1p" or "3p", keeping whether it is open.
+  function fillCusHelp(box, mode) {
+    var m = mode === "3p" ? "3p" : "1p";
+    if (box.getAttribute("data-mode") === m) return;
+    box.setAttribute("data-mode", m);
+    var open = box.open;
+    clear(box);
+    box.appendChild(el("summary", "cdbx-note", "How Cowork chooses where a task runs"));
+    (m === "3p" ? CUS_HELP_3P : CUS_HELP_1P).forEach(function (t) { box.appendChild(el("div", "cdbx-note", t)); });
+    var links = el("div", "cdbx-note cdbx-cus-help-links");
+    (m === "3p" ? [["docs/cowork.md", CUS_HELP_DOC]] : CUS_HELP_LINKS_1P).forEach(function (l, i) {
+      if (i) links.appendChild(document.createTextNode(" - "));
+      var a = el("a", "cdbx-cus-help-link", l[0]);
+      a.href = l[1];
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      links.appendChild(a);
+    });
+    box.appendChild(links);
+    box.open = open;
+  }
+
   var CUS_SECTIONS = [
     { id: "cloud", title: "Cloud Cowork" },
     { id: "local", title: "Local Cowork VM" },
@@ -1962,6 +2006,10 @@
       "Cowork runs each task in Anthropic's cloud or in a VM on this computer. Cloud tasks reach this desktop only " +
       "when it connects as a device with a key kept in its TPM; the local VM needs KVM. Code sessions use Computer " +
       "Use on this desktop directly."));
+
+    var help = el("details", "cdbx-cus-what cdbx-cus-help");
+    fillCusHelp(help, null);
+    panel.appendChild(help);
 
     var apiOk = cuStatusApiOk();
     var hosts = {};

@@ -1518,6 +1518,34 @@ async function cusPanel(cuItem) {
       return n.getAttribute("data-cdbx-section") + ":" + n.querySelector(".cdbx-sec-t").textContent; });
     ok(secs.join("|") === "cloud:Cloud Cowork|local:Local Cowork VM|cu:Computer Use",
        "three sections in order, each with its heading: " + secs.join("|"));
+    // "How Cowork chooses where a task runs": closed, above the sections.
+    const help = panel.querySelector("details.cdbx-cus-help");
+    const firstSec = panel.querySelector("[data-cdbx-section]");
+    ok(!!help && help.open === false && help.querySelector("summary").textContent === "How Cowork chooses where a task runs" &&
+       !!(help.compareDocumentPosition(firstSec) & Node.DOCUMENT_POSITION_FOLLOWING),
+       "a closed help block 'How Cowork chooses where a task runs' sits above the three sections");
+    const hl = help ? Array.prototype.map.call(help.querySelectorAll(":scope > div.cdbx-note:not(.cdbx-cus-help-links)"), function (n) { return n.textContent; }) : [];
+    ok(hl.length === 5 && /^Cloud: Anthropic's cloud VM/.test(hl[0]) && /device key/.test(hl[0]) && /^Local: the VM on this computer/.test(hl[1]) &&
+       /only option in 3P mode/.test(hl[1]) && /"Connected"/.test(hl[2]) && /"Only on this computer"/.test(hl[2]) &&
+       /toggle \(Beta\)/.test(hl[3]) && /local folder or Space, Dispatch/.test(hl[3]) && /"Continue in cloud\.\.\."/.test(hl[3]) &&
+       /"Cowork in the cloud"/.test(hl[4]) && /"Chat and Cowork unified"/.test(hl[4]) && /"Computer access"/.test(hl[4]) &&
+       /"Require trusted devices"/.test(hl[4]) && hl.every(function (t) { return !/\u2014/.test(t); }),
+       "1P: cloud, local, the header icon, switching and the admin settings: " + hl.length);
+    const links = help ? Array.prototype.map.call(help.querySelectorAll("a.cdbx-cus-help-link"), function (a) {
+      return a.textContent + "=" + a.getAttribute("href") + "|" + a.target + "|" + a.rel; }) : [];
+    ok(links.join(" ; ") === [
+      "Admin settings - Cowork=https://claude.ai/admin-settings/cowork|_blank|noopener noreferrer",
+      "Admin settings - Capabilities=https://claude.ai/admin-settings/capabilities|_blank|noopener noreferrer",
+      "docs/cowork.md=https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/cowork.md#how-cowork-chooses-cloud-or-local|_blank|noopener noreferrer"].join(" ; "),
+       "three fixed links, each opening a new window: " + links.join(" ; "));
+    help.open = true;
+    window.__cusCalls.read--;
+    btn(panel, "Re-check").click();
+    await sleep(60);
+    ok(help.isConnected && help.open === true, "a re-read keeps the help block and whether it is open");
+    help.open = false;
+  }
+  {
     const inSec = function (key) { const r = row(key); const w = r && r.closest("[data-cdbx-section]"); return w ? w.getAttribute("data-cdbx-section") : null; };
     ok(inSec("tpm") === "cloud" && inSec("cloud") === "cloud" && inSec("desktop") === "cu",
        "device key and cloud rows under Cloud Cowork, this desktop under Computer Use");
@@ -1960,6 +1988,14 @@ async function cusPanel(cuItem) {
   ok(word("tpm") === "Not available" && row("tpm").querySelector(".cdbx-cus-fact").textContent === "Not used in 3P mode" &&
      row("cloud").querySelector(".cdbx-cus-fact").textContent === "Not used in 3P mode" && !btn(panel, "Enable TPM access") &&
      word("kvm") === "OK", "3P: Not used in 3P mode on the cloud section, the local VM section live");
+  {
+    const help = panel.querySelector("details.cdbx-cus-help");
+    const hl = help ? Array.prototype.map.call(help.querySelectorAll(":scope > div.cdbx-note:not(.cdbx-cus-help-links)"), function (n) { return n.textContent; }) : [];
+    const links = help ? Array.prototype.map.call(help.querySelectorAll("a"), function (a) { return a.getAttribute("href"); }) : [];
+    ok(hl.length === 2 && /^Local: the VM on this computer/.test(hl[0]) && hl[1] === "Cloud Cowork is not available in 3P mode." &&
+       links.length === 1 && /docs\/cowork\.md#how-cowork-chooses-cloud-or-local$/.test(links[0]) && !/admin-settings/.test(help.textContent + links.join()),
+       "3P help: the local line, cloud not available, no admin links: " + hl.join(" | ") + " / " + links.join());
+  }
   window.__cusState = { ok: true, rows: window.__cusRows(), actions: { tpmEnable: PK_EN } };
 }
 

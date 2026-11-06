@@ -16,6 +16,15 @@ The app chooses per task: "This task will run in the cloud" or "on your computer
 
 In the header of every claude.ai chat and Cowork session (`/chat/...` and `/cowork/...`) a device icon shows where this desktop stands: the upstream laptop icon (with a "Linux details" row that opens Cowork (Linux)) when the chat is linked to this computer or runs in the local VM, a laptop with an X when this desktop has no device key, an amber dot when the desktop is keyed but this chat is not linked to it, and a plain laptop while the device key state is not known yet. Every variant opens the matching section of the page. Each popover also says where the chat runs: in the cloud (and through which computer, when linked) or in the local VM on this computer, with the VM's state.
 
+## How Cowork chooses cloud or local
+
+Facts as of app version 4.23118.0. Settings -> Extra -> Cowork (Linux) shows the same as a collapsible "How Cowork chooses where a task runs" block.
+
+- **Two places.** Cloud: Anthropic's cloud VM. It reaches this computer's files and apps only through the device link, which needs the device key ([Cloud Cowork setup](#cloud-cowork-setup)). Local: the VM on this computer. It needs KVM ([Local Cowork VM setup](#local-cowork-vm-setup)), and it is the only option in 3P mode, where cloud Cowork is not available.
+- **Which one a task uses:** the header icon tells you. A laptop marked "Connected" is a cloud task linked to this computer; a slashed cloud, "Only on this computer", is a local task.
+- **Switching.** If your organization offers the choice, a cloud / local toggle (Beta) sits above the composer of a new task. Otherwise the app decides: a task with a local folder or Space, Dispatch, or an Auto or Skip-approvals mode the cloud cannot run, runs locally; plain chats and tasks run in the cloud. A running task can be moved with "Continue in cloud..." or back to this computer.
+- **Organization admins** control this in claude.ai Admin settings: [Cowork](https://claude.ai/admin-settings/cowork) -> "Cowork in the cloud" (and "Chat and Cowork unified": when on, chat and Cowork are one surface and no separate toggle is shown), and [Capabilities](https://claude.ai/admin-settings/capabilities) -> Remote sessions -> "Computer access" and "Require trusted devices" (trusted devices = the device key).
+
 ## Local Cowork VM setup
 
 The local backend is the **official native Cowork VM backend** bundled inside the package - the same one Anthropic ships in the official Linux build. There is no separate daemon to install; sessions run in a lightweight VM with `$HOME` shared in, which requires **`/dev/kvm`** and **`/dev/vhost-vsock`** on the host. Host loop sessions also run their shell commands in this VM.
