@@ -4,11 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Claude Desktop for Linux</title>
-  <meta name="description" content="Unofficial pre-patched Linux packages for Claude Desktop. Chat, Code, Cowork, Computer Use - on every distro, every architecture.">
+  <meta name="description" content="Anthropic's official Claude Desktop Linux build, repackaged for Arch, Fedora/RHEL, NixOS and AppImage, with Linux-only extras: Computer Use, custom themes, multiple profiles, Quick Entry, custom models in the Code tab.">
   <meta property="og:title" content="Claude Desktop for Linux">
-  <meta property="og:description" content="Anthropic's official Claude Desktop Linux build, repackaged for Arch, Fedora, NixOS & AppImage - x86_64 and ARM64 - plus Linux-only extras: Computer Use, themes, profiles, Quick Entry.">
+  <meta property="og:description" content="Anthropic's official Claude Desktop Linux build, repackaged for Arch, Fedora/RHEL, NixOS and AppImage - x86_64 and ARM64 - plus Linux-only extras: Computer Use, themes, profiles, Quick Entry, custom models.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://patrickjaja.github.io/claude-desktop-extra/">
+  <script>document.documentElement.className += ' js';</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -251,8 +252,10 @@
       border-color: var(--accent);
       color: var(--accent);
     }
-    .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
+    html:not(.js) .tabs { display: none; }
+    html:not(.js) .tab-panel + .tab-panel { margin-top: 1.25rem; }
+    .js .tab-panel { display: none; }
+    .js .tab-panel.active { display: block; }
     .install-block {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -413,18 +416,18 @@
     .footer-badges img { height: 20px; }
 
     /* --- ANIMATIONS --- */
-    .fade-in {
+    .js .fade-in {
       opacity: 0;
       transform: translateY(16px);
       transition: opacity 0.5s ease, transform 0.5s ease;
     }
-    .fade-in.visible {
+    .js .fade-in.visible {
       opacity: 1;
       transform: translateY(0);
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .fade-in { opacity: 1; transform: none; transition: none; }
+      .js .fade-in { opacity: 1; transform: none; transition: none; }
       .cursor { animation: none; opacity: 1; }
       .feature-card:hover { transform: none; }
     }
@@ -458,6 +461,161 @@
       .hero { padding: 3rem 1.5rem 2.5rem; }
       section { padding: 2.5rem 1.5rem; }
     }
+
+    /* --- HERO STAT LINE --- */
+    .stat-line {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.5rem;
+      margin: 2rem auto 0;
+      max-width: 760px;
+    }
+    .stat {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 0.4rem;
+      padding: 0.35rem 0.8rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+    .stat strong { color: var(--accent); font-weight: 700; font-size: 0.95rem; }
+    .stat a { color: inherit; }
+
+    /* --- SCREENSHOTS --- */
+    .shot {
+      display: block;
+      width: 100%;
+      height: auto;
+      margin-top: 1.5rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .shot-caption {
+      margin-top: 0.5rem;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      text-align: center;
+    }
+    .sub-h {
+      font-size: 1rem;
+      margin: 2.25rem 0 1rem;
+    }
+    .more-link {
+      margin-top: 1rem;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+    .feature-card code, .cowork-mode code, .cf-note code, .more-link code, section > p code {
+      font-family: var(--mono);
+      font-size: 0.8em;
+      color: var(--text);
+    }
+
+    /* --- COMMUNITY FEATURES FILTER --- */
+    .cf-search {
+      position: relative;
+      margin-bottom: 1.5rem;
+    }
+    .cf-search input {
+      width: 100%;
+      padding: 0.7rem 2.5rem 0.7rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .cf-search input::placeholder { color: var(--text-dim); }
+    .cf-search input:focus { border-color: var(--accent); }
+    .cf-search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+    .cf-clear {
+      position: absolute;
+      top: 50%;
+      right: 0.6rem;
+      transform: translateY(-50%);
+      width: 1.6rem;
+      height: 1.6rem;
+      border: none;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-dim);
+      font-size: 1rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .cf-clear:hover { background: rgba(255, 255, 255, 0.1); color: var(--text); }
+    .cf-group { margin-bottom: 1.75rem; }
+    .cf-group .cf-group { margin: 1.25rem 0 0 1rem; }
+    .cf-group-sub {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      margin: -0.25rem 0 0.75rem;
+    }
+    .cf-list {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    /* Every row draws a bottom border and overlaps the next by 1px; the list
+       clips the last visible row's border, whichever row the filter left last. */
+    .cf-row {
+      padding: 0.85rem 1.1rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: -1px;
+    }
+    .cf-title {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 0.2rem;
+    }
+    .cf-note {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+    .cf-hint {
+      display: inline-block;
+      padding: 0.1rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.65rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .cf-empty {
+      padding: 1rem;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      text-align: center;
+    }
+    [hidden] { display: none !important; }
+
+    /* --- PATCH TIERS --- */
+    .tier-count {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1.2;
+    }
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
   </style>
 </head>
 <body>
@@ -465,16 +623,21 @@
 <!-- NAV -->
 <nav>
   <div class="nav-inner">
-    <div class="nav-brand"><span>claude</span>-desktop-bin</div>
+    <div class="nav-brand"><span>claude</span>-desktop-extra</div>
     <button class="nav-toggle" aria-label="Toggle navigation">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
     </button>
     <div class="nav-links">
       <a href="#install">Install</a>
       <a href="#features">Features</a>
-      <a href="#compatibility">Compatibility</a>
+      <a href="#code-tab">Code tab</a>
+      <a href="#custom-models">Models</a>
+      <a href="#community">Community</a>
+      <a href="#patches">Patches</a>
       <a href="#cowork">Cowork</a>
-      <a href="#enterprise">Enterprise</a>
+      <a href="#enterprise">3P</a>
+      <a href="#compatibility">Distros</a>
+      <a href="#troubleshooting">Help</a>
       <a href="https://github.com/patrickjaja/claude-desktop-extra" class="nav-gh">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         GitHub
@@ -487,7 +650,7 @@
 <div class="hero">
   <div class="hero-badge">Community package - not affiliated with Anthropic</div>
   <h1>Claude Desktop, <em>packaged for every Linux</em></h1>
-  <p>Anthropic's official Claude Desktop Linux build - repackaged for Arch, Fedora, NixOS, and AppImage - plus Linux-only extras like Computer Use, themes, and multi-profile.</p>
+  <p>Anthropic's official Claude Desktop Linux build, repackaged for Arch, Fedora/RHEL, NixOS and AppImage (plus our own <code>.deb</code>), with Linux-only extras on top: Computer Use, custom themes, multiple profiles, Quick Entry, and more under Settings &rarr; Extra.</p>
 
   <div class="terminal">
     <div class="terminal-bar">
@@ -508,17 +671,23 @@
       View on GitHub
     </a>
   </div>
+
+  <div class="stat-line">
+    <span class="stat"><strong>66</strong> <a href="#patches">patches on the official build, and growing</a></span>
+    <span class="stat"><strong>43</strong> core: where Anthropic lacks compatibility</span>
+    <span class="stat"><strong>23</strong> community: improvements and features</span>
+  </div>
 </div>
 
 <!-- INSTALL -->
 <section id="install" class="fade-in">
   <div class="section-label">Quick Start</div>
   <h2>Install in seconds</h2>
-  <p>Pick your distro. ARM64 packages are served from the same repos - your package manager selects the right architecture automatically.</p>
+  <p>Pick your distro. x86_64 and aarch64 are supported everywhere except Nix (x86_64 only); the repos pick the right architecture. New upstream releases reach you through your package manager.</p>
 
   <div class="tabs" role="tablist">
     <button class="tab-btn active" data-tab="arch" role="tab">Arch / Manjaro</button>
-    <button class="tab-btn" data-tab="debian" role="tab">Ubuntu / Debian</button>
+    <button class="tab-btn" data-tab="debian" role="tab">Debian / Ubuntu</button>
     <button class="tab-btn" data-tab="fedora" role="tab">Fedora / RHEL</button>
     <button class="tab-btn" data-tab="nix" role="tab">NixOS / Nix</button>
     <button class="tab-btn" data-tab="appimage" role="tab">AppImage</button>
@@ -530,31 +699,31 @@
       <pre><span class="comment"># From the AUR (or: paru -S, Manjaro: pamac build)</span>
 yay -S claude-desktop-extra</pre>
     </div>
-    <div class="install-note">Updates arrive through <code>yay -Syu</code>. x86_64 and aarch64. The <a href="https://aur.archlinux.org/packages/claude-desktop-extra">PKGBUILD</a> repackages the SHA256-pinned release tarball, no compiling. No AUR helper? <a href="https://github.com/patrickjaja/claude-desktop-extra#arch-linux--manjaro-pacman-repository">Use the signed pacman repository →</a></div>
+    <div class="install-note">Arch, Manjaro, <a href="https://omarchy.org">Omarchy</a>, CachyOS, EndeavourOS and other Arch-based distros. Updates arrive through <code>yay -Syu</code>; x86_64 and aarch64. The <a href="https://aur.archlinux.org/packages/claude-desktop-extra">PKGBUILD</a> downloads the prebuilt, SHA256-pinned release tarball and repackages it, no compiling. No AUR helper? <a href="https://github.com/patrickjaja/claude-desktop-extra#arch-linux--manjaro-pacman-repository">Use the signed pacman repository &rarr;</a></div>
   </div>
 
   <div class="tab-panel" id="tab-debian">
     <div class="install-block">
       <button class="copy-btn" data-copy="curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install.sh | sudo bash
 sudo apt install claude-desktop-extra">Copy</button>
-      <pre><span class="comment"># Add repo + GPG key</span>
+      <pre><span class="comment"># Add the repo + signing key, once</span>
 curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install.sh | sudo bash
 <span class="comment"># Install</span>
 sudo apt install claude-desktop-extra</pre>
     </div>
-    <div class="install-note">Updates arrive through <code>apt update && apt upgrade</code>. Supports amd64 and arm64.</div>
+    <div class="install-note">Requires Ubuntu 22.04+ / Debian 12+ (glibc 2.34+); amd64 and arm64. Replaces Anthropic's own <code>claude-desktop</code> package if installed (same files). Cowork packages come in as <code>Recommends</code>. Updates arrive through <code>apt upgrade</code>.</div>
   </div>
 
   <div class="tab-panel" id="tab-fedora">
     <div class="install-block">
       <button class="copy-btn" data-copy="curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-rpm.sh | sudo bash
 sudo dnf install claude-desktop-extra">Copy</button>
-      <pre><span class="comment"># Add repo + GPG key</span>
+      <pre><span class="comment"># Add the repo + signing key, once</span>
 curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-rpm.sh | sudo bash
 <span class="comment"># Install</span>
 sudo dnf install claude-desktop-extra</pre>
     </div>
-    <div class="install-note">Updates arrive through <code>dnf upgrade</code>. Supports x86_64 and aarch64.</div>
+    <div class="install-note">x86_64 and aarch64. Cowork packages come in as weak deps. Updates arrive through <code>dnf upgrade</code>.</div>
   </div>
 
   <div class="tab-panel" id="tab-nix">
@@ -566,76 +735,56 @@ nix run github:patrickjaja/claude-desktop-extra
 <span class="comment"># Or install persistently</span>
 nix profile install github:patrickjaja/claude-desktop-extra</pre>
     </div>
-    <div class="install-note">Nix flake with auto-updated hashes on each release.</div>
+    <div class="install-note">x86_64 only. Flake users: add <code>inputs.claude-desktop.url = "github:patrickjaja/claude-desktop-extra";</code>, update with <code>nix flake update</code>. Cowork tools are baked into the closure. <a href="https://github.com/patrickjaja/claude-desktop-extra#nixos--nix">NixOS details &rarr;</a></div>
   </div>
 
   <div class="tab-panel" id="tab-appimage">
     <div class="install-block">
-      <button class="copy-btn" data-copy="wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/Claude_Desktop-x86_64.AppImage
-chmod +x Claude_Desktop-x86_64.AppImage
-./Claude_Desktop-x86_64.AppImage">Copy</button>
-      <pre><span class="comment"># Download, make executable, run</span>
-wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/Claude_Desktop-x86_64.AppImage
-chmod +x Claude_Desktop-x86_64.AppImage
-./Claude_Desktop-x86_64.AppImage</pre>
+      <button class="copy-btn" id="appimage-copy" data-copy="chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage">Copy</button>
+      <pre id="appimage-pre"><span class="comment"># Download Claude_Desktop-&lt;version&gt;-x86_64.AppImage from the latest release, then:</span>
+chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage</pre>
     </div>
-    <div class="install-note">No root required. Works on any glibc-based distro. ARM64 AppImage also available.</div>
+    <div class="install-note">Any distro, including immutable ones (Bazzite, Silverblue/Kinoite, SteamOS, Universal Blue). No root required; the <code>claude://</code> sign-in handler registers itself on first launch. Delta updates with <code>appimageupdatetool</code>; works with AppImageLauncher and Gear Lever. Needs the host's PipeWire client library (<code>libpipewire-0.3.so.0</code>, present on every desktop with PipeWire); for the Claude Code shell sandbox, <code>bubblewrap</code> and <code>socat</code>. aarch64 build in the same release. <a href="https://github.com/patrickjaja/claude-desktop-extra/releases/latest">Latest release &rarr;</a></div>
+  </div>
+
+  <div class="install-note" style="margin-top: 1.25rem;">
+    <strong>Cowork</strong> (the agent VM) is optional and needs QEMU/KVM: <a href="#cowork">setup below</a>.
+    Repository signing key (APT, DNF and pacman): <code>825A 7D15 D78B ABE4 5646  D5DF 3824 09F5 9790 8867</code>,
+    check it with <code>curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/gpg-key.asc | gpg --show-keys --with-fingerprint</code>.
+    Also available: <a href="https://github.com/patrickjaja/claude-desktop-extra#from-source">from source</a> and <a href="https://github.com/patrickjaja/claude-desktop-extra#migrating-from-claude-desktop-bin">migrating from claude-desktop-bin</a>.
   </div>
 </section>
 
 <!-- FEATURES -->
 <section id="features" class="fade-in">
   <div class="section-label">Features</div>
-  <h2>Everything works on Linux</h2>
-  <p>Anthropic's official Linux build - Chat, Code, Cowork, Browser Tools, 3P inference - preserved through the repackage, plus four Linux-only extras we add on top.</p>
+  <h2>The official app, plus Linux-only extras</h2>
+  <p>Chat, Cowork, Claude Code, Browser Tools and 3P inference are Anthropic's own build, preserved through the repackage. On top of it, this package adds the extras below and the <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/patches.md#linux-compatibility">Linux fixes</a> the official build needs on more distros.</p>
 
+  <h3 class="sub-h">What we add</h3>
   <div class="features-grid">
-    <div class="feature-card">
-      <div class="feature-icon">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
-      </div>
-      <h3>Chat</h3>
-      <p>Full desktop chat UI with artifacts, projects, search, and file uploads on X11 and Wayland.</p>
-    </div>
-
-    <div class="feature-card">
-      <div class="feature-icon">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-      </div>
-      <h3>Code</h3>
-      <p>Claude Code CLI integration with local agent mode, git worktrees, and terminal access.</p>
-    </div>
-
-    <div class="feature-card">
-      <div class="feature-icon">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-      </div>
-      <h3>Cowork</h3>
-      <p>Delegated coding workspace with live artifacts, CoworkSpaces, and Imagine/Visualize.</p>
-    </div>
-
     <div class="feature-card">
       <div class="feature-icon">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
       </div>
       <h3>Computer Use</h3>
-      <p>27 desktop automation tools - screenshot, click, type, scroll, drag. Teach mode for learning new tools.</p>
+      <p>Desktop automation (screenshot, click, type, scroll, teach mode), on for every account and every session type, with bundled bridges for X11, Wayland, GNOME and KDE. <a href="#computer-use">More &rarr;</a></p>
     </div>
 
     <div class="feature-card">
       <div class="feature-icon">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
       </div>
-      <h3>Browser Tools</h3>
-      <p>18 Chrome automation tools via the Claude in Chrome extension with native messaging host.</p>
+      <h3>The Code tab as an IDE</h3>
+      <p>Files quick open with <kbd>Ctrl</kbd>+<kbd>P</kbd>, side panels as tabs, diff view modes, large sessions loaded in full, and pull-request notices. <a href="#code-tab">More &rarr;</a></p>
     </div>
 
     <div class="feature-card">
       <div class="feature-icon">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
       </div>
-      <h3>Multiple Profiles</h3>
-      <p>Run multiple instances side by side with fully isolated state, config, and session data per account.</p>
+      <h3>Custom Models</h3>
+      <p>Models from other providers (DeepSeek, Kimi, GLM, MiniMax, Qwen, OpenRouter, a gateway) in the Code tab's model picker, next to Anthropic's, on your own key. <a href="#custom-models">More &rarr;</a></p>
     </div>
 
     <div class="feature-card">
@@ -643,7 +792,15 @@ chmod +x Claude_Desktop-x86_64.AppImage
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
       </div>
       <h3>Custom Themes</h3>
-      <p>97 bundled dual light/dark palettes (Catppuccin, Nord, Gruvbox, Mario, and more) plus your own. Live reload: <a href="https://github.com/InioX/matugen">matugen</a>, <a href="https://github.com/dylanaraps/pywal">pywal</a> or <a href="https://codeberg.org/explosion-mental/wallust">wallust</a> recolor the app on every wallpaper change.</p>
+      <p>97 dual light/dark palettes (Catppuccin, Nord, Gruvbox, gaming themes, ...) or your own; <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> picks one live. Theme files reload live, so <a href="https://github.com/InioX/matugen">matugen</a>, pywal or wallust can recolor the app from your wallpaper. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/themes.md">Guide</a> - <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/themes/PALETTES.md">gallery</a></p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+      </div>
+      <h3>Multiple Profiles</h3>
+      <p>Several instances side by side, each with its own account and fully isolated state: <code>claude-desktop --create-profile=work</code>, then launch <code>claude-desktop-work</code>. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/profiles.md">Details</a></p>
     </div>
 
     <div class="feature-card">
@@ -651,7 +808,66 @@ chmod +x Claude_Desktop-x86_64.AppImage
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
       </div>
       <h3>Quick Entry</h3>
-      <p>Global hotkey opens a floating prompt on the monitor where your cursor is. 5-25ms toggle latency.</p>
+      <p>Global hotkey popup (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>) on the monitor under your cursor. Works as installed on KDE; on other desktops bind <code>claude-desktop --toggle</code> to a key. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/quick-entry.md">Per-desktop setup</a></p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+      </div>
+      <h3>Settings &rarr; Extra</h3>
+      <p>Everything this project adds in one settings section, no config file or <code>sudo</code> needed: themes, community switches, models, Anthropic's feature flags and the 1P/3P deployment. <a href="#extra">More &rarr;</a></p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"/></svg>
+      </div>
+      <h3>Feature Flag Overrides</h3>
+      <p>Advanced: override Anthropic's server-side feature flags in <code>~/.config/Claude/claude-desktop-extra.jsonc</code>, or flip them in Settings &rarr; Extra &rarr; Anthropic. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/feature-flags.md">Details</a></p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+      </div>
+      <h3>Command-line flags</h3>
+      <p><code>claude-desktop --help</code> lists them: <code>--profile=NAME</code>, <code>--toggle</code>, <code>--diagnose</code>, <code>--1p</code> / <code>--3p</code>, ... <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/command-line.md">Reference</a> - <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/environment-variables.md">environment variables</a></p>
+    </div>
+  </div>
+
+  <h3 class="sub-h">Anthropic's own build, preserved</h3>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      </div>
+      <h3>Chat</h3>
+      <p>The full desktop chat UI with artifacts, projects, search and file uploads, on X11 and Wayland.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+      </div>
+      <h3>Claude Code</h3>
+      <p>The Code tab with local sessions, git worktrees and an integrated terminal.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      </div>
+      <h3>Cowork</h3>
+      <p>Delegate a goal to a sandboxed Claude Code agent that reads, edits and creates files and returns a deliverable. Optional, needs QEMU/KVM. <a href="#cowork">Setup &rarr;</a></p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+      </div>
+      <h3>Browser Tools</h3>
+      <p>Chrome automation through the Claude in Chrome extension.</p>
     </div>
 
     <div class="feature-card">
@@ -659,7 +875,7 @@ chmod +x Claude_Desktop-x86_64.AppImage
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/></svg>
       </div>
       <h3>Third-Party Inference</h3>
-      <p>Route through Vertex AI, Bedrock, Azure AI Foundry, or any Anthropic-compatible gateway.</p>
+      <p>Bedrock, Vertex AI, Azure AI Foundry or any Anthropic-compatible gateway, without a claude.ai login. <a href="#enterprise">More &rarr;</a></p>
     </div>
 
     <div class="feature-card">
@@ -667,15 +883,343 @@ chmod +x Claude_Desktop-x86_64.AppImage
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
       </div>
       <h3>MCP Servers</h3>
-      <p>Model Context Protocol servers work natively. Configure in your Claude Desktop settings.</p>
+      <p>Model Context Protocol servers and desktop extensions work as on the other platforms; install <code>nodejs</code> for system MCP servers.</p>
     </div>
 
     <div class="feature-card">
       <div class="feature-icon">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
       </div>
-      <h3>Auto Updates</h3>
-      <p>CI checks for new upstream versions every 2 hours. Packages land in your repo within minutes.</p>
+      <h3>Automatic updates</h3>
+      <p>CI checks for new upstream versions every 2 hours; a new release reaches your package manager once every patch has applied cleanly.</p>
+    </div>
+  </div>
+</section>
+
+<!-- EXTRA SETTINGS -->
+<section id="extra" class="fade-in">
+  <div class="section-label">Settings &rarr; Extra</div>
+  <h2>Everything we add, in one place</h2>
+  <p>Settings &rarr; <strong>Extra</strong> holds everything this project adds, no config file or <code>sudo</code> needed.</p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <h3>Themes</h3>
+      <p>Pick one of 97 palettes or your own, applied live. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/themes.md">docs/themes.md</a></p>
+    </div>
+    <div class="feature-card">
+      <h3>Community</h3>
+      <p>Opt-in switches such as Files quick open, panel tabs, diff view modes and custom models. <a href="#community">The full list &rarr;</a></p>
+    </div>
+    <div class="feature-card">
+      <h3>Models</h3>
+      <p>Providers and models for the Code tab's model picker. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/custom-models.md">docs/custom-models.md</a></p>
+    </div>
+    <div class="feature-card">
+      <h3>Anthropic</h3>
+      <p>Every upstream feature flag as a switch. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/feature-flags.md">docs/feature-flags.md</a></p>
+    </div>
+    <div class="feature-card">
+      <h3>Deployment</h3>
+      <p>The 1P/3P switch and the full third-party inference config. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/third-party-inference.md#route-a-the-in-app-deployment-panel">Route A</a></p>
+    </div>
+    <div class="feature-card">
+      <h3>Computer Use</h3>
+      <p>Whether Computer Use works on this machine, and its switches. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md">docs/computer-use.md</a></p>
+    </div>
+  </div>
+
+  <img class="shot" src="https://raw.githubusercontent.com/patrickjaja/claude-desktop-extra/master/docs/extra/extra-settings.png" alt="The Extra section in Claude's Settings" width="1026" height="802" loading="lazy">
+  <div class="shot-caption">The Extra section in Claude's Settings</div>
+</section>
+
+<!-- CODE TAB -->
+<section id="code-tab" class="fade-in">
+  <div class="section-label">Code tab</div>
+  <h2>The Code tab as an IDE</h2>
+  <p>Community switches that make the Code tab work like VS Code, plus help with long sessions and pull requests. Each is off by default; turn it on in Settings &rarr; Extra &rarr; Community. Off leaves the Code tab as Anthropic ships it.</p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+      </div>
+      <h3>Files quick open</h3>
+      <p><kbd>Ctrl</kbd>+<kbd>P</kbd> finds a file and opens it in the Files panel; <code>path:42</code> jumps to a line, and words match in any order (<code>user service</code> finds <code>user-service.spec.ts</code>).</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
+      </div>
+      <h3>Panel tabs</h3>
+      <p>Diff, terminal, browser and files open as tabs instead of a shrinking split; each gets the full width and keeps its state, <kbd>Ctrl</kbd>+<kbd>1</kbd>-<kbd>9</kbd> switches.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      </div>
+      <h3>Diff view modes</h3>
+      <p>The diff panel shows Working tree, Branch changes or Latest turn, against the branch you actually forked from, with expand/collapse all.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+      </div>
+      <h3>Load large sessions in full</h3>
+      <p>Long Code sessions open in full instead of hiding their older part behind "This session is too large to load in full". Uses more memory on huge sessions; takes effect after a restart.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.040A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+      </div>
+      <h3>"Allow always" for new sessions</h3>
+      <p>When Claude wants to start another Code session, a system dialog asks with Deny, Allow once or Allow always, instead of the in-chat card. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/session-start-permission.md">Details</a></p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+      </div>
+      <h3>Pull requests</h3>
+      <p>Auto-fix notices when a PR is ready to merge and for comments after it merges (Claude reports and waits, it never merges), trusted Auto-fix PR authors, and a delay before auto-archive with a "Keep this session" button. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/autofix-merge-ready.md">Auto-fix notices</a> - <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/auto-archive-grace.md">auto-archive delay</a></p>
+    </div>
+  </div>
+
+  <img class="shot" src="https://raw.githubusercontent.com/patrickjaja/claude-desktop-extra/master/docs/code-tab/quick-open-and-panel-tabs.png" alt="Ctrl+P quick open over the Files panel, and the side panels as tabs" width="1459" height="857" loading="lazy">
+  <div class="shot-caption">Ctrl+P quick open over the Files panel, and the side panels as tabs. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/code-tab.md">docs/code-tab.md</a></div>
+</section>
+
+<!-- CUSTOM MODELS -->
+<section id="custom-models" class="fade-in">
+  <div class="section-label">Models</div>
+  <h2>Other providers' models, next to Claude</h2>
+  <p>Two ways to use non-Anthropic models, depending on whether you keep your claude.ai login.</p>
+
+  <div class="cowork-box">
+    <div class="cowork-mode">
+      <div class="badge badge-default">1P - keep your login</div>
+      <h3>Custom models</h3>
+      <p>Use models from other providers (DeepSeek, Kimi, GLM, MiniMax, Qwen, OpenRouter, Opper, a gateway, or Anthropic's API on your API credit) in the Code tab's model picker, next to Anthropic's. Sessions on them use your own key; everything else stays on your subscription. Add a provider from a preset in Settings &rarr; Extra &rarr; Models, fetch its models and turn the switch on. Claude can also use them by itself: every custom model is a sub-agent type, and workflows can name it. Off by default. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/custom-models.md">docs/custom-models.md &rarr;</a></p>
+    </div>
+    <div class="cowork-mode">
+      <div class="badge badge-exp">3P - a gateway replaces the login</div>
+      <h3>Allow non-Anthropic models</h3>
+      <p>In third-party mode, upstream silently drops gateway model IDs that do not look Anthropic (DeepSeek, Qwen, GLM, Kimi, gpt-oss, ...) and falls back to the default model. This opt-in switch in Settings &rarr; Extra &rarr; Community keeps them in the model list, the picker and running sessions; HIPAA and admin model allowlists still apply. Restart after switching. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/cookbook/opper-gateway.md">Recipe with an EU gateway (Opper) &rarr;</a></p>
+    </div>
+  </div>
+  <div class="more-link">The <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/cookbook/opper-gateway.md">Opper cookbook</a> covers both routes; more recipes in <a href="https://github.com/patrickjaja/claude-desktop-extra/tree/master/docs/cookbook">docs/cookbook/</a>.</div>
+</section>
+
+<!-- COMPUTER USE -->
+<section id="computer-use" class="fade-in">
+  <div class="section-label">Computer Use</div>
+  <h2>Desktop automation on every session type</h2>
+  <p>Screenshot, click, type, scroll and teach mode, on for every account and every session type. The official build's own Linux Computer Use is a staged rollout that needs a RemoteDesktop portal (GNOME 46+, current Plasma) and skips wlroots; our bundled bridges take precedence and need nothing installed.</p>
+
+  <div class="compat-grid">
+    <table>
+      <thead>
+        <tr>
+          <th>Session</th>
+          <th>Compositors</th>
+          <th>Input and screenshots</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>X11 / XWayland</td>
+          <td>GNOME, KDE, i3, ...</td>
+          <td>x11-bridge (bundled)</td>
+        </tr>
+        <tr>
+          <td>Wayland (wlroots)</td>
+          <td>Sway, Hyprland, Niri</td>
+          <td>wlroots-bridge (bundled)</td>
+        </tr>
+        <tr>
+          <td>Wayland (GNOME)</td>
+          <td>GNOME Shell, PipeWire &gt;= 1.0.5</td>
+          <td>gnome-portal-bridge (bundled)</td>
+        </tr>
+        <tr>
+          <td>Wayland (KDE)</td>
+          <td>KDE Plasma 6.6+</td>
+          <td>kwin-portal-bridge (bundled)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="install-note">Older GNOME and KDE sessions, NixOS GNOME / KDE and other compositors take a fallback: <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use-dependencies.md">per-session matrix</a>.</div>
+
+  <div class="cowork-box" style="margin-top: 1.5rem;">
+    <div class="cowork-mode">
+      <div class="badge badge-exp">Experimental</div>
+      <h3>Background display</h3>
+      <p>Point Computer Use at a second display you start yourself (Xvfb, Xephyr or a headless sway), so Claude works there while you keep your desktop. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md#computer-use-on-a-background-display-experimental">Details</a></p>
+    </div>
+    <div class="cowork-mode">
+      <div class="badge badge-exp">Experimental</div>
+      <h3>Read app controls</h3>
+      <p>Claude reads and presses app controls by name through the accessibility bus instead of by screenshot. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md#read-app-controls-through-accessibility-experimental">Details</a></p>
+    </div>
+  </div>
+  <div class="more-link">Settings &rarr; Extra &rarr; <strong>Computer Use</strong> shows whether it works here and holds its switches. Cloud Cowork and Dispatch reach it only with TPM access for the device key (one click on that page): <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md#computer-use-in-cloud-cowork-and-dispatch">details</a>. Full guide: <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md">docs/computer-use.md</a>.</div>
+</section>
+
+<!-- COMMUNITY FEATURES -->
+<section id="community" class="fade-in">
+  <div class="section-label">Community features</div>
+  <h2>Switch on what you need</h2>
+  <p>The optional features in Settings &rarr; Extra &rarr; Community, in the same groups the app uses. Each has its own switch; all but the Theme picker start off, and off keeps Anthropic's behavior.</p>
+
+  <div class="cf-search" id="cf-search" hidden>
+    <input type="search" id="cf-filter" placeholder="Filter 16 features by name or description" aria-label="Filter community features" autocomplete="off">
+    <button type="button" class="cf-clear" id="cf-clear" aria-label="Clear filter" hidden>&times;</button>
+  </div>
+
+  <div id="cf-groups">
+    <div class="cf-group">
+      <div class="section-label">Code</div>
+      <div class="cf-group-sub">Code tab: panels, files, diffs and sessions</div>
+      <div class="cf-list">
+        <div class="cf-row">
+          <div class="cf-title">Panel tabs <span class="cf-hint badge-default">applies live</span></div>
+          <div class="cf-note">Shows the Code tab's side panels as tabs, so the panel you are using gets the full width. Off gives you the normal split layout back. Applies live.</div>
+        </div>
+        <div class="cf-row">
+          <div class="cf-title">Files quick open <span class="cf-hint badge-default">applies live</span> <span class="cf-hint badge-exp">needs restart</span></div>
+          <div class="cf-note">Press Ctrl+P on the Code tab to jump to a file by typing part of its name. Off leaves the Files panel as Anthropic ships it. The hotkey applies live; the improved search reaches the file index after a restart.</div>
+        </div>
+        <div class="cf-row">
+          <div class="cf-title">Diff view modes <span class="cf-hint badge-default">applies live</span></div>
+          <div class="cf-note">Adds a scope dropdown to the Code tab's diff panel: Working tree, Branch changes or Latest turn. Off leaves the panel as Anthropic ships it. Applies live.</div>
+        </div>
+        <div class="cf-row">
+          <div class="cf-title">Load large sessions in full <span class="cf-hint badge-exp">needs restart</span></div>
+          <div class="cf-note">Opens very large sessions in full instead of hiding their older part. It uses more memory and time on huge sessions; off keeps Anthropic's limits. Takes effect after a restart.</div>
+        </div>
+        <div class="cf-row">
+          <div class="cf-title">Native dialog with 'Allow always' for starting other sessions <span class="cf-hint badge-default">applies live</span></div>
+          <div class="cf-note">Asks with a system dialog (Deny, Allow once, Allow always) when Claude wants to start another Code session. Off (the default) keeps Anthropic's in-chat card, and turning it off forgets every remembered approval. Applies live.</div>
+        </div>
+      </div>
+
+      <div class="cf-group">
+        <div class="section-label">Pull requests</div>
+        <div class="cf-group-sub">Auto-fix and auto-archive for your GitHub PRs</div>
+        <div class="cf-list">
+          <div class="cf-row">
+            <div class="cf-title">Trusted Auto-fix PR authors <span class="cf-hint badge-default">applies live</span></div>
+            <div class="cf-note">Lets Auto-fix also handle PRs opened by other GitHub users or bots. Empty by default, so only the signed-in gh user counts; add one host/login per line, for example github.com/my-app[bot]. Applies live to future attempts.</div>
+          </div>
+          <div class="cf-row">
+            <div class="cf-title">Auto-fix notices: ready to merge, comments after merge <span class="cf-hint badge-default">applies live</span></div>
+            <div class="cf-note">Tells the Code session when a PR with Auto-fix on is ready to merge, and passes on new comments after it merges. Claude only reports them and waits for you - it never merges. Costs one GitHub read per Auto-fix PR and one model turn per notice. Applies live.</div>
+          </div>
+          <div class="cf-row">
+            <div class="cf-title">Auto-archive delay after a PR merges or closes <span class="cf-hint badge-default">applies live</span></div>
+            <div class="cf-note">Waits a chosen time after a PR merges or closes before its Code session is archived. Only used while PR auto-archive is on; the Code session also shows the time left and a Keep this session button. Applies live.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cf-group">
+      <div class="section-label">App and window</div>
+      <div class="cf-group-sub">Look and behavior of the app window, tray and theme</div>
+      <div class="cf-list">
+        <div class="cf-row">
+          <div class="cf-title">Hide window controls <span class="cf-hint badge-exp">needs restart</span></div>
+          <div class="cf-note">Opens the main window without frame, buttons or shadow, which removes the thin border some window managers (XFCE, i3, Awesome) leave. You minimize, maximize and close through your window manager; the native titlebar wins if both are on. Takes effect after a restart.</div>
+        </div>
+        <div class="cf-row">
+          <div class="cf-title">Native titlebar <span class="cf-hint badge-exp">needs restart</span></div>
+          <div class="cf-note">Uses your system's own window frame and titlebar instead of the app's. It adds a second bar above the app's header and wins over "Hide window controls". Takes effect after a restart.</div>
+        </div>
+        <div class="cf-row">
+          <div class="cf-title">Transparent window <span class="cf-hint badge-default">applies live</span> <span class="cf-hint badge-exp">needs restart</span></div>
+          <div class="cf-note">Makes the main window see-through so your desktop, or the blur your compositor adds, shows through. It has no window buttons or shadow and needs the integrated titlebar. The switch takes effect after a restart; the Transparency slider applies live.</div>
+        </div>
+        <div class="cf-row">
+          <div class="cf-title">Always use the white tray icon <span class="cf-hint badge-default">applies live</span></div>
+          <div class="cf-note">Keeps the tray icon white instead of following the theme. Off follows the theme like the stock app. Applies live.</div>
+        </div>
+        <div class="cf-row">
+          <div class="cf-title">Theme picker <span class="cf-hint badge-default">applies live</span></div>
+          <div class="cf-note">Press Ctrl+Shift+T to open a searchable gallery of themes and apply one with a click. Applies live.</div>
+        </div>
+        <div class="cf-row">
+          <div class="cf-title">Developer tools <span class="cf-hint badge-default">applies live</span> <span class="cf-hint badge-exp">needs restart</span></div>
+          <div class="cf-note">Lets Ctrl+Alt+I open the browser developer tools for the focused window. The shortcut applies live; the app menu entry appears after a restart, and an organization that turned developer mode off keeps it off.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cf-group">
+      <div class="section-label">Models and 3P</div>
+      <div class="cf-group-sub">Extra models and gateway options</div>
+      <div class="cf-list">
+        <div class="cf-row">
+          <div class="cf-title">Custom models <span class="cf-hint badge-default">applies live</span></div>
+          <div class="cf-note">Adds models from Anthropic-compatible providers (DeepSeek, OpenRouter, your own gateway) to the Code tab's model picker. Sessions on them use your own key; set them up in Settings &gt; Extra &gt; Models. Applies live.</div>
+        </div>
+        <div class="cf-row">
+          <div class="cf-title">Allow non-Anthropic models <span class="cf-hint badge-exp">needs restart</span></div>
+          <div class="cf-note">Keeps models such as DeepSeek, Qwen, GLM or Kimi in the model list when you use a third-party (3P) gateway. 3P mode only: set it while in 3P mode. Takes effect after a restart.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cf-empty" id="cf-empty" hidden>No feature matches that filter.</div>
+  </div>
+  <div class="more-link">Every community patch and what it changes: <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/patches.md#community-features">docs/patches.md</a>.</div>
+</section>
+
+<!-- PATCHES -->
+<section id="patches" class="fade-in">
+  <div class="section-label">How it works</div>
+  <h2>66 patches on the official build, and growing</h2>
+  <p>We start from Anthropic's official Claude Desktop Linux <code>.deb</code>, apply small JavaScript patches to its <code>app.asar</code>, and repackage the result for each distro.</p>
+
+  <div class="steps-grid">
+    <div class="feature-card">
+      <h3>1. Ingest</h3>
+      <p>Download the official <code>.deb</code> from Anthropic's apt repo, verify GPG and SHA256, extract it.</p>
+    </div>
+    <div class="feature-card">
+      <h3>2. Patch</h3>
+      <p>Apply the patches to the extracted bundle. A patch that stops matching fails the build, and a patch is removed once upstream ships the behavior.</p>
+    </div>
+    <div class="feature-card">
+      <h3>3. Repackage</h3>
+      <p>Build the pacman package, <code>.deb</code>, <code>.rpm</code>, AppImage and Nix flake from the patched tree, and publish them to the repos.</p>
+    </div>
+  </div>
+
+  <div class="cowork-box">
+    <div class="cowork-mode">
+      <div class="badge badge-default">Always on</div>
+      <div class="tier-count">43</div>
+      <h3>Core patches</h3>
+      <p>Where Anthropic lacks compatibility: general Linux patches for the tray, portals, Wayland and X11, the sandbox, Cowork on non-Debian distros and more, plus the shared infrastructure the features build on (the Extra settings pages, the theme engine, profiles). In the repo they are split into 36 Linux fixes (<code>patches/linux/</code>) and 7 core plumbing patches (<code>patches/core/</code>).</p>
+    </div>
+    <div class="cowork-mode">
+      <div class="badge badge-exp">Switchable</div>
+      <div class="tier-count">23</div>
+      <h3>Community patches</h3>
+      <p>Improvements and features, each behind its own switch under Settings &rarr; Extra &rarr; Community (<code>patches/community/</code>); all but the Theme picker start off. Their switches are the <a href="#community">community features</a> above.</p>
+    </div>
+  </div>
+  <div class="more-link">Catalog, one table per directory: <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/patches.md">docs/patches.md</a>. Release notes: <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/CHANGELOG.md">CHANGELOG.md</a>.</div>
+
+  <h3 class="sub-h">Add your use case</h3>
+  <div class="cowork-box">
+    <div class="cowork-mode">
+      <h3>The list keeps growing</h3>
+      <p>More patches follow with every release (see the <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/CHANGELOG.md">CHANGELOG</a>). The community features are exactly that: use cases someone needed and shared, so everyone can switch them on. A new use case becomes a community patch; a Linux gap becomes a core patch.</p>
+    </div>
+    <div class="cowork-mode">
+      <h3>Feel free to add yours</h3>
+      <p>Write one patch following <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/patches.md#adding-your-own-feature">Adding your own feature</a>, share a setup as a recipe in <a href="https://github.com/patrickjaja/claude-desktop-extra/tree/master/docs/cookbook">docs/cookbook/</a>, or bring an idea to the <a href="https://github.com/patrickjaja/claude-desktop-extra/issues">issues</a>.</p>
     </div>
   </div>
 </section>
@@ -683,10 +1227,10 @@ chmod +x Claude_Desktop-x86_64.AppImage
 <!-- COMPATIBILITY -->
 <section id="compatibility" class="fade-in">
   <div class="section-label">Compatibility</div>
-  <h2>Every distro, every session type</h2>
-  <p>Tested across distributions, architectures, and display servers.</p>
+  <h2>Every distro, X11 and Wayland</h2>
+  <p>Packages for the distros Anthropic does not ship, plus our own <code>.deb</code>.</p>
 
-  <div class="compat-grid" style="margin-bottom: 2rem;">
+  <div class="compat-grid">
     <table>
       <thead>
         <tr>
@@ -698,8 +1242,8 @@ chmod +x Claude_Desktop-x86_64.AppImage
       </thead>
       <tbody>
         <tr>
-          <td>Arch Linux / Manjaro</td>
-          <td>.pkg.tar.zst (pacman)</td>
+          <td>Arch / Manjaro and Arch-based</td>
+          <td>AUR or signed pacman repo</td>
           <td><span class="check">&#10003;</span></td>
           <td><span class="check">&#10003;</span></td>
         </tr>
@@ -731,10 +1275,10 @@ chmod +x Claude_Desktop-x86_64.AppImage
           <td>NixOS</td>
           <td>Nix flake</td>
           <td><span class="check">&#10003;</span></td>
-          <td><span class="check">&#10003;</span></td>
+          <td><span class="dash">-</span></td>
         </tr>
         <tr>
-          <td>Any (glibc)</td>
+          <td>Any (glibc 2.34+), incl. immutable distros</td>
           <td>AppImage</td>
           <td><span class="check">&#10003;</span></td>
           <td><span class="check">&#10003;</span></td>
@@ -742,84 +1286,45 @@ chmod +x Claude_Desktop-x86_64.AppImage
       </tbody>
     </table>
   </div>
-
-  <h3 style="font-size: 1rem; margin-bottom: 1rem;">Session types</h3>
-  <div class="compat-grid">
-    <table>
-      <thead>
-        <tr>
-          <th>Session</th>
-          <th>Compositors</th>
-          <th>Input</th>
-          <th>Screenshots</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>X11</td>
-          <td>GNOME, KDE, i3, ...</td>
-          <td>x11-bridge (bundled)</td>
-          <td>x11-bridge (bundled)</td>
-        </tr>
-        <tr>
-          <td>Wayland (wlroots)</td>
-          <td>Sway, Hyprland</td>
-          <td>ydotool</td>
-          <td>grim</td>
-        </tr>
-        <tr>
-          <td>Wayland (GNOME)</td>
-          <td>GNOME Shell</td>
-          <td>ydotool</td>
-          <td>portal + pipewire</td>
-        </tr>
-        <tr>
-          <td>Wayland (KDE)</td>
-          <td>KDE Plasma</td>
-          <td>kwin-portal-bridge</td>
-          <td>kwin-portal-bridge</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+  <div class="install-note">ARM64 covers boards such as the Raspberry Pi 5, NVIDIA DGX Spark and Jetson. Computer Use backends per session type: <a href="#computer-use">see above</a>.</div>
 </section>
 
 <!-- COWORK -->
 <section id="cowork" class="fade-in">
   <div class="section-label">Agentic workspace</div>
   <h2>Cowork</h2>
-  <p>Claude Desktop's agentic workspace - delegate a goal to a sandboxed Claude Code agent that reads, edits, and creates files and returns a deliverable, with live artifacts and concurrent sessions.</p>
+  <p>Claude Desktop's agentic workspace: delegate a goal to a sandboxed Claude Code agent that reads, edits and creates files and returns a deliverable. Optional on every install path.</p>
 
   <div class="cowork-box">
     <div class="cowork-mode">
       <div class="badge badge-default">Bundled</div>
       <h3>Official native backend</h3>
-      <p>Cowork runs on the native VM backend Anthropic ships in the official Linux build (cowork-linux-helper + virtiofsd + smol-bin + QEMU/OVMF). Our repackage preserves it - there is nothing extra to install.</p>
+      <p>Cowork and Dispatch run on the native VM backend Anthropic ships in the official Linux build, bundled in the package. The <code>.deb</code> and <code>.rpm</code> pull in the host tools as recommended / weak deps, and Nix bakes them into the closure.</p>
     </div>
     <div class="cowork-mode">
-      <div class="badge badge-default">Requirement</div>
-      <h3>/dev/kvm</h3>
-      <p>The native VM backend needs hardware virtualization. Make sure <code>/dev/kvm</code> is available on the host (most desktops and laptops have it).</p>
+      <div class="badge badge-exp">Host setup</div>
+      <h3>QEMU, firmware, virtiofsd and /dev/kvm</h3>
+      <p>The host needs QEMU, UEFI firmware and virtiofsd, and access to <code>/dev/kvm</code>: join the <code>kvm</code> group once (<code>sudo usermod -aG kvm "$USER"</code>, then log out and in). <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/cowork.md">Per-distro commands &rarr;</a></p>
     </div>
   </div>
 </section>
 
 <!-- ENTERPRISE / THIRD-PARTY INFERENCE -->
 <section id="enterprise" class="fade-in">
-  <div class="section-label">Enterprise</div>
+  <div class="section-label">Third-party / enterprise inference</div>
   <h2>Bring your own inference</h2>
-  <p>Run Claude Desktop entirely on your own backend - no personal claude.ai login required. Point Chat, Code, and Cowork at <strong>Vertex AI</strong>, <strong>Bedrock</strong>, <strong>Azure AI Foundry</strong>, or any <strong>Anthropic-compatible gateway</strong> (LiteLLM, Portkey, in-house proxies) through a single <code>/etc/claude-desktop/managed-settings.json</code>. Deployable fleet-wide via MDM, GPO, or a dropped JSON file - and it works on Linux today.</p>
+  <p>Run on <strong>Bedrock</strong>, <strong>Vertex AI</strong>, <strong>Azure AI Foundry</strong> or any <strong>Anthropic-compatible gateway</strong>, without a claude.ai login. Configure it in Settings &rarr; Extra &rarr; Deployment, or fleet-wide via <code>/etc/claude-desktop/managed-settings.json</code>.</p>
 
   <div class="cowork-box">
     <div class="cowork-mode">
-      <div class="badge badge-default">5-minute local demo</div>
-      <h3>LiteLLM gateway</h3>
-      <p>Stand up a local LiteLLM proxy, drop one JSON file, and you're running Cowork against your own endpoint. No claude.ai account, no cloud setup. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/third-party-inference.md#5-minute-local-quickstart-litellm-container">Quickstart →</a></p>
+      <div class="badge badge-default">Single machine</div>
+      <h3>Settings &rarr; Extra &rarr; Deployment</h3>
+      <p>The 1P/3P switch, every config key as a toggle or field, no root; the only route that also switches back to 1P. Each profile has its own. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/third-party-inference.md#route-a-the-in-app-deployment-panel">Route A &rarr;</a></p>
     </div>
     <div class="cowork-mode">
       <div class="badge badge-exp">Fleet rollout</div>
-      <h3>Vertex AI, Bedrock, Foundry</h3>
-      <p>Worked examples with <code>gcloud</code> ADC and provider-specific keys. Configure interactively via <strong>Developer → Configure Third-Party Inference</strong>, then export and redeploy. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/third-party-inference.md">Linux guide →</a></p>
+      <h3>managed-settings.json</h3>
+      <p>For MDM rollouts, headless servers and scripted provisioning. Try it end to end with a local LiteLLM proxy first: <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/third-party-inference.md#5-minute-local-quickstart-litellm-container">5-minute quickstart &rarr;</a> Vertex AI, Bedrock and Foundry: <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/third-party-inference.md">Linux guide &rarr;</a></p>
     </div>
   </div>
 
@@ -834,7 +1339,6 @@ chmod +x Claude_Desktop-x86_64.AppImage
     { "name": "claude-sonnet-4-6" }
   ],
   "disableDeploymentModeChooser": true,
-  "betaFeaturesEnabled": true,
   "chatTabEnabled": true,
   "coworkTabEnabled": true,
   "isClaudeCodeForDesktopEnabled": true
@@ -852,26 +1356,41 @@ chmod +x Claude_Desktop-x86_64.AppImage
   "disableDeploymentModeChooser": true,
 
   // Surfaces - Chat, Cowork, Code tabs
-  "betaFeaturesEnabled": true,
   "chatTabEnabled": true,
   "coworkTabEnabled": true,
   "isClaudeCodeForDesktopEnabled": true
 }</pre>
   </div>
-  <p style="font-size: 0.8125rem; color: var(--text-dim); margin-top: 0.5rem; text-align: center;">One file, no Anthropic sign-in - Chat, Cowork &amp; Code, all enabled. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/third-party-inference.md#maximum-managed-settingsjson-every-key">See every key →</a></p>
+  <p style="font-size: 0.8125rem; color: var(--text-dim); margin-top: 0.5rem; text-align: center;">One file, no Anthropic sign-in. Every key must be one the running build knows, or the whole file is ignored. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/third-party-inference.md#maximum-managed-settingsjson-every-key">See every key &rarr;</a></p>
 
   <div class="install-note" style="margin-top: 1.25rem;">
+    Non-Anthropic gateway models (DeepSeek, Qwen, GLM, Kimi, gpt-oss, ...) need the <a href="#custom-models">Allow non-Anthropic models</a> switch.
     Official key reference:
-    <a href="https://claude.com/docs/cowork/3p/configuration">Configuration reference</a> -
-    <a href="https://support.claude.com/en/articles/12622667-enterprise-configuration-for-claude-desktop">Enterprise configuration</a> -
-    <a href="https://support.claude.com/en/articles/14680753-extend-claude-cowork-with-third-party-platforms">3P platforms guide</a>
+    <a href="https://claude.com/docs/third-party/claude-desktop/configuration">Configuration reference</a> -
+    <a href="https://support.claude.com/en/articles/12622667-enterprise-configuration-for-claude-desktop">Enterprise configuration</a>
   </div>
+</section>
+
+<!-- TROUBLESHOOTING -->
+<section id="troubleshooting" class="fade-in">
+  <div class="section-label">Troubleshooting</div>
+  <h2>When something goes wrong</h2>
+  <p>Logs are in <code>~/.config/Claude/logs/</code> (3P mode: <code>~/.config/Claude-3p/logs/</code>, named profiles: <code>~/.config/Claude-&lt;profile&gt;/logs/</code>). Common problems and known limitations: <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/troubleshooting.md">docs/troubleshooting.md</a>. A white screen or GPU crash: <code>CLAUDE_DISABLE_GPU=1</code> or <code>CLAUDE_GPU_BACKEND=angle-gl</code>.</p>
+
+  <div class="install-block">
+    <button class="copy-btn" data-copy="claude-desktop --diagnose > diagnose.txt
+cp ~/.config/Claude/logs/claude-patches.log .">Copy</button>
+    <pre><span class="comment"># Reporting a bug: attach both files to your issue</span>
+claude-desktop --diagnose &gt; diagnose.txt
+cp ~/.config/Claude/logs/claude-patches.log .   <span class="comment"># 3P mode: ~/.config/Claude-3p/logs/claude-patches.log</span></pre>
+  </div>
+  <div class="install-note"><a href="https://github.com/patrickjaja/claude-desktop-extra/issues">Open an issue &rarr;</a></div>
 </section>
 
 <!-- FOOTER -->
 <footer>
   <div>
-    <p>This is an unofficial community package, not supported by or affiliated with Anthropic.</p>
+    <p>This is an unofficial community project, not affiliated with, endorsed by, or sponsored by Anthropic. Claude Desktop is proprietary software owned by Anthropic PBC, downloaded directly from Anthropic during the build. "Claude" is a trademark of Anthropic PBC.</p>
     <p style="margin-top: 0.25rem;">
       <a href="https://github.com/patrickjaja/claude-desktop-extra">Source</a>
       &middot;
@@ -888,6 +1407,7 @@ chmod +x Claude_Desktop-x86_64.AppImage
     <img src="https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-desktop-extra/badges/apt-repo.json" alt="APT" loading="lazy">
     <img src="https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-desktop-extra/badges/rpm-repo.json" alt="RPM" loading="lazy">
     <img src="https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-desktop-extra/badges/appimage.json" alt="AppImage" loading="lazy">
+    <img src="https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-desktop-extra/badges/nix.json" alt="Nix flake" loading="lazy">
     <a href="https://www.reddit.com/r/ClaudeAI/comments/1r871b0/claude_desktop_on_linux_chat_cowork_code/"><img src="https://img.shields.io/badge/Reddit-Discussion-FF4500?logo=reddit&logoColor=white" alt="Reddit" loading="lazy"></a>
   </div>
 </footer>
@@ -899,10 +1419,12 @@ chmod +x Claude_Desktop-x86_64.AppImage
     debian:  'curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install.sh | sudo bash\nsudo apt install claude-desktop-extra',
     fedora:  'curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/install-rpm.sh | sudo bash\nsudo dnf install claude-desktop-extra',
     nix:     'nix run github:patrickjaja/claude-desktop-extra',
-    appimage:'wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/Claude_Desktop-x86_64.AppImage\nchmod +x Claude_Desktop-x86_64.AppImage\n./Claude_Desktop-x86_64.AppImage'
+    appimage:'chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage'
   };
+  var currentTab = 'arch';
 
   function selectTab(id) {
+    currentTab = id;
     document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
     document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
     var btn = document.querySelector('[data-tab="' + id + '"]');
@@ -911,16 +1433,41 @@ chmod +x Claude_Desktop-x86_64.AppImage
     if (panel) panel.classList.add('active');
   }
 
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
   function updateHero(id) {
     var el = document.getElementById('hero-terminal');
     var lines = (distroCommands[id] || distroCommands.arch).split('\n');
     var html = '<div><span class="terminal-comment"># install in one command</span></div>';
     lines.forEach(function(line, i) {
-      html += '<div><span class="terminal-prompt">$</span> <span class="terminal-cmd">' + line + '</span>';
+      html += '<div><span class="terminal-prompt">$</span> <span class="terminal-cmd">' + escapeHtml(line) + '</span>';
       if (i === lines.length - 1) html += '<span class="cursor"></span>';
       html += '</div>';
     });
     el.innerHTML = html;
+  }
+
+  // The AppImage file name carries the version. The release job publishes
+  // badges/version-check.json next to this page, so the download command is
+  // filled in from it; without it the page keeps the version-free fallback.
+  function fillAppImageVersion() {
+    if (!window.fetch) return;
+    fetch('badges/version-check.json', { cache: 'no-store' }).then(function(r) {
+      return r.ok ? r.json() : null;
+    }).then(function(badge) {
+      var m = badge && typeof badge.message === 'string' && badge.message.match(/^v(\d+\.\d+\.\d+)/);
+      if (!m) return;
+      var file = 'Claude_Desktop-' + m[1] + '-x86_64.AppImage';
+      var url = 'https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/' + file;
+      var cmd = 'wget ' + url + '\nchmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage';
+      distroCommands.appimage = cmd;
+      document.getElementById('appimage-copy').setAttribute('data-copy', cmd);
+      document.getElementById('appimage-pre').innerHTML =
+        '<span class="comment"># Download, make executable, run</span>\n' + escapeHtml(cmd);
+      if (currentTab === 'appimage') updateHero('appimage');
+    }).catch(function() {});
   }
 
   // Detect distro from User-Agent
@@ -937,6 +1484,7 @@ chmod +x Claude_Desktop-x86_64.AppImage
   var detected = detectDistro();
   selectTab(detected);
   updateHero(detected);
+  fillAppImageVersion();
 
   // Tab switching - also updates hero
   document.querySelectorAll('.tab-btn').forEach(function(btn) {
@@ -957,6 +1505,58 @@ chmod +x Claude_Desktop-x86_64.AppImage
       });
     });
   });
+
+  // Community features filter, like Settings -> Extra -> Community: matches
+  // title and description, hides groups with no visible row. Without
+  // JavaScript the bar stays hidden and every row shows.
+  (function() {
+    var bar = document.getElementById('cf-search');
+    var input = document.getElementById('cf-filter');
+    var clearBtn = document.getElementById('cf-clear');
+    var empty = document.getElementById('cf-empty');
+    var root = document.getElementById('cf-groups');
+    if (!bar || !input || !root) return;
+    var rows = Array.prototype.slice.call(root.querySelectorAll('.cf-row'));
+    // Title and description only, not the restart / live hints.
+    var texts = rows.map(function(row) {
+      var title = row.querySelector('.cf-title').firstChild.textContent;
+      return (title + ' ' + row.querySelector('.cf-note').textContent).toLowerCase();
+    });
+    var groups = Array.prototype.slice.call(root.querySelectorAll('.cf-group'));
+    input.placeholder = 'Filter ' + rows.length + ' features by name or description';
+    bar.hidden = false;
+
+    function draw() {
+      var needle = input.value.trim().toLowerCase();
+      var shown = 0;
+      rows.forEach(function(row, i) {
+        var hit = !needle || texts[i].indexOf(needle) !== -1;
+        row.hidden = !hit;
+        if (hit) shown++;
+      });
+      // Innermost groups first, so a parent sees its nested group's state.
+      groups.slice().reverse().forEach(function(g) {
+        var visible = Array.prototype.some.call(g.querySelectorAll('.cf-row'), function(r) { return !r.hidden; });
+        g.hidden = !visible;
+      });
+      Array.prototype.forEach.call(root.querySelectorAll('.cf-list'), function(list) {
+        list.hidden = !Array.prototype.some.call(list.children, function(r) { return !r.hidden; });
+      });
+      empty.hidden = shown !== 0;
+      clearBtn.hidden = !input.value;
+    }
+
+    input.addEventListener('input', draw);
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') { input.value = ''; draw(); }
+    });
+    clearBtn.addEventListener('click', function() {
+      input.value = '';
+      draw();
+      input.focus();
+    });
+    draw();
+  })();
 
   // Fade-in on scroll
   var obs = new IntersectionObserver(function(entries) {

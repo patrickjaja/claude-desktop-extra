@@ -1,6 +1,6 @@
 # Computer Use
 
-**Our exclusive feature - not part of the official Linux beta.** Claude Desktop's built-in Computer Use MCP server exposes 27 tools for desktop automation (screenshot, click, type, scroll, drag, clipboard, and more). The **learn tools** (`learn_application`, `learn_screen_region`) generate interactive overlay tutorials that walk through any application's UI step by step.
+**On for every account and every session type.** The official build's own Linux Computer Use is a staged rollout that needs a RemoteDesktop portal and skips wlroots; our bundled bridges take precedence. Claude Desktop's built-in Computer Use MCP server exposes 27 tools for desktop automation (screenshot, click, type, scroll, drag, clipboard, and more). The **learn tools** (`learn_application`, `learn_screen_region`) generate interactive overlay tutorials that walk through any application's UI step by step.
 
 Example prompt: *"Can you use computer use MCP to explain me the PhpStorm application?"*
 

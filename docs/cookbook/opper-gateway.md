@@ -4,9 +4,18 @@ Run open-weight models such as GLM, Kimi, Qwen, DeepSeek and gpt-oss inside Clau
 
 ![Cowork model picker listing GLM-5.3, Kimi K2.7 Code, Qwen3.8 2.4T, DeepSeek V4.1 Flash and gpt-oss-120b with EU region labels](img/opper-model-picker.png)
 
+## Which route?
+
+There are two ways to reach Opper from Claude Desktop:
+
+- **1P - keep your claude.ai login.** Opper models appear in the Code tab's picker next to Claude's models, and only a session that picks one talks to Opper. Set up under **Settings -> Extra -> Models** ([1P section](#1p-opper-models-next-to-claude-models-page)).
+- **3P - Opper replaces the login.** Chat, Cowork and Code all run on Opper's models. Set up under **Settings -> Extra -> Deployment** ([3P section](#3p-opper-as-the-inference-backend)).
+
+Both routes need the Opper account and key from step 1 and are best checked with the curl call in step 2.
+
 ## What you get
 
-Claude Desktop's third-party inference mode can point at any gateway that speaks the Anthropic Messages API. Out of the box, though, Anthropic's own bundle checks every gateway model ID by name: IDs that look like another model family (`deepseek`, `qwen`, `glm`, `kimi`, `moonshot`, `gpt`, ...) or that do not name an Anthropic family (`sonnet`, `opus`, `haiku`, ...) are dropped from the Setup model list and the picker, and a session that asks for one falls back to the default model without an error.
+This section describes the 3P route. Claude Desktop's third-party inference mode can point at any gateway that speaks the Anthropic Messages API. Out of the box, though, Anthropic's own bundle checks every gateway model ID by name: IDs that look like another model family (`deepseek`, `qwen`, `glm`, `kimi`, `moonshot`, `gpt`, ...) or that do not name an Anthropic family (`sonnet`, `opus`, `haiku`, ...) are dropped from the Setup model list and the picker, and a session that asks for one falls back to the default model without an error.
 
 This package adds an opt-in switch, **Allow non-Anthropic models**, that relaxes exactly that gateway name check. HIPAA restrictions and an admin's model allowlist still apply. Combined with Opper's EU routes, the prompt and response stay with providers that run inference in the EU, and Opper itself is hosted in Stockholm.
 
@@ -62,7 +71,23 @@ A working setup returns an Anthropic-shaped message (`"type": "message"`, a `con
 
 Opper's docs also list `https://api.opper.ai/v3/compat` as the base URL for its Anthropic-compatible surface ([Drop-in SDKs](https://docs.opper.ai/build/gateway/drop-in-sdks), [Messages API reference](https://docs.opper.ai/v3-api-reference/compatibility/create-message)); this recipe uses `https://eu.gw.opper.ai`.
 
-## 3. Configure the gateway
+## 1P: Opper models next to Claude (Models page)
+
+Keep your claude.ai login and add Opper's models to the Code tab's picker. A session on an Opper model talks to Opper with your key; everything else stays on the subscription. Sub-agents and workflows can use these models too. Local Code sessions only: Chat, Cowork, Dispatch and SSH sessions keep Anthropic's models. Custom models do not reach the picker in 3P mode, so use the 3P route there.
+
+1. Open **Settings -> Extra -> Models** and choose **Add a provider**. Pick the **Opper (EU)** preset (base URL `https://eu.gw.opper.ai`), paste the key from step 1 and save.
+2. On the provider card click **Fetch models**. It reads `https://eu.gw.opper.ai/v1/models` and lists the routes with their names and context windows; tick the ones you want. Alternatively click **Add a model** and type a route ID such as `melious/deepseek-v4.1-flash`.
+3. Optionally click the card's **test** button: it sends a one-token request with the stored key.
+4. Turn on the **Custom models** switch at the top of the page (the same switch is a row under **Community Features -> Models and 3P**).
+5. Click **Reload the Code tab**. The models appear in the picker after the Claude models.
+
+Details: [custom models](../custom-models.md). Steps 3 to 5 below are the 3P route and are not needed for 1P; the **Allow non-Anthropic models** switch only relaxes the 3P gateway filter.
+
+## 3P: Opper as the inference backend
+
+The steps below switch Claude Desktop to third-party inference with Opper as the gateway.
+
+### 3. Configure the gateway
 
 No `sudo` needed. In Claude Desktop open **Settings -> Extra -> Deployment** (details: [Third-party inference, Route A](../third-party-inference.md#route-a-the-in-app-deployment-panel)):
 
@@ -106,7 +131,7 @@ Both files are `0600` in a `0700` directory because they hold the key.
 
 **Fleet rollout:** the same keys work in `/etc/claude-desktop/managed-settings.json`. That file must be owned by root and not group/world-writable, a single unknown key makes Claude Desktop ignore the whole file, and while it is valid it replaces the per-user configuration. See [Third-party inference, Route C](../third-party-inference.md#route-c-manual-managed-settingsjson). The **Allow non-Anthropic models** switch below is per user either way.
 
-## 4. Turn on "Allow non-Anthropic models" and restart
+### 4. Turn on "Allow non-Anthropic models" and restart
 
 Open **Settings -> Extra -> Community Features**, scroll to the **Models and 3P** group (next to the *Custom models* row, which belongs to the separate **Extra -> Models** page: that page adds providers next to a claude.ai subscription and does not add models to the 3P picker, so it is not needed here) and turn on **Allow non-Anthropic models**, then fully quit and restart Claude Desktop. The model list is built at startup, so the switch has no effect until the restart.
 
@@ -114,12 +139,14 @@ Open **Settings -> Extra -> Community Features**, scroll to the **Models and 3P*
 
 The switch stores `"allowNonAnthropicModels": true` in `~/.config/Claude-3p/claude-desktop-extra.json`. To set it by hand instead, put the same key in `~/.config/Claude-3p/claude-desktop-extra.jsonc`; the `.jsonc` file wins, and the switch then shows as locked. Patch source: [`add_feature_allow_non_anthropic_models.nim`](../../patches/community/add_feature_allow_non_anthropic_models.nim).
 
-## 5. Pick a model
+### 5. Pick a model
 
 Open a new Chat, Cowork or Code session and choose a model from the picker (screenshot at the top). Each entry shows its `labelOverride`, so putting the region in the label makes it visible where you pick. The choice applies per session.
 
 ## Troubleshooting
 
+- **The Opper models are missing from the Code picker (1P).** The **Custom models** switch is off, no model is ticked on the provider card, or the Code tab was not reloaded. Turn the switch on, tick at least one model and click **Reload the Code tab**.
+- **You are in 3P mode: custom models do not reach the picker there.** Use the 3P route (steps 3 to 5), or switch to 1P with the Deployment panel switch or `claude-desktop --1p`.
 - **The picker shows only some models, or a session answers as the default model.** The switch is off or Claude Desktop was not restarted after turning it on. Check the patch log:
   ```bash
   grep cdb-models ~/.config/Claude-3p/logs/claude-patches.log | tail -n 3

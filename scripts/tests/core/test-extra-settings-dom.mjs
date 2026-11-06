@@ -428,6 +428,87 @@ async function featuresPanel(featuresItem) {
        "the state line follows the flip: " + cmRow.querySelector(".cdbx-state").textContent);
   }
 
+  // The "Settings > Extra > Models" words are an inline link that opens our Models
+  // page in the same dialog; the strings behind the row (search haystack) stay plain.
+  {
+    const LINK = "Settings > Extra > Models";
+    const cur0 = function (it) { return it.getAttribute("aria-current") === "page" || !!it.querySelector('[aria-current="page"]'); };
+    const rowOf = function (p) { return p.querySelector(cmSel).closest(".cdbx-row"); };
+    const links = function (n) { return Array.prototype.slice.call(n.querySelectorAll(".cdbx-link")); };
+    const cmRow = rowOf(panel);
+    const noteLinks = links(cmRow.querySelector(".cdbx-note"));
+    ok(noteLinks.length === 1 && noteLinks[0].textContent === LINK,
+       "Custom models note: exactly one .cdbx-link reading " + LINK + " (" + noteLinks.length + ")");
+    ok(noteLinks.length === 1 && /^Adds models from .* set them up in $/.test(
+         cmRow.querySelector(".cdbx-note").firstChild.textContent) &&
+       /Applies live\.$/.test(cmRow.querySelector(".cdbx-note").textContent) &&
+       cmRow.querySelector(".cdbx-note").textContent.indexOf("set them up in " + LINK + ". Applies live.") > 0,
+       "the note text reads the same as before");
+    ok(noteLinks.length === 1 && (noteLinks[0].tagName === "BUTTON" || noteLinks[0].tagName === "A") &&
+       noteLinks[0].tabIndex >= 0, "the link is focusable");
+    ok(links(cmRow.querySelector(".cdbx-state")).length === 0, "configured: the state line carries no link");
+    const otherLinks = links(panel).filter(function (l) { return !cmRow.contains(l); });
+    ok(otherLinks.length === 0, "no other row grew a link (" + otherLinks.length + ")");
+    const sbox = panel.querySelector(".cdbx-search");
+    sbox.value = "endpoint"; sbox.dispatchEvent(new Event("input", { bubbles: true }));
+    await sleep(30);
+    ok(cmRow.closest(".cdbx-list").style.display !== "none", "the filter 'endpoint' still matches the Custom models row");
+    sbox.value = ""; sbox.dispatchEvent(new Event("input", { bubbles: true }));
+    await sleep(30);
+
+    window.__customModelsState = { ok: true, enabled: false, configured: false, lockedByJsonc: false, source: "default", surfaces: ["code"], models: 0, providers: [] };
+    window.__cmConfig = { ok: true, enabled: false, configured: false, lockedByJsonc: false, source: "default",
+      surfaces: ["code"], models: 0, providers: [], paths: {} };
+    featuresItem.click();
+    await sleep(120);
+    const p2 = document.querySelector(".cdbx-panel");
+    const r2 = rowOf(p2);
+    const sl = links(r2.querySelector(".cdbx-state"));
+    ok(sl.length === 1 && sl[0].textContent === LINK && r2.querySelector(".cdbx-state").textContent ===
+       "off - no model configured yet (" + LINK + ")",
+       "nothing configured: the state line carries the link: " + r2.querySelector(".cdbx-state").textContent);
+
+    const modelsItemEl = ourItems()[3];
+    const cmNow = function () { return document.querySelector(cmSel); };
+    ok(cur0(ourItems()[1]) && !cur0(modelsItemEl), "before: the Community item holds aria-current=page, Models does not");
+    const cmBefore = cmNow().getAttribute("aria-checked"), callsBefore = (window.__customModelsCalls || []).length;
+    // Space: opens only via the native click on keyup, so keydown alone must do nothing
+    const spaceEv = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+    links(r2.querySelector(".cdbx-note"))[0].dispatchEvent(spaceEv);
+    await sleep(100);
+    ok(document.querySelector(".cdbx-panel .cdbx-h1").textContent === "Community Features" &&
+       cmNow().getAttribute("aria-checked") === cmBefore && (window.__customModelsCalls || []).length === callsBefore,
+       "Space keydown on the link opens nothing and flips nothing");
+    // click
+    links(r2.querySelector(".cdbx-note"))[0].click();
+    await sleep(150);
+    let np = document.querySelector(".cdbx-panel");
+    ok(!!np && np.querySelector(".cdbx-h1").textContent === "Custom models",
+       "clicking the note link opens the Models panel: " + (np && np.querySelector(".cdbx-h1").textContent));
+    const cur = function (it) { return it.getAttribute("aria-current") === "page" || !!it.querySelector('[aria-current="page"]'); };
+    ok(cur(modelsItemEl) && !cur(ourItems()[1]),
+       "and selectOurs moved aria-current=page from the Community item to the Models item");
+    ok(cmBefore === "false" && window.__customModelsCalls.length === callsBefore,
+       "clicking the note link did not flip the Custom models switch");
+    // Enter on the state-line link
+    featuresItem.click();
+    await sleep(120);
+    const r3 = rowOf(document.querySelector(".cdbx-panel"));
+    const sl3 = links(r3.querySelector(".cdbx-state"))[0];
+    sl3.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    await sleep(150);
+    np = document.querySelector(".cdbx-panel");
+    ok(!!np && np.querySelector(".cdbx-h1").textContent === "Custom models",
+       "pressing Enter on the state-line link opens the Models panel too");
+    ok(window.__customModelsCalls.length === callsBefore, "and Enter did not call customModelsSet either");
+    featuresItem.click();
+    await sleep(120);
+    ok(document.querySelector(cmSel).getAttribute("aria-checked") === cmBefore, "the switch is still as it was after both link uses");
+    window.__customModelsState = null;
+    featuresItem.click();
+    await sleep(120);
+  }
+
   const author = panel.querySelector('#cdbx-autofix-authors');
   ok(!!author, "renders trusted-author list editor");
   if (author) {
@@ -3498,10 +3579,10 @@ for (const [name, fixture] of scenarios) {
   try {
     // Virtual time, so the budget costs no wall clock: it only has to cover the
     // sum of the driver's sleep() calls in the longest scenario.
-    // 15 s since the background-display setup page tests (issue #300).
+    // 20 s: the background-display setup page tests (issue #300) and the Models link tests.
     dump = execFileSync(CHROMIUM, [
       "--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",
-      "--window-size=1000,700", "--virtual-time-budget=15000",
+      "--window-size=1000,700", "--virtual-time-budget=20000",
       "--dump-dom", "file://" + file
     ], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
   } catch (e) {

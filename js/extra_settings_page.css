@@ -463,6 +463,28 @@
   overflow-wrap: anywhere;
 }
 
+/* An inline text link inside a note or state line: the words, underlined, in the
+   brand accent that already colours the headlines; no button chrome. */
+.cdbx-link {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: hsl(var(--accent-brand, 15 63.1% 59.6%));
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cdbx-link:hover { text-decoration-thickness: 2px; }
+
+.cdbx-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 .cdbx-state {
   margin-top: 2px;
   font-size: 11px;

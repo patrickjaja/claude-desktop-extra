@@ -1106,6 +1106,60 @@
     return (entry.displayName || entry.name || "").toLowerCase();
   }
 
+  // Opens one of our own panels in this same dialog, as a click on its nav item
+  // does. `show` and `mounted` are defined further down; both are live by the
+  // time anyone can click.
+  function openPanel(kind) {
+    var item = null;
+    if (mounted && mounted.items) {
+      for (var i = 0; i < mounted.items.length; i++) {
+        if (mounted.items[i].kind === kind) { item = mounted.items[i]; break; }
+      }
+    }
+    if (!item) { diag("openpanel-miss", "[ExtraSettings] no mounted nav item of kind " + kind + " to open"); return; }
+    show(kind, item);
+  }
+
+  // Renders `text` into `node`: plain text, except that each occurrence of a
+  // link's text (spec.links: [{ text, kind }]) becomes an inline button that
+  // opens that panel. A <button> is Tab-focusable and activates on Enter/Space
+  // by itself; the handlers keep the click away from the surrounding row.
+  function setLinkedText(node, text, links) {
+    node.textContent = "";
+    if (!links || !links.length) { node.textContent = text; return; }
+    var rest = String(text);
+    while (rest) {
+      var best = null, at = -1;
+      for (var i = 0; i < links.length; i++) {
+        var k = rest.indexOf(links[i].text);
+        if (k >= 0 && (at < 0 || k < at)) { at = k; best = links[i]; }
+      }
+      if (!best) { node.appendChild(document.createTextNode(rest)); break; }
+      if (at > 0) node.appendChild(document.createTextNode(rest.slice(0, at)));
+      node.appendChild(inlineLink(best));
+      rest = rest.slice(at + best.text.length);
+    }
+  }
+
+  function inlineLink(link) {
+    var b = el("button", "cdbx-link", link.text);
+    b.type = "button";
+    b.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openPanel(link.kind);
+    });
+    // Enter is handled on keydown, whose preventDefault also drops the click the
+    // browser would synthesize (no double open); Space keeps the native click.
+    b.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Enter") return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      openPanel(link.kind);
+    });
+    return b;
+  }
+
   // --- ONE TOGGLE ROW, EVERY COMMUNITY FEATURE -----------------------------
   // Every one of our own switches (Source control, Layout, Motion, Shortcuts)
   // is the same widget: a section heading, a titled row with a note and a state
@@ -1147,7 +1201,9 @@
     // spec.badge: a pill after the title ("Experimental"), see experimentalBadge().
     if (spec.badge) title.appendChild(experimentalBadge(spec.badge));
     main.appendChild(title);
-    main.appendChild(el("div", "cdbx-note", spec.note));
+    var noteNode = el("div", "cdbx-note");
+    setLinkedText(noteNode, spec.note, spec.links);
+    main.appendChild(noteNode);
     var stateLine = el("div", "cdbx-state", "Loading...");
     main.appendChild(stateLine);
     node.appendChild(main);
@@ -1198,12 +1254,12 @@
       // the .jsonc leaves the key alone.
       if (res.lockedByJsonc) {
         toggle.title = "Edit " + spec.lockFile + " to change this";
-        stateLine.textContent = describe() + " - set in " + spec.lockFile;
+        setLinkedText(stateLine, describe() + " - set in " + spec.lockFile, spec.links);
         return;
       }
 
       toggle.disabled = false;
-      stateLine.textContent = describe();
+      setLinkedText(stateLine, describe(), spec.links);
       toggle.addEventListener("click", function () {
         if (toggle.disabled) return;
         var next = !isOn();
@@ -1212,7 +1268,7 @@
           toggle.disabled = false;
           if (failed(r)) { toast(spec.errorPrefix + reason(r), true); return; }
           toggle.setAttribute("aria-checked", next ? "true" : "false");
-          stateLine.textContent = describe();
+          setLinkedText(stateLine, describe(), spec.links);
           syncRestart(res);
           node.classList.add("cdbx-flash");
           setTimeout(function () { node.classList.remove("cdbx-flash"); }, 700);
@@ -1327,6 +1383,7 @@
     return renderToggleRow(panel, {
       title: "Custom models",
       note: "Adds models from Anthropic-compatible providers (DeepSeek, OpenRouter, your own gateway) to the Code tab's model picker. Sessions on them use your own key; set them up in Settings > Extra > Models. Applies live.",
+      links: [{ text: "Settings > Extra > Models", kind: "models" }],
       keywords: "endpoint subscription routing reopen picker reload",
       ariaLabel: "list custom Anthropic-compatible models in the Code model picker",
       read: "customModelsRead",
