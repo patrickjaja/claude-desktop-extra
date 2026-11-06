@@ -35,6 +35,10 @@ Desktop-side preconditions: the `cdbExtra` bridge in `.vite/build/mainView.js` (
 
 Pure state function: `window.__cdbCoworkIconState({upstream, cloud, device})`.
 
+## Mode lines
+
+Every popover we touch carries one mode line above our action: linked chat "Runs in the cloud - uses <computer> through the device link"; local "Runs in the local VM on this computer - running|ready|not available (<main's reason>)" (one line, from `cuStatusIcon()`); our own icon "Runs in the cloud" above its X / amber / neutral text. `textContent` only.
+
 ## Anchors
 
 | Anchor | Where | Measured on 4.23118.0 | If it breaks |
@@ -49,6 +53,7 @@ Pure state function: `window.__cdbCoworkIconState({upstream, cloud, device})`.
 | Popover `[data-cds="PreviewCard"]` in `#portal-root > [data-base-ui-portal] > [data-cds-portal] > [role=presentation]` | page `decorateCards` | `[role=group][aria-labelledby]`, opens on click (trigger gets `data-popup-open`), closes on focus loss | `no-popup` when an indicator is open and no card is in the document |
 | `button[data-testid="cowork-computer-link-manage"]` ("Manage devices") | page `MANAGE` | last row of the link card: `div.flex.flex-col.p-1 > [title block, div.flex.flex-col > (divider, ..., manage)]`; ghost `data-cds="Button"` with `w-full justify-start` | `no-popup`; the row goes to the end of the card's padded column, unstyled own button |
 | Local card title = the trigger's `aria-label` | page `cardOf` | `div.flex.flex-col.p-1 > div.flex.flex-col.gap-0.5.px-md.py-sm > (span title "Only on this computer", span detail)` | `no-popup` ("no PreviewCard is titled with its aria-label"); no row |
+| Link card title `#<aria-labelledby>` (the computer name) and `[data-testid="cowork-computer-link-status-detail"]` classes | page `computerName` / `modeClass` | card `aria-labelledby` -> `span.truncate` with the computer name; status detail span styled `text-footnote ...` | No warning: the name falls back to the indicator's `aria-label` before the comma, then "this computer"; the mode line falls back to `px-md py-xs text-footnote text-secondary` |
 | `globalThis["claude.web"].WindowState.deviceLinkStore` | page `deviceState` | `getStateSync()` -> `{appStartedMs, connected:true, idSource:"keyed", presentedDeviceId, recentGaps}`; `onStateChange(cb)` returns an unsubscribe (mainView preload, sync IPC `WindowState_$_deviceLink_$store$_getStateSync`) | `no-device-store`; the neutral plain laptop (no warning) on every unlinked chat |
 | `__reactFiber$` expando | page `fiberOf` | React 19 production | `no-seat` |
 

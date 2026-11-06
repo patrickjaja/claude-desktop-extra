@@ -170,7 +170,7 @@ function setup(w, o) {
   if (o.bridge !== false) {
     w.cdbExtra = {
       diag: function (m) { t.diags.push(String(m)); return Promise.resolve({ ok: true }); },
-      cuStatusIcon: function () { t.icon++; return Promise.resolve({ ok: true, mode: "1p", tpm: "ok", vm: { now: "ok", tools: "ok", running: false }, line: "Local VM ready" }); },
+      cuStatusIcon: function () { t.icon++; return Promise.resolve(o.vm || { ok: true, mode: "1p", tpm: "ok", vm: { now: "ok", tools: "ok", running: false }, line: "Local VM ready" }); },
       extraOpenSettings: function () { t.settings++; return Promise.resolve({ ok: true }); }
     };
   }
@@ -205,7 +205,7 @@ function portal(inner) {
     '<div data-cds="PreviewCard" role="group" aria-labelledby="pt" id="card">' + inner + "</div></div></div></div>";
 }
 var LINK_CARD = '<div class="flex flex-col p-1"><div class="flex flex-col gap-0.5 px-md py-sm"><span id="pt" class="truncate text-body">jajapc</span>' +
-  '<span data-testid="cowork-computer-link-status">Connected</span><span data-testid="cowork-computer-link-status-detail">detail</span></div>' +
+  '<span data-testid="cowork-computer-link-status">Connected</span><span data-testid="cowork-computer-link-status-detail" class="text-footnote text-muted-as-secondary">detail</span></div>' +
   '<div class="flex flex-col" id="actions"><div aria-hidden="true" class="my-1 h-px bg-border"></div>' +
   '<button type="button" data-cds="Button" data-cds-ghost="" class="w-full justify-start" data-testid="cowork-computer-link-manage" id="manage"><span data-cds="Icon" class="ico">\ue001</span><span class="truncate">Manage devices</span></button></div></div>';
 var LOCAL_CARD = '<div class="flex flex-col p-1" id="col"><div class="flex flex-col gap-0.5 px-md py-sm"><span class="text-body font-medium text-primary">Only on this computer</span>' +
@@ -281,6 +281,11 @@ step(function (go) {
         ok(manage.textContent === "\ue001Manage devices" && t.d.querySelectorAll('[data-testid="cowork-computer-link-manage"]').length === 1,
           "bound: upstream's manage button is untouched");
         ok(rows[0].getAttribute("data-cdb-cowork-icon") === "details", "bound: row is marked data-cdb-cowork-icon=details");
+        var ml = rows[0].querySelector(".cdb-cowork-icon-line");
+        ok(ml && ml.textContent === "Runs in the cloud - uses jajapc through the device link" && ml.nextSibling === b,
+          "bound: one mode line above Linux details, computer name from the card title", ml && ml.textContent);
+        ok(ml && /text-footnote text-muted-as-secondary/.test(ml.className), "bound: the mode line borrows the status-detail classes", ml && ml.className);
+        ok(rows[0].querySelectorAll(".cdb-cowork-icon-line").length === 1, "bound: exactly one mode line");
         b.click();
         ok(t.opens.join() === "cu/cloud", "bound: Linux details -> __cdbExtraOpen(cu, cloud)", t.opens.join());
         t.mutate(); t.mutate();
@@ -306,12 +311,13 @@ step(function (go) {
       ok(t.icons().length === 0, "local: no icon of ours next to upstream's local indicator (even keyless)");
       t.d.querySelector('[data-testid="cowork-local-session-indicator"]').setAttribute("data-popup-open", "");
       addPortal(t, portal(LOCAL_CARD));
-      waitFor(function () { var l = t.d.querySelector(".cdb-cowork-icon-line"); return l && l.textContent === "Local VM ready"; }, function () {
+      waitFor(function () { var l = t.d.querySelector(".cdb-cowork-icon-line"); return l && l.textContent === "Runs in the local VM on this computer - ready"; }, function () {
         var rows = t.d.querySelectorAll(".cdb-cowork-icon-row");
         ok(rows.length === 1, "local: one details row", rows.length);
         ok(rows[0] && rows[0].parentNode === t.d.getElementById("col"), "local: the row goes into the card's padded column");
         var line = t.d.querySelector(".cdb-cowork-icon-line");
-        ok(line && line.textContent === "Local VM ready", "local: readiness line from cuStatusIcon()", line && line.textContent);
+        ok(line && line.textContent === "Runs in the local VM on this computer - ready", "local: one merged mode + readiness line from cuStatusIcon()", line && line.textContent);
+        ok(rows[0].querySelectorAll(".cdb-cowork-icon-line").length === 1, "local: no second line");
         ok(t.icon === 1, "local: cuStatusIcon called once per open", t.icon);
         var b = rows[0] && rows[0].querySelector("button");
         ok(b && b.textContent === "Linux details", "local: Linux details button");
@@ -362,6 +368,8 @@ step(function (go) {
     var pop = t.d.querySelector(".cdb-cowork-icon-pop");
     ok(pop && pop.getAttribute("role") === "dialog" && pop.getAttribute("aria-labelledby"), "keyless: click opens a labelled role=dialog popover");
     ok(pop && /Not connected - this computer has no device key, cloud tasks and chats can't use it/.test(pop.textContent), "keyless: popover text");
+    ok(pop && pop.querySelector(".cdb-cowork-icon-pop-mode").textContent === "Runs in the cloud" &&
+      pop.querySelector(".cdb-cowork-icon-pop-mode").nextSibling.textContent.indexOf("Not connected") === 0, "keyless: Runs in the cloud line first, then the X text");
     ok(b.getAttribute("aria-expanded") === "true" && b.getAttribute("aria-controls") === (pop && pop.id), "keyless: aria-expanded=true + aria-controls");
     var act = pop && pop.querySelector("button");
     ok(act && act.textContent === "Set up" && t.d.activeElement === act, "keyless: focus moves to Set up");
@@ -413,6 +421,7 @@ step(function (go) {
     b.click();
     var pop = t.d.querySelector(".cdb-cowork-icon-pop");
     ok(pop && /Not connected to this chat/.test(pop.textContent) && /device key/.test(pop.textContent), "keyed: popover says not connected to this chat");
+    ok(pop && pop.querySelector(".cdb-cowork-icon-pop-mode").textContent === "Runs in the cloud", "keyed: Runs in the cloud line");
     pop.querySelector("button").click();
     ok(t.opens.join() === "cu/cloud", "keyed: Linux details -> __cdbExtraOpen(cu, cloud)", t.opens.join());
     t.push({ connected: true, idSource: "keyless" });
@@ -461,9 +470,9 @@ step(function (go) {
       ok(count(t.warns, /^\\[cdb-cowork-icon\\] no-seat: /) === 1, "anchor miss: no-seat warned once across rescans", t.warns.join(" | "));
       ok(count(t.diags, /^\\[cdb-cowork-icon\\] no-seat: /) === 1, "anchor miss: and one diag line");
       t.icons()[0].click();
-      waitFor(function () { var p = t.d.querySelector(".cdb-cowork-icon-pop-text"); return p && p.textContent === "Local VM ready"; }, function () {
+      waitFor(function () { var p = t.d.querySelector(".cdb-cowork-icon-pop-text"); return p && p.textContent === "Runs in the local VM on this computer - ready"; }, function () {
         var p = t.d.querySelector(".cdb-cowork-icon-pop");
-        ok(p && /Runs on this computer \\(local VM\\)/.test(p.textContent) && /Local VM ready/.test(p.textContent), "fallback: local popover with readiness line");
+        ok(p && /Runs on this computer \\(local VM\\)/.test(p.textContent) && p.querySelectorAll(".cdb-cowork-icon-pop-text").length === 1, "fallback: local popover with one merged mode + readiness line");
         p.querySelector("button").click();
         ok(t.opens.join() === "cu/local", "fallback: Linux details -> __cdbExtraOpen(cu, local)", t.opens.join());
         t.loc.pathname = "/chat/c9"; t.mutate();
@@ -533,7 +542,8 @@ step(function (go) {
     ok(w.getComputedStyle(b.querySelector(".cdb-cowork-icon-badge")).display === "none", "neutral: no badge");
     b.click();
     var pop = t.d.querySelector(".cdb-cowork-icon-pop");
-    ok(pop && !pop.querySelector(".cdb-cowork-icon-pop-text") && !/device key|Not connected/.test(pop.textContent), "neutral: popover makes no claim", pop && pop.textContent);
+    ok(pop && pop.querySelectorAll(".cdb-cowork-icon-pop-text").length === 1 && pop.querySelector(".cdb-cowork-icon-pop-mode").textContent === "Runs in the cloud" &&
+      !/device key|Not connected/.test(pop.textContent), "neutral: only the Runs in the cloud line, no claim", pop && pop.textContent);
     ok(pop && pop.querySelector("button").textContent === "Linux details", "neutral: Linux details only");
     pop.querySelector("button").click();
     ok(t.opens.join() === "cu/cloud", "neutral: Linux details -> __cdbExtraOpen(cu, cloud)", t.opens.join());
@@ -568,8 +578,9 @@ step(function (go) {
     var b = t.icons()[0];
     b.click();
     var pop = t.d.querySelector(".cdb-cowork-icon-pop");
-    var desc = pop && t.d.getElementById(pop.getAttribute("aria-describedby"));
-    ok(desc && /no device key/.test(desc.textContent), "a11y: aria-describedby names the text line");
+    var ids = pop ? pop.getAttribute("aria-describedby").split(" ") : [];
+    ok(ids.length === 2 && /Runs in the cloud/.test(t.d.getElementById(ids[0]).textContent) && /no device key/.test(t.d.getElementById(ids[1]).textContent),
+      "a11y: aria-describedby names the mode and text lines");
     var top0 = pop.style.top;
     w.scrollTo(0, 300); w.dispatchEvent(new w.Event("scroll"));
     ok(pop.style.top !== top0, "scroll: the popover follows the icon", top0 + " -> " + pop.style.top);
@@ -600,6 +611,45 @@ step(function (go) {
           ok(t2.settings === 1 && count(t2.warns, /deeplink-error/) === 1 && count(t2.warns, /deeplink-refused|no-deeplink/) === 0,
             "throwing deep link: asks main for settings, warns deeplink-error", t2.warns.join(" | "));
           go();
+        });
+      });
+    });
+  });
+});
+
+// ---- local readiness: running / not available, name fallback ---------------
+step(function (go) {
+  frame(header(LOCAL), function (w) {
+    var t = setup(w, { path: "/cowork/local_s", device: { connected: true, idSource: "keyed" },
+      vm: { ok: true, mode: "1p", vm: { now: "ok", tools: "ok", running: true }, line: "Local VM ready - running" } });
+    fib(t.d.getElementById("split"), {}, seat("local_s").return);
+    t.run();
+    t.d.querySelector('[data-testid="cowork-local-session-indicator"]').setAttribute("data-popup-open", "");
+    addPortal(t, portal(LOCAL_CARD));
+    waitFor(function () { var l = t.d.querySelector(".cdb-cowork-icon-line"); return l && /running$/.test(l.textContent); }, function () {
+      ok(t.d.querySelector(".cdb-cowork-icon-line").textContent === "Runs in the local VM on this computer - running", "local: running");
+      frame(header(LOCAL), function (w2) {
+        var t2 = setup(w2, { path: "/cowork/local_u", device: { connected: true, idSource: "keyed" },
+          vm: { ok: true, mode: "1p", vm: { now: "no_permission", tools: "ok", running: false }, line: "Local VM unavailable: no access to /dev/kvm or /dev/vhost-vsock" } });
+        fib(t2.d.getElementById("split"), {}, seat("local_u").return);
+        t2.run();
+        t2.d.querySelector('[data-testid="cowork-local-session-indicator"]').setAttribute("data-popup-open", "");
+        addPortal(t2, portal(LOCAL_CARD));
+        waitFor(function () { var l = t2.d.querySelector(".cdb-cowork-icon-line"); return l && /not available/.test(l.textContent); }, function () {
+          ok(t2.d.querySelector(".cdb-cowork-icon-line").textContent ===
+            "Runs in the local VM on this computer - not available (Local VM unavailable: no access to /dev/kvm or /dev/vhost-vsock)", "local: not available, with main's reason");
+          frame(header(LINK), function (w3) {
+            var t3 = setup(w3, { device: { connected: true, idSource: "keyed" } });
+            fib(t3.d.getElementById("split"), {}, seat("c13").return);
+            t3.run();
+            t3.d.querySelector('[data-testid="cowork-computer-link-indicator"]').setAttribute("data-popup-open", "");
+            addPortal(t3, portal(LINK_CARD.replace('id="pt" ', 'id="other" ')));
+            waitFor(function () { return t3.d.querySelector(".cdb-cowork-icon-line"); }, function () {
+              ok(t3.d.querySelector(".cdb-cowork-icon-line").textContent === "Runs in the cloud - uses jajapc through the device link",
+                "bound: computer name from the indicator aria-label when the title id does not resolve");
+              go();
+            });
+          });
         });
       });
     });

@@ -14,7 +14,7 @@ What Cowork and Dispatch need from the host, per backend and per distro, and wha
 
 The app chooses per task: "This task will run in the cloud" or "on your computer". Without KVM access the app hides the local option and a claude.ai account still gets cloud Cowork. Settings -> Extra -> **Cowork (Linux)** shows the state of both backends and Computer Use; `claude-desktop --diagnose` prints the same checks (sections "Cloud Cowork device key" and "Local Cowork VM").
 
-In the header of every claude.ai chat and Cowork session (`/chat/...` and `/cowork/...`) a device icon shows where this desktop stands: the upstream laptop icon (with a "Linux details" row that opens Cowork (Linux)) when the chat is linked to this computer or runs in the local VM, a laptop with an X when this desktop has no device key, an amber dot when the desktop is keyed but this chat is not linked to it, and a plain laptop while the device key state is not known yet. Every variant opens the matching section of the page.
+In the header of every claude.ai chat and Cowork session (`/chat/...` and `/cowork/...`) a device icon shows where this desktop stands: the upstream laptop icon (with a "Linux details" row that opens Cowork (Linux)) when the chat is linked to this computer or runs in the local VM, a laptop with an X when this desktop has no device key, an amber dot when the desktop is keyed but this chat is not linked to it, and a plain laptop while the device key state is not known yet. Every variant opens the matching section of the page. Each popover also says where the chat runs: in the cloud (and through which computer, when linked) or in the local VM on this computer, with the VM's state.
 
 ## Local Cowork VM setup
 

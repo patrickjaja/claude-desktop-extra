@@ -207,12 +207,40 @@
   }
 
   // ---- readiness line (local) ----------------------------------------------------
+  // One line: the mode plus the VM state (running / ready / not available,
+  // with main's reason). cuStatusIcon() once per call.
+  var LOCAL_MODE = "Runs in the local VM on this computer";
   function readiness(target) {
-    target.textContent = "Checking the local VM...";
-    if (typeof api.cuStatusIcon !== "function") { target.textContent = "Local VM status unavailable"; return; }
-    Promise.resolve().then(function () { return api.cuStatusIcon(); }).then(function (r) {
-      target.textContent = r && r.ok === true && typeof r.line === "string" && r.line ? r.line.slice(0, 200) : "Local VM status unavailable";
-    }, function () { target.textContent = "Local VM status unavailable"; });
+    target.textContent = LOCAL_MODE + " - checking...";
+    function set(r) {
+      var line = r && r.ok === true && typeof r.line === "string" ? r.line.slice(0, 200) : "";
+      var st = !line ? "status unavailable"
+        : r.vm && r.vm.running === true ? "running"
+        : line.indexOf("Local VM ready") === 0 ? "ready"
+        : "not available (" + line + ")";
+      target.textContent = LOCAL_MODE + " - " + st;
+    }
+    if (typeof api.cuStatusIcon !== "function") { set(null); return; }
+    Promise.resolve().then(function () { return api.cuStatusIcon(); }).then(set, function () { set(null); });
+  }
+  // The computer a linked chat uses: the card's title, else the indicator's
+  // aria-label up to the comma ("jajapc, Connected"), else "this computer".
+  function computerName(card) {
+    var name = "";
+    var id = card && card.getAttribute("aria-labelledby");
+    var t = id ? document.getElementById(id) : null;
+    if (t && card.contains(t)) name = String(t.textContent || "").trim();
+    if (!name) {
+      var ind = document.querySelector(LINK_IND + "[data-popup-open]") || document.querySelector(LINK_IND);
+      name = ind ? String(ind.getAttribute("aria-label") || "").split(",")[0].trim() : "";
+    }
+    return name ? name.slice(0, 80) : "this computer";
+  }
+  var MODE_CLS = "px-md py-xs text-footnote text-secondary";
+  function modeClass(card) {
+    var d = card && card.querySelector('[data-testid="cowork-computer-link-status-detail"]');
+    var c = d ? String(d.className || "").trim() : "";
+    return "cdb-cowork-icon-line " + (c || MODE_CLS);
   }
 
   // ---- our icon -----------------------------------------------------------------
@@ -324,16 +352,23 @@
     title.textContent = t.title;
     el.setAttribute("aria-labelledby", title.id);
     el.appendChild(title);
+    var mode = document.createElement("div");
+    mode.className = "cdb-cowork-icon-pop-text cdb-cowork-icon-pop-mode";
+    mode.id = el.id + "-m";
+    if (st === "local") readiness(mode);
+    else mode.textContent = "Runs in the cloud";
+    el.appendChild(mode);
+    var described = [mode.id];
     var text = st === "local" ? "" : popText(st, b);
-    if (st === "local" || text) {
+    if (text) {
       var line = document.createElement("div");
       line.className = "cdb-cowork-icon-pop-text";
       line.id = el.id + "-d";
-      if (st === "local") readiness(line);
-      else line.textContent = text;
-      el.setAttribute("aria-describedby", line.id);
+      line.textContent = text;
+      described.push(line.id);
       el.appendChild(line);
     }
+    el.setAttribute("aria-describedby", described.join(" "));
     var act = document.createElement("button");
     act.type = "button";
     act.className = "cdb-cowork-icon-action";
@@ -442,7 +477,7 @@
     });
     return b;
   }
-  function detailsRow(kind, model) {
+  function detailsRow(kind, model, card) {
     var row = document.createElement("div");
     row.className = "cdb-cowork-icon-row flex flex-col";
     row.setAttribute(ATTR, "details");
@@ -453,9 +488,14 @@
       hr.setAttribute("aria-hidden", "true");
       row.appendChild(hr);
       var line = document.createElement("span");
-      line.className = "cdb-cowork-icon-line px-md py-xs text-footnote text-secondary";
+      line.className = "cdb-cowork-icon-line " + MODE_CLS;
       readiness(line);
       row.appendChild(line);
+    } else {
+      var mode = document.createElement("span");
+      mode.className = modeClass(card);
+      mode.textContent = "Runs in the cloud - uses " + computerName(card) + " through the device link";
+      row.appendChild(mode);
     }
     row.appendChild(detailsButton(model, kind === "local" ? "local" : "cloud"));
     return row;
@@ -495,7 +535,7 @@
       if (card.querySelector(".cdb-cowork-icon-row")) continue;
       var manage = card.querySelector(MANAGE);
       if (manage && manage.parentNode) {
-        manage.parentNode.insertBefore(detailsRow("cloud", manage), manage.nextSibling);
+        manage.parentNode.insertBefore(detailsRow("cloud", manage, card), manage.nextSibling);
         continue;
       }
       bare.push(card);
@@ -518,7 +558,7 @@
       var kc = cardOf(linkOpen, bare, false);
       if (kc) {
         warn("no-popup", "the computer-link popover is open but has no button[data-testid=\"cowork-computer-link-manage\"]; the row goes to its end");
-        localContainer(kc).appendChild(detailsRow("cloud", null));
+        localContainer(kc).appendChild(detailsRow("cloud", null, kc));
       }
     }
   }
