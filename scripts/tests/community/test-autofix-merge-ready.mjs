@@ -325,7 +325,10 @@ await test("settings: autoFixMergeReady predicate, channels, lock and win32 refu
   const run = async (platform, body) => {
     const dir = mkdtempSync(join(tmpdir(), "cdb-afmr-extra-"));
     const mod = join(dir, "extra.cjs");
-    writeFileSync(mod, '"use strict";\nfunction FHa(e=[]){let t=G().type==="3p"&&ou()==="1p"?[...e,j$t]:e;a.app.isPackaged?Mj(!0,t):fj(t)}\n');
+    writeFileSync(mod, '"use strict";\nfunction FHa(e=[]){let t=G().type==="3p"&&ou()==="1p"?[...e,j$t]:e;a.app.isPackaged?Mj(!0,t):fj(t)}\n' +
+      // ...and the navigation / VM-probe capture anchors (sub-patches C, D); never called.
+      'var Hrr,Urr;function Yrr(){return Urr??=(async()=>{let t,n,r,s;return Hrr={qemuPath:t,firmwarePath:n,virtiofsdPath:r,virtiofsdAptInstallable:!0,kvm:s},Hrr})(),Urr}function Xrr(){return Hrr}\n' +
+      'function nav0(){let Uy=go(Hy,"Navigation",Xy,{events:[["navigate",[["path",I]]]]});return Uy}\n');
     execFileSync(EXTRA_BIN, [mod], { stdio: "ignore" });
     const userData = join(dir, "Claude"); mkdirSync(userData, { recursive: true });
     const handlers = {};

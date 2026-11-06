@@ -235,7 +235,7 @@ await test("settings IPC: default, persistence, jsonc lock, validation and untou
   for (const platform of ["linux", "win32"]) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-grace-settings-")), file = path.join(dir, "extra.cjs");
     try {
-      fs.writeFileSync(file, 'function FHa(e=[]){let t=G().type==="3p"&&ou()==="1p"?[...e,j$t]:e;a.app.isPackaged?Mj(!0,t):fj(t)}');
+      fs.writeFileSync(file, 'function FHa(e=[]){let t=G().type==="3p"&&ou()==="1p"?[...e,j$t]:e;a.app.isPackaged?Mj(!0,t):fj(t)}\n' + 'var Hrr,Urr;function Yrr(){return Urr??=(async()=>{let t,n,r,s;return Hrr={qemuPath:t,firmwarePath:n,virtiofsdPath:r,virtiofsdAptInstallable:!0,kvm:s},Hrr})(),Urr}function Xrr(){return Hrr}\n' + 'function nav0(){let Uy=go(Hy,"Navigation",Xy,{events:[["navigate",[["path",I]]]]});return Uy}\n');
       execFileSync(extra, [file]); const handlers = {}, userData = path.join(dir, "Claude"); fs.mkdirSync(userData);
       const electron = { app: { getPath: () => userData, on() {}, once() {} },
         ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; }, removeHandler() {} }, shell: {} };
@@ -840,7 +840,7 @@ await test("keep channel: validated in main, calls upstream's session setter wit
   const Module = require2("module");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-grace-keep-")), file = path.join(dir, "extra.cjs");
   try {
-    fs.writeFileSync(file, 'function FHa(e=[]){let t=G().type==="3p"&&ou()==="1p"?[...e,j$t]:e;a.app.isPackaged?Mj(!0,t):fj(t)}');
+    fs.writeFileSync(file, 'function FHa(e=[]){let t=G().type==="3p"&&ou()==="1p"?[...e,j$t]:e;a.app.isPackaged?Mj(!0,t):fj(t)}\n' + 'var Hrr,Urr;function Yrr(){return Urr??=(async()=>{let t,n,r,s;return Hrr={qemuPath:t,firmwarePath:n,virtiofsdPath:r,virtiofsdAptInstallable:!0,kvm:s},Hrr})(),Urr}function Xrr(){return Hrr}\n' + 'function nav0(){let Uy=go(Hy,"Navigation",Xy,{events:[["navigate",[["path",I]]]]});return Uy}\n');
     execFileSync(extra, [file]); const handlers = {}, userData = path.join(dir, "Claude"); fs.mkdirSync(userData);
     const electron = { app: { getPath: () => userData, on() {}, once() {} },
       ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; }, removeHandler() {} }, shell: {} };
