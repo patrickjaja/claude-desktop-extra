@@ -322,7 +322,7 @@ jobs:
         run: |
           echo "=== Running shellcheck on shell scripts ==="
           FAILED=false
-          for f in scripts/*.sh packaging/apt/*.sh packaging/rpm/*.sh packaging/pacman/*.sh .github/scripts/*.sh packaging/udev/cdb-tpm-access; do
+          for f in scripts/*.sh packaging/apt/*.sh packaging/rpm/*.sh packaging/pacman/*.sh .github/scripts/*.sh packaging/udev/cdb-tpm-access packaging/udev/cdb-kvm-access; do
             [ -f "$f" ] || continue
             echo "Checking $f..."
             if ! shellcheck -S error "$f"; then
@@ -386,6 +386,32 @@ jobs:
           rc=0; out=$("$D/cdb-tpm-access" enable 2>/dev/null) || rc=$?
           [ "$rc" = 5 ] && [ -z "$out" ] || { echo "::error::cdb-tpm-access enable from the source tree exited $rc (stdout '$out'), expected 5 and no stdout"; exit 1; }
           echo "TPM access rule, helper and polkit action OK"
+
+      - name: Validate KVM access rule, modules-load file, helper and polkit action
+        run: |
+          # Same contract as the TPM step, plus the vhost_vsock modules-load file.
+          set -euo pipefail
+          D=packaging/udev
+          POLICY="$D/io.github.patrickjaja.claude-desktop-extra.kvm-access.policy"
+          shellcheck -S style "$D/cdb-kvm-access"
+          sudo apt-get install -y libxml2-utils
+          xmllint --noout "$POLICY"
+          grep -qF '<action id="io.github.patrickjaja.claude-desktop-extra.kvm-access">' "$POLICY"
+          grep -qF '<annotate key="org.freedesktop.policykit.exec.path">/usr/lib/claude-desktop/resources/linux-udev/cdb-kvm-access</annotate>' "$POLICY"
+          grep -qF '<allow_active>auth_admin</allow_active>' "$POLICY"
+          udevadm verify "$D/70-claude-desktop-extra-kvm.rules"
+          # The helper links only files equal to its embedded RULE_TEXT / CONF_TEXT.
+          sed -n "/^RULE_TEXT='/,/^'\$/p" "$D/cdb-kvm-access" | sed '1s/^RULE_TEXT=.//;$d' \
+            | cmp - "$D/70-claude-desktop-extra-kvm.rules" \
+            || { echo "::error::RULE_TEXT in cdb-kvm-access differs from 70-claude-desktop-extra-kvm.rules"; exit 1; }
+          sed -n "/^CONF_TEXT='/,/^'\$/p" "$D/cdb-kvm-access" | sed '1s/^CONF_TEXT=.//;$d' \
+            | cmp - "$D/claude-desktop-extra-vsock.conf" \
+            || { echo "::error::CONF_TEXT in cdb-kvm-access differs from claude-desktop-extra-vsock.conf"; exit 1; }
+          rc=0; "$D/cdb-kvm-access" bogus 2>/dev/null || rc=$?
+          [ "$rc" = 2 ] || { echo "::error::cdb-kvm-access bogus exited $rc, expected 2"; exit 1; }
+          rc=0; out=$("$D/cdb-kvm-access" enable 2>/dev/null) || rc=$?
+          [ "$rc" = 5 ] && [ -z "$out" ] || { echo "::error::cdb-kvm-access enable from the source tree exited $rc (stdout '$out'), expected 5 and no stdout"; exit 1; }
+          echo "KVM access rule, modules-load file, helper and polkit action OK"
 
       - name: Verify Nim patches compile
         run: |
@@ -1403,13 +1429,39 @@ jobs:
                       "-rw-r--r-- root/root usr/share/polkit-1/actions/$P"; do
             grep -qxF -- "$want" <<<"$LIST" || { echo "::error::.deb lacks '$want'"; exit 1; }
           done
-          if grep -E ' (etc/udev|usr/lib/udev)/' <<<"$LIST"; then echo "::error::.deb ships udev files outside resources/"; exit 1; fi
+          if grep -E ' (etc/udev|usr/lib/udev|etc/modules-load.d)/' <<<"$LIST"; then echo "::error::.deb ships udev files outside resources/"; exit 1; fi
           dpkg-deb --fsys-tarfile "$DEB" | tar -xO "./usr/share/polkit-1/actions/$P" \
             | grep -qF "<annotate key=\"org.freedesktop.policykit.exec.path\">/$U/cdb-tpm-access</annotate>" \
             || { echo "::error::polkit exec.path is not /$U/cdb-tpm-access"; exit 1; }
           CTL=$(mktemp -d); dpkg-deb -e "$DEB" "$CTL"
           if grep -rlE 'tpm|linux-udev|polkit' "$CTL"; then echo "::error::a maintainer script references the TPM access files"; exit 1; fi
           echo "TPM access files OK in $(basename "$DEB")"
+
+
+      - name: Check KVM access files in the .deb (${{ matrix.arch }})
+        run: |
+          # Disabled rule + root helper + polkit action, root-owned with fixed
+          # modes; nothing under /etc/udev or /usr/lib/udev; no maintainer
+          # script references them.
+          set -euo pipefail
+          DEB=$(ls dist/claude-desktop-extra_*_${{ matrix.arch }}.deb)
+          U=usr/lib/claude-desktop/resources/linux-udev
+          P=io.github.patrickjaja.claude-desktop-extra.kvm-access.policy
+          LIST=$(dpkg-deb -c "$DEB" | awk '{print $1, $2, $NF}' | sed 's| \./| |')
+          for want in "-rw-r--r-- root/root $U/70-claude-desktop-extra-kvm.rules" \
+                      "-rw-r--r-- root/root $U/claude-desktop-extra-vsock.conf" \
+                      "-rwxr-xr-x root/root $U/cdb-kvm-access" \
+                      "-rw-r--r-- root/root $U/$P" \
+                      "-rw-r--r-- root/root usr/share/polkit-1/actions/$P"; do
+            grep -qxF -- "$want" <<<"$LIST" || { echo "::error::.deb lacks '$want'"; exit 1; }
+          done
+          if grep -E ' (etc/udev|usr/lib/udev|etc/modules-load.d)/' <<<"$LIST"; then echo "::error::.deb ships udev files outside resources/"; exit 1; fi
+          dpkg-deb --fsys-tarfile "$DEB" | tar -xO "./usr/share/polkit-1/actions/$P" \
+            | grep -qF "<annotate key=\"org.freedesktop.policykit.exec.path\">/$U/cdb-kvm-access</annotate>" \
+            || { echo "::error::polkit exec.path is not /$U/cdb-kvm-access"; exit 1; }
+          CTL=$(mktemp -d); dpkg-deb -e "$DEB" "$CTL"
+          if grep -rlE 'kvm-access|vsock|linux-udev|polkit' "$CTL"; then echo "::error::a maintainer script references the KVM access files"; exit 1; fi
+          echo "KVM access files OK in $(basename "$DEB")"
 
       - name: Test Debian Package (${{ matrix.arch }})
         run: |
@@ -1583,12 +1635,43 @@ jobs:
                           "-rw-r--r-- root/root usr/share/polkit-1/actions/$P"; do
                 grep -qxF -- "$want" <<<"$LIST" || { echo "::error::.rpm lacks $want"; exit 1; }
               done
-              if grep -E " (etc/udev|usr/lib/udev)/" <<<"$LIST"; then echo "::error::.rpm ships udev files outside resources/"; exit 1; fi
+              if grep -E " (etc/udev|usr/lib/udev|etc/modules-load.d)/" <<<"$LIST"; then echo "::error::.rpm ships udev files outside resources/"; exit 1; fi
               rpm2cpio "$RPM" | cpio -i --quiet --to-stdout "./usr/share/polkit-1/actions/$P" \
                 | grep -qF "<annotate key=\"org.freedesktop.policykit.exec.path\">/$U/cdb-tpm-access</annotate>" \
                 || { echo "::error::polkit exec.path is not /$U/cdb-tpm-access"; exit 1; }
               if rpm -qp --scripts "$RPM" | grep -E "tpm|linux-udev|polkit"; then echo "::error::an rpm scriptlet references the TPM access files"; exit 1; fi
               echo "TPM access files OK in $(basename "$RPM")"
+            '
+
+
+      - name: Check KVM access files in the .rpm (${{ matrix.arch }})
+        run: |
+          # Same assertions as the .deb: disabled rule + root helper + polkit
+          # action, root-owned with fixed modes, no udev path outside resources/,
+          # no scriptlet reference. rpm reads the package without installing it.
+          docker run --rm \
+            -v "$(pwd)/dist:/dist:ro" \
+            fedora:40 \
+            bash -c '
+              set -euo pipefail
+              dnf install -y -q cpio >/dev/null
+              RPM=$(ls /dist/claude-desktop-extra-*.${{ matrix.arch }}.rpm)
+              U=usr/lib/claude-desktop/resources/linux-udev
+              P=io.github.patrickjaja.claude-desktop-extra.kvm-access.policy
+              LIST=$(rpm -qlvp "$RPM" | awk "{print \$1, \$3\"/\"\$4, \$NF}" | sed "s| /| |")
+              for want in "-rw-r--r-- root/root $U/70-claude-desktop-extra-kvm.rules" \
+                          "-rw-r--r-- root/root $U/claude-desktop-extra-vsock.conf" \
+                          "-rwxr-xr-x root/root $U/cdb-kvm-access" \
+                          "-rw-r--r-- root/root $U/$P" \
+                          "-rw-r--r-- root/root usr/share/polkit-1/actions/$P"; do
+                grep -qxF -- "$want" <<<"$LIST" || { echo "::error::.rpm lacks $want"; exit 1; }
+              done
+              if grep -E " (etc/udev|usr/lib/udev|etc/modules-load.d)/" <<<"$LIST"; then echo "::error::.rpm ships udev files outside resources/"; exit 1; fi
+              rpm2cpio "$RPM" | cpio -i --quiet --to-stdout "./usr/share/polkit-1/actions/$P" \
+                | grep -qF "<annotate key=\"org.freedesktop.policykit.exec.path\">/$U/cdb-kvm-access</annotate>" \
+                || { echo "::error::polkit exec.path is not /$U/cdb-kvm-access"; exit 1; }
+              if rpm -qp --scripts "$RPM" | grep -E "kvm-access|vsock|linux-udev|polkit"; then echo "::error::an rpm scriptlet references the KVM access files"; exit 1; fi
+              echo "KVM access files OK in $(basename "$RPM")"
             '
 
       - name: Test RPM Package (${{ matrix.arch }})
@@ -2079,12 +2162,37 @@ jobs:
                       "-rw-r--r-- root/root usr/share/polkit-1/actions/$P"; do
             grep -qxF -- "$want" <<<"$LIST" || { echo "::error::pacman package lacks '$want'"; exit 1; }
           done
-          if grep -E ' (etc/udev|usr/lib/udev)/' <<<"$LIST"; then echo "::error::pacman package ships udev files outside resources/"; exit 1; fi
+          if grep -E ' (etc/udev|usr/lib/udev|etc/modules-load.d)/' <<<"$LIST"; then echo "::error::pacman package ships udev files outside resources/"; exit 1; fi
           tar --zstd -xOf "$PKG" "usr/share/polkit-1/actions/$P" \
             | grep -qF "<annotate key=\"org.freedesktop.policykit.exec.path\">/$U/cdb-tpm-access</annotate>" \
             || { echo "::error::polkit exec.path is not /$U/cdb-tpm-access"; exit 1; }
           if tar --zstd -xOf "$PKG" .INSTALL | grep -E 'tpm|linux-udev|polkit'; then echo "::error::the .install hook references the TPM access files"; exit 1; fi
           echo "TPM access files OK in $(basename "$PKG")"
+
+
+      - name: Check KVM access files in the pacman package (${{ matrix.arch }})
+        run: |
+          # Same assertions as the .deb: disabled rule + root helper + polkit
+          # action, root-owned with fixed modes, no udev path outside resources/,
+          # and the .install hook does not reference them.
+          set -euo pipefail
+          PKG=$(ls dist/claude-desktop-extra-*-${{ matrix.arch }}.pkg.tar.zst)
+          U=usr/lib/claude-desktop/resources/linux-udev
+          P=io.github.patrickjaja.claude-desktop-extra.kvm-access.policy
+          LIST=$(tar --zstd -tvf "$PKG" | awk '{print $1, $2, $NF}')
+          for want in "-rw-r--r-- root/root $U/70-claude-desktop-extra-kvm.rules" \
+                      "-rw-r--r-- root/root $U/claude-desktop-extra-vsock.conf" \
+                      "-rwxr-xr-x root/root $U/cdb-kvm-access" \
+                      "-rw-r--r-- root/root $U/$P" \
+                      "-rw-r--r-- root/root usr/share/polkit-1/actions/$P"; do
+            grep -qxF -- "$want" <<<"$LIST" || { echo "::error::pacman package lacks '$want'"; exit 1; }
+          done
+          if grep -E ' (etc/udev|usr/lib/udev|etc/modules-load.d)/' <<<"$LIST"; then echo "::error::pacman package ships udev files outside resources/"; exit 1; fi
+          tar --zstd -xOf "$PKG" "usr/share/polkit-1/actions/$P" \
+            | grep -qF "<annotate key=\"org.freedesktop.policykit.exec.path\">/$U/cdb-kvm-access</annotate>" \
+            || { echo "::error::polkit exec.path is not /$U/cdb-kvm-access"; exit 1; }
+          if tar --zstd -xOf "$PKG" .INSTALL | grep -E 'kvm-access|vsock|linux-udev|polkit'; then echo "::error::the .install hook references the KVM access files"; exit 1; fi
+          echo "KVM access files OK in $(basename "$PKG")"
 
       - name: Upload Arch package (${{ matrix.arch }})
         uses: actions/upload-artifact@v7
