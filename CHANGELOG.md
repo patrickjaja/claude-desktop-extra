@@ -6,6 +6,7 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ### Settings -> Extra -> Models works in 3P mode (#318)
 
+- **Docs:** the [Opper gateway cookbook](docs/cookbook/opper-gateway.md) names the current location of the **Allow non-Anthropic models** switch (Community Features, group *Models and 3P*) and carries a fresh screenshot of it.
 - The Models page now loads in 3P (managed / gateway) deployments, where the main window is served from `app://localhost`; before, it showed an error instead of the provider list. The sender check that every page script of ours applies to its IPC calls is now one shared implementation (`js/sender_guard.js`), so all of them accept the same senders.
 
 ### PR auto-archive delay: remaining time and keep button also with a claude.ai login

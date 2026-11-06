@@ -108,9 +108,9 @@ Both files are `0600` in a `0700` directory because they hold the key.
 
 ## 4. Turn on "Allow non-Anthropic models" and restart
 
-Open **Settings -> Extra -> Community Features -> Inference** and turn on **Allow non-Anthropic models**, then fully quit and restart Claude Desktop. The model list is built at startup, so the switch has no effect until the restart.
+Open **Settings -> Extra -> Community Features**, scroll to the **Models and 3P** group (next to the *Custom models* row, which belongs to the separate **Extra -> Models** page and is not needed here) and turn on **Allow non-Anthropic models**, then fully quit and restart Claude Desktop. The model list is built at startup, so the switch has no effect until the restart.
 
-![Settings -> Extra -> Community Features, Inference section, with "Allow non-Anthropic models" switched on](img/allow-non-anthropic-models-switch.png)
+![Settings -> Extra -> Community Features, Models and 3P group, with "Allow non-Anthropic models" switched on](img/allow-non-anthropic-models-switch.png)
 
 The switch stores `"allowNonAnthropicModels": true` in `~/.config/Claude-3p/claude-desktop-extra.json`. To set it by hand instead, put the same key in `~/.config/Claude-3p/claude-desktop-extra.jsonc`; the `.jsonc` file wins, and the switch then shows as locked. Patch source: [`add_feature_allow_non_anthropic_models.nim`](../../patches/community/add_feature_allow_non_anthropic_models.nim).
 
