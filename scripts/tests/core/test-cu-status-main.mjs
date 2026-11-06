@@ -43,6 +43,8 @@ import vm from "node:vm";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const MAIN_JS = process.env.CUS_MAIN_JS || join(ROOT, "js", "extra_settings_main.js");
+// The core patch emits it ahead of the module above: the shared IPC sender guard.
+const GUARD_JS = join(ROOT, "js", "sender_guard.js");
 const BRIDGE_JS = process.env.CUS_BRIDGE_JS || join(ROOT, "js", "extra_settings_bridge.js");
 const PAGE_JS = join(ROOT, "js", "extra_settings_page.js");
 const HELPER = join(ROOT, "packaging", "udev", "cdb-tpm-access");
@@ -199,6 +201,7 @@ function load({ platform, trusted = true, known = true, sticky = true, pkexec = 
   if (sticky) src = subst(src, 'var __cdbEx_CUS_STICKY_DIRS = ["/nix/store"];', "var __cdbEx_CUS_STICKY_DIRS = " + J(["/nix/store", ...STICKY_ANC]) + ";");
   src = subst(src, 'var __cdbEx_CUS_PKEXEC = ["/usr/bin/pkexec", "/bin/pkexec"];', "var __cdbEx_CUS_PKEXEC = " + J(pkexec) + ";");
   for (const [a, b] of edits) src = subst(src, a, b);
+  src = readFileSync(GUARD_JS, "utf8") + src;
   const dir = mkdtempSync(join(tmpdir(), "cdb-cus-mod-"));
   const mod = join(dir, "extra.cjs");
   writeFileSync(mod, src);

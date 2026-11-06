@@ -935,7 +935,9 @@ let mainFail = 0;
     process: { platform: "linux", env: {} }, console, URL,
     setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {} };
   sb.globalThis = sb;
-  vm.runInNewContext(readFileSync(join(ROOT, "js/diff_views_main.js"), "utf8"), vm.createContext(sb));
+  { const __c = vm.createContext(sb);
+    vm.runInContext(readFileSync(new URL("../../../js/sender_guard.js", import.meta.url), "utf8"), __c);
+    vm.runInContext(readFileSync(join(ROOT, "js/diff_views_main.js"), "utf8"), __c); }
   const from = (u, parent = null) => ({ sender: { getURL: () => u, isDestroyed: () => false }, senderFrame: { parent } });
   for (const ch of ["cdb-diff:pref-read", "cdb-diff:state"]) {
     for (const u of ["https://claude.ai/x", "https://preview.claude.ai/x", "https://claude.com/",

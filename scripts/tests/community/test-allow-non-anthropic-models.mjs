@@ -54,7 +54,9 @@ function load(dir, env = {}) {
     process: { platform: "linux", env }, console, setTimeout, clearTimeout
   };
   sandbox.globalThis = sandbox;
-  vm.runInNewContext(readFileSync(MODULE_PATH, "utf8"), vm.createContext(sandbox));
+  { const __c = vm.createContext(sandbox);
+    vm.runInContext(readFileSync(new URL("../../../js/sender_guard.js", import.meta.url), "utf8"), __c);
+    vm.runInContext(readFileSync(MODULE_PATH, "utf8"), __c); }
   return { handlers, events, sandbox };
 }
 const sender = { sender: { getURL: () => "https://claude.ai/x", isDestroyed: () => false } };

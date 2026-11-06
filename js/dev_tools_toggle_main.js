@@ -24,7 +24,6 @@
   var _fs = require("fs");
   var _path = require("path");
   var _electron = require("electron");
-  var _URL = require("url").URL;
   var _ipc = _electron.ipcMain;
 
   var FILE_NAME = "developer_settings.json";
@@ -76,33 +75,9 @@
     return p;
   }
 
-  var ALLOWED_ORIGINS = [
-    "https://claude.ai",
-    "https://preview.claude.ai",
-    "https://claude.com",
-    "https://preview.claude.com",
-    // app://localhost is the main window in 3P mode; its URL.origin is the
-    // opaque "null", so normalise to protocol + "//" + host and compare exactly.
-    "app://localhost"
-  ];
-  function originAllowed(rawUrl) {
-    try {
-      var u = new _URL(String(rawUrl));
-      var o = u.origin;
-      if (!o || o === "null") o = u.protocol + "//" + u.host;
-      return ALLOWED_ORIGINS.indexOf(o) !== -1;
-    } catch (e) { return false; }
-  }
-  function okSender(ev) {
-    try {
-      var wc = ev && ev.sender;
-      if (!wc || wc.isDestroyed()) return false;
-      if (!originAllowed(wc.getURL() || "")) return false;
-      var frame = ev.senderFrame;
-      if (frame && frame.parent) return false;
-      return true;
-    } catch (e) { return false; }
-  }
+  // The IPC sender validator is shared: js/sender_guard.js (issue #318). Looked up
+  // at call time; a missing guard fails closed.
+  function okSender(ev) { var g = globalThis.__cdbSenderGuard; return !!g && g.okSender(ev); }
   function handle(channel, fn) {
     try {
       _ipc.handle(channel, function (ev) {

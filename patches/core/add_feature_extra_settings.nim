@@ -51,6 +51,11 @@ import std/[os, strutils, json]
 # that the feature-test harnesses execute uses `regex` for exactly this reason.
 import regex
 
+# The shared IPC sender guard (globalThis.__cdbSenderGuard) every main-side
+# module of ours consults. It rides in this always-on core patch, emitted ahead
+# of the Extra settings IIFE and outside its platform gate, so there is exactly
+# one definition at runtime; consumers look it up at call time and fail closed.
+const GUARD_JS = staticRead("../../js/sender_guard.js")
 const MAIN_JS = staticRead("../../js/extra_settings_main.js")
 const PAGE_JS = staticRead("../../js/extra_settings_page.js")
 const PAGE_CSS = staticRead("../../js/extra_settings_page.css")
@@ -58,17 +63,25 @@ const PAGE_CSS = staticRead("../../js/extra_settings_page.css")
 # The page script and its stylesheet are spliced into the main-process IIFE as
 # JS string literals (escapeJson yields a quoted, fully escaped literal). The
 # placeholders are plain strings in the .js so it passes node --check unpatched.
-const EXTRA_JS = MAIN_JS.replace("\"__CDB_EX_PAGE_SRC__\"", escapeJson(PAGE_JS)).replace(
+const EXTRA_JS =
+  GUARD_JS &
+  MAIN_JS.replace("\"__CDB_EX_PAGE_SRC__\"", escapeJson(PAGE_JS)).replace(
     "\"__CDB_EX_PAGE_CSS__\"", escapeJson(PAGE_CSS)
   )
 
 const EXPECTED_PATCHES = 2
 
 # Positive end-state markers (Rule 6): the build tag, one handler name per panel
-# from the main half, and one class name from the page half - so a partially
-# spliced payload cannot report success.
-const MARKERS =
-  ["__cdb_extra_settings", "\"cdb-flags:set\"", "\"cdb-deploy:mode\"", "cdbx-navgroup"]
+# from the main half, one class name from the page half, and the sender guard's
+# own definition - so a partially spliced payload cannot report success. The
+# guard marker is its assignment, not the bare global name: the community
+# modules injected earlier into this same file read globalThis.__cdbSenderGuard
+# by name, and a bare-name marker would make sub-patch A see a "partial
+# injection" on a pristine bundle.
+const MARKERS = [
+  "__cdb_extra_settings", "\"cdb-flags:set\"", "\"cdb-deploy:mode\"", "cdbx-navgroup",
+  "globalThis.__cdbSenderGuard = Object.freeze(",
+]
 
 proc markersPresent(s: string): int =
   for m in MARKERS:

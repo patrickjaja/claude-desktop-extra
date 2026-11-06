@@ -45,7 +45,9 @@ function load(dir) {
     process: { platform: "linux", env: {}, pid: process.pid }, console, setTimeout, clearTimeout
   };
   sandbox.globalThis = sandbox;
-  vm.runInNewContext(readFileSync(MODULE_PATH, "utf8"), vm.createContext(sandbox));
+  { const __c = vm.createContext(sandbox);
+    vm.runInContext(readFileSync(new URL("../../../js/sender_guard.js", import.meta.url), "utf8"), __c);
+    vm.runInContext(readFileSync(MODULE_PATH, "utf8"), __c); }
   return { handlers, sandbox };
 }
 const from = (u, parent = null) => ({ sender: { getURL: () => u, isDestroyed: () => false }, senderFrame: { parent } });
@@ -100,16 +102,20 @@ console.log("\nC. Sender guard");
 {
   const dir = mkdtempSync(join(tmpdir(), "cdb-dt-"));
   const t = load(dir);
-  for (const u of ["https://claude.ai/x", "https://preview.claude.ai/", "https://claude.com/", "app://localhost/"]) {
+  for (const u of ["https://claude.ai/x", "https://preview.claude.ai/x", "https://claude.com/",
+                   "https://preview.claude.com/x", "app://localhost/", "app://localhost/new?x=1"]) {
     const r = await t.handlers["cdb-dt:pref-read"](from(u));
     ok(r.ok === true, "accepted: " + u);
   }
-  for (const u of ["https://evil.example/", "https://claude.ai.evil.example/", "file:///tmp/x.html", "app://other/"]) {
+  for (const u of ["https://evil.example/", "https://claude.ai.evil.example/", "app://localhost.evil/", "app://localhost:1234/",
+                   "app://other/", "file:///home/u/x.html", "http://localhost:3000/", "http://claude.ai/", "not a url"]) {
     const r = await t.handlers["cdb-dt:pref-set"](from(u), true);
     ok(r.ok === false && /sender/.test(r.error), "rejected: " + u);
   }
   const sub = await t.handlers["cdb-dt:pref-set"](from("https://claude.ai/x", {}), true);
   ok(sub.ok === false, "rejected: a subframe of an allowed origin");
+  const sub3p = await t.handlers["cdb-dt:pref-set"](from("app://localhost/", {}), true);
+  ok(sub3p.ok === false, "rejected: an app://localhost subframe");
   ok(!existsSync(file(dir)), "rejected calls wrote nothing");
   rmSync(dir, { recursive: true });
 }

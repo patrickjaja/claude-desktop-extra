@@ -43,6 +43,8 @@ function loadSettings(profile = dir, platform = "linux") {
   };
   const ctx = vm.createContext({ require: m => m === "electron" ? electron : require(m),
     process: { platform, env: {} }, console, setTimeout, clearTimeout, URL });
+  // The core patch emits the shared IPC sender guard ahead of the module.
+  vm.runInContext(readFileSync(join(ROOT, "js/sender_guard.js"), "utf8"), ctx);
   vm.runInContext(readFileSync(join(ROOT, "js/extra_settings_main.js"), "utf8"), ctx);
   return { ctx, handlers };
 }

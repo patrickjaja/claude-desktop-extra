@@ -57,7 +57,6 @@
   var _fs = require("fs");
   var _path = require("path");
   var _electron = require("electron");
-  var _URL = require("url").URL;
 
   var KEY_ON = "windowTransparency";
   var KEY_LEVEL = "windowTransparencyLevel";
@@ -335,22 +334,9 @@
   var SHELL_CSS = "html,html body{background:transparent!important}" +
     "html #boot-placeholder-sidebar,html #boot-placeholder-sidebar-rows,html [class*=boot-placeholder-seam],html [class*=boot-placeholder-frame],html [class*=boot-placeholder-row]{display:none!important}";
 
-  // app://localhost is the main window in 3P mode. Its URL.origin is the opaque
-  // "null", so normalise to protocol + "//" + host (upstream's eIPC validator
-  // does the same) and compare exactly; a port stays part of host.
-  var ALLOWED_ORIGINS = [
-    "https://claude.ai", "https://preview.claude.ai",
-    "https://claude.com", "https://preview.claude.com",
-    "app://localhost"
-  ];
-  function originAllowed(rawUrl) {
-    try {
-      var u = new _URL(String(rawUrl));
-      var o = u.origin;
-      if (!o || o === "null") o = u.protocol + "//" + u.host;
-      return ALLOWED_ORIGINS.indexOf(o) !== -1;
-    } catch (e) { return false; }
-  }
+  // The IPC sender validator is shared: js/sender_guard.js (issue #318). Looked up
+  // at call time; a missing guard fails closed.
+  function originAllowed(u) { var g = globalThis.__cdbSenderGuard; return !!g && g.originAllowed(u); }
   function isShell(rawUrl) {
     return /^file:\/\/.*\/renderer\/main_window\//.test(String(rawUrl));
   }
@@ -464,14 +450,7 @@
   });
 
   // ---- Settings -> Extra row (IPC) -------------------------------------------
-  function okSender(ev) {
-    try {
-      var wc = ev && ev.sender;
-      if (!wc || wc.isDestroyed()) return false;
-      if (!originAllowed(wc.getURL() || "")) return false;
-      return !(ev.senderFrame && ev.senderFrame.parent);
-    } catch (e) { return false; }
-  }
+  function okSender(ev) { var g = globalThis.__cdbSenderGuard; return !!g && g.okSender(ev); }
 
   // Writes keys of the .json in one go - `changes` maps key -> value, undefined
   // deletes the key - tmp + rename, every other key preserved; refuses to touch

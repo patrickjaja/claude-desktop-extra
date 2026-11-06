@@ -16,8 +16,8 @@
  *
  * SECURITY: the caller is remote claude.ai code. Every handler validates its
  * sender's ORIGIN against an exact allowlist (main frame only - see
- * __cdbEx_okSender below), flag ids must exist in the catalog, and values are
- * restricted to JSON scalars.
+ * js/sender_guard.js, reached through __cdbEx_okSender below), flag ids must
+ * exist in the catalog, and values are restricted to JSON scalars.
  *
  * The two placeholder string literals below are replaced at build time by the
  * Nim patch with the contents of js/extra_settings_page.js and
@@ -35,7 +35,6 @@
   var _ipc = _electron.ipcMain;
   var _path = require("path");
   var _fs = require("fs");
-  var _URL = require("url").URL;
 
   var __cdbEx_pageSrc = "__CDB_EX_PAGE_SRC__";
   var __cdbEx_pageCss = "__CDB_EX_PAGE_CSS__";
@@ -1575,53 +1574,22 @@
   }
 
   // --- sender validation ---------------------------------------------------
-  // Exact-origin allowlist, same posture as the panel-tabs, files-quick-open,
-  // window-controls and diff-views sender checks: the parsed origin is compared
-  // against the list, never a substring or prefix test of the raw URL. A scheme
-  // test alone ("is it http(s)?") accepted every https page that ended up in
-  // the main frame of a webContents carrying our preload - and the handlers
-  // behind this guard write the 3P gateway URL, its API key and the bootstrap
-  // URL, and relaunch the app. Only the main frame is accepted: subframes never
-  // get the preload, but reject them explicitly rather than relying on that.
+  // The exact-origin allowlist (claude.ai/claude.com plus app://localhost, the
+  // main window in 3P mode), the "null"-origin normalisation and the main-frame
+  // check live in ONE place, js/sender_guard.js, which the core patch emits
+  // ahead of this IIFE as globalThis.__cdbSenderGuard; every main-side module
+  // of ours consults it. The handlers behind this guard write the 3P gateway
+  // URL, its API key and the bootstrap URL, and relaunch the app.
   //
-  // app://localhost is the main window in 3P mode (upstream serves the bundled
-  // SPA from it instead of claude.ai). URL.origin is the opaque "null" for that
-  // scheme, so the origin is normalised to protocol + "//" + host first - the
-  // same normalisation upstream's own eIPC sender validator applies. host keeps
-  // a port, so app://localhost:1234 stays distinct and is rejected.
-  var __cdbEx_ALLOWED_ORIGINS = [
-    "https://claude.ai",
-    "https://preview.claude.ai",
-    "https://claude.com",
-    "https://preview.claude.com",
-    "app://localhost"
-  ];
-  function __cdbEx_originOf(rawUrl) {
-    var u;
-    try { u = new _URL(String(rawUrl)); } catch (e) { return ""; }
-    var o = u.origin;
-    if (!o || o === "null") o = u.protocol + "//" + u.host;
-    return o;
-  }
+  // Looked up at CALL time, never captured at load, and a missing guard is
+  // "not ok": the check fails closed whatever the evaluation order.
   function __cdbEx_originAllowed(rawUrl) {
-    var origin = __cdbEx_originOf(rawUrl);
-    if (!origin) return false;
-    for (var i = 0; i < __cdbEx_ALLOWED_ORIGINS.length; i++) {
-      if (origin === __cdbEx_ALLOWED_ORIGINS[i]) return true;
-    }
-    return false;
+    var g = globalThis.__cdbSenderGuard;
+    return !!g && g.originAllowed(rawUrl);
   }
-  // FAILS CLOSED: wc.isDestroyed() is called unguarded - a sender object
-  // missing the method throws, and the catch turns that into "not ok".
   function __cdbEx_okSender(ev) {
-    try {
-      var wc = ev && ev.sender;
-      if (!wc || wc.isDestroyed()) return false;
-      if (!__cdbEx_originAllowed(wc.getURL() || "")) return false;
-      var frame = ev.senderFrame;
-      if (frame && frame.parent) return false;
-      return true;
-    } catch (e) { return false; }
+    var g = globalThis.__cdbSenderGuard;
+    return !!g && g.okSender(ev);
   }
 
   // A handler marked by __cdbEx_withSender gets the (already checked) event as

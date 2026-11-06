@@ -44,7 +44,9 @@ function load(profileDir, env, opts) {
   sandbox.__fetchImpl = () => Promise.resolve(new Response(JSON.stringify({ id: "msg" }), { status: 200 }));
   sandbox.globalThis = sandbox;
   sandbox.__cdbDiag = (l) => diag.push(l);
-  vm.runInNewContext(src, vm.createContext(sandbox));
+  const ctx = vm.createContext(sandbox);
+  vm.runInContext(readFileSync(join(ROOT, "js/sender_guard.js"), "utf8"), ctx);
+  vm.runInContext(src, ctx);
   return { h: handlers, api: sandbox.__cdbCustomModels, on: appListeners, diag, sandbox };
 }
 
@@ -1708,6 +1710,28 @@ async function settle() { await new Promise((r) => setTimeout(r, 10)); }
   ok(JSON.stringify(r4.api.cliEnv()) === "{}" && calls.length === calls0, "linux: a path with a space is still refused, no lookup");
   rmSync(dir, { recursive: true, force: true });
   rmSync(pct, { recursive: true, force: true });
+}
+
+// The sender guard is the shared one (js/sender_guard.js): exact-origin, with
+// app://localhost (3P main window, opaque "null" origin normalised) accepted
+// and nothing near it. Issue #318: 3P mode showed "rejected: unrecognized sender".
+{
+  const dir = mkdtempSync(join(tmpdir(), "cdb-cm-3p-"));
+  const h = load(dir).h;
+  const from = (u, parent = null) => ({ sender: { getURL: () => u, isDestroyed: () => false }, senderFrame: { parent } });
+  for (const ch of ["cdb-cm:config-read", "cdb-cm:pref-read"]) {
+    for (const u of ["https://claude.ai/x", "https://preview.claude.ai/x", "https://claude.com/",
+                     "https://preview.claude.com/x", "app://localhost/", "app://localhost/new?x=1"]) {
+      ok((await h[ch](from(u))).ok === true, ch + " sender " + u + " accepted");
+    }
+    for (const u of ["https://evil.example/", "app://localhost.evil/", "app://localhost:1234/", "app://other/",
+                     "file:///home/u/x.html", "http://localhost:3000/", "http://claude.ai/", "not a url"]) {
+      const r = await h[ch](from(u));
+      ok(r.ok === false && /unrecognized sender/.test(r.error || ""), ch + " sender " + u + " rejected");
+    }
+    ok((await h[ch](from("app://localhost/", {}))).ok === false, ch + ": an app://localhost subframe is rejected");
+  }
+  rmSync(dir, { recursive: true, force: true });
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

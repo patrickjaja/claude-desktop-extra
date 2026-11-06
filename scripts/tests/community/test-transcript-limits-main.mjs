@@ -48,7 +48,9 @@ function load(profileDir, { platform = "linux", env = {}, diag = true, heap = 8 
   };
   if (diag) sandbox.__cdbDiag = (m) => logs.push(m);
   sandbox.globalThis = sandbox;
-  vm.runInNewContext(src, vm.createContext(sandbox));
+  { const __c = vm.createContext(sandbox);
+    vm.runInContext(readFileSync(new URL("../../../js/sender_guard.js", import.meta.url), "utf8"), __c);
+    vm.runInContext(src, __c); }
   return { handlers, logs, g: sandbox, env: sandbox.process.env };
 }
 function profile(files = {}) {

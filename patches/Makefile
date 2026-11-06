@@ -155,6 +155,7 @@ community/add_feature_theme_picker: ../js/theme_picker_page.html ../js/theme_pic
 # Extra settings area: main-process half embeds the injected page script and its
 # stylesheet; the bridge half embeds the preload snippet.
 core/add_feature_extra_settings: \
+  ../js/sender_guard.js \
   ../js/extra_settings_main.js \
   ../js/extra_settings_page.js \
   ../js/extra_settings_page.css

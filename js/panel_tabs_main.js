@@ -163,51 +163,9 @@
     return { ok: true, path: p };
   }
 
-  // Exact-origin allowlist, same posture as the diff-views and Extra settings
-  // sender checks: comparing parsed origins instead of testing whether the raw
-  // URL STRING contains "claude.ai"/"claude.com" anywhere. A substring test
-  // would also pass a lookalike host such as "https://evil.example/?next=
-  // claude.ai" or "https://claude.ai.evil.example" - both contain the
-  // substring, neither is our origin.
-  //
-  // app://localhost is the main window in 3P mode (upstream serves the bundled
-  // SPA from it instead of claude.ai). Its URL.origin is the opaque "null", so
-  // the origin is normalised to protocol + "//" + host first - the same
-  // normalisation upstream's own eIPC sender validator applies. host keeps a
-  // port, so app://localhost:1234 stays distinct and is rejected.
-  var ALLOWED_ORIGINS = [
-    "https://claude.ai",
-    "https://preview.claude.ai",
-    "https://claude.com",
-    "https://preview.claude.com",
-    "app://localhost"
-  ];
-  function originAllowed(rawUrl) {
-    var origin;
-    try {
-      var u = new _URL(String(rawUrl));
-      origin = u.origin;
-      if (!origin || origin === "null") origin = u.protocol + "//" + u.host;
-    } catch (e) { return false; }
-    for (var i = 0; i < ALLOWED_ORIGINS.length; i++) {
-      if (origin === ALLOWED_ORIGINS[i]) return true;
-    }
-    return false;
-  }
-  // FAILS CLOSED: wc.isDestroyed() is called unguarded, same as the diff-views
-  // precedent - a sender object missing the method throws, the catch below
-  // turns that into "not ok", not "assume fine". Do not soften this to a
-  // typeof-guard that treats a missing method as "not destroyed".
-  function okSender(ev) {
-    try {
-      var wc = ev && ev.sender;
-      if (!wc || wc.isDestroyed()) return false;
-      if (!originAllowed(wc.getURL() || "")) return false;
-      var frame = ev.senderFrame;
-      if (frame && frame.parent) return false;
-      return true;
-    } catch (e) { return false; }
-  }
+  // The IPC sender validator is shared: js/sender_guard.js (issue #318). Looked up
+  // at call time; a missing guard fails closed.
+  function okSender(ev) { var g = globalThis.__cdbSenderGuard; return !!g && g.okSender(ev); }
 
   _ipc.handle("cdb-tabs:state", function (ev) {
     if (!okSender(ev)) return { ok: false, error: "rejected: unrecognized sender" };
@@ -246,7 +204,7 @@
   // on this webContents, it is NOT a security boundary (the page script itself
   // does nothing sensitive - it only defines globals and polls state(), which
   // re-validates the sender origin strictly, above). It is looser than
-  // ALLOWED_ORIGINS on purpose: any claude.ai/claude.com subdomain gets the
+  // the shared sender guard (js/sender_guard.js) on purpose: any claude.ai/claude.com subdomain gets the
   // injection, so an upstream move to another subdomain does not kill the bar.
   // app://localhost (exact, no port) is the main window in 3P mode.
   function injectHost(rawUrl) {

@@ -30,7 +30,7 @@ for n in <numbers>; do gh issue view $n --json title,author,createdAt,body; gh i
 
 - `--comments` shows only the comments, never the body. Always fetch the body separately with `--json body`.
 - Pull any `--diagnose` gist the reporter linked with `gh gist view <id> --raw > <scratch>/gist<n>/diagnose.txt`. Then grep it for session type, compositor, scale, bridges and versions.
-- Compare the reporter's version with `.upstream-version` and the installed package (`pacman -Q claude-desktop-extra`). If the extract in `tmp/` matches the upstream version the reports are against, it can be reused read-only.
+- Compare the reporter's version with `.upstream-version` and the installed package (`pacman -Q claude-desktop-extra`). `tmp/` is reusable read-only only when `tmp/app.asar.contents/package.json` says the same version: its mtime lies (a fresh-looking `tmp/` held the previous release in #318). Otherwise re-extract before any probe or real-release harness section runs.
 
 ## Phase 2 - investigate in parallel (read-only)
 
@@ -52,6 +52,7 @@ Each brief carries:
 
 **Reproduce without the user's running app.** The user's Claude is in use: never signal its processes, and identify yours by your own `--user-data-dir`.
 - **Renderer, main-process or Electron behaviour:** run on a private Xvfb display with `env -i` and a throwaway HOME, XDG_RUNTIME_DIR, CLAUDE_CONFIG_DIR and `--user-data-dir`. Use the installed binary or a scratch patched tree. A hung renderer is simulated with `SIGSTOP` on the main renderer.
+- **A scratch 3P instance** (anything on `app://localhost`, managed/gateway deployments) needs no login and no `/etc`: a throwaway HOME where `<userData>-3p/configLibrary/_meta.json` applies an entry with `inferenceProvider: gateway` pointing at a stub HTTP server on 127.0.0.1, plus `deploymentMode: 3p` in `claude_desktop_config.json`; the launcher's `--user-data-dir` only identifies the pid. `main.log` must show upstream's `3P mode active`. Our IPC can be probed from an appended `index.js` probe that calls the Extra page's preload bridge. Crop screenshots to the Settings dialog: the account row shows `os.userInfo()`'s login name whatever `USER` says.
 - **A logged-in scratch instance** (cloud session timing, anything that needs the account): copy `~/.config/Claude` minus logs, caches, vm_bundles and `bridge-state.json` into a 0700 scratch dir and use it as `--user-data-dir`, pass the real `DBUS_SESSION_BUS_ADDRESS` so libsecret can decrypt the cookies, and delete the copy afterwards. `--remote-debugging-port` makes the app refuse to start; append a probe to the scratch asar's `index.js` instead (wrap main-side hooks, `executeJavaScript` into the claude.ai page every few seconds). On Xvfb the CU overlay renders solid black, so the model never clicks anything: good for lock, turn-end and API timing, useless for click accuracy. Upstream re-shows the session page when the lock is released, so a 'page not mounted' run has to re-assert the home after that.
 - **Wayland, wlroots or fractional scale:** use headless sway per `/test-native`, and run the bridge CLI directly against it. The Wayland socket path must stay under 108 bytes, so use a short `mktemp -d /tmp/xx.XXXX` runtime dir rather than the scratchpad.
 - **GNOME portal (gnome-portal-bridge) without a VM:** headless nested GNOME on the host (`dbus-run-session -- gnome-shell --wayland --no-x11 --devkit --virtual-monitor WxH`, private XDG_RUNTIME_DIR, own xdg-desktop-portal + pipewire), with the consent dialog and "Stop sharing" driven over accessibility/Shell.Eval. Good for bridge-level session tests; it cannot host a logged-in Claude.
@@ -90,6 +91,8 @@ Ask the real design forks with AskUserQuestion: one question per fork, with the 
 - A harness that runs the compiled patch is only valid after `make` ran AFTER the last `js/` edit (the binary embeds the JS); reviewers rebuild in a scratch copy before trusting counts.
 - A harness must fire the trigger upstream really uses. If it only calls our own injected hook (e.g. the CU lock hook), it misses upstream paths that bypass that hook: #300 passed ~400 harness cases and a private-display rig, then failed in the first real Code-tab turn.
 - Live checks run on scratch trees only.
+- Scratch budget: `/tmp` is a 16 GB tmpfs. A worker keeps its scratch under 2 GB and deletes it when done (one reviewer's 11 GB repo copy filled the disk and put a "Low disk space" toast into the after screenshots).
+- A runtime global that one patch defines and others consume (`globalThis.__cdbX`) gets its idempotency marker from the DEFINING line (`globalThis.__cdbX = Object.freeze(`), never the bare name: consumers injected earlier in basename order mention the name, and a bare-name marker reads as a partial injection on a pristine build.
 
 **Reviews:**
 - Every task gets an independent per-task review.

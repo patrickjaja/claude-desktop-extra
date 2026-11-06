@@ -36,7 +36,9 @@ function load(profileDir) {
   const sandbox = { require: (m) => (m === "electron" ? electron : Module.createRequire(import.meta.url)(m)),
     process: { platform: "linux", env: {} }, console, globalThis: {}, setTimeout };
   sandbox.globalThis = sandbox;
-  vm.runInNewContext(src, vm.createContext(sandbox));
+  { const __c = vm.createContext(sandbox);
+    vm.runInContext(readFileSync(new URL("../../../js/sender_guard.js", import.meta.url), "utf8"), __c);
+    vm.runInContext(src, __c); }
   return handlers;
 }
 

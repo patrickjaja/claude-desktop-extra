@@ -33,6 +33,8 @@ import vm from "node:vm";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const MAIN_JS = process.env.CUBG_MAIN_JS || join(ROOT, "js", "extra_settings_main.js");
+// The core patch emits it ahead of the module above: the shared IPC sender guard.
+const GUARD_JS = join(ROOT, "js", "sender_guard.js");
 const BRIDGE_JS = process.env.CUBG_BRIDGE_JS || join(ROOT, "js", "extra_settings_bridge.js");
 // The executor's reader of the same key, for the cross-reader contract below.
 const PREAMBLE_JS = process.env.CU_PREAMBLE || join(ROOT, "js", "cu_mode_preamble.js");
@@ -159,7 +161,8 @@ process.resourcesPath = res;
 
 // --- load ----------------------------------------------------------------------
 function load({ platform } = {}) {
-  const src = readFileSync(MAIN_JS, "utf8").split('"/tmp/.X11-unix"').join(JSON.stringify(x11Dir));
+  const src = readFileSync(GUARD_JS, "utf8") +
+    readFileSync(MAIN_JS, "utf8").split('"/tmp/.X11-unix"').join(JSON.stringify(x11Dir));
   const dir = mkdtempSync(join(tmpdir(), "cdb-cubg-mod-"));
   const mod = join(dir, "extra.cjs");
   writeFileSync(mod, src);

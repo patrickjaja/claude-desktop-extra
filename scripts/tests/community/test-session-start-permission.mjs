@@ -30,6 +30,8 @@ const require = createRequire(import.meta.url);
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-session-start-"));
 const helper = fs.readFileSync(path.join(root, "js/session_start_permission.js"), "utf8");
 const main = fs.readFileSync(path.join(root, "js/extra_settings_main.js"), "utf8");
+// The core patch emits the shared IPC sender guard ahead of extra_settings_main.js.
+const guard = fs.readFileSync(path.join(root, "js/sender_guard.js"), "utf8");
 const START = "mcp__ccd_session__start_session";
 const SPLIT = name => `\n/*__CDB_SPLIT__${name}__*/\n`;
 let passed = 0;
@@ -58,14 +60,15 @@ function install(userData, platform = "linux", extraElectron = {}) {
     process: { platform, env: {}, resourcesPath: dir },
     require: name => name === "electron" ? electron : require(name)
   });
+  vm.runInContext(guard, context);
   vm.runInContext(main, context);
   return { context, store: context.__cdbSessionStartPermission, enabled: context.__cdbSessionStartDialogEnabled, handlers, electron };
 }
 const settingsSender = { sender: { isDestroyed: () => false, getURL: () => "https://claude.ai/settings" }, senderFrame: {} };
 const ipc = (handlers, ch, ...args) => handlers[ch](settingsSender, ...args);
 function readFromFreshProcess(profile, key) {
-  const code = `const fs=require("node:fs"),vm=require("node:vm"),path=require("node:path");const main=fs.readFileSync(process.argv[1],"utf8");const dir=process.argv[2];const install=${install.toString()};process.stdout.write("HAS="+install(dir).store.has(process.argv[3]));`;
-  const child = spawnSync(process.execPath, ["-e", code, path.join(root, "js/extra_settings_main.js"), profile, key], { encoding: "utf8" });
+  const code = `const fs=require("node:fs"),vm=require("node:vm"),path=require("node:path");const main=fs.readFileSync(process.argv[1],"utf8");const guard=fs.readFileSync(process.argv[4],"utf8");const dir=process.argv[2];const install=${install.toString()};process.stdout.write("HAS="+install(dir).store.has(process.argv[3]));`;
+  const child = spawnSync(process.execPath, ["-e", code, path.join(root, "js/extra_settings_main.js"), profile, key, path.join(root, "js/sender_guard.js")], { encoding: "utf8" });
   assert.equal(child.status, 0, child.stderr);
   return child.stdout.endsWith("HAS=true");
 }

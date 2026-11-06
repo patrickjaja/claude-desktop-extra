@@ -30,7 +30,9 @@ function load(dir, env = {}, native = false) {
   const sandbox = { require: (m) => (m === "electron" ? electron : Module.createRequire(import.meta.url)(m)),
     process: { platform: "linux", env }, console, setTimeout, __cdbNativeTb: () => native };
   sandbox.globalThis = sandbox;
-  vm.runInNewContext(readFileSync(join(ROOT, "js/window_transparency.js"), "utf8"), vm.createContext(sandbox));
+  { const __c = vm.createContext(sandbox);
+    vm.runInContext(readFileSync(new URL("../../../js/sender_guard.js", import.meta.url), "utf8"), __c);
+    vm.runInContext(readFileSync(join(ROOT, "js/window_transparency.js"), "utf8"), __c); }
   return { handlers, events, windows, sandbox };
 }
 const sender = { sender: { getURL: () => "https://claude.ai/x", isDestroyed: () => false } };

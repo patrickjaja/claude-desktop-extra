@@ -45,6 +45,8 @@ Each can also point at another Claude model.
 
 The Models page writes providers and models to `claude-desktop-extra.json` in the profile directory (`~/.config/Claude`, or `~/.config/Claude-<name>` for a [profile](profiles.md)), and the keys to `custom-models/secrets.json` (mode 0600, in a 0700 directory). A key is never shown again once saved.
 
+The Models page also works in [3P mode](third-party-inference.md) (a managed or gateway deployment), where the main window is served from `app://localhost`.
+
 The same settings can be written by hand under `customModels` in `claude-desktop-extra.jsonc`. A provider defined there shows as locked on the page, and `enabled` set there locks the switch. Both files are read together: providers come from both, and a `.jsonc` provider wins over a `.json` one with the same id.
 
 ```jsonc

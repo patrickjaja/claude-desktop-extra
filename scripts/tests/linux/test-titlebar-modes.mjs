@@ -1429,6 +1429,7 @@ try {
     sandbox.globalThis = sandbox;
     const ctx = vm.createContext(sandbox);
     vm.runInContext(PREF_SRC, ctx);
+    vm.runInContext(readFileSync(join(ROOT, "js", "sender_guard.js"), "utf8"), ctx);
     vm.runInContext(MAIN_SRC, ctx);
     check("ipc: cdb-wc:pref-read registered", typeof handlers["cdb-wc:pref-read"], "function");
     const from = (u, parent = null) => ({

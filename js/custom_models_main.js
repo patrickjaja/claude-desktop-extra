@@ -1453,27 +1453,9 @@
   }
 
   // ---- IPC (Settings -> Extra) ----------------------------------------------
-  var ALLOWED_ORIGINS = [
-    "https://claude.ai", "https://preview.claude.ai",
-    "https://claude.com", "https://preview.claude.com"
-  ];
-  function originAllowed(rawUrl) {
-    var origin;
-    try { origin = new _URL(String(rawUrl)).origin; } catch (e) { return false; }
-    return ALLOWED_ORIGINS.indexOf(origin) !== -1;
-  }
-  // FAILS CLOSED, same as the panel-tabs precedent: a sender without
-  // isDestroyed() throws into the catch and is rejected.
-  function okSender(ev) {
-    try {
-      var wc = ev && ev.sender;
-      if (!wc || wc.isDestroyed()) return false;
-      if (!originAllowed(wc.getURL() || "")) return false;
-      var frame = ev.senderFrame;
-      if (frame && frame.parent) return false;
-      return true;
-    } catch (e) { return false; }
-  }
+  // The IPC sender validator is shared: js/sender_guard.js (issue #318). Looked up
+  // at call time; a missing guard fails closed.
+  function okSender(ev) { var g = globalThis.__cdbSenderGuard; return !!g && g.okSender(ev); }
   function summary(cfg) {
     var models = 0;
     var providers = cfg.providers.map(function (p) {
