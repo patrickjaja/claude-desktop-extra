@@ -178,5 +178,17 @@
     }
   };
   globalThis.__cdbArchiveGraceStatus = id => api.status(id);
+  // "Keep this session" (1P page, cdb-archive-grace:keep): the setter upstream's
+  // LocalSessions.setSessionAutoArchiveOnPrClose eIPC handler calls; it saves
+  // the session and emits the update. The next reconcile drops the grace.
+  globalThis.__cdbArchiveGraceKeep = async id => {
+    const manager = engine.sessionManager;
+    if (typeof manager?.setSessionAutoArchiveOnPrClose !== "function") return { ok: false, error: "no session setter" };
+    const session = await manager.getSession(id);
+    if (!session || session.isArchived) return { ok: false, error: "no such session" };
+    manager.setSessionAutoArchiveOnPrClose(id, false);
+    log(id + ": kept (Auto-archive on merge or close off for this session)");
+    return { ok: true };
+  };
   return api;
 })

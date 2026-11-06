@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Profile-local grace state + compiled native pipeline + settings/IPC validation.
+// Profile-local grace state + compiled native pipeline + settings/IPC validation,
+// the ion-dist (3P) renderer half and the claude.ai (1P) page half.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -32,7 +33,7 @@ function harness(disk = new Map()) {
     Date: { now: () => clock }, globalThis: { __cdbDiag: text => logs.push(text), __cdbAutoArchiveMergeDelayMinutes: () => minutes } };
   const restart = () => vm.runInNewContext(source, context)(engine, () => optIn);
   const api = restart();
-  return { api, restart, session, engine, disk, file, logs,
+  return { api, restart, session, engine, disk, file, logs, g: context.globalThis,
     tick: n => { clock += n; }, minutes: n => { minutes = n; }, optIn: v => { optIn = v; },
     fail: () => { failure = true; }, state: () => JSON.parse(disk.get(file) || '{"records":{}}').records,
     wait: (state = "merged") => api.wait(session, state) };
@@ -520,5 +521,358 @@ await test("renderer: keep control only when terminal, writes only this session'
   await h.poll();
   assert.equal(h.render({ rail: true }), null, "a read still reporting the old value cannot bring the button back");
   cleanup();
+});
+// ---- 1P half (claude.ai Code page): add_feature_auto_archive_grace_web ----
+const require2 = createRequire(import.meta.url);
+const webBinary = path.join(ROOT, "patches/community/add_feature_auto_archive_grace_web");
+function runWeb(text) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-grace-web-")), file = path.join(dir, "index.js");
+  fs.writeFileSync(file, text);
+  const run = spawnSync(webBinary, [file], { encoding: "utf8" });
+  const out = fs.readFileSync(file, "utf8"); fs.rmSync(dir, { recursive: true, force: true });
+  return { run, out };
+}
+function checkWeb(text) {
+  const first = runWeb(text);
+  assert.equal(first.run.status, 0, first.run.stdout + first.run.stderr);
+  assert.equal(first.out.split("/*__CDB_ARCHIVE_GRACE_WEB__*/").length, 2, "one injection");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-grace-web-")), file = path.join(dir, "index.js");
+  try {
+    fs.writeFileSync(file, first.out); execFileSync(process.execPath, ["--check", file]);
+    // A later prefix injection (panel tabs) lands between ours and the prologue.
+    fs.writeFileSync(file, first.out.replace('"use strict";', '"use strict";/*other*/;'));
+    const again = spawnSync(webBinary, [file], { encoding: "utf8" });
+    assert.equal(again.status, 0, again.stdout + again.stderr); assert.match(again.stdout, /already present/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  return first.out;
+}
+const pristineIndex = path.join(ROOT, "tmp/app.asar.contents/.vite/build/index.js");
+await test("web patch: injects after the prologue, node --check, idempotent; fails closed on a stale or duplicated injection", async () => {
+  const out = checkWeb('"use strict";require("electron");upstream();');
+  assert.ok(out.startsWith('"use strict";/*\n * auto_archive_grace_web_main.js'));
+  assert.ok(out.endsWith('require("electron");upstream();'));
+  const head = runWeb("upstream();"); assert.equal(head.run.status, 0); assert.ok(head.out.startsWith("/*\n * auto_archive_grace_web_main.js") && head.out.endsWith("})();\nupstream();"));
+  for (const broken of [out.replace("POLL_MS = 30000", "POLL_MS = 1"), out + out.slice(13)]) {
+    const r = runWeb(broken); assert.notEqual(r.run.status, 0); assert.match(r.run.stdout + r.run.stderr, /\[FAIL\]/);
+  }
+  if (fs.existsSync(pristineIndex) && !fs.readFileSync(pristineIndex, "utf8").includes("__CDB_")) checkWeb(fs.readFileSync(pristineIndex, "utf8"));
+  else console.log("SKIP web patch on the pristine index.js: tmp/app.asar.contents missing or already patched");
+});
+const webMainSource = () => {
+  const out = runWeb('"use strict";').out;
+  return out.slice('"use strict";'.length);
+};
+await test("web main: runs the page script on dom-ready in claude.ai pages only, linux only; refresh re-runs it", async () => {
+  const code = webMainSource();
+  for (const platform of ["linux", "win32"]) {
+    let created = null; const all = [];
+    const wc = url => { const c = { url, ran: [], handlers: {}, isDestroyed: () => false, getURL() { return c.url; },
+      on(ev, fn) { c.handlers[ev] = fn; }, executeJavaScript(src) { c.ran.push(src); return Promise.resolve(); } }; all.push(c); return c; };
+    const electron = { app: { on: (ev, fn) => { if (ev === "web-contents-created") created = fn; } }, webContents: { getAllWebContents: () => all } };
+    const g = { process: { platform }, require: id => id === "electron" ? electron : require2(id) };
+    g.globalThis = g; vm.runInNewContext(code, g);
+    if (platform === "win32") { assert.equal(created, null); assert.equal(g.__cdbArchiveGraceWebRefresh, undefined); continue; }
+    const pages = ["https://claude.ai/epitaxy/x", "https://preview.claude.ai/", "app://localhost/epitaxy", "https://claude.ai.evil.example/", "http://claude.ai/"].map(wc);
+    for (const p of pages) { created({}, p); p.handlers["dom-ready"](); }
+    assert.deepEqual(pages.map(p => p.ran.length), [1, 1, 0, 0, 0]);
+    assert.ok(pages[0].ran[0].includes("__cdbArchiveGraceWeb") && pages[0].ran[0].includes("[archive-grace-ui]"));
+    g.__cdbArchiveGraceWebRefresh(); assert.deepEqual(pages.map(p => p.ran.length), [2, 2, 0, 0, 0]);
+  }
+});
+
+// A small DOM: elements, text, attribute selectors, React fiber expandos, a
+// counted MutationObserver. The fixtures reproduce the markup and props of
+// upstream's notice (both shapes) and session rail from the 4.23118.0 ion
+// chunks, which are the same React app claude.ai serves.
+class Node0 { constructor(doc) { this.ownerDocument = doc; this.parentNode = null; this.childNodes = []; } 
+  get firstChild() { return this.childNodes[0] || null; } get lastChild() { return this.childNodes.at(-1) || null; }
+  get nextSibling() { const s = this.parentNode?.childNodes; return s ? s[s.indexOf(this) + 1] || null : null; }
+  get isConnected() { let n = this; while (n.parentNode) n = n.parentNode; return n === this.ownerDocument; }
+  get textContent() { return this.nodeType === 3 ? this.data : this.childNodes.map(c => c.textContent).join(""); }
+  set textContent(v) { this.ownerDocument.mutations++; this.childNodes.forEach(c => { c.parentNode = null; }); this.childNodes = v === "" ? [] : [this.ownerDocument.createTextNode(String(v))]; this.childNodes.forEach(c => { c.parentNode = this; }); }
+  contains(n) { for (; n; n = n.parentNode) if (n === this) return true; return false; }
+  remove() { if (!this.parentNode) return; this.ownerDocument.mutations++; const s = this.parentNode.childNodes; s.splice(s.indexOf(this), 1); this.parentNode = null; }
+  insertBefore(node, ref) { node.remove(); this.ownerDocument.mutations++; const i = ref ? this.childNodes.indexOf(ref) : -1; if (i < 0) this.childNodes.push(node); else this.childNodes.splice(i, 0, node); node.parentNode = this; return node; }
+  appendChild(node) { return this.insertBefore(node, null); } }
+class El extends Node0 { constructor(doc, tag) { super(doc); this.nodeType = 1; this.tagName = tag.toUpperCase(); this.attrs = new Map(); this.listeners = {}; this.disabled = false; }
+  getAttribute(n) { return this.attrs.has(n) ? this.attrs.get(n) : null; }
+  setAttribute(n, v) { this.ownerDocument.mutations++; this.attrs.set(n, String(v)); }
+  get className() { return this.getAttribute("class") || ""; } set className(v) { this.setAttribute("class", v); }
+  set type(v) { this.attrs.set("type", v); } set title(v) { this.attrs.set("title", v); } get title() { return this.getAttribute("title"); }
+  addEventListener(ev, fn) { (this.listeners[ev] ||= []).push(fn); }
+  click() { (this.listeners.click || []).forEach(fn => fn({})); }
+  matches(sel) { return sel.split(",").some(alt => { const m = /^([a-z]*)((?:\[[^\]]+\])*)$/.exec(alt.trim());
+    if (!m || (m[1] && m[1].toUpperCase() !== this.tagName)) return false;
+    return [...m[2].matchAll(/\[([\w-]+)(?:="([^"]*)")?\]/g)].every(([, n, v]) => this.attrs.has(n) && (v === undefined || this.attrs.get(n) === v)); }); }
+  closest(sel) { for (let n = this; n && n.nodeType === 1; n = n.parentNode) if (n.matches(sel)) return n; return null; }
+  querySelectorAll(sel) { const out = []; const walk = n => { for (const c of n.childNodes) if (c.nodeType === 1) { if (c.matches(sel)) out.push(c); walk(c); } }; walk(this); return out; } }
+function makeDom() {
+  const doc = new Node0(null); doc.ownerDocument = doc; doc.mutations = 0;
+  doc.createElement = tag => new El(doc, tag);
+  doc.createTextNode = data => Object.assign(new Node0(doc), { nodeType: 3, data });
+  doc.querySelectorAll = sel => { const out = []; const walk = n => { for (const c of n.childNodes) if (c.nodeType === 1) { if (c.matches(sel)) out.push(c); walk(c); } }; walk(doc); return out; };
+  doc.body = doc.createElement("body"); doc.documentElement = doc.body; doc.appendChild(doc.body);
+  return doc;
+}
+let fiberSeq = 0;
+function el(doc, tag, attrs = {}, children = []) {
+  const e = doc.createElement(tag); for (const [k, v] of Object.entries(attrs)) e.attrs.set(k, v);
+  for (const c of children) e.appendChild(typeof c === "string" ? doc.createTextNode(c) : c); return e;
+}
+function fiber(props, stateNode = null, parent = null) {
+  const f = { memoizedProps: props, stateNode, return: parent, child: null };
+  if (parent && !parent.child) parent.child = f;
+  if (stateNode) stateNode["__reactFiber$t" + fiberSeq] = f;
+  return f;
+}
+const HOLD_TEXT = "This session will be archived automatically after you leave it.";
+// Fxt's plain shape: {hold, sessionRef} -> div[role=status].
+function plainNotice(doc, parent, sessionRef, hold = { reason: "on_screen" }) {
+  const app = fiber({ children: [] });
+  const owner = fiber({ hold, sessionRef }, null, app);
+  const div = el(doc, "div", { role: "status", "aria-live": "polite", "data-find-omitted": "", class: "max-w-full text-footnote min-w-0 text-secondary" }, [HOLD_TEXT]);
+  fiber({ role: "status", children: HOLD_TEXT }, div, owner);
+  parent.appendChild(div); return { owner, div };
+}
+// Fxt's OnScreen shape: {hold, sessionRef} -> Ixt {sessionRef} -> div > span[role=status].
+function wrappedNotice(doc, parent, sessionRef) {
+  const owner = fiber({ hold: { reason: "on_screen" }, sessionRef });
+  const inner = fiber({ sessionRef }, null, owner);
+  const span = el(doc, "span", { id: ":r1:", role: "status", "aria-live": "polite", "aria-atomic": "true", class: "min-w-0 text-secondary" }, [HOLD_TEXT]);
+  const div = el(doc, "div", { "data-find-omitted": "", class: "flex min-w-0 max-w-full flex-wrap items-baseline gap-x-1.5 text-footnote" }, [span]);
+  const divFiber = fiber({ children: [] }, div, inner); fiber({ role: "status" }, span, divFiber);
+  parent.appendChild(div); return { owner, div, span };
+}
+// Rail cards: upstream's card component {id, title, ...} renders a collapsible
+// root whose render prop is section[aria-labelledby] (header + panel inside).
+function card(doc, id, title, parentFiber) {
+  const cardFiber = fiber({ id, title, summary: undefined, children: [] }, null, parentFiber);
+  const root = fiber({ open: true, render: {} }, null, cardFiber);
+  const section = el(doc, "section", { "aria-labelledby": ":" + id + ":", class: "group/railcard flex shrink-0 flex-col py-md" },
+    [el(doc, "div", { class: "group/railtop relative flex" }, [el(doc, "span", { class: "shrink-0" }, [title])]), el(doc, "div", { class: "flex flex-col" })]);
+  fiber({ "aria-labelledby": ":" + id + ":" }, section, root);
+  return section;
+}
+function rail(doc, parent, outputsSession, { changes = false } = {}) {
+  const owner = fiber({ session: {}, pullRequests: changes ? {} : null, plan: [], artifacts: [], outputsSession });
+  const scroll = el(doc, "div", { class: "scroll-fade-y min-h-0 flex-1 overflow-y-auto" });
+  const aside = el(doc, "aside", { "aria-label": "Session details", tabindex: "-1", class: "relative flex min-h-0 flex-col font-sans outline-none" },
+    [el(doc, "div", { class: "contents" }), scroll]);
+  const asideFiber = fiber({ "aria-label": "Session details" }, aside, owner);
+  const sections = { environment: card(doc, "environment", "Environment", asideFiber) };
+  if (changes) sections.pullRequests = card(doc, "pullRequests", "Changes", asideFiber);
+  sections.progress = card(doc, "progress", "Progress", asideFiber);
+  for (const sec of Object.values(sections)) scroll.appendChild(sec);
+  parent.appendChild(aside); return { owner, aside, scroll, sections };
+}
+const webPageSource = fs.readFileSync(path.join(ROOT, "js/auto_archive_grace_web_page.js"), "utf8");
+function webHost({ minutes = 15, status, pathname = "/epitaxy/local_s", debugFlag = false, noKeep = false } = {}) {
+  const doc = makeDom();
+  const host = { doc, reads: [], keeps: [], warns: [], observers: [], intervals: new Map(), timeouts: new Map(), nextId: 1, now: 1000000, minutes, status };
+  const ctx = {
+    document: doc, location: { pathname }, console: { warn: m => host.warns.push(m) },
+    Date: { now: () => host.now },
+    MutationObserver: class { constructor(cb) { this.cb = cb; this.on = false; host.observers.push(this); } observe() { this.on = true; } disconnect() { this.on = false; } },
+    setInterval: (fn, ms) => { const id = host.nextId++; host.intervals.set(id, { fn, ms }); return id; },
+    clearInterval: id => { host.intervals.delete(id); },
+    setTimeout: (fn, ms) => { const id = host.nextId++; host.timeouts.set(id, { fn, ms }); return id; },
+    clearTimeout: id => { host.timeouts.delete(id); },
+    localStorage: { getItem: k => (debugFlag && k === "cdbArchiveGraceDebug" ? "1" : null) },
+    cdbExtra: {
+      autoArchiveGraceRead: async id => { host.reads.push(id); return id === undefined ? { ok: true, minutes: host.minutes } : (typeof host.status === "function" ? host.status(id) : host.status); }
+    }
+  };
+  if (!noKeep) ctx.cdbExtra.autoArchiveGraceKeep = async id => { host.keeps.push(id); return { ok: true }; };
+  vm.createContext(ctx); ctx.window = ctx; host.ctx = ctx;
+  host.run = () => vm.runInContext(webPageSource, ctx);
+  host.flush = async () => { for (let i = 0; i < 5; i++) await new Promise(r => setImmediate(r)); };
+  host.mutate = async () => { host.observers.filter(o => o.on).forEach(o => o.cb([])); await host.flush(); };
+  host.poll = async () => { for (const { fn } of [...host.intervals.values()]) fn(); await host.flush(); };
+  host.lines = () => doc.querySelectorAll("[data-cdb-archive-grace-line]");
+  host.keepButtons = () => doc.querySelectorAll("[data-cdb-archive-grace-keep]").map(b => b.firstChild);
+  return host;
+}
+const TERMINAL = { ok: true, active: true, enabled: true, terminal: true };
+await test("web page: delay Immediately -> one settings read, no observer, no timer, no DOM change", async () => {
+  for (const minutes of [0, null]) {
+    const h = webHost({ minutes, status: { ...TERMINAL, deadline: 2000000 } });
+    const main = h.doc.body.appendChild(el(h.doc, "main")); plainNotice(h.doc, main, { type: "local", id: "local_s" }); rail(h.doc, main, { type: "local", id: "local_s" });
+    const before = h.doc.mutations; h.run(); await h.flush();
+    assert.deepEqual(h.reads, [undefined], "one read of the setting, no session read");
+    assert.equal(h.observers.length, 0); assert.equal(h.intervals.size, 0);
+    assert.equal(h.doc.mutations, before); assert.equal(h.warns.length, 0);
+    assert.equal(h.ctx.__cdbArchiveGraceDebug, undefined, "no debug hook without the localStorage flag");
+  }
+  const noBridge = webHost(); delete noBridge.ctx.cdbExtra; noBridge.run(); await noBridge.flush();
+  assert.equal(noBridge.observers.length, 0); assert.equal(noBridge.warns.length, 1); assert.match(noBridge.warns[0], /^\[archive-grace-ui\] no-bridge: /);
+});
+await test("web page: terminal PR -> one line after upstream's notice (both shapes), upstream untouched, outside the live region; polls 30 s", async () => {
+  let answer = { ...TERMINAL, deadline: 1000000 + 12 * 60000 - 5000 };
+  const h = webHost({ status: () => answer });
+  const main = h.doc.body.appendChild(el(h.doc, "main"));
+  const a = plainNotice(h.doc, main, { type: "local", id: "local_s" });
+  h.run(); await h.flush();
+  assert.equal(h.observers.length, 1); assert.equal(h.observers[0].on, true);
+  assert.deepEqual(h.reads, [undefined, "local_s"]);
+  const [line] = h.lines();
+  assert.equal(a.div.nextSibling, line, "a sibling right after the notice");
+  assert.equal(a.div.textContent, HOLD_TEXT, "upstream's text unchanged"); assert.equal(a.div.childNodes.length, 1);
+  assert.equal(line.getAttribute("aria-live"), "off"); assert.equal(line.getAttribute("role"), null);
+  assert.equal(line.closest('[role="status"]'), null, "not inside a live region");
+  assert.equal(line.className, "max-w-full text-footnote min-w-0 text-secondary");
+  assert.match(line.textContent, /about 12 min left/);
+  assert.equal(h.intervals.size, 1); assert.equal([...h.intervals.values()][0].ms, 30000);
+  answer = { ...answer, deadline: 1000000 + 125 * 60000 }; await h.poll(); assert.match(line.textContent, /about 2 h 5 min left/);
+  h.now = answer.deadline; await h.poll(); assert.match(line.textContent, /delay has ended/);
+  answer = { ...answer, deadline: null }; await h.poll(); assert.match(line.textContent, /starts at the next archive sweep/);
+  const quiet = h.doc.mutations; await h.mutate(); assert.equal(h.doc.mutations, quiet, "a rescan with nothing new writes nothing");
+  // The OnScreen shape: span[role=status] inside upstream's wrapper.
+  const b = wrappedNotice(h.doc, main, { type: "local", id: "local_t" }); await h.mutate();
+  const second = h.lines().find(l => l.getAttribute("data-session") === "local_t");
+  assert.equal(b.div.nextSibling, second); assert.equal(b.span.textContent, HOLD_TEXT);
+  assert.equal(second.className, "max-w-full text-footnote min-w-0 text-secondary");
+  // Not terminal / rule off / delay off: no line; off stops the poll.
+  answer = { ...TERMINAL, terminal: false }; await h.poll(); assert.equal(h.lines().length, 0); assert.equal(h.intervals.size, 2);
+  answer = { ok: true, active: false }; await h.poll(); assert.equal(h.intervals.size, 0, "poll stops once the delay is Immediately");
+  // Unmount: the notice leaves, the session state goes with it.
+  answer = { ...TERMINAL, deadline: 2000000 }; a.div.remove(); b.div.remove(); await h.mutate();
+  assert.equal(h.ctx.__cdbArchiveGraceWeb.state().sessions.length, 0);
+  // A cloud session or another route: upstream's notice only, no read.
+  const reads = h.reads.length; plainNotice(h.doc, main, { type: "remote", id: "r" }); await h.mutate();
+  assert.equal(h.reads.length, reads); assert.equal(h.lines().length, 0);
+  h.ctx.location.pathname = "/new"; plainNotice(h.doc, main, { type: "local", id: "local_u" }); await h.mutate();
+  assert.equal(h.reads.length, reads, "outside the Code route nothing is read");
+  // Switch to Immediately: main re-runs the page script -> one read, observer gone, nodes removed.
+  h.ctx.location.pathname = "/epitaxy/local_u"; await h.mutate(); assert.equal(h.lines().length, 1);
+  h.minutes = 0; h.run(); await h.flush();
+  assert.equal(h.observers[0].on, false); assert.equal(h.lines().length, 0); assert.equal(h.intervals.size, 0);
+  assert.equal(h.observers.length, 1, "the re-run reuses the installed module");
+});
+await test("web page: keep button only when terminal, at the end of the rail; one keep(id) and it stays hidden", async () => {
+  const h = webHost({ status: { ...TERMINAL, deadline: 2000000 } });
+  const main = h.doc.body.appendChild(el(h.doc, "main"));
+  const r = rail(h.doc, main, { type: "local", id: "local_s" });
+  h.run(); await h.flush();
+  const [button] = h.keepButtons();
+  assert.equal(r.aside.lastChild, button.parentNode, "no Changes card: appended after upstream's two children");
+  assert.equal(r.aside.childNodes.length, 3); assert.equal(button.textContent, "Keep this session");
+  assert.deepEqual(h.warns.map(w => w.split(":")[0]), ["[archive-grace-ui] rail-changes"], "one fallback line");
+  assert.equal(button.closest('[role="status"]'), null);
+  button.click(); button.click(); await h.flush();
+  assert.deepEqual(h.keeps, ["local_s"], "one keep for this session");
+  assert.equal(h.keepButtons().length, 0, "hidden after keep");
+  await h.poll(); await h.mutate(); assert.equal(h.keepButtons().length, 0, "a stale read cannot bring it back");
+  // With the Changes card: right below it, before the next card; once per session.
+  const c = webHost({ status: { ...TERMINAL, deadline: 2000000 } });
+  const cr = rail(c.doc, c.doc.body, { type: "local", id: "local_s" }, { changes: true });
+  c.run(); await c.flush(); await c.mutate();
+  const [cb] = c.keepButtons();
+  assert.equal(cr.sections.pullRequests.nextSibling, cb.parentNode, "directly after the Changes card");
+  assert.equal(cb.parentNode.nextSibling, cr.sections.progress); assert.equal(cr.aside.childNodes.length, 2, "nothing at the aside's end");
+  assert.equal(cr.sections.pullRequests.querySelectorAll("[data-cdb-archive-grace-keep]").length, 0, "upstream's card untouched");
+  assert.equal(c.keepButtons().length, 1); assert.equal(c.warns.length, 0);
+  const quiet = c.doc.mutations; await c.mutate(); assert.equal(c.doc.mutations, quiet);
+  cb.click(); await c.flush(); assert.deepEqual(c.keeps, ["local_s"]); assert.equal(c.keepButtons().length, 0);
+  // Failure shows an alert and keeps the button.
+  const f = webHost({ status: { ...TERMINAL, deadline: 2000000 } });
+  rail(f.doc, f.doc.body, { type: "local", id: "local_s" }); f.ctx.cdbExtra.autoArchiveGraceKeep = async () => ({ ok: false, error: "x" });
+  f.run(); await f.flush(); f.keepButtons()[0].click(); await f.flush();
+  assert.equal(f.doc.querySelectorAll('[role="alert"]')[0].textContent, "Could not keep this session. Try again.");
+  assert.equal(f.keepButtons().length, 1);
+  // Not terminal, or no keep channel: no button.
+  for (const [status, noKeep] of [[{ ...TERMINAL, terminal: false }, false], [{ ...TERMINAL, deadline: 1 }, true]]) {
+    const n = webHost({ status, noKeep }); rail(n.doc, n.doc.body, { type: "local", id: "local_s" });
+    n.run(); await n.flush(); assert.equal(n.keepButtons().length, 0);
+  }
+});
+await test("web page: a terminal read without a start time is retried once after 3 s, then only the 30 s poll", async () => {
+  let answer = { ...TERMINAL, deadline: null };
+  const h = webHost({ status: () => answer });
+  plainNotice(h.doc, h.doc.body, { type: "local", id: "local_s" });
+  h.run(); await h.flush();
+  assert.match(h.lines()[0].textContent, /starts at the next archive sweep/);
+  assert.equal(h.timeouts.size, 1); assert.equal([...h.timeouts.values()][0].ms, 3000);
+  answer = { ...TERMINAL, deadline: 1000000 + 30 * 60000 };
+  const reads = h.reads.length; const [[tid, timer]] = [...h.timeouts]; h.timeouts.delete(tid); timer.fn(); await h.flush();
+  assert.equal(h.reads.length, reads + 1); assert.match(h.lines()[0].textContent, /about 30 min left/);
+  answer = { ...TERMINAL, deadline: null }; await h.poll(); await h.mutate();
+  assert.equal(h.timeouts.size, 0, "one retry per session, polls never retry");
+  // A deadline on the first read, or an unmount before the retry: no retry left behind.
+  const d = webHost({ status: { ...TERMINAL, deadline: 2000000 } }); plainNotice(d.doc, d.doc.body, { type: "local", id: "local_s" });
+  d.run(); await d.flush(); assert.equal(d.timeouts.size, 0);
+  const u = webHost({ status: { ...TERMINAL, deadline: null } }); const n = plainNotice(u.doc, u.doc.body, { type: "local", id: "local_s" });
+  u.run(); await u.flush(); assert.equal(u.timeouts.size, 1); n.div.remove(); await u.mutate(); assert.equal(u.timeouts.size, 0);
+});
+await test("web page: a moved anchor logs one [archive-grace-ui] line and leaves upstream's DOM alone", async () => {
+  const h = webHost({ status: { ...TERMINAL, deadline: 2000000 } });
+  const main = h.doc.body.appendChild(el(h.doc, "main"));
+  // Notice without {hold, sessionRef} props (renamed upstream).
+  const owner = fiber({ reason: {}, ref: { type: "local", id: "local_s" } });
+  const div = el(h.doc, "div", { role: "status", "aria-live": "polite", class: "x" }, [HOLD_TEXT]); fiber({}, div, owner); main.appendChild(div);
+  // Rail without outputsSession.
+  const railOwner = fiber({ session: {}, pullRequests: null, sessionRef: { type: "local", id: "local_s" } });
+  const aside = el(h.doc, "aside", { "aria-label": "Session details" }, [el(h.doc, "div")]); fiber({}, aside, railOwner); main.appendChild(aside);
+  // A notice element with no fiber at all.
+  main.appendChild(el(h.doc, "div", { role: "status", "aria-live": "polite" }, ["Claude is waiting for your reply, so automatic archiving is paused for up to a day."]));
+  const before = h.doc.mutations;
+  h.run(); await h.flush(); await h.mutate(); await h.mutate();
+  assert.equal(h.doc.mutations, before, "no DOM change");
+  assert.deepEqual(h.reads, [undefined], "no session read");
+  assert.deepEqual(h.warns.map(w => w.split(":")[0]).sort(), ["[archive-grace-ui] no-fiber", "[archive-grace-ui] notice-props", "[archive-grace-ui] rail-props"], "one line per key");
+  // An unrelated status (no archive wording) is not a warning.
+  const quiet = webHost(); quiet.doc.body.appendChild(el(quiet.doc, "div", { role: "status", "aria-live": "polite" }, ["Saved"]));
+  quiet.run(); await quiet.flush(); assert.equal(quiet.warns.length, 0);
+});
+await test("web page: debug hook exists only with the localStorage flag and renders a fake terminal status without IPC writes", async () => {
+  const h = webHost({ minutes: 0, debugFlag: true, status: { ok: true, active: false } });
+  const main = h.doc.body.appendChild(el(h.doc, "main"));
+  plainNotice(h.doc, main, { type: "local", id: "local_s" }); rail(h.doc, main, { type: "local", id: "local_s" });
+  h.run(); await h.flush(); assert.equal(h.observers.length, 0);
+  const state = await h.ctx.__cdbArchiveGraceDebug({ deadline: 1000000 + 10 * 60000 }); await h.flush();
+  assert.equal(state.debug, true); assert.match(h.lines()[0].textContent, /about 10 min left/);
+  h.keepButtons()[0].click(); await h.flush();
+  assert.deepEqual(h.keeps, [], "debug keep is not sent"); assert.match(h.warns.at(-1), /debug-keep/);
+  await h.ctx.__cdbArchiveGraceDebug(null); await h.flush();
+  assert.equal(h.lines().length, 0); assert.equal(h.observers[0].on, false, "back to the real (off) setting");
+});
+await test("keep channel: validated in main, calls upstream's session setter with (id, false) once; bridge forwards the id", async () => {
+  const extra = path.join(ROOT, "patches/core/add_feature_extra_settings");
+  const Module = require2("module");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-grace-keep-")), file = path.join(dir, "extra.cjs");
+  try {
+    fs.writeFileSync(file, 'function FHa(e=[]){let t=G().type==="3p"&&ou()==="1p"?[...e,j$t]:e;a.app.isPackaged?Mj(!0,t):fj(t)}');
+    execFileSync(extra, [file]); const handlers = {}, userData = path.join(dir, "Claude"); fs.mkdirSync(userData);
+    const electron = { app: { getPath: () => userData, on() {}, once() {} },
+      ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; }, removeHandler() {} }, shell: {} };
+    const original = Module._load, descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+    Module._load = function (id, ...args) { return id === "electron" ? electron : original.call(this, id, ...args); };
+    Object.defineProperty(process, "platform", { value: "linux" });
+    try { require2(file); } finally { Module._load = original; Object.defineProperty(process, "platform", descriptor); }
+    const event = url => ({ sender: { isDestroyed: () => false, getURL: () => url }, senderFrame: { parent: null } });
+    const keep = (id, url = "https://claude.ai/epitaxy/x") => handlers["cdb-archive-grace:keep"](event(url), id);
+    // The engine-side hook from js/auto_archive_grace.js, against a fake session manager.
+    const h = harness(); const sets = [];
+    h.engine.sessionManager.setSessionAutoArchiveOnPrClose = (...args) => sets.push(args);
+    h.restart();
+    let refreshed = 0; globalThis.__cdbArchiveGraceWebRefresh = () => { refreshed++; };
+    assert.equal((await keep("s")).ok, false, "delay off");
+    assert.equal((await handlers["cdb-archive-grace:set"](event("https://claude.ai/"), 15)).ok, true); assert.equal(refreshed, 1, "a delay change re-runs the page script");
+    assert.match((await keep("s")).error, /not swept/);
+    globalThis.__cdbArchiveGraceKeep = h.g.__cdbArchiveGraceKeep;
+    for (const bad of [undefined, "", 5, "x".repeat(257)]) assert.equal((await keep(bad)).ok, false);
+    assert.equal((await keep("s", "https://claude.ai.evil.example/")).ok, false, "origin-checked");
+    assert.deepEqual(sets, []);
+    assert.deepEqual(await keep("s"), { ok: true }); assert.deepEqual(sets, [["s", false]]);
+    assert.ok(h.logs.some(l => /s: kept/.test(l)));
+    h.session.isArchived = true; assert.equal((await keep("s")).ok, false); assert.equal(sets.length, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    for (const k of ["__cdbAutoArchiveMergeDelayMinutes", "__cdbArchiveGraceKeep", "__cdbArchiveGraceWebRefresh"]) delete globalThis[k];
+  }
+  const calls = []; let api;
+  vm.runInNewContext(fs.readFileSync(path.join(ROOT, "js/extra_settings_bridge.js"), "utf8"), {
+    require: () => ({ contextBridge: { exposeInMainWorld: (_name, exposed) => { api = exposed; } },
+      ipcRenderer: { invoke: (...args) => { calls.push(args); } } }) });
+  api.autoArchiveGraceKeep("s"); assert.deepEqual(calls, [["cdb-archive-grace:keep", "s"]]);
 });
 console.log(`${passed} archive-grace tests passed`);

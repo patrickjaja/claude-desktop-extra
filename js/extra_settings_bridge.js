@@ -115,6 +115,10 @@
 
     autoArchiveGraceRead: function (sessionId) { return sessionId === undefined ? ipcRenderer.invoke("cdb-archive-grace:read") : ipcRenderer.invoke("cdb-archive-grace:read", sessionId); },
     autoArchiveGraceSet: function (minutes) { return ipcRenderer.invoke("cdb-archive-grace:set", minutes); },
+    // The 1P Code page's "Keep this session" (js/auto_archive_grace_web_page.js):
+    // the session id only; main validates it and writes upstream's own
+    // per-session "Auto-archive on merge or close" = false.
+    autoArchiveGraceKeep: function (sessionId) { return ipcRenderer.invoke("cdb-archive-grace:keep", sessionId); },
 
     // Auto-fix notices (ready to merge, comments after merge). Fixed channels,
     // boolean only; the main side re-validates the type.

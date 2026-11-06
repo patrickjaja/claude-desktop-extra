@@ -2844,7 +2844,7 @@
     if (!api || typeof api.autoArchiveGraceRead !== "function" || typeof api.autoArchiveGraceSet !== "function") return;
     var spec = { title: "Auto-archive delay after a PR merges or closes",
       note: "Waits a chosen time after a PR merges or closes before its Code session is archived. Only used " +
-        "while PR auto-archive is on; in 3P mode the Code session also shows the time left and a Keep this " +
+        "while PR auto-archive is on; the Code session also shows the time left and a Keep this " +
         "session button. Applies live.",
       keywords: "grace native sweep 5 minutes safety checks inactivity rule recalculates disabling cancels persists restarts" };
     var head = el("div", "cdbx-sec-h");

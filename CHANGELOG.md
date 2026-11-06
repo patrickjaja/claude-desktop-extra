@@ -2,6 +2,12 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-06
+
+### PR auto-archive delay: remaining time and keep button also with a claude.ai login
+
+- With a nonzero PR auto-archive delay, the line with the time left below upstream's auto-archive hold notice and the **Keep this session** button in the session rail now also appear in 1P mode, where the Code tab is claude.ai's page. Upstream's notice text is unchanged; with the delay at Immediately the page only reads the setting once. If claude.ai's markup moves, `[archive-grace-ui]` lines in `claude.ai-web.log` say which part was not found and upstream's UI stays as it is.
+
 ## 2026-11-05
 
 ### Claude Desktop 4.23118.0

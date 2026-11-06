@@ -3284,7 +3284,22 @@
         else cfg[__cdbEx_AAG_KEY] = minutes;
         return minutes;
       });
+      if (res.ok) { try { globalThis.__cdbArchiveGraceWebRefresh?.(); } catch (e) {} }
       return res.ok ? { ok: true, minutes: minutes, path: res.path, warning: __cdbEx_aagPref().warning || null } : res;
+    },
+    // "Keep this session" in the 1P Code page: upstream's per-session
+    // "Auto-archive on merge or close" = false, through the engine's own
+    // session manager (js/auto_archive_grace.js defines the hook once the
+    // archive engine has swept). Never touches another session or the default.
+    "cdb-archive-grace:keep": function (sessionId) {
+      if (typeof sessionId !== "string" || sessionId.length < 1 || sessionId.length > 256)
+        return { ok: false, error: "invalid session id" };
+      if (__cdbEx_aagPref().value === 0) return { ok: false, error: "the PR archive delay is off" };
+      var keep = globalThis.__cdbArchiveGraceKeep;
+      if (typeof keep !== "function") return { ok: false, error: "the archive engine has not swept yet" };
+      return Promise.resolve().then(function () { return keep(sessionId); }).then(function (r) {
+        return r && r.ok === true ? { ok: true } : { ok: false, error: (r && r.error) || "not kept" };
+      }, function (e) { return { ok: false, error: (e && e.message) || String(e) }; });
     },
 
     // Computer Use: read app controls (accessibility). Pref and reader above.
