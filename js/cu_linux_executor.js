@@ -102,7 +102,8 @@ function _tgtDownMsg(d){return"Computer Use is set to the background display "+(
 // toolkits pinned to the target's protocol - all unless the setting's env map
 // supplies the var. The map never carries PATH, CLAUDE_ELECTRON or LD_*
 // (validated by __cuTargetRead); the display var and XDG_SESSION_TYPE are
-// always the target's.
+// always the target's. PATH is the one the app was started with (see
+// _startedPath), not the narrowed one upstream leaves in process.env.
 // x11 target: with WAYLAND_DISPLAY unset libwayland still connects to
 // $XDG_RUNTIME_DIR/wayland-0 - the user's desktop on most Wayland sessions -
 // and GTK3/GTK4 and Wayland-only apps opened there (measured: headless sway on
@@ -114,10 +115,32 @@ function _tgtDownMsg(d){return"Computer Use is set to the background display "+(
 // defence in depth. wlroots target: Electron < 38 defaults to X11 (and fails
 // with DISPLAY unset), so its hint is pinned to wayland; GTK/Qt follow
 // WAYLAND_DISPLAY already.
+// Upstream (v4.23118) narrows process.env.PATH at startup to a fixed list of
+// root-owned system dirs (/usr/bin:/bin:...:/run/current-system/sw/bin) and
+// keeps the PATH it was started with in CLAUDE_DESKTOP_STARTED_PATH. On the
+// background display only the direct Exec spawn can start an app (no gio /
+// gtk-launch, they would open it on the desktop), so a bare Exec=nautilus from
+// a per-user profile (/etc/profiles/per-user/<u>/bin, ~/.nix-profile/bin,
+// ~/.local/bin) read as "command not found". The target's lookups and spawns
+// use the started PATH - what the desktop's own launcher uses - with the
+// narrowed dirs appended, so nothing that resolved before stops resolving.
+// Relative entries are dropped: they would resolve against our cwd.
+// null when the variable is absent (an upstream without narrowing): PATH is
+// then left as inherited.
+function _startedPath(){
+  var s=process.env.CLAUDE_DESKTOP_STARTED_PATH;if(typeof s!=="string"||!s)return null;
+  var out=[],seen={};
+  s.split(":").concat((process.env.PATH||"").split(":")).forEach(function(d){if(d.charAt(0)==="/"&&!seen[d]){seen[d]=1;out.push(d)}});
+  return out.length?out.join(":"):null;
+}
+// The PATH a command lookup walks: the target's when one is latched (the same
+// PATH its spawns get, so a lookup and the spawn after it agree), else ours.
+function _lookupPath(){return(_tgt&&_tgt.env&&typeof _tgt.env.PATH==="string"?_tgt.env.PATH:process.env.PATH)||""}
 var _TGT_PIN={x11:{GDK_BACKEND:"x11",QT_QPA_PLATFORM:"xcb",SDL_VIDEODRIVER:"x11",ELECTRON_OZONE_PLATFORM_HINT:"x11",MOZ_ENABLE_WAYLAND:"0"},wlroots:{ELECTRON_OZONE_PLATFORM_HINT:"wayland"}};
 function _targetEnv(r){
   var e={},k,x=r.env||{},X=r.kind==="x11",own=X?"DISPLAY":"WAYLAND_DISPLAY",other=X?"WAYLAND_DISPLAY":"DISPLAY",pin=_TGT_PIN[r.kind];
   for(k in process.env)e[k]=process.env[k];
+  var sp=_startedPath();if(sp)e.PATH=sp;
   // The desktop compositor's IPC sockets too: a terminal on the target could
   // otherwise `swaymsg exec` / `hyprctl dispatch exec` onto the user's desktop.
   ["GDK_BACKEND","QT_QPA_PLATFORM","SDL_VIDEODRIVER","ELECTRON_OZONE_PLATFORM_HINT","MOZ_ENABLE_WAYLAND","WAYLAND_SOCKET","SWAYSOCK","I3SOCK","HYPRLAND_INSTANCE_SIGNATURE","NIRI_SOCKET",other].forEach(function(v){delete e[v]});
@@ -243,7 +266,8 @@ var _cmdCache={};
 // installed on every system (minimal images), where every tool read as missing,
 // and it cost one blocking spawn per tool on the main process. Empty and
 // relative PATH entries are skipped: they would resolve against our cwd.
-function _hasCmd(bin){if(_cmdCache[bin]!==void 0)return _cmdCache[bin];var found=false,X=(_fs.constants&&_fs.constants.X_OK)||1,dirs=(process.env.PATH||"").split(":");for(var i=0;i<dirs.length&&!found;i++){if(dirs[i].charAt(0)!=="/")continue;var c=_path.join(dirs[i],bin);try{_fs.accessSync(c,X);found=!_fs.statSync(c).isDirectory()}catch(e){}}_cmdCache[bin]=found;return found}
+// Cached per PATH (_lookupPath): the target's and ours can differ.
+function _hasCmd(bin){var P=_lookupPath(),ck=P+"\0"+bin;if(_cmdCache[ck]!==void 0)return _cmdCache[ck];var found=false,X=(_fs.constants&&_fs.constants.X_OK)||1,dirs=P.split(":");for(var i=0;i<dirs.length&&!found;i++){if(dirs[i].charAt(0)!=="/")continue;var c=_path.join(dirs[i],bin);try{_fs.accessSync(c,X);found=!_fs.statSync(c).isDirectory()}catch(e){}}_cmdCache[ck]=found;return found}
 // Application dirs per the XDG base-dir spec: $XDG_DATA_HOME (default
 // ~/.local/share) first, then each $XDG_DATA_DIRS entry (default
 // /usr/local/share:/usr/share - this is what carries NixOS profiles, snap and
@@ -387,7 +411,7 @@ function _entryBase(e){
 // fresh=true bypasses _hasCmd's permanent per-process cache (launch pre-checks:
 // an app or tool installed after the first attempt must launch without a restart).
 function _execResolvable(b,cwd,fresh){
-  if(b.indexOf("/")<0){if(fresh)delete _cmdCache[b];return _hasCmd(b)}
+  if(b.indexOf("/")<0){if(fresh)delete _cmdCache[_lookupPath()+"\0"+b];return _hasCmd(b)}
   var p=b.charAt(0)==="/"?b:_path.resolve(cwd||process.cwd(),b);
   try{_fs.accessSync(p,(_fs.constants&&_fs.constants.X_OK)||1);return!_fs.statSync(p).isDirectory()}catch(e){return false}
 }
@@ -536,7 +560,7 @@ function _alook(map,k){var c=k?map[k]:null;return c&&!c.amb?c.r:null}
 function _arec(idx,raw){var k=_akey(raw);return k?(idx.byId[k]||_alook(idx.keys,k)):null}
 function _aWhich(b){
   if(b.indexOf("/")>=0)return b.charAt(0)==="/"?b:null;
-  var X=(_fs.constants&&_fs.constants.X_OK)||1,dirs=(process.env.PATH||"").split(":");
+  var X=(_fs.constants&&_fs.constants.X_OK)||1,dirs=_lookupPath().split(":");
   for(var i=0;i<dirs.length;i++){if(dirs[i].charAt(0)!=="/")continue;var c=_path.join(dirs[i],b);try{_fs.accessSync(c,X);if(!_fs.statSync(c).isDirectory())return c}catch(e){}}
   return null;
 }

@@ -2,6 +2,12 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-09
+
+### Computer Use on a background display: apps from per-user PATH folders launch again
+
+- A patch to the Cowork / Computer Use executor solves an issue where upstream Claude Desktop sheds all non-root-owned folders in the PATH before trying to find a binary to launch. On NixOS this often causes most applications to not be visible; PATH folders such as those created by `home-manager` are not root-owned, and thus any application installed within them would fail to be found and not launch.
+
 ## 2026-11-06
 
 ### Cowork on Linux: two backends, Enable KVM access, a "Cowork (Linux)" page and a device icon in every chat

@@ -130,6 +130,7 @@ function makeRig(host, files = {}, opts = {}) {
   };
   const installed = new Set(["/usr/bin/ydotool", "/usr/bin/spectacle", "/usr/bin/convert", "/res/wlroots-bridge", "/res/x11-bridge",
     "/usr/bin/setsid", "/usr/bin/gedit", "/usr/bin/gio", "/usr/bin/gtk-launch", "/usr/bin/kioclient6", "/usr/bin/exo-open", "/usr/bin/xdg-open", ...(opts.installed || [])]);
+  for (const p of opts.uninstalled || []) installed.delete(p);
   const APPS = { "gedit.desktop": "[Desktop Entry]\nType=Application\nName=Gedit\nExec=gedit %U\n", "top.desktop": "[Desktop Entry]\nType=Application\nName=Top\nExec=top\nTerminal=true\n" };
   const fsStub = {
     constants: { X_OK: 1 },
@@ -569,6 +570,43 @@ try {
   const launch = r.spawns.filter((x) => x.kind === "spawn");
   check(!o.e && o.v.action === "launched" && launch.length === 1 && !("env" in launch[0].opts), "desktop launch: inherited env, window found (pin, same as before)", JSON.stringify({ o: o.v || o.e.message, l: launch.map((x) => x.bin + " " + x.args) }));
   check(!r.spawns.some((x) => x.kind === "execSync"), "the poll no longer blocks on `sleep 0.5`", JSON.stringify(r.spawns.filter((x) => x.kind === "execSync").map((x) => x.bin)));
+} finally { fakeClock(false); }
+
+// ------------------------------- 8b. T6 launch: the started PATH, not upstream's narrowed one
+// Upstream narrows process.env.PATH at startup to root-owned system dirs and
+// keeps the launch PATH in CLAUDE_DESKTOP_STARTED_PATH. An app installed only
+// in a per-user profile (NixOS home-manager, ~/.nix-profile, ~/.local/bin) must
+// still launch on the target: looked up on, and spawned with, the started PATH
+// (relative entries dropped, the narrowed dirs appended).
+const USER_GEDIT = "/home/u/.nix-profile/bin/gedit";
+for (const [label, extraEnv, wantPath] of [
+  ["started PATH present", { CLAUDE_DESKTOP_STARTED_PATH: "/home/u/.nix-profile/bin:rel/bin:/usr/bin" }, "/home/u/.nix-profile/bin:/usr/bin:/bin"],
+  ["no started PATH (upstream without narrowing)", {}, null]
+]) {
+  console.log(`\n[T6 started PATH: ${label}]`);
+  fakeClock(true);
+  try {
+    const r = makeRig("gnome", { "claude-desktop-extra.json": cfg({ enabled: true, kind: "wlroots", display: "wayland-9" }) }, { env: extraEnv, installed: [USER_GEDIT], uninstalled: ["/usr/bin/gedit"], windows: (launched) => launched ? [GEDIT_WIN] : [] });
+    await r.ex.__setLockHeld(true);
+    r.reset();
+    const o = await settle(r.ex.openApp("gedit"));
+    const launch = r.spawns.filter((x) => x.kind === "spawn");
+    if (wantPath) {
+      check(!o.e && o.v.action === "launched" && launch.length === 1 && launch[0].args === "gedit" && launch[0].opts.env && launch[0].opts.env.PATH === wantPath, "per-user app found and spawned with the started PATH", JSON.stringify({ o: o.e ? o.e.message : o.v, l: launch.map((x) => [x.bin, x.args, x.opts.env && x.opts.env.PATH]) }));
+      check(process.env.PATH === "/usr/bin:/bin", "our own process.env.PATH is untouched", process.env.PATH);
+    } else {
+      check(o.e && /gedit: command not found/.test(o.e.message) && launch.length === 0, "PATH left as inherited: the per-user app is not found (same as before)", JSON.stringify({ e: o.e && o.e.message, l: launch.map((x) => x.bin) }));
+    }
+  } finally { fakeClock(false); }
+}
+console.log("\n[T6 started PATH: off -> desktop launch unchanged]");
+fakeClock(true);
+try {
+  const r = makeRig("x11", {}, { env: { CLAUDE_DESKTOP_STARTED_PATH: "/home/u/.nix-profile/bin:/usr/bin" }, windows: (launched) => launched ? [GEDIT_WIN] : [] });
+  r.reset();
+  const o = await settle(r.ex.openApp("gedit"));
+  const launch = r.spawns.filter((x) => x.kind === "spawn");
+  check(!o.e && launch.length === 1 && !("env" in launch[0].opts), "no target: inherited env, no PATH override", JSON.stringify({ o: o.v || o.e.message, l: launch.map((x) => [x.bin, x.args, x.opts.env]) }));
 } finally { fakeClock(false); }
 
 // -------------------------------------------------- 9. T7 target clipboard
