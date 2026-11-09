@@ -4,6 +4,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-09
 
+### NixOS: a background display for Claude
+
+- New option `programs.claude-desktop-extra.backgroundDisplay` in `nixosModules.default`: a headless sway for one user as a systemd user service (`claude-extra-display`), started at boot through lingering. It runs on a private D-Bus, under a stable socket name (`wayland-claude-extra`) for [Computer Use on a background display](docs/computer-use.md#computer-use-on-a-background-display), with wayvnc on localhost, a gnome-keyring unlocked by a password sealed with `systemd-creds` (host+tpm2), and a Chromium-family browser with its own profile (`~/.claude-extra/chrome-data`) and the Claude in Chrome native-messaging manifest, so Claude Desktop or Claude Code on your desktop can drive it. See [docs/nixos-background-display.md](docs/nixos-background-display.md). Apps that Claude launches there from per-user profiles (home-manager, `~/.nix-profile`) need the PATH fix below.
+
 ### Computer Use on a background display: apps from per-user PATH folders launch again
 
 - A patch to the Cowork / Computer Use executor solves an issue where upstream Claude Desktop sheds all non-root-owned folders in the PATH before trying to find a binary to launch. On NixOS this often causes most applications to not be visible; PATH folders such as those created by `home-manager` are not root-owned, and thus any application installed within them would fail to be found and not launch.

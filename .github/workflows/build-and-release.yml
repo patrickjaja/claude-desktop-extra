@@ -1800,6 +1800,27 @@ jobs:
           RULE_OUT=$(nix build --no-link --print-out-paths "${RULES##* rule=}^out")
           cmp "$RULE_OUT/lib/udev/rules.d/70-claude-desktop-extra-tpm.rules" packaging/udev/70-claude-desktop-extra-tpm.rules
           echo "Nix TPM access files + NixOS module OK"
+          # backgroundDisplay: the user unit exists only when enabled, is scoped
+          # to its user and turns lingering on (eval only, nothing is built).
+          BGD=$(nix eval --impure --raw --expr '
+            let
+              f = builtins.getFlake (toString ./.);
+              sys = enable: (f.inputs.nixpkgs.lib.nixosSystem {
+                modules = [ f.nixosModules.default {
+                  nixpkgs.hostPlatform = "x86_64-linux";
+                  nixpkgs.config.allowUnfree = true;
+                  users.users.alice.isNormalUser = true;
+                  programs.claude-desktop-extra.backgroundDisplay = { inherit enable; user = "alice"; };
+                  boot.loader.grub.enable = false;
+                  fileSystems."/" = { device = "none"; fsType = "tmpfs"; };
+                  system.stateVersion = "25.05";
+                } ];
+              }).config;
+              on = sys true; off = sys false;
+              u = on.systemd.user.services.claude-extra-display;
+            in "on=${toString (on.systemd.user.services ? claude-extra-display)} off=${toString (off.systemd.user.services ? claude-extra-display)} user=${u.unitConfig.ConditionUser} linger=${toString on.users.users.alice.linger} exec=${builtins.unsafeDiscardStringContext u.serviceConfig.ExecStart}"')
+          echo "NixOS module backgroundDisplay: $BGD"
+          case "$BGD" in "on=1 off= user=alice linger=1 exec=/nix/store/"*/bin/claude-extra-display) ;; *) echo "::error::nixosModules.default backgroundDisplay option misbehaves: $BGD"; exit 1 ;; esac
 
   # ================================================================
   # Job 3e: Generate PKGBUILD & .SRCINFO — PARALLEL

@@ -122,6 +122,8 @@ Without the repo: `wget https://github.com/patrickjaja/claude-desktop-extra/rele
 Try it with `nix run github:patrickjaja/claude-desktop-extra`, install with `nix profile install github:patrickjaja/claude-desktop-extra`. Flake: add `inputs.claude-desktop.url = "github:patrickjaja/claude-desktop-extra";` and put `inputs.claude-desktop.packages.x86_64-linux.default` in `environment.systemPackages`. Update with `nix flake update`. "Start at login" and profile shortcuts run through the package wrapper, so they survive a garbage collection.
 
 Local Cowork VM tools (`qemu`, `virtiofsd`, OVMF) are baked into the closure (`.override { qemu = null; }` drops them). Host steps: `programs.claude-desktop-extra.kvmAccess.enable = true;` (or `users.users.<you>.extraGroups = [ "kvm" ];`) for the local VM and, outside GNOME, `services.gnome.gnome-keyring.enable = true;` to keep sign-in. The GNOME/KDE Computer Use bridges need an override on NixOS, see [Computer Use dependencies](docs/computer-use-dependencies.md#nixos).
+
+A background display for Claude: `programs.claude-desktop-extra.backgroundDisplay = { enable = true; user = "<you>"; };` runs a headless sway as a user service (started at boot), with a browser for Claude in Chrome, a TPM-unlocked keyring and wayvnc; Computer Use can target it too. See [NixOS background display](docs/nixos-background-display.md).
 </details>
 
 <a name="appimage-any-distro"></a>

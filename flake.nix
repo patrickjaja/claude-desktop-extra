@@ -65,6 +65,10 @@
           '';
         in
         {
+          # programs.claude-desktop-extra.backgroundDisplay: a headless sway
+          # display for Computer Use and Claude in Chrome (docs/nixos-background-display.md).
+          imports = [ (import ./packaging/nix/background-display.nix { inherit self; }) ];
+
           options.programs.claude-desktop-extra.tpmAccess.enable = lib.mkOption {
             type = lib.types.bool;
             default = false;
