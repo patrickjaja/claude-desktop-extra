@@ -1800,6 +1800,57 @@ jobs:
           RULE_OUT=$(nix build --no-link --print-out-paths "${RULES##* rule=}^out")
           cmp "$RULE_OUT/lib/udev/rules.d/70-claude-desktop-extra-tpm.rules" packaging/udev/70-claude-desktop-extra-tpm.rules
           echo "Nix TPM access files + NixOS module OK"
+          # backgroundDisplay: the user unit exists only when enabled, is scoped
+          # to its user and turns lingering on; off leaves users.users alone, and
+          # linger = false defines no users.users entry (an undeclared user then
+          # trips no assertion). drvs = the start script (it embeds the session
+          # script) for option sets that change the scripts' text, built below so
+          # writeShellApplication's shellcheck runs on each. claudePackage, the
+          # browser, sway and wayvnc are tiny stubs there: nothing big is fetched.
+          BGD=$(nix eval --impure --raw --expr '
+            let
+              f = builtins.getFlake (toString ./.);
+              p = f.inputs.nixpkgs.legacyPackages.x86_64-linux;
+              stub = p.writeShellScriptBin "stub" "exit 0";
+              cheap = {
+                claudePackage = p.runCommand "claude-stub" { } "mkdir -p $out/lib/claude-desktop/resources; touch $out/lib/claude-desktop/resources/chrome-native-host";
+                browser.package = stub; swayPackage = stub; vnc.package = stub;
+              };
+              sys = mods: (f.inputs.nixpkgs.lib.nixosSystem {
+                modules = [ f.nixosModules.default {
+                  nixpkgs.hostPlatform = "x86_64-linux";
+                  nixpkgs.config.allowUnfree = true;
+                  users.users.alice.isNormalUser = true;
+                  boot.loader.grub.enable = false;
+                  fileSystems."/" = { device = "none"; fsType = "tmpfs"; };
+                  system.stateVersion = "25.05";
+                } ] ++ map (m: { programs.claude-desktop-extra.backgroundDisplay = m; }) mods;
+              }).config;
+              on = sys [ { enable = true; user = "alice"; } ]; off = sys [ { enable = false; user = "alice"; } ];
+              nol = sys [ { enable = true; user = "alice"; linger = false; } cheap ];
+              und = sys [ { enable = true; user = "bob"; linger = false; } cheap ];
+              u = on.systemd.user.services.claude-extra-display;
+              bob = builtins.filter (a: !a.assertion && f.inputs.nixpkgs.lib.hasInfix "bob" a.message) und.assertions;
+              start = o: (sys [ { enable = true; user = "alice"; } cheap o ]).systemd.user.services.claude-extra-display.serviceConfig.ExecStart;
+              combos = [
+                { }
+                { browser.enable = false; keyring.enable = false; }
+                { browser.enable = false; vnc.enable = true; autostart = [ "true" ]; }
+                { keyring.enable = false; vnc = { enable = true; unixSocket = true; }; xwayland = true;
+                  browser = { startUrl = "https://claude.ai/"; extraArgs = [ "--a b" ]; nativeMessagingHosts."com.example host" = "/etc/my hosts/host.json"; }; }
+                { browser.claudeNativeHost = false; }
+              ];
+            in "on=${toString (on.systemd.user.services ? claude-extra-display)} off=${toString (off.systemd.user.services ? claude-extra-display)} user=${u.unitConfig.ConditionUser} linger=${toString on.users.users.alice.linger} offlinger=${toString off.users.users.alice.linger} nolinger=${toString nol.users.users.alice.linger} undeclared=${toString (builtins.length bob)} exec=${builtins.unsafeDiscardStringContext u.serviceConfig.ExecStart} drvs=${toString (map (o: builtins.head (builtins.attrNames (builtins.getContext (start o)))) combos)}"')
+          echo "NixOS module backgroundDisplay: $BGD"
+          case "$BGD" in "on=1 off= user=alice linger=1 offlinger= nolinger= undeclared=0 exec=/nix/store/"*"/bin/claude-extra-display drvs=/nix/store/"*.drv) ;; *) echo "::error::nixosModules.default backgroundDisplay option misbehaves: $BGD"; exit 1 ;; esac
+          # Each build runs shellcheck (writeShellApplication's checkPhase).
+          read -ra BGD_DRVS <<< "${BGD##* drvs=}"
+          nix build --no-link "${BGD_DRVS[@]/%/^out}" \
+            || { echo "::error::nixosModules.default backgroundDisplay: a generated script does not build (shellcheck?)"; exit 1; }
+          # The module's Claude in Chrome manifest embeds this path of the package.
+          test -x "$OUT/lib/claude-desktop/resources/chrome-native-host" \
+            || { echo "::error::Nix output lacks an executable lib/claude-desktop/resources/chrome-native-host (the backgroundDisplay manifest points there)"; exit 1; }
+          echo "NixOS module backgroundDisplay OK"
 
   # ================================================================
   # Job 3e: Generate PKGBUILD & .SRCINFO — PARALLEL
