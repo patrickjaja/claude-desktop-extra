@@ -2344,6 +2344,14 @@ export function createLinuxExecutor(opts = {}) {
       return backend.getFrontmostApp()
     },
 
+    // Upstream's key-focus check (keyboard gate + per-key delivery check)
+    // calls this on every keyboard action at a granted app. Its own Linux
+    // executors answer `this.getFrontmostApp()`; so does this one (upstream
+    // calls it as a method of the executor).
+    async getKeyFocusApp() {
+      return this.getFrontmostApp()
+    },
+
     async appUnderPoint(x, y) {
       return backend.appUnderPoint(x, y)
     },

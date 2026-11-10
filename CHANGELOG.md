@@ -17,6 +17,13 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - The Computer Use access patch no longer touches the OS-permission step: upstream reports it granted on Linux itself.
 - New build gates: a predicate census and a refusal-string census run after patching (local builds and CI), so an upstream release that adds a Linux/Wayland decision or a refusal string on a strong topic our patches do not cover fails the build instead of shipping; weaker findings are warnings that the update workflow turns into failures with `--strict`. See [Census gates](docs/census-gates.md).
 
+### Computer Use: keyboard actions in cloud sessions and on KDE, the glow on the right monitor
+
+- Key presses, typing, paste and clicks with modifier keys work again in cloud Cowork, Dispatch and chats linked to this computer, in teach mode, and in every session on KDE Plasma Wayland. They failed with "getKeyFocusApp is not a function" since 4.16336.0.
+- On X11 the "Claude is using your computer" glow and the teach overlay appear on the monitor Claude is working on and follow it when Claude switches monitor; before a monitor is chosen they use the monitor of the Claude window. They were always placed on the primary monitor.
+- No glow on your desktop while Computer Use runs on a background display.
+- The build fails when upstream starts calling a Computer Use executor method the Linux executors do not define.
+
 ### Follow-ups: tools installed while the app runs, local-build bridges, release pipeline
 
 - Computer Use picks up a tool installed, or `ydotoold` started, while Claude Desktop is running: a "not found" is re-checked after 5 seconds instead of lasting until restart.

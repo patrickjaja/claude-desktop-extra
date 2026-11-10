@@ -2034,6 +2034,45 @@ function _findMon(displayId){
   for(var i=0;i<mons.length;i++){if(mons[i].isPrimary)return mons[i]}
   return mons[0];
 }
+// Upstream's overlay display resolver (glow, teach overlay, screenshot target
+// label) looks a display up in Electron's getAllDisplays() by `display.id`: the
+// macOS executor's display ids are Electron ids. Ours are _getMonitors() list
+// indexes, and on EDID-less X11 outputs (VMs, Xvfb, XWayland, dummy plugs)
+// Electron's ids are small integers too, from the RandR output index, so an
+// index can name a DIFFERENT monitor as an Electron id. Sub-patches 10b1-10b5
+// of fix_computer_use_linux.nim therefore translate the SELECTED display (the
+// session's cuSelectedDisplayId, a screenshot's displayId) here, where it
+// enters upstream's overlay code; upstream's main-window fallback (a real
+// Electron id) never passes through this. Returns the Electron display id of
+// the monitor at that index, matched by its DIP bounds (desktop mode builds
+// the list from getAllDisplays() itself, so the match is exact on every
+// session and the order is not relied on). Anything it cannot map comes back
+// unchanged: not a non-negative integer (undefined / null keep upstream's
+// fallback firing), no Electron displays, no monitor with that index, no
+// geometry match, or a background display (its indexes name the target's
+// monitors, not the user's; the glow is off there and teach is refused).
+globalThis.__cdbCuElectronDisplayId=function(v){
+  if(typeof v!=="number"||!Number.isInteger(v)||v<0||_tgt)return v;
+  var ds,i,m=null;
+  try{ds=_electron.screen.getAllDisplays()}catch(e){return v}
+  if(!ds||!ds.length)return v;
+  var mons=_getMonitors();
+  for(i=0;i<mons.length;i++){if(mons[i].displayId===v){m=mons[i];break}}
+  if(!m)return v;
+  for(i=0;i<ds.length;i++){var b=ds[i]&&ds[i].bounds||{};if(b.x===m.originX&&b.y===m.originY&&b.width===m.width&&b.height===m.height&&typeof ds[i].id==="number")return ds[i].id}
+  return v;
+};
+// Upstream's glow ("Claude is using your computer", sub-patch 10c) frames the
+// user's monitor. On a background display Computer Use is not using it, so
+// true = upstream's own no-glow path. The glow is decided when the CU lock is
+// taken, before the executor re-latches the setting (__setLockHeld awaits the
+// setting's signature first), so this reads the setting itself; without the
+// reader, the latched state.
+globalThis.__cdbCuGlowOff=function(){
+  var f=globalThis.__cuTargetRead;
+  if(typeof f==="function"){try{return f()!=null}catch(e){return !0}}
+  return !!_tgt;
+};
 // X11 HiDPI: Electron reports displays in DIP, but x11-bridge (XTest motion,
 // GetImage crop) works in X root PIXELS. Chromium does not lay DIP origins out
 // as px/scale: ConvertDisplayBoundsToDips (ui/base/x/x11_display_util.cc)
@@ -2878,6 +2917,13 @@ var _ex=globalThis.__linuxExecutor={
       throw fe;
     }
   },
+  // Upstream's key-focus check (its keyboard gate and the per-key delivery
+  // check, js chunk "St"/"Tt" in 4.23118.1) calls this on every keyboard action
+  // that targets a granted app; its own Linux executors answer with the
+  // frontmost app, as here (no separate key-focus source on X11 or Wayland).
+  // Same backend calls as getFrontmostApp: window list / frontmost-app, never a
+  // portal command, so it opens no GNOME session and does not block.
+  async getKeyFocusApp(){return _ex.getFrontmostApp()},
   // The app owning the window at DIP point (x, y): x11-bridge's
   // app-under-point (X11, or the background display); wlroots-bridge with
   // window geometry (sway / Hyprland): the topmost window there by

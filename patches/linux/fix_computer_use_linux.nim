@@ -9,7 +9,7 @@
 # embeds them via staticRead at compile time; Python reads them at runtime.
 # No codegen — the .js files are the single source of truth.
 #
-# All 54 sub-patches use std/nre (PCRE) because many require backreferences.
+# All 59 sub-patches use std/nre (PCRE) because many require backreferences.
 # "Ask before Computer Use controls an app" (js/cu_consent.js, injected by
 # Patch 1 after the executors): sub-patch 6b makes upstream's grants full level
 # in the regular executor mode, 6c lets upstream's terminal / file-manager
@@ -43,6 +43,11 @@
 # auto-unhide) to the active Linux executor's __unhideApps when it has one, so
 # the KWin executor lifts the capture exclusions it set (upstream's own Linux
 # unhide only knows windows its own executor hid).
+# Sub-patches 10b1-10b5 translate the Linux executor's selected display id (a
+# list index) to the Electron display id where it enters upstream's glow, teach
+# overlay and target label, so those follow the monitor Computer Use works on;
+# upstream's resolver and its main-window fallback stay unchanged. 10c keeps the
+# glow off while Computer Use runs on a background display.
 # Sub-patch 17c exposes upstream's "user stopped sharing" abort as
 # globalThis.__cdbCuShareEnded, so the executors stop the running turn the
 # moment the user clicks Stop sharing (issue #323; js/cu_share_stop.js,
@@ -222,6 +227,14 @@ proc countMatches(content: string, pat: Regex): int =
 # `\n/*__CDB_SPLIT__<file name>__*/\n` line. Each part is its own CommonJS
 # module at run time.
 const CDB_SPLIT = "\n/*__CDB_SPLIT__"
+
+# Sub-patches 10b1-10b5: the expression that turns a Linux executor display id
+# (a list index) into the Electron display id at the places where upstream's
+# glow / teach overlay / target label read the SELECTED display. Anything it
+# cannot map (and every non-Linux platform) passes through unchanged.
+const DID_HEAD =
+  "/*__cdbCuDid*/((v)=>{try{let f=globalThis.__cdbCuElectronDisplayId;" &
+  "return process.platform===\"linux\"&&typeof f==\"function\"?f(v):v}catch{return v}})("
 
 proc partSpan(c: string, at: int): (int, int) =
   ## [start, end) of the staged part containing offset `at`.
@@ -466,9 +479,39 @@ proc endStateMarkers(): seq[EndStateMarker] =
     ),
     lit("10 overlay transparency", "transparent:!globalThis.__isVM"),
     rx(
-      "10b overlay display",
-      """\{if\(process\.platform==="linux"\)([\w$]+)=null;return \1===null\?""",
+      "10b1 glow display switch",
+      r"\{[\w$]+===[\w$]+\.currentHolder&&[\w$]+\(" & escapeRe(DID_HEAD) &
+        r"[\w$]+\)\)\}",
     ),
+    rx(
+      "10b2 glow display at lock",
+      r"let ([\w$]+)=" & escapeRe(DID_HEAD) &
+        r"[\w$]+\([\w$]+\)\);\1===void 0&&![\w$]+\.isDestroyed\(\)&&\(\1=[\w$]+\.screen\.getDisplayMatching\(",
+    ),
+    rx(
+      "10b3 teach display at teach start",
+      r"let ([\w$]+)=" & escapeRe(DID_HEAD) &
+        r"[\w$]+\.getSession\([\w$]+\)\?\.cuSelectedDisplayId\);\1===void 0&&",
+    ),
+    rx(
+      "10b4 teach display switch",
+      r"\.on\([""`]cuSelectedDisplayChanged[""`],\(\(\{sessionId:([\w$]+),displayId:([\w$]+)\}\)=>\{\1===[\w$]+&&[\w$]+\(" &
+        escapeRe(DID_HEAD) & r"\2\)\)\}\)\)",
+    ),
+    rx(
+      "10b5 target label display",
+      r"\.displayName;let [\w$]+=[\w$]+\(" & escapeRe(DID_HEAD) &
+        r"([\w$]+)\.displayId\?\?null\)\);",
+    ),
+    lit(
+      "10b display id helper (executor)",
+      "globalThis.__cdbCuElectronDisplayId=function(v){",
+    ),
+    rx(
+      "10c glow off on a background display",
+      """\{if\(![\w$]+\|\|process\.platform==="linux"&&globalThis\.__cdbCuGlowOff\?\.\(\)===!0\)return Promise\.resolve\(\);""",
+    ),
+    lit("10c glow-off helper (executor)", "globalThis.__cdbCuGlowOff=function(){"),
     rx(
       "11 isEnabled gate",
       """function [\w$]+\((?:[\w$]+=\{\})?\)\{if\(process\.platform==="linux"\)return(?: ?!0| globalThis\.__cdbCuHipaa=[\w$]+,![\w$]+\(\));return ?!?(?:[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)|[\w$]+\(\))(?:\|\|[\w$]+\(\))?\?(?:!1:)?[\w$]+\([\w$]*\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)(?::!1)?\}""",
@@ -624,7 +667,7 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 54
+  const EXPECTED_PATCHES = 59
 
   let gateSet = cuPlatformSetName(content)
   if gateSet == "":
@@ -1667,23 +1710,171 @@ proc apply*(input: string): string =
     if not applied:
       echo "  [FAIL] teach overlay transparency pattern not found"
 
-  # ── Patch 10b: xlr() force primary monitor on Linux ────────────────────
+  # ── Patches 10b1-10b5: the selected display reaches upstream as an Electron id
+  # Upstream's overlay display resolver (4.23118.1 names):
+  #   function xui(e){return e===null?u.screen.getPrimaryDisplay():
+  #     u.screen.getAllDisplays().find((t=>t.id===e))??u.screen.getPrimaryDisplay()}
+  # takes Electron display ids: the macOS executor's display ids are Electron
+  # ids. The Linux executor's are list indexes (the session's
+  # cuSelectedDisplayId, a screenshot's displayId), so they never matched and
+  # every overlay sat on Electron's primary. The resolver also receives REAL
+  # Electron ids (the main window's display, upstream's fallback), and on
+  # EDID-less X11 outputs Electron ids are small integers too, so the resolver
+  # cannot tell the two apart. The selected id is translated where it ENTERS
+  # the overlay code instead (DID_HEAD -> js/cu_linux_executor.js
+  # __cdbCuElectronDisplayId); the resolver and its main-window fallback stay
+  # byte-unchanged. The entries, every caller checked:
+  #   10b1 glow setter from cuSelectedDisplayChanged: Jvo(sid,id) (its three
+  #        registrations: two session managers' cuSelectedDisplayChanged and
+  #        the remote-tools callback FOa)
+  #   10b2 glow setter at lock: Yvo's cuLockChanged `let r=e(n)` (the session's
+  #        cuSelectedDisplayId ?? store ?? remote host), BEFORE the fallback
+  #   10b3 teach setter at teach start: `let n=e.getSession(t)?.cuSelectedDisplayId`
+  #   10b4 teach setter from cuSelectedDisplayChanged
+  #   10b5 the screenshot target label: Nui's `xui(e.displayId??null)`
+  # The glow setter (Wvo) and teach setter (Oyo) have no other callers.
+  block:
+    let glowSetterRe =
+      re"""function ([\w$]+)\(([\w$]+)\)\{[\w$]+=\2\?\?null,([\w$]+)&&!\3\.isDestroyed\(\)&&\3\.setBounds\([\w$]+\(\)\.bounds\)\}"""
+    let teachSetterRe =
+      re"""function ([\w$]+)\(([\w$]+)\)\{[\w$]+=\2\?\?null;let ([\w$]+)=[\w$]+\(\);\3&&\3\.setBounds\([\w$]+\(\)\.workArea\)\}"""
+    let resolverRe =
+      re"""function ([\w$]+)\(([\w$]+)\)\{return \2===null\?[\w$]+\.screen\.getPrimaryDisplay\(\):[\w$]+\.screen\.getAllDisplays\(\)\.find\(\(?([\w$]+)\)?=>\3\.id===\2\)?\)\?\?[\w$]+\.screen\.getPrimaryDisplay\(\)\}"""
+    proc onlyName(c: string, pat: Regex, what: string): string =
+      var names: seq[string] = @[]
+      for m in c.findIter(pat):
+        names.add m.captures[0]
+      if names.len != 1:
+        echo &"  [FAIL] 10b {what}: {names.len} definitions, expected 1 - re-audit"
+        return ""
+      names[0]
+
+    let glowSetter = onlyName(
+      content, glowSetterRe,
+      "glow setter `function W(e){H=e??null,j&&!j.isDestroyed()&&j.setBounds(U().bounds)}`",
+    )
+    let teachSetter = onlyName(
+      content, teachSetterRe,
+      "teach setter `function O(e){T=e??null;let t=L();t&&t.setBounds(k().workArea)}`",
+    )
+    let resolver = onlyName(content, resolverRe, "overlay display resolver")
+    if glowSetter != "" and teachSetter != "" and resolver != "":
+      let g = escapeRe(glowSetter)
+      let t = escapeRe(teachSetter)
+      let r = escapeRe(resolver)
+      # (label, pattern, rebuild from captures)
+      type Site = tuple[label: string, pat: Regex, build: proc(m: RegexMatch): string]
+      let sites: seq[Site] =
+        @[
+          (
+            "10b1 glow display switch",
+            re(r"\{([\w$]+)===([\w$]+)\.currentHolder&&(" & g & r")\(([\w$]+)\)\}"),
+            proc(m: RegexMatch): string =
+              "{" & m.captures[0] & "===" & m.captures[1] & ".currentHolder&&" &
+                m.captures[2] & "(" & DID_HEAD & m.captures[3] & "))}",
+          ),
+          (
+            "10b2 glow display at lock",
+            re(
+              r"let ([\w$]+)=([\w$]+\([\w$]+\));(\1===void 0&&!([\w$]+)\.isDestroyed\(\)&&\(\1=[\w$]+\.screen\.getDisplayMatching\(\4\.getBounds\(\)\)\.id\)," &
+                g & r"\(\1\),)"
+            ),
+            proc(m: RegexMatch): string =
+              "let " & m.captures[0] & "=" & DID_HEAD & m.captures[1] & ");" &
+                m.captures[2],
+          ),
+          (
+            "10b3 teach display at teach start",
+            re(
+              r"let ([\w$]+)=([\w$]+\.getSession\([\w$]+\)\?\.cuSelectedDisplayId);(\1===void 0&&([\w$]+)&&!\4\.isDestroyed\(\)&&\(\1=[\w$]+\.screen\.getDisplayMatching\(\4\.getBounds\(\)\)\.id\)," &
+                t & r"\(\1\))"
+            ),
+            proc(m: RegexMatch): string =
+              "let " & m.captures[0] & "=" & DID_HEAD & m.captures[1] & ");" &
+                m.captures[2],
+          ),
+          (
+            "10b4 teach display switch",
+            re(
+              r"(\.on\([""`]cuSelectedDisplayChanged[""`],\(\(\{sessionId:([\w$]+),displayId:([\w$]+)\}\)=>\{\2===[\w$]+&&" &
+                t & r"\()\3\)\}\)\)"
+            ),
+            proc(m: RegexMatch): string =
+              m.captures[0] & DID_HEAD & m.captures[2] & "))}))",
+          ),
+          (
+            "10b5 target label display",
+            re(
+              r"(function [\w$]+\(([\w$]+)\)\{if\(\2\.mode===[""`]app[""`]\)return \2\.displayName;let [\w$]+=" &
+                r & r"\()(\2\.displayId\?\?null)\);"
+            ),
+            proc(m: RegexMatch): string =
+              m.captures[0] & DID_HEAD & m.captures[2] & "));",
+          ),
+        ]
+      for site in sites:
+        var hits = 0
+        for m in content.findIter(site.pat):
+          inc hits
+        if hits != 1:
+          echo &"  [FAIL] {site.label}: {hits} matches, expected 1 - re-audit"
+          continue
+        let n = replaceFirst(content, site.pat, site.build)
+        if n == 1:
+          echo &"  [OK] {site.label}: Linux display id -> Electron id (glow {glowSetter}, teach {teachSetter}, resolver {resolver}; 1 match)"
+          inc changes
+          inc patchesApplied
+        else:
+          echo &"  [FAIL] {site.label}: replacement did not apply"
+
+  # ── Patch 10c: no glow for a background display ────────────────────────
+  # Upstream's glow show (4.23118.1: `function Kvo(e){if(!Z2r)return
+  # Promise.resolve();...`) already skips the glow where it cannot draw it
+  # (Z2r = CLICK_THROUGH_WINDOWS = not a Wayland session). On Linux it also
+  # skips it while the executor says __cdbCuGlowOff() (target mode: Computer
+  # Use works on a background display, not the user's monitors). Anchor: the
+  # show function exactly once, its flag the CLICK_THROUGH_WINDOWS key, and its
+  # one call the cuLockChanged handler's "[cu-glow] showGlow failed" catch.
   block:
     let pat =
-      re"""(function [\w$]+\(([\w$]+)\)\{)(return \2===null\?[\w$]+\.screen\.getPrimaryDisplay\(\):[\w$]+\.screen\.getAllDisplays\(\)\.find)"""
-    let n = replaceFirst(
-      content,
-      pat,
-      proc(m: RegexMatch): string =
-        let param = m.captures[1]
-        m.captures[0] & &"if(process.platform===\"linux\"){param}=null;" & m.captures[2],
-    )
-    if n >= 1:
-      echo &"  [OK] teach overlay display: forced to primary monitor on Linux ({n} match)"
-      inc changes, n
-      inc patchesApplied
+      re"""function ([\w$]+)\(([\w$]+)\)\{if\(!([\w$]+)\)return Promise\.resolve\(\);([\w$]+)&&=\(clearTimeout\(\4\),null\);"""
+    var hits: seq[RegexMatch] = @[]
+    for m in content.findIter(pat):
+      hits.add m
+    if hits.len != 1:
+      echo &"  [FAIL] 10c glow show (`function K(e){{if(!CT)return Promise.resolve();T&&=(clearTimeout(T),null);`): {hits.len} matches, expected 1"
     else:
-      echo "  [FAIL] xlr display resolver pattern: 0 matches (teach may appear on wrong monitor)"
+      let fnName = hits[0].captures[0]
+      let ct = hits[0].captures[2]
+      let keyHits = countMatches(
+        content, re("""CLICK_THROUGH_WINDOWS:\(\)=>""" & escapeRe(ct) & "[,}]")
+      )
+      let callHits = countMatches(
+        content,
+        re(
+          "(?<![\\w$.])" & escapeRe(fnName) &
+            """\(\)\.catch\(\(?[\w$]+\)?=>\{?[\w$]+\.warn\(["'`]\[cu-glow\] showGlow failed"""
+        ),
+      )
+      if keyHits != 1:
+        echo &"  [FAIL] 10c glow show {fnName}: {ct} is not CLICK_THROUGH_WINDOWS ({keyHits} namespace keys, expected 1) - re-audit"
+      elif callHits != 1:
+        echo &"  [FAIL] 10c glow show {fnName}: not the cuLockChanged glow call ({callHits} `{fnName}().catch(...[cu-glow] showGlow failed` sites, expected 1) - re-audit"
+      else:
+        let n = replaceFirst(
+          content,
+          pat,
+          proc(m: RegexMatch): string =
+            "function " & m.captures[0] & "(" & m.captures[1] & "){if(!" & m.captures[2] &
+              "||process.platform===\"linux\"&&globalThis.__cdbCuGlowOff?.()===!0)return Promise.resolve();" &
+              m.captures[3] & "&&=(clearTimeout(" & m.captures[3] & "),null);",
+        )
+        if n == 1:
+          echo &"  [OK] 10c glow show {fnName}: off while Computer Use runs on a background display (1 match)"
+          inc changes
+          inc patchesApplied
+        else:
+          echo "  [FAIL] 10c glow show: replacement did not apply"
 
   # ── Patch 11: force the primary CU enable gate → true on Linux ──────────
   block:
