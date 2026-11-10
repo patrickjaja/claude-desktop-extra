@@ -350,6 +350,11 @@ function onLine(c,line){
     diag("ready ("+S.bridge+", mechanism "+S.ready.mechanism+", syntheticSafe "+S.ready.syntheticSafe+")");
   }else if(o.event==="abort"){
     if(c!==S.child||!S.armed){diag("abort after disarm ignored");return}
+    // Only a long model Escape keeps a watcher we told to stop as the current
+    // one while armed (the window stops it before injecting). On KDE it can
+    // still hold its grab while it cleans up: what it reports now is the
+    // model's own Escape, not the user stopping the turn.
+    if(c.__cdbStopping){diag("abort from a stopping watcher ignored (long model Escape)");return}
     if(S.muted){diag("abort ignored inside a suspend window (model Escape)");return}
     var h=S.handler;
     diag("abort: the user pressed Escape, stopping Computer Use");

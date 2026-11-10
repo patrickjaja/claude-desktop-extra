@@ -383,6 +383,9 @@ if (process.argv[2] === "--version") {
   process.stdin.on("data", (d) => { buf += d; let i; while ((i = buf.indexOf("\n")) >= 0) { const l = buf.slice(0, i).trim(); buf = buf.slice(i + 1); cmd(l); } });
   process.stdin.on("end", () => {
     log("EOF");
+    // KDE-style: while it cleans up it still holds its grab, and the model's
+    // Escape of the long window lands on it.
+    if (m === "unsafe-slowstop") { log("abort-sent (model Escape on the stopping watcher)"); out({ event: "abort" }); }
     if (m.endsWith("slowstop")) { setTimeout(() => { try { fs.unlinkSync(alive); } catch {} log("stopped " + process.pid); process.exit(0); }, 800); return; }
     if (m !== "ignore") process.exit(0);
   });
@@ -707,7 +710,8 @@ if (!escLoaded) {
     // window's bounded wait (PREV_WAIT_MS, scaled here) ends. Its exit starts
     // nothing (it was stopping), so the window's rearm must wait for it.
     const r = escRig("unsafe-slowstop", { timers: { 4500: 100 } });
-    r.W.arm(() => {}, "session_K");
+    const hits = [];
+    r.W.arm(() => hits.push(1), "session_K");
     await until(() => r.W.state().mechanism === "kglobalaccel");
     await r.W.suspendAround(async () => { await sleep(50); }, 6000);
     ok(r.starts().length === 1 && r.W.state().armed && r.log().includes("EOF") && !r.log().some((l) => l.startsWith("stopped ")),
@@ -717,6 +721,32 @@ if (!escLoaded) {
     const stoppedAt = L.findIndex((l) => l.startsWith("stopped ")), secondAt = L.findIndex((l, i) => l.startsWith("start") && i > L.indexOf("EOF"));
     ok(r.starts().length === 2 && r.W.state().running && r.W.state().armed && r.W.state().failures === 0, "  armed again once that watcher has exited, nothing counted", JSON.stringify(L));
     ok(stoppedAt >= 0 && secondAt > stoppedAt, "  and never next to it (started after it stopped)", stoppedAt + " / " + secondAt);
+    ok(L.some((l) => l.startsWith("abort-sent")) && hits.length === 0 && r.diag.some((d) => d.includes("abort from a stopping watcher ignored (long model Escape)")),
+      "  the model's Escape reported by the stopping watcher is not acted on", JSON.stringify({ hits: hits.length }));
+    r.W.disarm();
+  }
+
+  {
+    // Guard (review of #324): while a suspend window is open and its KDE
+    // watcher has already exited (its 5 s limit), the cycle is armed with no
+    // child - legitimately. A same-holder cuLockChanged during the injection
+    // must not start an unsuspended watcher that takes the model's Escape.
+    const r = escRig("unsafe-exit-suspended");
+    const hits = [];
+    r.W.arm(() => hits.push(1), "session_K");
+    await until(() => r.W.state().mechanism === "kglobalaccel");
+    let during = null;
+    await r.W.suspendAround(async () => {
+      await until(() => r.log().includes("exit while suspended"), 2000);
+      writeFileSync(join(r.dir, "escape-now"), "1");
+      r.W.arm(() => hits.push(1), "session_K");
+      await sleep(600);
+      during = r.starts().length;
+      unlinkSync(join(r.dir, "escape-now"));
+    }, 2000);
+    await until(() => r.starts().length === 2 && r.W.state().running, 3000);
+    ok(during === 1 && hits.length === 0, "same-holder arm during the injection: no watcher started inside the window, no abort acted on", JSON.stringify({ during, hits: hits.length }));
+    ok(r.starts().length === 2 && r.W.state().running && r.W.state().failures === 0, "  armed again after the window", r.starts().length);
     r.W.disarm();
   }
 
