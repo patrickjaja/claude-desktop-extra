@@ -2111,7 +2111,10 @@
       var hits = names.filter(function (n) { return re.test(n) && !/\.lock$/.test(n); }).slice(0, 64);
       return Promise.all(hits.map(function (n) {
         var p = _path.join(dir, n);
-        return _fs.promises.lstat(p).then(function (st) { return st.isSocket() ? { name: n, path: p } : null; },
+        // stat follows symlinks (as the identity check and the executor do), so
+        // a stable-name symlink to a compositor socket (wayland-claude-extra ->
+        // wayland-1) is listed next to its target.
+        return _fs.promises.stat(p).then(function (st) { return st.isSocket() ? { name: n, path: p } : null; },
           function () { return null; });
       })).then(function (r) { return r.filter(Boolean); });
     }, function () { return []; });

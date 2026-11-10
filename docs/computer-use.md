@@ -127,7 +127,7 @@ DISPLAY=:98 openbox &
 env -u WAYLAND_DISPLAY -u DISPLAY WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 sway &
 ```
 
-A nested sway (started inside your own session without `WLR_BACKENDS=headless`) or labwc works the same way. On NixOS, `programs.claude-desktop-extra.backgroundDisplay` runs a headless sway as a user service, with a browser, a keyring and wayvnc: see [NixOS background display](nixos-background-display.md). If sway starts XWayland for its apps, give Claude the `DISPLAY` it picked through `env` (see below).
+A nested sway (started inside your own session without `WLR_BACKENDS=headless`) or labwc works the same way. On NixOS, `programs.claude-desktop-extra.backgroundDisplay` runs a headless sway as a user service, with a browser, a keyring and optional wayvnc: see [NixOS background display](nixos-background-display.md). If sway starts XWayland for its apps, give Claude the `DISPLAY` it picked through `env` (see below).
 
 | Distro family | Xvfb | Xephyr | window manager | sway | x11vnc / wayvnc |
 |---|---|---|---|---|---|
