@@ -31,8 +31,12 @@ The KDE stop key needs a runnable `kwin-portal-bridge` (glibc 2.39 or newer), so
 - Manual cleanup: if the app was killed hard while the stop key was armed and the switch was turned off before the next start, a compositor binding can stay. Run `<bridge> abort-watch </dev/null` to clear it, with `x11-bridge` (X11), `wlroots-bridge` (sway, Hyprland) or `kwin-portal-bridge` (KDE Plasma), from the `resources/` folder of the install (for example `/usr/lib/claude-desktop/resources/`).
 - A watcher that cannot arm leaves nothing behind.
 
-Log lines are `[claude-cu] esc-watch: ...` in `~/.config/Claude/logs/claude-patches.log`. `claude-desktop --diagnose` prints an `abortWatch` line per bridge.
+Log lines are `[claude-cu] esc-watch: ...` in `~/.config/Claude/logs/claude-patches.log`. `claude-desktop --diagnose` has its own section for this, see below.
 
 ## Stop sharing
 
 Independent of this switch (always on): **Stop sharing** on the GNOME or KDE screen-share indicator stops the running Computer Use turn at once (log prefix `[claude-cu] stop-sharing:`). It also fires when the desktop itself ends the share (for example a portal restart, possibly a screen lock). Where `XDG_RUNTIME_DIR` is unset, the marker directory is watched only if it is a real directory owned by you without group or other write access.
+
+## Checking the state
+
+`claude-desktop --diagnose` has an "Escape stops Computer Use" section. It shows whether the switch is on for the profile, which bridge would watch for Escape on this session and whether it can, and whether Escape still reaches your apps while Claude is working. It also lists a leftover binding from an earlier run, with the command that clears it, and adds a "Problems found" entry when the switch is on but no stop key can work on this session.

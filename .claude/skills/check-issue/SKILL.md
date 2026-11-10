@@ -114,6 +114,7 @@ The integration worker (sonnet):
 touch patches/linux/<embedding>.nim && (cd patches && make -j"$(nproc)")
 python3 scripts/check-upstream-absorbed.py tmp/app.asar.contents tmp/extract/usr/lib/claude-desktop/resources/ion-dist.asar
 bash scripts/check-patch-sibling-noop.sh
+nph --check $(git diff --name-only HEAD -- 'patches/*.nim'; git ls-files --others --exclude-standard 'patches/*.nim')   # the pre-commit hook rejects unformatted patches; later fix rounds unformat them
 bash scripts/run-feature-tests.sh linux   # plus core and community
 python3 scripts/apply_patches.py patches <scratch copy of tmp/app.asar.contents>
 # then: node --check on every patched chunk

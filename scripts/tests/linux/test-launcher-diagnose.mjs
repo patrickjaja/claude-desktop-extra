@@ -1138,6 +1138,101 @@ else touch ${marker}; fi
   check("empty entries are skipped", run(`::${join(dd, "sib")}:`), true);
 });
 
+// ---------------------------------------------------------------- D16
+console.log("D16: --diagnose reports Escape stops Computer Use: the switch, the session's watcher, doctor facts");
+safe("D16", () => {
+  const root = join(scratch, "d16");
+  const py = (spawnSync("sh", ["-c", "command -v python3"], { encoding: "utf8" }).stdout || "").trim();
+  const pyBin = join(root, "pybin");
+  if (py) writeExe(join(pyBin, "python3"), `#!/bin/sh\nexec ${py} "$@"\n`);
+  // A fake bridge: --version answers, `doctor` prints a contract doctor whose
+  // abortWatch object is `aw` (null: an older bridge without the key).
+  const bridge = (name, aw) => {
+    const doctor = { contract: 2, backend: name.replace(/-bridge$/, ""), ...(aw ? { abortWatch: aw } : {}) };
+    const p = join(root, "b", name + "-" + Math.random().toString(36).slice(2, 8));
+    writeExe(p, `#!/bin/sh\ncase "$1" in --version) echo "${name} 1";; doctor) cat <<'JSON'\n${JSON.stringify(doctor, null, 2)}\nJSON\n;; *) exit 2;; esac\n`);
+    return p;
+  };
+  const ud = (cfg) => {
+    const d = join(root, "ud-" + Math.random().toString(36).slice(2, 8));
+    mkdirSync(d, { recursive: true });
+    if (cfg.json !== undefined) writeFileSync(join(d, "claude-desktop-extra.json"), cfg.json);
+    if (cfg.jsonc !== undefined) writeFileSync(join(d, "claude-desktop-extra.jsonc"), cfg.jsonc);
+    return d;
+  };
+  const FNS = ["_bridge_json_field", "_cu_bridge_env", "_cu_bridge_path", "_diag_elf_foreign", "_diag_bridge_runs", "_cu_bridge_doctor",
+    "_diag_escape_switch", "_diag_escape_doctor", "_diag_escape"];
+  const diag = (dir, env) => runFns(FNS, `_diag_problems=(); _diag_escape '${dir}'; printf 'P=%s\\n' "\${_diag_problems[@]:-}"`,
+    { PATH: `${py ? pyBin + ":" : ""}${coreBin}`, ...env }).out;
+  const ON = ud({ json: '{ "computerUseEscapeAbort": true }' });
+  const OFF = ud({});
+  const LOCKED = ud({ jsonc: '{\n  // hand-edited\n  "computerUseEscapeAbort": false,\n}\n', json: '{ "computerUseEscapeAbort": true }' });
+  const X11 = { XDG_SESSION_TYPE: "x11", DISPLAY: ":0" };
+  const WL = { XDG_SESSION_TYPE: "wayland", WAYLAND_DISPLAY: "wayland-1" };
+  const ok = { available: true, mechanism: "xi2", reason: null, consumes: false, stale: false, skippedKeyboards: [] };
+
+  if (!py) {
+    console.log("  (python3 not found: only the no-python3 path is checked)");
+    check("no python3: the switch is unknown with the reason", /= unknown \(python3 is needed/.test(diag(ON, { ...X11, X11_BRIDGE_BIN: bridge("x11-bridge", ok) })), true);
+    return;
+  }
+  // The switch.
+  let out = diag(ON, { ...X11, X11_BRIDGE_BIN: bridge("x11-bridge", ok) });
+  check("switch on (claude-desktop-extra.json)", /Escape stops Computer Use \(community switch\) = on  \[/.test(out), true);
+  check("X11: x11-bridge is the watcher", /stop-key watcher = x11-bridge abort-watch \(X11 session\)/.test(out), true);
+  check("available, with its mechanism", /\n  available \(mechanism xi2\)/.test(out), true);
+  check("consumes false: Escape still reaches applications", /Escape and applications: Escape still reaches applications/.test(out), true);
+  check("all fine: no problem", out.endsWith("P="), true);
+  out = diag(OFF, { ...X11, X11_BRIDGE_BIN: bridge("x11-bridge", ok) });
+  check("no settings file: off (the default)", /= off \(the default\)  \[/.test(out), true);
+  out = diag(LOCKED, { ...X11, X11_BRIDGE_BIN: bridge("x11-bridge", ok) });
+  check(".jsonc false wins over .json true and is reported as the lock", /= off \(set in claude-desktop-extra\.jsonc, the switch is locked\)/.test(out), true);
+  const UNREAD = ud({ json: '{ "computerUseEscapeAbort": true }' });
+  chmodSync(join(UNREAD, "claude-desktop-extra.json"), 0o000);
+  if (process.getuid() !== 0) {
+    out = diag(UNREAD, { ...X11, X11_BRIDGE_BIN: bridge("x11-bridge", ok) });
+    check("unreadable settings: unknown with the reason, not a guess", /= unknown \(claude-desktop-extra\.json cannot be read: Permission denied\)/.test(out), true);
+  }
+  chmodSync(join(UNREAD, "claude-desktop-extra.json"), 0o644);
+
+  // Sessions.
+  out = diag(ON, { ...WL, SWAYSOCK: "/run/user/1000/sway.sock", XDG_CURRENT_DESKTOP: "sway",
+    WLROOTS_BRIDGE_BIN: bridge("wlroots-bridge", { ...ok, mechanism: "sway", consumes: true, skippedKeyboards: ["Yubico YubiKey", "ydotoold virtual device"] }) });
+  check("sway: wlroots-bridge", /stop-key watcher = wlroots-bridge abort-watch \(sway\)/.test(out), true);
+  check("consumes true: taken from applications", /Escape is taken from applications while Claude is working/.test(out), true);
+  check("skipped keyboards listed", /keyboards not watched: Yubico YubiKey, ydotoold virtual device/.test(out), true);
+  out = diag(ON, { ...WL, HYPRLAND_INSTANCE_SIGNATURE: "abc", XDG_CURRENT_DESKTOP: "Hyprland",
+    WLROOTS_BRIDGE_BIN: bridge("wlroots-bridge", { ...ok, mechanism: "hyprland", consumes: false }) });
+  check("Hyprland: wlroots-bridge, Escape still reaches applications", /wlroots-bridge abort-watch \(Hyprland\)[\s\S]*Escape still reaches applications/.test(out), true);
+  out = diag(ON, { ...WL, XDG_CURRENT_DESKTOP: "KDE",
+    KWIN_PORTAL_BRIDGE_BIN: bridge("kwin-portal-bridge", { ...ok, mechanism: "kglobalaccel", consumes: true }) });
+  check("KDE Wayland: kwin-portal-bridge", /stop-key watcher = kwin-portal-bridge abort-watch \(KDE Plasma Wayland\)/.test(out), true);
+  out = diag(ON, { ...WL, XDG_CURRENT_DESKTOP: "ubuntu:GNOME" });
+  check("GNOME Wayland: no watcher, what remains", /stop-key watcher = none on this session \(GNOME Wayland has no global stop key for Claude\): Escape in Claude's own window, Stop sharing and Stop remain/.test(out), true);
+  check("GNOME + switch on: a Problems entry", /P=Escape stops Computer Use is on, but this session has no stop-key watcher/.test(out), true);
+  out = diag(OFF, { ...WL, XDG_CURRENT_DESKTOP: "ubuntu:GNOME" });
+  check("GNOME + switch off: no Problems entry", out.endsWith("P="), true);
+
+  // Doctor facts.
+  const un = bridge("wlroots-bridge", { available: false, mechanism: null, reason: "Escape is already bound in sway's default mode ({config}:12)", consumes: null, stale: false, skippedKeyboards: [] });
+  out = diag(ON, { ...WL, SWAYSOCK: "/s", WLROOTS_BRIDGE_BIN: un });
+  check("unavailable: the reason verbatim (braces included)", /unavailable: Escape is already bound in sway's default mode \(\{config\}:12\)/.test(out), true);
+  check("consumes null: unknown", /Escape and applications: unknown/.test(out), true);
+  check("switch on + unavailable: a Problems entry", /P=Escape stops Computer Use is on, but wlroots-bridge cannot watch Escape here: Escape is already bound/.test(out), true);
+  out = diag(OFF, { ...WL, SWAYSOCK: "/s", WLROOTS_BRIDGE_BIN: un });
+  check("switch off + unavailable: no Problems entry", out.endsWith("P="), true);
+  const st = bridge("kwin-portal-bridge", { ...ok, mechanism: "kglobalaccel", consumes: true, stale: true });
+  out = diag(OFF, { ...WL, XDG_CURRENT_DESKTOP: "KDE", KWIN_PORTAL_BRIDGE_BIN: st });
+  check("stale: the leftover binding and how to clear it", out.includes(`leftover binding: a stop-key binding from an earlier run is still active - clear it with: ${st} abort-watch </dev/null`), true);
+  check("stale goes into Problems even with the switch off", out.includes(`P=kwin-portal-bridge left a stop-key binding from an earlier run, so Escape may be taken from applications with nothing running: clear it with ${st} abort-watch </dev/null`), true);
+  const old = bridge("x11-bridge", null);
+  out = diag(ON, { ...X11, X11_BRIDGE_BIN: old });
+  check("old bridge without abortWatch: no stop-key support", /unavailable: this x11-bridge has no stop-key support \(older bridge: no abortWatch in its doctor\)/.test(out), true);
+  check("  and with the switch on, a Problems entry", /P=Escape stops Computer Use is on, but x11-bridge at .* has no stop-key support/.test(out), true);
+  out = diag(ON, { ...X11, X11_BRIDGE_BIN: join(root, "nope", "x11-bridge") });
+  check("bridge missing: unavailable and a Problems entry (switch on)", /unavailable: x11-bridge is missing[\s\S]*P=Escape stops Computer Use is on, but x11-bridge is missing/.test(out), true);
+});
+
 rmSync(scratch, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) {

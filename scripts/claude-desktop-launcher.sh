@@ -2087,11 +2087,215 @@ _diag_bridge_screens() {
     done
 }
 
+# --diagnose: the community switch "Escape stops Computer Use" for the
+# userData dir given as $1, read the way js/extra_settings_main.js reads it:
+# a boolean computerUseEscapeAbort in claude-desktop-extra.jsonc wins (and
+# locks the switch), else only a true in claude-desktop-extra.json is on. A
+# .jsonc that does not parse is skipped, as the app skips it. Prints "on ...",
+# "off ..." or "unknown (<why>)". Read-only.
+_diag_escape_switch() {
+    local ud="$1"
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo 'unknown (python3 is needed to read claude-desktop-extra.json)'
+        return 0
+    fi
+    python3 - "$ud/claude-desktop-extra.jsonc" "$ud/claude-desktop-extra.json" 2>/dev/null <<'PY' \
+        || echo 'unknown (the settings files could not be read)'
+import json, os, sys
+
+KEY = "computerUseEscapeAbort"
+
+
+# js/extra_settings_main.js __cdbEx_strip: comments and trailing commas out,
+# string literals untouched.
+def strip(s):
+    out, i, n, in_str = [], 0, len(s), False
+    while i < n:
+        c = s[i]
+        if in_str:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(s[i + 1])
+                i += 1
+            elif c == '"':
+                in_str = False
+            i += 1
+            continue
+        if c == '"':
+            in_str = True
+            out.append(c)
+            i += 1
+            continue
+        if s.startswith("//", i):
+            while i < n and s[i] != "\n":
+                i += 1
+            continue
+        if s.startswith("/*", i):
+            j = s.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        if c == ",":
+            j = i + 1
+            while j < n:
+                if s[j] in " \t\r\n":
+                    j += 1
+                elif s.startswith("//", j):
+                    while j < n and s[j] != "\n":
+                        j += 1
+                elif s.startswith("/*", j):
+                    k = s.find("*/", j + 2)
+                    j = n if k < 0 else k + 2
+                else:
+                    break
+            if j < n and s[j] in "}]":
+                i += 1
+                continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def read(path):
+    if not os.path.exists(path):
+        return "absent", None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = fh.read()
+    except OSError as e:
+        return "unreadable", e.strerror or str(e)
+    try:
+        data = json.loads(strip(raw) or "{}")
+    except ValueError:
+        return "bad", None
+    return "ok", (data.get(KEY) if isinstance(data, dict) else None)
+
+
+jsonc, js = sys.argv[1], sys.argv[2]
+st, val = read(jsonc)
+if st == "unreadable":
+    print("unknown (claude-desktop-extra.jsonc cannot be read: %s)" % val)
+elif st == "ok" and isinstance(val, bool):
+    print(("on" if val else "off") + " (set in claude-desktop-extra.jsonc, the switch is locked)")
+else:
+    st2, val2 = read(js)
+    if st2 == "unreadable":
+        print("unknown (claude-desktop-extra.json cannot be read: %s)" % val2)
+    elif st2 == "ok" and val2 is True:
+        print("on")
+    else:
+        print("off (the default)" if not (st2 == "ok" and val2 is False) else "off")
+PY
+}
+
+# --diagnose: the `abortWatch` doctor object of a bridge as tab-separated
+# fields: has available mechanism reason consumes stale skipped. has=0: the
+# bridge has no such key (older bridge). Needs python3; without it only
+# available / reason are read (the plain-text path below).
+_diag_escape_doctor() {
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c '
+import json, sys
+try:
+    d = json.loads(sys.stdin.read() or "{}")
+except ValueError:
+    d = {}
+a = d.get("abortWatch") if isinstance(d, dict) else None
+if not isinstance(a, dict):
+    print("0"); sys.exit(0)
+def s(v):
+    if v is None: return "null"
+    if isinstance(v, bool): return "true" if v else "false"
+    return str(v).replace("\t", " ").replace("\n", " ")
+sk = a.get("skippedKeyboards")
+sk = ", ".join(str(k) for k in sk) if isinstance(sk, list) else ""
+print("\t".join(["1", s(a.get("available")), s(a.get("mechanism")), s(a.get("reason")), s(a.get("consumes")), s(a.get("stale")), sk]))
+' 2>/dev/null || echo 0
+        return 0
+    fi
+    local doc aw av re
+    doc="$(cat)"
+    [[ "$doc" == *'"abortWatch"'* ]] || { echo 0; return 0; }
+    aw="${doc#*\"abortWatch\"}"
+    av="$(_bridge_json_field "$aw" available || true)"
+    re="$(_bridge_json_field "$aw" reason || true)"
+    printf '1\t%s\tnull\t%s\tnull\tnull\t\n' "${av:-null}" "${re:-null}"
+}
+
+# --diagnose: "Escape stops Computer Use" - the switch for this profile and
+# the stop-key watcher the app would start on this session (the same choice
+# as js/cu_esc_watch.js select(): the HOST session, not the input bridge), with
+# that bridge's doctor facts in plain words. Read-only: the settings files and
+# one `doctor` call, which never binds anything. $1 = the userData dir.
+_diag_escape() {
+    local ud="$1" sw st desk wl='' name='' why bin env_var info has av mech reason cons stale skipped
+    sw="$(_diag_escape_switch "$ud")"
+    echo "Escape stops Computer Use (community switch) = $sw  [$ud]"
+    st="$(printf %s "${XDG_SESSION_TYPE:-}" | tr '[:upper:]' '[:lower:]')"
+    desk="$(printf %s "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')"
+    case "$st" in
+        wayland) wl=1 ;;
+        x11)     wl='' ;;
+        *)       [[ -n "${WAYLAND_DISPLAY:-}" ]] && wl=1 ;;
+    esac
+    if [[ -z "$wl" ]]; then
+        if [[ -n "${DISPLAY:-}" ]]; then name=x11-bridge; why='X11 session'; else why='no X display'; fi
+    elif [[ -n "${NIRI_SOCKET:-}" ]]; then why='niri has no runtime key binding API'
+    elif [[ -n "${SWAYSOCK:-}" ]]; then name=wlroots-bridge; why='sway'
+    elif [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then name=wlroots-bridge; why='Hyprland'
+    elif [[ "$desk" == *kde* ]]; then name=kwin-portal-bridge; why='KDE Plasma Wayland'
+    elif [[ "$desk" == *gnome* ]]; then why='GNOME Wayland has no global stop key for Claude'
+    else why="no global stop key on this Wayland compositor${desk:+ ($desk)}"
+    fi
+    if [[ -z "$name" ]]; then
+        echo "  stop-key watcher = none on this session ($why): Escape in Claude's own window, Stop sharing and Stop remain"
+        [[ "$sw" == on* ]] && _diag_problems+=("Escape stops Computer Use is on, but this session has no stop-key watcher ($why): use Escape in Claude's window, Stop sharing or Stop")
+        return 0
+    fi
+    env_var="$(_cu_bridge_env "$name")"
+    bin="$(_cu_bridge_path "$name" "$env_var")"
+    echo "  stop-key watcher = $name abort-watch ($why)${bin:+, $bin}"
+    if [[ -z "$bin" || ! -x "$bin" ]]; then
+        echo "  unavailable: $name is missing"
+        [[ "$sw" == on* ]] && _diag_problems+=("Escape stops Computer Use is on, but $name is missing: no stop key on this session - reinstall the package")
+        return 0
+    fi
+    if [[ "$(_diag_bridge_runs "$bin" "$env_var")" != ok* ]]; then
+        echo "  unavailable: $name cannot run (see the bridge run check above)"
+        [[ "$sw" == on* ]] && _diag_problems+=("Escape stops Computer Use is on, but $name cannot run: no stop key on this session")
+        return 0
+    fi
+    info="$(_cu_bridge_doctor "$bin" | _diag_escape_doctor)"
+    IFS=$'\t' read -r has av mech reason cons stale skipped <<<"$info"
+    if [[ "$has" != 1 ]]; then
+        echo "  unavailable: this $name has no stop-key support (older bridge: no abortWatch in its doctor)"
+        [[ "$sw" == on* ]] && _diag_problems+=("Escape stops Computer Use is on, but $name at $bin has no stop-key support (older bridge)")
+        return 0
+    fi
+    if [[ "$av" == true ]]; then
+        echo "  available${mech:+ (mechanism ${mech/#null/unknown})}"
+    else
+        [[ -n "$reason" && "$reason" != null ]] || reason='no reason given'
+        echo "  unavailable: $reason"
+        [[ "$sw" == on* ]] && _diag_problems+=("Escape stops Computer Use is on, but $name cannot watch Escape here: $reason")
+    fi
+    case "$cons" in
+        true)  echo '  Escape and applications: Escape is taken from applications while Claude is working' ;;
+        false) echo '  Escape and applications: Escape still reaches applications' ;;
+        *)     echo '  Escape and applications: unknown' ;;
+    esac
+    [[ -n "$skipped" ]] && echo "  keyboards not watched: $skipped"
+    if [[ "$stale" == true ]]; then
+        echo "  leftover binding: a stop-key binding from an earlier run is still active - clear it with: $bin abort-watch </dev/null"
+        _diag_problems+=("$name left a stop-key binding from an earlier run, so Escape may be taken from applications with nothing running: clear it with $bin abort-watch </dev/null")
+    fi
+    return 0
+}
+
 # --diagnose: the contract view of every bridge - doctor's required keys, then
 # `screens` when the bridge says it serves this session. Bridges below
 # contract 1 get the checks this launcher made before the contract.
 _diag_bridges() {
-    local name bin doc contract k v line session_match reachable err supported aw any_session=''
+    local name bin doc contract k v line session_match reachable err supported any_session=''
     local state_base="${XDG_STATE_HOME:-$HOME/.local/state}" run_base="${XDG_RUNTIME_DIR:-/tmp}"
     local desk wl=''
     desk="$(printf %s "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')"
@@ -2119,23 +2323,6 @@ _diag_bridges() {
             # until the next session-start.
             if [[ "$(_bridge_json_field "$doc" stopped_by_user || true)" == true ]]; then
                 echo '  stopped_by_user: screen sharing was stopped by the user; the next Computer Use task starts it again'
-            fi
-            # Optional key (contract v2): the "press Escape to stop Computer
-            # Use" watcher, `{"abortWatch":{"available":..,"mechanism":..,"reason":..}}`.
-            # The app picks the watcher by host session (js/cu_esc_watch.js),
-            # so an unavailable one is information, not a problem.
-            # Its three fields are read from the text right after the key (the
-            # object's own fields come first), so a reason with braces or
-            # quotes in it is still read whole by _bridge_json_field.
-            if [[ "$doc" == *'"abortWatch"'* ]]; then
-                aw="${doc#*\"abortWatch\"}"
-                if [[ "$(_bridge_json_field "$aw" available || true)" == true ]]; then
-                    echo "  abortWatch: available ($(_bridge_json_field "$aw" mechanism || echo '?'))"
-                else
-                    k="$(_bridge_json_field "$aw" reason || true)"
-                    [[ -n "$k" && "$k" != null ]] || k='no reason given'
-                    echo "  abortWatch: unavailable ($k)"
-                fi
             fi
             session_match="$(_bridge_json_field "$doc" session_match || true)"
             reachable="$(_bridge_json_field "$doc" backend_reachable || true)"
@@ -2679,6 +2866,12 @@ _diagnose() {
     echo '--- Computer Use bridges (CLI contract) ---'
     # doctor + screens per bridge; neither opens a portal session (contract).
     _diag_bridges
+    echo
+    echo '--- Escape stops Computer Use ---'
+    # The switch is read from the userData dir the app writes to (the one whose
+    # main.log is newer: the default one or upstream's 3p relocation, as for
+    # the device key above); only `doctor` runs, nothing is bound.
+    _diag_escape "$(dirname "$(dirname "$_cu_log")")"
     echo
     echo '--- Local Cowork VM (replicates the app probe) ---'
     # Mirrors the native Cowork backend's capability probe. If any of qemuPath /
