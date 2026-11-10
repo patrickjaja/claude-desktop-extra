@@ -36,7 +36,7 @@ import os from "node:os";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..", "..", "..");
-const EXECUTOR = path.join(ROOT, "js", "cu_linux_executor.js");
+const EXECUTOR = process.env.CU_EXECUTOR || path.join(ROOT, "js", "cu_linux_executor.js");
 
 let pass = 0;
 const failures = [];
@@ -97,7 +97,7 @@ function load(env, behave) {
       setImmediate(() => {
         if (b.error) { const e = new Error("spawn " + cmd + " ENOENT"); e.code = "ENOENT"; child.emit("error", e); return; }
         child.emit("spawn");
-        if (TOOLS.has(cmd)) setImmediate(() => child.emit("exit", b.exit || 0, null));
+        if (TOOLS.has(path.basename(cmd))) setImmediate(() => child.emit("exit", b.exit || 0, null));
       });
       return child;
     }
@@ -453,6 +453,47 @@ Exec=@OPT@/My\ App/run --x
     "F: with no launcher tool the error says the working directory is not usable: " + (l.err && l.err.message));
 }
 
+// Upstream (v4.23118) narrows PATH to system dirs and keeps the started PATH in
+// CLAUDE_DESKTOP_STARTED_PATH. On the desktop the app's bare Exec= is looked up
+// on, and spawned with, the started PATH (APP PATH); setsid and the launcher
+// tools are ours: taken from the narrowed dirs (TOOL PATH) and spawned by
+// absolute path, never from a user-writable dir on the started PATH - here a
+// temp dir, owned by us. The launcher tool gets the APP PATH in its env: it
+// resolves Exec= itself.
+async function testStartedPath() {
+  console.log("\n[S] desktop mode under upstream's PATH narrowing");
+  const sys = makeBin(["setsid", "gio"]);
+  const user = makeBin(["setsid", "gio", "cdbapp"]);
+  const dd = dataDir({ app: HDR + "Name=Probe App\nExec=cdbapp --x %U\n", dbus: HDR + "Name=Bus Only\nDBusActivatable=true\n", gone: HDR + "Name=Gone App\nExec=gone-app\n" }, sys);
+  const env = { PATH: sys, CLAUDE_DESKTOP_NARROWED_PATH: sys, CLAUDE_DESKTOP_STARTED_PATH: user + ":rel:" + sys, XDG_DATA_HOME: dd.data };
+  const APP = user + ":" + sys;
+  const r = load(env);
+  try {
+    await r.ex.openApp("Probe App");
+    eq(r.calls.spawn.map((c) => [c.argv, c.opts.env && c.opts.env.PATH]), [[[path.join(sys, "setsid"), "cdbapp", "--x"], APP]],
+      "S: per-user app: /<narrowed>/setsid by absolute path, the app found on and spawned with the APP PATH");
+    ok(r.diag.some((d) => d === "[claude-cu] openApp: cdbapp -> " + path.join(user, "cdbapp") + " (found on the PATH Claude Desktop was started with, not on the narrowed one)"), "S: one line names the started PATH");
+    r.calls.spawn.length = 0;
+    await r.ex.openApp("Bus Only");
+    eq(r.calls.spawn.map((c) => [c.argv, c.opts.env && c.opts.env.PATH]), [[[path.join(sys, "gio"), "launch", dd.file("dbus")], APP]],
+      "S: no Exec -> gio from the narrowed dir, with the APP PATH in its env");
+    r.calls.spawn.length = 0;
+    await r.ex.openApp("Gone App");
+    eq(r.calls.spawn.map((c) => c.argv[0]), [path.join(sys, "gio")], "S: an app on neither PATH falls to gio (system copy)");
+    ok(process.env.PATH === sys, "S: process.env.PATH untouched");
+  } finally { r.restore(); }
+  // Without a system setsid the planted one is still not used: the app is
+  // spawned directly (APP PATH in its env).
+  const sys2 = makeBin(["gio"]);
+  const r2 = load({ ...env, PATH: sys2, CLAUDE_DESKTOP_NARROWED_PATH: sys2, CLAUDE_DESKTOP_STARTED_PATH: user + ":" + sys2 });
+  try {
+    await r2.ex.openApp("Probe App");
+    eq(r2.calls.spawn.map((c) => [c.argv, c.opts.env && c.opts.env.PATH]), [[["cdbapp", "--x"], user + ":" + sys2]],
+      "S: setsid only in a user-writable dir: ignored, the app spawned directly");
+    ok(r2.diag.some((d) => d.includes("tools: setsid found only in " + user + ", a user-writable folder - ignored")), "S: the ignored copy is logged");
+  } finally { r2.restore(); }
+}
+
 async function main() {
   try {
     await testArgvShapes();
@@ -465,6 +506,7 @@ async function main() {
     await testListNoWrappers();
     await testDirs();
     await testReviewFixes();
+    await testStartedPath();
   } catch (e) {
     console.error("\nHARNESS ERROR: " + (e && e.stack ? e.stack : e));
     process.exitCode = 1;
