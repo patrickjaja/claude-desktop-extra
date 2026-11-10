@@ -225,9 +225,9 @@ Runtime logs are in `~/.config/Claude/logs/`. When 3P mode is active (an `infere
 
 ```
 patches/           # Nim patch sources (.nim) + Makefile, compiled to native binaries (ls patches/*/*.nim)
-patches/linux/     #   Linux compatibility - always on, not user-configurable (37)
+patches/linux/     #   Linux compatibility - always on, not user-configurable (38)
 patches/community/ #   Opt-in features, each with a switch in Settings -> Extra -> Community Features (23)
-patches/core/      #   Always-on infrastructure: Extra settings pages, theme engine, GrowthBook overrides, multi-profile (8)
+patches/core/      #   Always-on infrastructure: Extra settings pages, theme engine, GrowthBook overrides, multi-profile, shared tool lookup (9)
 js/                # Shared JS snippets embedded by Nim patches via staticRead ("../../js/..." from a patch)
 scripts/           # Build, validation, and launcher scripts
 scripts/tests/     # Feature test harnesses, grouped like patches/ (run: scripts/run-feature-tests.sh)

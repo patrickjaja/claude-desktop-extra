@@ -106,19 +106,23 @@ export PATH="$_claude_path"
 # sub-patch D): the first executable (X_OK) of
 #   1. $CLAUDE_QEMU_PATH, if set to an absolute path (our override),
 #   2. /usr/bin/qemu-system-<arch> (upstream's only candidate since 4.29.0),
-#   3. <dir>/qemu-system-<arch> for each absolute dir on $PATH (our fallback;
-#      upstream itself walked PATH up to 3.6556.2), skipping paths containing
-#      ',' or '=' (cowork-linux-helper rejects those QEMU option separators).
+#   3. <dir>/qemu-system-<arch> for each dir of the TOOL PATH (our fallback;
+#      upstream itself walked PATH up to 3.6556.2): upstream's narrowed PATH
+#      plus the root-owned read-only dirs of the PATH the app is started with
+#      (see _diag_tool_path), skipping paths containing ',' or '='
+#      (cowork-linux-helper rejects those QEMU option separators).
 # The resolved absolute path is passed to cowork-linux-helper, which execs it.
 # _cowork_qemu_probe replicates that order for --diagnose. Args: binary name,
-# PATH, override, and the /usr/bin dir (a parameter only so tests can fake it).
+# the dirs to walk (--diagnose passes the TOOL PATH), override, and the /usr/bin
+# dir (a parameter only so tests can fake it).
 _cowork_qemu_probe() {
     local bin=$1 path=$2 override=$3 usr_bin=${4:-/usr/bin} _d _c
     local -a cands=()
     [[ $override == /* ]] && cands+=("$override")
     cands+=("$usr_bin/$bin")
-    local IFS=:
-    for _d in $path; do
+    local -a _dirs=()
+    IFS=: read -r -a _dirs <<<"$path"
+    for _d in "${_dirs[@]}"; do
         [[ $_d == /* ]] || continue
         while [[ $_d == */ ]]; do _d=${_d%/}; done
         _c="$_d/$bin"
@@ -135,22 +139,23 @@ _cowork_qemu_probe() {
 # /usr/bin/qemu-system-<arch>, nothing on PATH, so Cowork reports "requires
 # QEMU" with qemu-kvm installed. The rpm ships qemu-shim/qemu-system-<arch>
 # symlinks to it (the helper's command line boots unchanged on RHEL qemu-kvm);
-# the app's PATH fallback (step 3 above) finds the shim once this dir is on
-# PATH. Append it only when no executable qemu-system-<arch> is on PATH,
-# qemu-kvm exists and the shim is installed; a real QEMU always wins (one in
-# /usr/bin wins anyway, since the app checks /usr/bin before PATH).
+# the app's TOOL PATH fallback (step 3 above) finds the shim once this dir is
+# on the PATH the app is started with: upstream's narrowed PATH drops it, but
+# the dir is root-owned and read-only, so it passes upstream's trust rule.
+# Appended (last, once) whenever qemu-kvm exists and the shim is installed -
+# only the rpm ships it, so every other install keeps its PATH unchanged. No
+# check for another qemu-system-<arch> on PATH: a copy in a user-writable dir
+# (~/.local/bin) is ignored by the app, so it must not suppress the shim, and a
+# real QEMU still wins (the app checks /usr/bin and the narrowed system dirs
+# first, then the started dirs in order, the shim last).
 _cowork_qemu_shim_path() {
-    local path=$1 arch=$2 qemu_kvm=$3 shim_dir=$4 bin _d
+    local path=$1 arch=$2 qemu_kvm=$3 shim_dir=$4 bin
     case "$arch" in
         x86_64) bin=qemu-system-x86_64 ;;
         aarch64 | arm64) bin=qemu-system-aarch64 ;;
         *) echo "$path"; return 0 ;;
     esac
-    local IFS=:
-    for _d in $path; do
-        [[ -n "$_d" && -x "$_d/$bin" && ! -d "$_d/$bin" ]] && { echo "$path"; return 0; }
-    done
-    if [[ -x "$qemu_kvm" && -x "$shim_dir/$bin" ]]; then
+    if [[ ":$path:" != *":$shim_dir:"* && -x "$qemu_kvm" && -x "$shim_dir/$bin" ]]; then
         echo "${path:+${path}:}${shim_dir}"
     else
         echo "$path"
@@ -1594,6 +1599,99 @@ _diag_app_is_wayland() {
     fi
 }
 
+# --- The PATH the app runs its own tools from (upstream 4.23118+) ---
+# At startup upstream narrows process.env.PATH to fixed system dirs and keeps
+# the launch PATH in CLAUDE_DESKTOP_STARTED_PATH. Our patches resolve the tools
+# they run (xdg-mime, git, hyprctl, secret-tool, qemu-system-*, ...) through
+# js/tool_path.js on the TOOL PATH: the narrowed dirs, then each started-PATH
+# dir that passes upstream's trust rule along the whole entry as written. The
+# helpers below replicate that for --diagnose; the launcher's own PATH is what
+# the app is started with.
+
+# Upstream's trust rule for a dir (index.pre.js): a directory that is not a
+# symlink, owned by root, and not writable by us.
+_diag_trust_rule() {
+    local d="$1" u
+    [[ -d "$d" && ! -L "$d" ]] || return 1
+    u="$(stat -c %u -- "$d" 2>/dev/null)" || return 1
+    [[ "$u" == 0 && ! -w "$d" ]]
+}
+
+# A started-PATH entry -> the real dir tools are taken from, when every dir
+# passed through passes the rule and every symlink hop is owned by root (only
+# root can change where the entry leads); status 1 otherwise. Same walk as
+# _chainReal in js/tool_path.js.
+_diag_chain_real() {
+    local cur=/ n nx t u hops=0
+    local -a q tq
+    _diag_trust_rule / || return 1
+    IFS=/ read -r -a q <<<"$1"
+    while (( ${#q[@]} )); do
+        n="${q[0]}"; q=("${q[@]:1}")
+        [[ -z "$n" || "$n" == . ]] && continue
+        if [[ "$n" == .. ]]; then
+            cur="${cur%/*}"; [[ -n "$cur" ]] || cur=/
+            continue
+        fi
+        nx="${cur%/}/$n"
+        if [[ -L "$nx" ]]; then
+            hops=$(( hops + 1 )); (( hops <= 40 )) || return 1
+            u="$(stat -c %u -- "$nx" 2>/dev/null)" || return 1
+            [[ "$u" == 0 ]] || return 1
+            t="$(readlink -- "$nx" 2>/dev/null)" || return 1
+            [[ "$t" == /* ]] && cur=/
+            IFS=/ read -r -a tq <<<"$t"
+            q=("${tq[@]}" "${q[@]}")
+            continue
+        fi
+        _diag_trust_rule "$nx" || return 1
+        cur="$nx"
+    done
+    echo "$cur"
+}
+
+# Upstream's narrowed PATH, computed the way index.pre.js does it.
+_diag_narrowed_path() {
+    local -a out=()
+    if _diag_trust_rule /usr/local; then
+        _diag_trust_rule /usr/local/bin && out+=(/usr/local/bin)
+        _diag_trust_rule /usr/local/sbin && out+=(/usr/local/sbin)
+    fi
+    out+=(/usr/bin /bin /usr/sbin /sbin /snap/bin /run/current-system/sw/bin /run/current-system/profile/bin)
+    local IFS=:
+    echo "${out[*]}"
+}
+
+# TOOL PATH. $1 = the PATH the app is started with, $2 = the narrowed PATH
+# (default: computed; a parameter only so tests can fake it).
+_diag_tool_path() {
+    local started="$1" out="${2:-}" d r
+    local -a dirs=()
+    [[ -n "$out" ]] || out="$(_diag_narrowed_path)"
+    # Split on ':' without word splitting or globbing (an entry such as /opt/*
+    # stays one literal entry, as in the app).
+    IFS=: read -r -a dirs <<<"$started"
+    for d in "${dirs[@]}"; do
+        [[ "$d" == /* ]] || continue
+        [[ ":$out:" == *":$d:"* ]] && continue
+        r="$(_diag_chain_real "$d")" || continue
+        [[ ":$out:" == *":$r:"* ]] || out="$out:$r"
+    done
+    echo "$out"
+}
+
+# First executable non-directory $1 in the dirs of $2. Status 1 if none.
+_diag_which_in() {
+    local name="$1" d
+    local -a dirs=()
+    IFS=: read -r -a dirs <<<"$2"
+    for d in "${dirs[@]}"; do
+        [[ "$d" == /* ]] || continue
+        [[ -x "$d/$name" && ! -d "$d/$name" ]] && { echo "$d/$name"; return 0; }
+    done
+    return 1
+}
+
 # Resolve a host tool the way the patched app does: the literal upstream path
 # when that file exists (fs.existsSync, not an exec check), else the bare name
 # for PATH lookup. Echoes the command the app will exec.
@@ -1603,22 +1701,37 @@ _diag_app_tool_cmd() {
 }
 
 # One host tool.
-#   $1 mode: fallback = upstream execs $3, our patch falls back to PATH
+#   $1 mode: fallback = upstream execs $3, our patch falls back to the TOOL PATH
 #            abs      = only the literal $3 works (nothing falls back)
-#            path     = resolved through PATH
+#            path     = resolved through PATH (the launcher's own tools)
+#            tool     = resolved by the app on the TOOL PATH (system folders,
+#                       then root-owned read-only folders of the started PATH)
 #   $2 tool name, $3 absolute path (or ''), $4 1 = this session needs it,
 #   $5 what it is for, $6 consequence when it is missing
+# _DIAG_NARROWED (tests only) replaces the computed narrowed PATH.
 _diag_cap() {
-    local mode="$1" name="$2" abs="$3" needed="$4" what="$5" miss="$6" p=''
+    local mode="$1" name="$2" abs="$3" needed="$4" what="$5" miss="$6" p='' tp
     case "$mode" in
         fallback)
             if [[ -e "$abs" ]]; then
                 echo "[ok]   $name = $abs (upstream path) - $what"; return 0
             fi
-            p="$(command -v "$name" 2>/dev/null || true)"
+            tp="$(_diag_tool_path "${PATH:-}" "${_DIAG_NARROWED:-}")"
+            p="$(_diag_which_in "$name" "$tp" || true)"
             if [[ -n "$p" ]]; then
-                echo "[ok]   $name = $p (not at $abs; works through our PATH fallback) - $what"; return 0
+                echo "[ok]   $name = $p (not at $abs; found by our fallback in a system or root-owned read-only folder) - $what"; return 0
             fi
+            p="$(command -v "$name" 2>/dev/null || true)"
+            [[ -n "$p" ]] && miss="$miss (found $p, a user-writable folder the app does not run its own tools from - install $name system-wide)"
+            ;;
+        tool)
+            tp="$(_diag_tool_path "${PATH:-}" "${_DIAG_NARROWED:-}")"
+            p="$(_diag_which_in "$name" "$tp" || true)"
+            if [[ -n "$p" ]]; then
+                echo "[ok]   $name = $p - $what"; return 0
+            fi
+            p="$(command -v "$name" 2>/dev/null || true)"
+            [[ -n "$p" ]] && miss="$miss (found $p, a user-writable folder the app does not run its own tools from - install $name system-wide)"
             ;;
         abs)
             if [[ -x "$abs" ]]; then
@@ -2562,14 +2675,18 @@ _diagnose() {
         *)             _arch=x64;   _qemu_bin=qemu-system-x86_64 ;;
     esac
     echo "PATH (as diagnose sees it) = ${PATH:-(empty!)}"
-    # qemuPath: CLAUDE_QEMU_PATH, then /usr/bin/<bin>, then PATH (same order and
-    # X_OK test as the app - see _cowork_qemu_probe)
+    local _tool_path
+    _tool_path="$(_diag_tool_path "${PATH:-}")"
+    echo "TOOL PATH (what the app runs its own tools from: upstream's system folders + the root-owned read-only folders above) = $_tool_path"
+    echo "  (the narrowed view: a running app whose remote switch restored its PATH uses the PATH above instead - diagnose cannot see that switch)"
+    # qemuPath: CLAUDE_QEMU_PATH, then /usr/bin/<bin>, then the TOOL PATH (same
+    # order and X_OK test as the app - see _cowork_qemu_probe)
     local _qemu_path=''
-    _qemu_path="$(_cowork_qemu_probe "$_qemu_bin" "${PATH:-}" "${CLAUDE_QEMU_PATH:-}")" || _qemu_path=''
+    _qemu_path="$(_cowork_qemu_probe "$_qemu_bin" "$_tool_path" "${CLAUDE_QEMU_PATH:-}")" || _qemu_path=''
     if [[ -n ${CLAUDE_QEMU_PATH:-} && $_qemu_path != "$CLAUDE_QEMU_PATH" ]]; then
         echo "  (CLAUDE_QEMU_PATH=$CLAUDE_QEMU_PATH is ignored: not an absolute path to an executable)"
     fi
-    echo "qemuPath = ${_qemu_path:-NOT FOUND (CLAUDE_QEMU_PATH, /usr/bin/$_qemu_bin, $_qemu_bin on PATH)}"
+    echo "qemuPath = ${_qemu_path:-NOT FOUND (CLAUDE_QEMU_PATH, /usr/bin/$_qemu_bin, $_qemu_bin on the TOOL PATH)}"
     # firmwarePath: first readable OVMF/AAVMF CODE candidate (must match the
     # app's patched firmware array: CLAUDE_OVMF_CODE_PATH override first, then
     # the fixed paths - see fix_cowork_firmware_paths_linux.nim)
@@ -2626,8 +2743,8 @@ _diagnose() {
     fi
     echo
     echo '--- Host capabilities (what the app execs, resolved the way it does) ---'
-    # One line per host tool: found at the upstream path, found on PATH only
-    # (works through our fallback patch), or MISSING with what breaks. A tool
+    # One line per host tool: found at the upstream path, found on the TOOL
+    # PATH only (works through our fallback patch), or MISSING with what breaks. A tool
     # this session does not need is listed but not counted as a problem.
     local _hc_wl='' _hc_desk _hc_ss='' _hc_kw='' _hc_py=1 _hc_owner _hc_n
     _diag_app_is_wayland && _hc_wl=1
@@ -2647,7 +2764,7 @@ _diagnose() {
     _diag_cap fallback kwallet-query /usr/bin/kwallet-query "${_hc_kw:-0}" \
         'Chrome cookie import from KWallet' \
         'Chrome cookie import skips KWallet-encrypted cookies (install kwallet / kwalletmanager)'
-    _diag_cap path xdg-open '' 1 \
+    _diag_cap tool xdg-open '' 1 \
         'opening links and "Open in" targets' \
         'links and "Open in ..." do nothing (install xdg-utils)'
     _diag_cap abs gjs /usr/bin/gjs "$([[ $_hc_desk == *gnome* ]] && echo 1 || echo 0)" \

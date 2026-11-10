@@ -22,12 +22,15 @@
 // unchanged and the guest reports ready.
 //
 // The rpm ships /usr/lib/claude-desktop/qemu-shim/qemu-system-<arch> symlinks.
-// The launcher appends that dir to PATH (where the patched probe's PATH step
-// finds it), and only when all of these hold:
-//   - no executable qemu-system-<arch> is on PATH (a real QEMU always wins,
-//     so Fedora/Arch/Debian behavior is unchanged),
+// The launcher appends that dir to PATH (last, once; the patched probe's
+// TOOL PATH step finds it because it is root-owned and read-only), when:
 //   - /usr/libexec/qemu-kvm is executable,
-//   - the shim exists (only the rpm ships it).
+//   - the shim exists (only the rpm ships it, so Fedora/Arch/Debian PATHs
+//     are unchanged),
+//   - it is not on PATH already.
+// Another qemu-system-<arch> on PATH does not suppress it: the app ignores a
+// copy in a user-writable dir, and a real QEMU in /usr/bin or a system dir is
+// checked before the shim anyway.
 //
 // Q1-Q3 extract the launcher function and run it against scratch directories,
 // and pin the rpm spec + the launcher call site. Q4-Q7 run the compiled patch
@@ -121,12 +124,14 @@ check("RHEL x86_64, no qemu-system on PATH -> shim appended",
   run(base, "x86_64"), `${base}:${shim}`);
 check("RHEL aarch64, no qemu-system on PATH -> shim appended",
   run(base, "aarch64"), `${base}:${shim}`);
-check("real qemu-system-x86_64 on PATH -> unchanged",
-  run(`${realQemuBin}:${base}`, "x86_64"), `${realQemuBin}:${base}`);
-check("real qemu-system-aarch64 on PATH -> unchanged",
-  run(`${realQemuBin}:${base}`, "aarch64"), `${realQemuBin}:${base}`);
-check("non-executable qemu-system-x86_64 on PATH does not count -> shim appended",
+check("another qemu-system-x86_64 on PATH (e.g. ~/.local/bin, ignored by the app) -> shim still appended, last",
+  run(`${realQemuBin}:${base}`, "x86_64"), `${realQemuBin}:${base}:${shim}`);
+check("another qemu-system-aarch64 on PATH -> shim still appended, last",
+  run(`${realQemuBin}:${base}`, "aarch64"), `${realQemuBin}:${base}:${shim}`);
+check("non-executable qemu-system-x86_64 on PATH -> shim appended",
   run(`${noExecBin}:${base}`, "x86_64"), `${noExecBin}:${base}:${shim}`);
+check("PATH entry with a glob character is passed through untouched",
+  run(`/opt/*:${base}`, "x86_64"), `/opt/*:${base}:${shim}`);
 check("no /usr/libexec/qemu-kvm -> unchanged",
   run(base, "x86_64", join(scratch, "missing", "qemu-kvm")), base);
 check("shim dir not installed (non-rpm package) -> unchanged",
@@ -321,8 +326,63 @@ if (!patchBin) {
     setUsrBin(usrBin);
     check(`_cowork_qemu_probe: ${label}`, probeSh(arch, env), got);
   }
-  check("--diagnose calls _cowork_qemu_probe with CLAUDE_QEMU_PATH",
-    launcherSrc.includes('_qemu_path="$(_cowork_qemu_probe "$_qemu_bin" "${PATH:-}" "${CLAUDE_QEMU_PATH:-}")"'), true);
+  setUsrBin(false);
+  check("_cowork_qemu_probe: a glob PATH entry is not expanded (the app never globs)",
+    probeSh("x64", { PATH: join(scratch, "real-qemu-*") }), null);
+  check("--diagnose calls _cowork_qemu_probe on the TOOL PATH with CLAUDE_QEMU_PATH",
+    launcherSrc.includes('_qemu_path="$(_cowork_qemu_probe "$_qemu_bin" "$_tool_path" "${CLAUDE_QEMU_PATH:-}")"') &&
+    launcherSrc.includes('_tool_path="$(_diag_tool_path "${PATH:-}")"'), true);
+
+  // Upstream (4.23118+) narrows process.env.PATH at startup to fixed system
+  // dirs, so the shim dir the launcher appends is gone from it; the started
+  // PATH survives in CLAUDE_DESKTOP_STARTED_PATH. The probe walks the TOOL
+  // PATH of the shared resolver (js/tool_path.js): narrowed dirs + started dirs
+  // that pass upstream's trust rule. The resolver judges ownership through a
+  // stub fs (scratch dirs cannot be root-owned); the probe's own X_OK checks
+  // use the real fs.
+  console.log("\nQ8: under upstream's PATH narrowing (shared resolver)");
+  const { makeHost, loadResolver } = await import("../lib/tool-path-vectors.mjs");
+  const RESOLVER_SRC = readFileSync(join(repo, "js", "tool_path.js"), "utf8");
+  const planted = join(scratch, "home-local-bin");
+  writeExe(join(planted, "qemu-system-x86_64"));
+  const anc = (p) => { const o = []; for (let d = p; d !== "/"; d = dirname(d)) o.push(d); return o; };
+  const R = { uid: 0, ro: "EACCES" };
+  const trustHost = () => {
+    const dirs = {};
+    for (const d of anc(scratch)) dirs[d] = R;
+    dirs[shim] = R; dirs[realQemuBin] = R; dirs[sysBin] = R; dirs[planted] = { uid: 1000, ro: null };
+    return makeHost({ dirs, files: [join(shim, "qemu-system-x86_64"), join(realQemuBin, "qemu-system-x86_64"), join(planted, "qemu-system-x86_64")] });
+  };
+  const nar = (started) => ({ PATH: sysBin, CLAUDE_DESKTOP_NARROWED_PATH: sysBin, CLAUDE_DESKTOP_STARTED_PATH: started });
+  async function probeNarrowed(env, withResolver) {
+    const sandbox = { process: { arch: "x64", env }, a: { constants: fsConstants }, _: { default: fsp }, Promise };
+    const diag = [];
+    if (withResolver === "throws") sandbox.__cdbToolPath = { toolPath() { throw new Error("resolver bug"); }, which() { throw new Error("resolver bug"); } };
+    else if (withResolver) sandbox.__cdbToolPath = loadResolver(RESOLVER_SRC, trustHost(), env).raw;
+    vm.runInNewContext(src, vm.createContext(sandbox));
+    return { got: await sandbox.__fixture.rWn().then((r) => r.qemuPath), diag };
+  }
+  setUsrBin(false);
+  const q8 = [
+    ["RHEL: launcher-appended shim dir (root-owned, read-only) is found again", nar(`${sysBin}:${shim}`), true, join(shim, "qemu-system-x86_64")],
+    ["planted ~/.local/bin copy ahead of the shim: the shim is taken", nar(`${planted}:${sysBin}:${shim}`), true, join(shim, "qemu-system-x86_64")],
+    ["planted copy only: not handed to the helper", nar(`${planted}:${sysBin}`), true, null],
+    ["root-managed dir outside the narrowed list (Nix wrapper store dir stand-in)", nar(`${planted}:${realQemuBin}`), true, join(realQemuBin, "qemu-system-x86_64")],
+    ["narrowing off (PATH = started): the old PATH walk, unchanged", { PATH: `${planted}:${sysBin}`, CLAUDE_DESKTOP_STARTED_PATH: `${planted}:${sysBin}`, CLAUDE_DESKTOP_NARROWED_PATH: sysBin }, true, join(planted, "qemu-system-x86_64")],
+    ["resolver missing: process.env.PATH (narrowed), as before", nar(`${sysBin}:${shim}`), false, null],
+    ["resolver throws: the probe survives and walks process.env.PATH, as before", nar(`${sysBin}:${shim}`), "throws", null],
+    ["resolver throws, narrowing off: old PATH walk finds the shim", { PATH: `${sysBin}:${shim}` }, "throws", join(shim, "qemu-system-x86_64")],
+    ["CLAUDE_QEMU_PATH still wins (user-named)", { ...nar(`${sysBin}:${shim}`), CLAUDE_QEMU_PATH: overrideExe }, true, overrideExe],
+  ];
+  // The launcher's PATH decision feeding the app (review: a user copy used to
+  // suppress the shim, and the app then ignored that copy).
+  const launched = run(`${planted}:${sysBin}`, "x86_64");
+  q8.push(["planted ~/.local/bin copy + launcher decision: shim appended, app takes the shim", nar(launched), true, join(shim, "qemu-system-x86_64")]);
+  for (const [label, env, withR, want] of q8) {
+    let r;
+    try { r = await probeNarrowed(env, withR); } catch (e) { r = { got: "THREW " + e.message }; }
+    check(label, r.got, want);
+  }
 }
 
 rmSync(scratch, { recursive: true, force: true });

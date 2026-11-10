@@ -1983,9 +1983,28 @@
     });
   }
 
-  // `which` without a spawn: the first executable regular file on PATH.
+  // Tools Computer Use or this page RUN (the clipboard tools, xprop): looked up
+  // on the TOOL PATH, like the executor's _toolCmd. Everything else in
+  // __cdbEx_CUBG_TOOLS is a program the user starts from the recipes (Xvfb,
+  // sway, x11vnc, ...): looked up on the APP PATH, the PATH Claude Desktop was
+  // started with - what the user's own shell has.
+  var __cdbEx_CUBG_RUN = { "xclip": 1, "xsel": 1, "wl-copy": 1, "wl-paste": 1, "xprop": 1 };
+  // The dirs a lookup walks. Since 4.23118 upstream narrows process.env.PATH
+  // to fixed system dirs (CLAUDE_DESKTOP_NARROWED_PATH); the shared resolver
+  // (globalThis.__cdbToolPath, add_tool_path_resolver.nim) gives the TOOL PATH
+  // (narrowed dirs + the root-owned read-only started dirs) and the APP PATH.
+  // Without it, or with narrowing off: process.env.PATH, as before.
+  function __cdbEx_cubgDirs(name) {
+    var t = globalThis.__cdbToolPath, p = null;
+    try {
+      if (t) p = Object.prototype.hasOwnProperty.call(__cdbEx_CUBG_RUN, name) ? t.toolPath() : t.appPath();
+    } catch (e) { p = null; }
+    if (typeof p !== "string") p = process.env.PATH || "";
+    return p.split(":").filter(function (d) { return d.charAt(0) === "/"; });
+  }
+  // `which` without a spawn: the first executable regular file on that PATH.
   function __cdbEx_cubgWhich(name) {
-    var dirs = (process.env.PATH || "").split(":").filter(function (d) { return d.charAt(0) === "/"; });
+    var dirs = __cdbEx_cubgDirs(name);
     var i = 0;
     function next() {
       if (i >= dirs.length) return Promise.resolve(null);

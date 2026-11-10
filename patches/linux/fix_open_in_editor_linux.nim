@@ -47,17 +47,26 @@ import regex
 # so shell metacharacters in a protocol string can never reach a shell. xdg-mime
 # is invoked directly, the scheme is appended to the literal "x-scheme-handler/"
 # argument, and a missing binary just throws into our catch → null.
+#
+# xdg-mime is a tool we choose, so it is resolved through the shared resolver
+# (globalThis.__cdbToolPath, patches/core/add_tool_path_resolver.nim): since
+# 4.23118 upstream narrows process.env.PATH to fixed system dirs, which drops
+# the NixOS wrapper's xdg-utils store dir. which() returns the absolute path on
+# the TOOL PATH (narrowed dirs + root-owned read-only started dirs), toolEnv()
+# gives xdg-mime that same PATH for the helpers it runs by name; both are
+# null/absent when narrowing is off or the resolver is missing, and the old
+# bare-name call with the inherited env runs.
 const LINUX_SHIM_HEAD =
-  "(process.platform===\"linux\"?(_p=>{try{const _s=String(_p).split(\"://\")[0];" &
-  "const _h=require(\"child_process\").execFileSync(\"xdg-mime\",[\"query\",\"default\",\"x-scheme-handler/\"+_s]," &
-  "{encoding:\"utf-8\",stdio:[\"ignore\",\"pipe\",\"ignore\"]}).trim();" &
+  "(process.platform===\"linux\"?(_p=>{try{const _s=String(_p).split(\"://\")[0],_t=globalThis.__cdbToolPath;" &
+  "const _h=require(\"child_process\").execFileSync(_t&&_t.which(\"xdg-mime\")||\"xdg-mime\",[\"query\",\"default\",\"x-scheme-handler/\"+_s]," &
+  "{encoding:\"utf-8\",stdio:[\"ignore\",\"pipe\",\"ignore\"],env:_t&&_t.toolEnv()||void 0}).trim();" &
   "return _h?{path:_h,name:_h.replace(/\\.desktop$/,\"\"),icon:{isEmpty:()=>!0}}:null}catch(_e){return null}})("
 
 # Unique substring proving our replacement is already present (idempotency).
 # Asserts the NEW (shell-free) execFileSync form specifically, so an old
 # execSync-based shim would NOT be mistaken for already-patched.
 const PATCHED_MARKER =
-  "execFileSync(\"xdg-mime\",[\"query\",\"default\",\"x-scheme-handler/\""
+  "execFileSync(_t&&_t.which(\"xdg-mime\")||\"xdg-mime\",[\"query\",\"default\",\"x-scheme-handler/\""
 
 proc apply*(input: string): string =
   result = input

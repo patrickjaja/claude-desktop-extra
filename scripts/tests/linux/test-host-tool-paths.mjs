@@ -75,7 +75,7 @@ function countOf(haystack, needle) {
 }
 
 function fallbackExpr(path, name) {
-  return `(require("fs").existsSync("${path}")?"${path}":"${name}")`;
+  return `(require("fs").existsSync("${path}")?"${path}":globalThis.__cdbToolPath&&globalThis.__cdbToolPath.which("${name}")||"${name}")`;
 }
 
 // ---------------------------------------------------------------- fixture
@@ -104,10 +104,11 @@ function runBin(bin, file) {
 
 // Evaluate the patched fixture with `present` as the set of files that exist.
 // Returns the program each call site would exec, plus the paths existsSync saw.
-async function evaluate(src, present) {
+async function evaluate(src, present, resolver) {
   const probed = [];
   const execd = [];
   const sandbox = {
+    __cdbToolPath: resolver,
     process: { platform: "linux", env: {} },
     require: (m) => {
       if (m !== "fs") throw new Error("unexpected require: " + m);
@@ -205,6 +206,35 @@ try {
     env: { PATH: fakeBin },
   }).trim();
   check("execFile(\"busctl\") runs the copy on PATH", out, "fake-busctl");
+
+  // ---------------------------------------------------------------- [3b] narrowing
+  // Since 4.23118 upstream narrows process.env.PATH at startup to fixed system
+  // dirs; the bare name no longer reaches a NixOS user's per-user profile or a
+  // wrapper's store dir. Not at /usr/bin, the patch asks the shared resolver
+  // (js/tool_path.js) for the absolute path on the TOOL PATH.
+  section("[3b] not at /usr/bin under upstream's PATH narrowing: the shared resolver");
+  {
+    const { makeHost, loadResolver, NARROWED } = await import("../lib/tool-path-vectors.mjs");
+    const RSRC = readFileSync(join(ROOT, "js", "tool_path.js"), "utf8");
+    const HM = "/nix/store/bbbb-home-manager-path";
+    const host = makeHost({
+      dirs: { [HM]: { uid: 0, ro: "EROFS" }, [HM + "/bin"]: { uid: 0, ro: "EROFS" } },
+      links: { "/etc/profiles/per-user/u": HM },
+      files: ["/run/current-system/sw/bin/busctl", HM + "/bin/secret-tool", "/home/u/.local/bin/kwallet-query"]
+    });
+    host.dirs["/run/current-system/sw"] = { uid: 0, ro: "EACCES" };
+    host.dirs["/run/current-system/sw/bin"] = { uid: 0, ro: "EACCES" };
+    const env = { PATH: NARROWED, CLAUDE_DESKTOP_NARROWED_PATH: NARROWED, CLAUDE_DESKTOP_STARTED_PATH: "/home/u/.local/bin:/etc/profiles/per-user/u/bin:/run/current-system/sw/bin" };
+    const r = loadResolver(RSRC, host, env).raw;
+    const nix = await evaluate(patched, new Set(), r);
+    check("NixOS: busctl from the system profile (narrowed dir), by absolute path", nix.busctl, "/run/current-system/sw/bin/busctl");
+    check("NixOS: secret-tool from /etc/profiles/per-user (root-managed), by its real path", nix["secret-tool"], HM + "/bin/secret-tool");
+    check("planted ~/.local/bin kwallet-query is not taken: the bare name (narrowed PATH)", nix["kwallet-query"], "kwallet-query");
+    const fhs = await evaluate(patched, new Set(TOOLS.map((t) => t.path)), r);
+    check("file at /usr/bin: upstream's literal, the resolver is not asked", fhs.busctl + "|" + fhs["secret-tool"], "/usr/bin/busctl|/usr/bin/secret-tool");
+    const off = loadResolver(RSRC, makeHost({ files: ["/opt/x/bin/busctl"] }), { PATH: "/opt/x/bin" }).raw;
+    check("narrowing off: the absolute path of the binary the bare name finds", (await evaluate(patched, new Set(), off)).busctl, "/opt/x/bin/busctl");
+  }
 
   // ---------------------------------------------------------------- [4] idempotent
   section("[4] a second run is a no-op with a positive 'already'");

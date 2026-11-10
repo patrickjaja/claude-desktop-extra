@@ -85,7 +85,7 @@ function writeExe(path, body) {
 // so a case controls exactly which host tools exist.
 const coreBin = join(scratch, "core");
 mkdirSync(coreBin, { recursive: true });
-for (const t of ["timeout", "head", "sed", "uname", "tr", "od", "cat", "sleep", "printf"]) {
+for (const t of ["timeout", "head", "sed", "uname", "tr", "od", "cat", "sleep", "printf", "stat", "readlink"]) {
   const p = (spawnSync("sh", ["-c", `command -v ${t}`], { encoding: "utf8" }).stdout || "").trim();
   if (p.startsWith("/")) writeExe(join(coreBin, t), `#!/bin/sh\nexec ${p} "$@"\n`);
 }
@@ -105,15 +105,52 @@ safe("D1", () => {
   writeExe(join(abs, "busctl"), "#!/bin/sh\n");
   writeExe(join(onPath, "busctl"), "#!/bin/sh\n");
   writeExe(join(onPath, "gjs"), "#!/bin/sh\n");
-  const env = { PATH: `${onPath}:${coreBin}` };
-  const cap = (args) => runFns(["_diag_cap"],
-    `_diag_problems=(); _diag_cap ${args}; printf 'P=%s\\n' "\${_diag_problems[@]:-}"`, env).out;
+  // _DIAG_NARROWED stands in for upstream's narrowed PATH (scratch dirs
+  // cannot be root-owned): onPath plays a system folder the app searches.
+  const env = { PATH: `${onPath}:${coreBin}`, _DIAG_NARROWED: onPath };
+  const TP_FNS = ["_diag_trust_rule", "_diag_chain_real", "_diag_narrowed_path", "_diag_tool_path", "_diag_which_in", "_diag_cap"];
+  const cap = (args, e = env) => runFns(TP_FNS,
+    `_diag_problems=(); _diag_cap ${args}; printf 'P=%s\\n' "\${_diag_problems[@]:-}"`, e).out;
   const up = cap(`fallback busctl ${abs}/busctl 1 'portal probe' 'hotkeys off'`);
   check("upstream path wins", /^\[ok\] +busctl = .*usr\/bin\/busctl \(upstream path\)/.test(up), true);
   const fb = cap(`fallback busctl ${root}/none/busctl 1 'portal probe' 'hotkeys off'`);
-  check("PATH only is reported as our fallback",
-    fb.includes(`busctl = ${onPath}/busctl (not at ${root}/none/busctl; works through our PATH fallback)`), true);
-  check("PATH only is not a problem", fb.endsWith("P="), true);
+  check("found in a folder the app searches is reported as our fallback",
+    fb.includes(`busctl = ${onPath}/busctl (not at ${root}/none/busctl; found by our fallback in a system or root-owned read-only folder)`), true);
+  check("found by the fallback is not a problem", fb.endsWith("P="), true);
+  // Since 4.23118 the app ignores a copy in a folder the user can write
+  // (upstream narrows PATH; our resolver adds only root-owned read-only dirs).
+  const userEnv = { PATH: `${onPath}:${coreBin}`, _DIAG_NARROWED: `${root}/nothing-here` };
+  const ign = cap(`fallback busctl ${root}/none/busctl 1 'portal probe' 'hotkeys off'`, userEnv);
+  check("a copy only in a user-writable folder is MISSING, and named",
+    ign.includes(`[MISS] busctl = MISSING - hotkeys off (found ${onPath}/busctl, a user-writable folder the app does not run its own tools from - install busctl system-wide)`), true);
+  // A real root-owned, read-only folder outside the narrowed list, when the
+  // host has one: the trust walk takes it.
+  const trustedDir = ["/usr/lib/systemd", "/usr/libexec", "/usr/lib/git-core"].find((d) => {
+    try { return lstatSync(d).isDirectory() && lstatSync(d).uid === 0 && readdirSync(d).some((f) => { try { const st = lstatSync(join(d, f)); return st.isFile() && (st.mode & 0o111) && /^[a-z][a-z0-9_-]+$/.test(f); } catch { return false; } }); } catch { return false; }
+  });
+  if (trustedDir && process.getuid() !== 0) {
+    const exe = readdirSync(trustedDir).sort().find((f) => { try { const st = lstatSync(join(trustedDir, f)); return st.isFile() && (st.mode & 0o111) && /^[a-z][a-z0-9_-]+$/.test(f); } catch { return false; } });
+    const tr = cap(`fallback ${exe} ${root}/none/${exe} 1 'x' 'y'`, { PATH: `${trustedDir}:${coreBin}`, _DIAG_NARROWED: `${root}/nothing-here` });
+    check(`a root-owned read-only started-PATH folder (${trustedDir}) is searched`,
+      tr.includes(`${exe} = ${trustedDir}/${exe} (not at`), true);
+    const ln = join(root, "user-link");
+    spawnSync("ln", ["-s", trustedDir, ln]);
+    const tl = cap(`fallback ${exe} ${root}/none/${exe} 1 'x' 'y'`, { PATH: `${ln}:${coreBin}`, _DIAG_NARROWED: `${root}/nothing-here` });
+    check("the same folder through a user-owned symlink is not", tl.startsWith(`[MISS] ${exe} = MISSING`), true);
+  } else {
+    console.log("  (no root-owned read-only folder with a tool on this host: trusted-folder case skipped)");
+  }
+  // A PATH entry with glob characters is one literal entry (the app never
+  // globs): /tmp/x/g* must not expand to /tmp/x/ga.
+  writeExe(join(root, "ga", "globtool"), "#!/bin/sh\n");
+  const g = runFns(TP_FNS, `_diag_which_in globtool '${root}/g*' || echo none; _diag_tool_path '${root}/g*:/nonexistent' '${onPath}'`, env).out;
+  check("glob entry: not expanded by _diag_which_in or _diag_tool_path", g, `none\n${onPath}`);
+  // tool mode (xdg-open: our openExternal hook widens the call to the TOOL PATH).
+  const toolOk = cap(`tool busctl '' 1 'links' 'links do nothing'`);
+  check("tool mode: found in a folder the app searches", toolOk.startsWith(`[ok]   busctl = ${onPath}/busctl - links`), true);
+  const toolMiss = cap(`tool busctl '' 1 'links' 'links do nothing'`, userEnv);
+  check("tool mode: a user-writable copy is MISSING, and named",
+    toolMiss.startsWith("[MISS] busctl = MISSING - links do nothing (found ") && toolMiss.includes("a user-writable folder the app does not run its own tools from"), true);
   const miss = cap(`fallback secret-tool ${abs}/secret-tool 1 'cookie import' 'cookies skipped'`);
   check("missing + needed is MISSING", /^\[MISS\] secret-tool = MISSING - cookies skipped/.test(miss), true);
   check("missing + needed is a problem", miss.includes("P=secret-tool missing: cookies skipped"), true);

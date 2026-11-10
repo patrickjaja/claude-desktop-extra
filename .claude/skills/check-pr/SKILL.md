@@ -12,7 +12,7 @@ PRs: **$ARGUMENTS**
 Open PRs right now: !`gh -R patrickjaja/claude-desktop-extra pr list --state open --limit 10 2>/dev/null || echo "(gh not ready)"`
 Latest release: !`gh -R patrickjaja/claude-desktop-extra release list --limit 1 2>/dev/null || echo "(gh not ready)"`
 Upstream version patches target: !`cat .upstream-version 2>/dev/null`
-Local master vs origin: !`git fetch -q origin master 2>/dev/null; git rev-list --left-right --count master...origin/master 2>/dev/null | awk '{print "ahead "$1", behind "$2}'`
+Local master vs origin: !`git fetch -q origin master 2>/dev/null; git rev-list --left-right --count master...origin/master 2>/dev/null | awk '{print "ahead " $(1) ", behind " $(2)}'`
 
 The main thread orchestrates and reads; audits, implementation and reviews run in dispatched workers. Follow the global subagent tier rules: name the tier and the reason in every dispatch.
 
@@ -111,3 +111,6 @@ Before reporting done, update **this file**. Fold lessons into the phase they be
 - 2026-11-06 (#316): the author's UI half patched ion-dist, which only 3P loads; the maintainer wanted it for everyone, so the port to the claude.ai page (runtime injection like panel tabs) was our follow-up, live-verified with the recipe in Phase 6. Ask "does this reach 1P users?" for every renderer patch.
 - 2026-11-04: `run-feature-tests.sh` prints its Summary on the second-to-last line (a `===` rule follows); gate on `tail -2 | grep ' 0 failed'`, not `tail -1`.
 - 2026-11-05 (#313): the patch keyed on the first-use folder sentence in the ask reason; live, upstream asked with its ordinary card (no reason) and the dialog never fired, although a 48-test harness incl. the real broker passed. Found only by the live run; fixed on top with a `card kept: <reason>` diag line.
+- 2026-11-10 (#321, #322): a Nix module can be evaluated and its generated scripts built on a host without Nix through Docker (`nixos/nix`, a named volume for `/nix`, `path:` flake refs, stub packages instead of the app and the browser); say in the comment what only a real NixOS run can show. The PR's own CI step had never run (fork PRs get no CI).
+- 2026-11-10 (#321, #322): our fix on top gets its own independent review before the merge. Both had a regression of ours (a bare-name spawn with a wide PATH; a transient failure turned into a permanent stop). A PR's CHANGELOG hunk conflicts with ours: take ours in the merge and write the credited entries in the integration commit.
+- 2026-11-10 (#321): upstream narrows `process.env.PATH` to root-owned system folders at startup and keeps the launch PATH in an env variable. A wide PATH goes only to what the user named (the app to open); tools we choose are resolved on the narrowed PATH plus root-managed folders and spawned by absolute path.

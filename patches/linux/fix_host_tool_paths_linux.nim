@@ -17,10 +17,12 @@
 # None of them live at /usr/bin on NixOS, and non-systemd distros or AppImage
 # on such hosts may not have busctl there either. Each literal becomes
 #
-#   (require("fs").existsSync("/usr/bin/X")?"/usr/bin/X":"X")
+#   (require("fs").existsSync("/usr/bin/X")?"/usr/bin/X":
+#     globalThis.__cdbToolPath&&globalThis.__cdbToolPath.which("X")||"X")
 #
 # so a host that has the file keeps upstream's exact behavior, and any other
-# host resolves the bare name through PATH (execFile does the lookup).
+# host runs the absolute path the shared resolver finds on the TOOL PATH, or the
+# bare name through PATH (execFile does the lookup) when there is none.
 #
 # Every chunk of the main bundle is a CommonJS module that already calls
 # `require(...)` at top level, so `require` is in scope at each site.
@@ -37,8 +39,16 @@ const TOOLS = [
   ("/usr/bin/kwallet-query", "kwallet-query"),
 ]
 
+# Not at the literal path: the absolute path the shared resolver
+# (globalThis.__cdbToolPath, patches/core/add_tool_path_resolver.nim) finds on
+# the TOOL PATH - upstream's narrowed PATH plus the root-owned read-only dirs of
+# the PATH the app was started with (a NixOS wrapper's store dirs,
+# /etc/profiles/per-user/<user>/bin). Without the resolver, or when it finds
+# nothing, the bare name, which execFile resolves on process.env.PATH.
 proc fallbackExpr*(path, name: string): string =
-  "(require(\"fs\").existsSync(\"" & path & "\")?\"" & path & "\":\"" & name & "\")"
+  "(require(\"fs\").existsSync(\"" & path & "\")?\"" & path &
+    "\":globalThis.__cdbToolPath&&globalThis.__cdbToolPath.which(\"" & name & "\")||\"" &
+    name & "\")"
 
 proc apply*(input: string): string =
   result = input

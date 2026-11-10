@@ -33,7 +33,7 @@ PATCH_SUBDIRS = ("linux", "core", "community")
 # forgotten `git mv` changes what gets discovered, the build must fail rather
 # than quietly ship a release with a patch missing. Bump this when you add or
 # remove a patch.
-EXPECTED_PATCH_COUNT = 68
+EXPECTED_PATCH_COUNT = 70
 
 # Byte strings that only ever appear in a bundle one of our builds already
 # patched: every injected identifier starts with `__cdb`, and
@@ -54,7 +54,7 @@ def discover_patch_files(patches_dir: Path):
 
     Sorting by basename (not by full path) keeps the application order
     identical to the old flat `sorted(patches_dir.iterdir())` layout. That
-    order is load-bearing: 8 patches prepend to the staged bundle head, and
+    order is load-bearing: several patches prepend to the staged bundle head, and
     later patches' regexes match against text earlier ones injected. Sorting
     by path instead would group by category and silently reorder them.
     """

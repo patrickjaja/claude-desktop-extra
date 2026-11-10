@@ -23,7 +23,10 @@
 # A QEMU anywhere else (RHEL's qemu-kvm via our rpm qemu-shim, NixOS ${qemu}/bin,
 # /usr/local/bin) made Cowork "unsupported" again. D rewrites the candidate list
 # to: CLAUDE_QEMU_PATH (absolute only), then upstream's /usr/bin path, then
-# <dir>/qemu-system-<arch> for every absolute $PATH dir (the old X_OK walk).
+# <dir>/qemu-system-<arch> for every dir of the TOOL PATH (the old X_OK walk;
+# the TOOL PATH is the narrowed PATH plus the root-owned read-only dirs of the
+# PATH the app was started with - see add_tool_path_resolver.nim - or
+# process.env.PATH when upstream does not narrow it).
 # Upstream's own path stays ahead of $PATH, so Debian/Ubuntu/Fedora/Arch resolve
 # exactly as upstream does. The helper's main.validateQEMUPath rejects a path
 # containing ',' or '=' (QEMU option separators), so PATH-derived candidates
@@ -124,7 +127,7 @@ proc apply*(input: string): string =
   var patchesApplied = 0
   const EXPECTED_PATCHES = 4
     # A: x64 firmware array, B: virtiofsd array, C: arm64 firmware array,
-    # D: qemu-system candidates (env override + upstream path + $PATH walk)
+    # D: qemu-system candidates (env override + upstream path + TOOL PATH walk)
 
   # --- Patch A: extend the x86_64 OVMF firmware array ------------------------
   # Only the x86_64 (OVMF) array needs extending; the aarch64 (AAVMF) array's
@@ -223,10 +226,24 @@ proc apply*(input: string): string =
   #       -> QUn((function __cdbQemuCandidates(q){...})(GUn),a.constants.X_OK)
   # Requires the 4.29.0 shape: 3.6556.2 has no /usr/bin constant (it walked
   # $PATH itself) and fails here; we only build >= 4.29.0.
+  #
+  # The dirs walked come from the shared resolver (globalThis.__cdbToolPath,
+  # patches/core/add_tool_path_resolver.nim): since 4.23118 upstream narrows
+  # process.env.PATH to fixed system dirs, which drops the rpm's qemu-shim dir
+  # the launcher appends on RHEL 9 and every other root-managed dir. toolPath()
+  # is the narrowed dirs plus the started-PATH dirs that pass upstream's trust
+  # rule (root-owned, not writable, along every hop): the shim dir and Nix
+  # store dirs pass, ~/.local/bin does not, so a user-writable copy is never
+  # handed to the helper. which(b) is called for its diagnostics only (one line
+  # when the shim or another trusted dir is taken, one when a user-writable copy
+  # is ignored). Without the resolver, or when it throws (any error is caught:
+  # the Cowork probe must never break on it): process.env.PATH, as before.
   const qemuCandidatesFn =
     "(function __cdbQemuCandidates(q){" &
     "let b=q.slice(q.lastIndexOf(\"/\")+1),o=process.env.CLAUDE_QEMU_PATH," &
-    "p=(process.env.PATH??\"\").split(\":\").filter(d=>d.startsWith(\"/\"))" &
+    "t=globalThis.__cdbToolPath,s;" &
+    "try{s=t?t.toolPath():void 0;t&&t.which(b)}catch(e){s=void 0}" &
+    "let p=((typeof s===\"string\"?s:process.env.PATH)??\"\").split(\":\").filter(d=>d.startsWith(\"/\"))" &
     ".map(d=>d.replace(/\\/+$/,\"\")+\"/\"+b).filter(c=>!/[,=]/.test(c));" &
     "return[...(o&&o.startsWith(\"/\")?[o]:[]),q,...p]})"
   let qemuDefPattern =
@@ -244,7 +261,7 @@ proc apply*(input: string): string =
         "\\),[\\w$]+\\.constants\\.X_OK\\)"
     )
     if result.contains(qemuInjected):
-      echo "  [OK] qemu candidates: env override + $PATH fallback already present"
+      echo "  [OK] qemu candidates: env override + TOOL PATH fallback already present"
       inc patchesApplied
     else:
       let qemuCallPattern =
@@ -258,7 +275,7 @@ proc apply*(input: string): string =
             s[m.group(1)] & ".constants.X_OK)",
       )
       if countD == 1:
-        echo "  [OK] qemu candidates: injected CLAUDE_QEMU_PATH override + $PATH fallback"
+        echo "  [OK] qemu candidates: injected CLAUDE_QEMU_PATH override + TOOL PATH fallback"
         inc patchesApplied
       else:
         echo "  [FAIL] qemu candidates: expected 1 probe call on " & qemuVars[0] &

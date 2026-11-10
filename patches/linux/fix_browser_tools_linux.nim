@@ -116,8 +116,12 @@ proc apply*(input: string): string =
       echo "         Debug: rg -o 'name:\"Chrome\",path:[\\w$]+.join([\\w$]+,\"google-chrome\")' index.js"
 
   # ── Patch E: Chrome DevTools opener (still darwin/win32 only) ──────────────
+  # xdg-open is a tool we choose: the absolute path the shared resolver
+  # (globalThis.__cdbToolPath, add_tool_path_resolver.nim) finds on the TOOL
+  # PATH, so the NixOS wrapper's xdg-utils store dir counts again under
+  # upstream's PATH narrowing; the bare name when the resolver is missing.
   let alreadyE =
-    re2"""process\.platform==="linux"&&await [\w$]+(?:\.[\w$]+)*\("xdg-open",\["chrome://inspect"\]\)"""
+    re2"""process\.platform==="linux"&&await [\w$]+(?:\.[\w$]+)*\(globalThis\.__cdbToolPath&&globalThis\.__cdbToolPath\.which\("xdg-open"\)\|\|"xdg-open",\["chrome://inspect"\]\)"""
   var amE: RegexMatch2
   if result.find(alreadyE, amE):
     echo "  [OK] Chrome DevTools opener: already patched (skipped)"
@@ -135,7 +139,7 @@ proc apply*(input: string): string =
         let execFn = s[m.group(1)]
         "process.platform===\"win32\"?await " & execFn & s[m.group(2)] &
           ":process.platform===\"linux\"&&await " & execFn &
-          "(\"xdg-open\",[\"chrome://inspect\"])",
+          "(globalThis.__cdbToolPath&&globalThis.__cdbToolPath.which(\"xdg-open\")||\"xdg-open\",[\"chrome://inspect\"])",
     )
     if countE == 1:
       echo &"  [OK] Chrome DevTools opener: added Linux xdg-open handler ({countE} match)"

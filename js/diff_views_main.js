@@ -720,11 +720,28 @@
   }
 
   // spawn-based collector: manual cap => clean truncation semantics.
+  //
+  // git is the ONE tool of ours treated the way upstream treats it: looked up
+  // on the APP PATH (the PATH Claude Desktop was started with, first), and run
+  // with that PATH - upstream runs git for Code sessions from its own wide
+  // path, and git executes hooks, filters and core.fsmonitor from the user's
+  // config anyway, so the TOOL PATH would protect nothing here and would cost
+  // ~/.local/bin and standalone home-manager users the diff view. Every other
+  // tool our patches run stays on the TOOL PATH (system folders plus root-owned
+  // read-only ones). Since 4.23118 upstream narrows process.env.PATH; the APP
+  // PATH comes from the shared resolver (globalThis.__cdbToolPath,
+  // add_tool_path_resolver.nim). Without the resolver, or with narrowing off:
+  // bare "git" and process.env, as before.
+  function gitCmd() {
+    var t = globalThis.__cdbToolPath;
+    return (t && typeof t.appWhich === "function" && t.appWhich("git")) || "git";
+  }
   function git(args, cwd, extraEnv, cb) {
     var out = [], outLen = 0, errBuf = "", truncated = false, done = false;
-    var env = Object.assign({}, process.env, extraEnv || {});
+    var t = globalThis.__cdbToolPath;
+    var env = Object.assign({}, (t && t.appEnv()) || process.env, extraEnv || {});
     var child;
-    try { child = _cp.spawn("git", args, { cwd: cwd, env: env, stdio: ["ignore", "pipe", "pipe"] }); }
+    try { child = _cp.spawn(gitCmd(), args, { cwd: cwd, env: env, stdio: ["ignore", "pipe", "pipe"] }); }
     catch (e) { return cb(String(e && e.message || e)); }
     var timer = setTimeout(function () { try { child.kill("SIGKILL"); } catch (e) {} }, GIT_TIMEOUT_MS);
     child.stdout.on("data", function (d) {

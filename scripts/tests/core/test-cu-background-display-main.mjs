@@ -871,6 +871,40 @@ section("candidates: stable-name symlinks (NixOS background display)");
   process.env.XDG_RUNTIME_DIR = hostRt;
 }
 
+section("tool lookups under upstream's PATH narrowing (shared resolver)");
+{
+  // Since 4.23118 process.env.PATH is upstream's narrowed one; the lists come
+  // from globalThis.__cdbToolPath (js/tool_path.js, tested in
+  // test-tool-path-resolver): the TOOL PATH for what Computer Use or this page
+  // runs (clipboard tools, xprop), the APP PATH for what the user starts from
+  // the recipes. A stand-in resolver answers here.
+  const toolDir = join(base, "tool-path"), appDir = join(base, "app-path");
+  mkdirSync(toolDir, { recursive: true }); mkdirSync(appDir, { recursive: true });
+  sh(join(toolDir, "wl-copy"), "exit 0\n"); sh(join(toolDir, "wl-paste"), "exit 0\n");
+  sh(join(appDir, "sway"), "exit 0\n"); sh(join(appDir, "wl-copy"), "exit 0\n"); sh(join(appDir, "xprop"), "exit 0\n");
+  const asked = [];
+  globalThis.__cdbToolPath = {
+    toolPath: () => { asked.push("tool"); return toolDir; },
+    appPath: () => { asked.push("app"); return appDir; }
+  };
+  try {
+    const r = await m.call("cdb-cubg:tools");
+    ok(r.ok && r.tools["wl-copy"] === join(toolDir, "wl-copy") && r.tools["wl-paste"] === join(toolDir, "wl-paste"),
+      "clipboard tools: looked up on the TOOL PATH (what the executor runs)", JSON.stringify(r.tools));
+    ok(r.tools.xprop === null && r.tools.xclip === null,
+      "xprop / xclip (run by us): not taken from the APP PATH or process.env.PATH", JSON.stringify(r.tools));
+    ok(r.tools.sway === join(appDir, "sway") && r.tools.Xvfb === null,
+      "recipe tools (the user starts them): looked up on the APP PATH", JSON.stringify(r.tools));
+    ok(asked.includes("tool") && asked.includes("app"), "both lists come from the resolver", JSON.stringify(asked));
+    globalThis.__cdbToolPath = { toolPath: () => null, appPath: () => null };
+    const r2 = await m.call("cdb-cubg:tools");
+    ok(r2.tools.Xvfb === join(bin, "Xvfb") && r2.tools.xclip === join(bin, "xclip"),
+      "narrowing off (appPath null): process.env.PATH, as before", JSON.stringify(r2.tools));
+  } finally {
+    delete globalThis.__cdbToolPath;
+  }
+}
+
 section("win32 build (downstream): channels refuse");
 {
   const w = load({ platform: "win32" });

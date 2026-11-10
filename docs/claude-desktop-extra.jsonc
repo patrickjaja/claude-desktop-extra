@@ -366,7 +366,7 @@
     // "1346958739": true, // chicago macOS version floor: major/minor (value flag) (new in v1.28929.0)
     // "1355741763": true, // kill-switch: ON stops asking claude.ai for a connector's record (Gmail) (new in v4.16336.0)
     // "1358149550": true, // Electron notification action backend probe (default ON, non-macOS) (new in v2.19675.1)
-    // "1358805273": true, // main-window show/showInactive wrapper (installed unless a server rule turns it off); only an Anthropic server rule applies, an override cannot (new in v4.23118.0)
+    // "1358805273": true, // startup PATH narrowing kill switch: a served OFF restores the started PATH (CLAUDE_DESKTOP_STARTED_PATH), on/absent keeps or re-applies the narrowed PATH; re-checked after every GrowthBook fetch; only an Anthropic server rule applies, an override cannot (new in v4.23118.0)
     // "1361104854": true, // launch-agent edit preview - opens the preview pane without waiting (new in v2.19675.1)
     // "1373298314": true, // Windows installer pre-check before an update (squirrel-firstrun, elevation, sideloading); inert on Linux (new in v4.16336.0)
     // "1385814901": true, // org restrictions: value true skips the org allowed-folders list (see 3215533343) (new in v3.1623.0)

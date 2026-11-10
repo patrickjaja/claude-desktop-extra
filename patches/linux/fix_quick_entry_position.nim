@@ -25,10 +25,18 @@ proc x11BridgeExpr(): string =
 # Cursor position cascade: hyprctl on Hyprland (compositor-native coords;
 # hyprctl always ships with Hyprland itself, no extra package), the bundled
 # x11-bridge on X11/XWayland, Electron's getCursorScreenPoint as last resort.
+# hyprctl is a tool we choose, so it is resolved through the shared resolver
+# (globalThis.__cdbToolPath, patches/core/add_tool_path_resolver.nim): the
+# absolute path on upstream's narrowed PATH plus the root-owned read-only dirs
+# of the PATH the app was started with (NixOS /etc/profiles/per-user/<user>/bin
+# included); a Hyprland only in a user-writable dir (~/.nix-profile/bin of a
+# standalone home-manager) is not run and the cascade moves on. Without the
+# resolver: the bare name, as before.
 proc cursorIife(electronVar: string): string =
   "(()=>{" & "if(process.platform===\"linux\"){" & "const cp=require(\"child_process\");" &
     "if(process.env.HYPRLAND_INSTANCE_SIGNATURE){try{" &
-    "const r=cp.execFileSync(\"hyprctl\",[\"cursorpos\"]," &
+    "const _t=globalThis.__cdbToolPath;" &
+    "const r=cp.execFileSync(_t&&_t.which(\"hyprctl\")||\"hyprctl\",[\"cursorpos\"]," &
     "{timeout:100,encoding:\"utf-8\"});" & "const m=r.match(/(-?\\d+),\\s*(-?\\d+)/);" &
     "if(m){if(!globalThis.__qeCursorLogged){globalThis.__qeCursorLogged=true;(globalThis.__cdbDiag||console.log)(\"[quick-entry] cursor: using hyprctl\")}return{x:parseInt(m[1]),y:parseInt(m[2])}}" &
     "}catch(e){}}" & "const xb=" & x11BridgeExpr() & ";" &

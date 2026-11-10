@@ -171,5 +171,9 @@ core/add_growthbook_overrides: ../js/growthbook_overrides.js
 
 core/fix_profile_app_identity: ../js/profile_app_identity.js
 
+core/add_tool_path_resolver: ../js/tool_path.js
+
+linux/fix_open_external_tool_path: ../js/open_external_tool_path.js
+
 clean:
 	@rm -rf $(BINS) .nimcache

@@ -4,6 +4,15 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-10
 
+### Tools the app runs itself are found again under upstream's PATH narrowing (4.23118+)
+
+- Claude Desktop 4.23118 narrows its own `PATH` to system folders at startup. A new shared lookup (`add_tool_path_resolver`) lets our patches find the tools they run in those system folders plus the root-owned read-only folders of the `PATH` Claude Desktop was started with, by absolute path; a copy in a folder your user can write to is never used and is named in `claude-patches.log`.
+- RHEL 9 / Rocky / Alma: local Cowork finds `qemu-kvm` through the package's qemu-shim again instead of reporting "Cowork requires QEMU".
+- Where `xdg-open` is not installed in a system folder but comes from a root-managed one (as with the Nix package's own `xdg-utils`), links, "Open in ..." and sign-in open again (`fix_open_external_tool_path`); where `xdg-open` is in a system folder nothing changes. "Open in VS Code / Cursor / ..." and the Chrome DevTools opener find `xdg-mime` / `xdg-open` the same way.
+- Quick Entry placement (`hyprctl`), Chrome cookie import (`secret-tool`, `kwallet-query`) and local Cowork's QEMU also use tools from root-managed folders such as `/etc/profiles/per-user/<you>/bin`. Diff views find `git` on the `PATH` Claude Desktop was started with, as the app's own Code sessions do.
+- The background-display setup page checks the clipboard tools where Computer Use looks for them. `claude-desktop --diagnose` prints the folders tools are taken from and names a tool found only in a user-writable folder. See [Troubleshooting](docs/troubleshooting.md).
+- Upstream 4.23118.1 audited against 4.23118.0: a point fix (Windows program lookup, an NFS rename retry on Linux), no flag, gate or IPC change; baselines re-stamped, and flag `1358805273` is documented as the PATH-narrowing kill switch.
+
 ### Named profiles get their own window identity (#319)
 
 - A named profile's windows now carry Wayland app_id / X11 WM_CLASS `com.anthropic.Claude-<name>` when the profile's `com.anthropic.Claude-<name>.desktop` exists in the XDG applications directories, so desktops that match windows to `.desktop` entries can show each profile as its own entry (`Claude (work)`); give the profile's `.desktop` its own `Icon=` to tell them apart at a glance (new patch `fix_profile_app_identity`). A profile without that file (`--profile=NAME` without `--create-profile`) keeps the shared `com.anthropic.Claude` identity. The default profile is unchanged; window rules written for `com.anthropic.Claude` do not match a named profile's windows, notifications are still attributed to the default app entry, and the `claude://` handler stays with the default profile. On KDE Plasma a named profile now registers the Quick Entry shortcut under its own entry (`Claude (work)`), so Plasma asks once per profile to confirm the shortcut on the first launch after the update.

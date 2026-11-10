@@ -13,7 +13,7 @@ Anthropic publishes an official Claude Desktop build for Linux as a `.deb` in an
 
 ## What this repo does: ingest -> patch -> repackage
 **Ingest:** download the official `.deb` (apt repo, or `--deb PATH`/`--version X`) -> verify GPG + SHA256 -> `dpkg-deb -x` -> locate `usr/lib/claude-desktop/resources/app.asar` -> `asar extract`.
-**Patch:** run `scripts/apply_patches.py` (the orchestrator) over the extracted bundle. **68** surgical JS patches (`patches/{linux,community,core}/*.nim`: 37 Linux fixes + 8 core plumbing, always on; 23 community features, opt-in, compiled native binaries, regex on minified JS) apply Linux-only fixes and our value-adds. The official build re-minifies between releases, so patterns use `[\w$]+` wildcards anchored on stable strings (feature names, log messages, `process.platform==="darwin"`), count `EXPECTED_PATCHES`, and `quit(1)` on any miss. `.upstream-version` records the last validated version.
+**Patch:** run `scripts/apply_patches.py` (the orchestrator) over the extracted bundle. **70** surgical JS patches (`patches/{linux,community,core}/*.nim`: 38 Linux fixes + 9 core plumbing, always on; 23 community features, opt-in, compiled native binaries, regex on minified JS) apply Linux-only fixes and our value-adds. The official build re-minifies between releases, so patterns use `[\w$]+` wildcards anchored on stable strings (feature names, log messages, `process.platform==="darwin"`), count `EXPECTED_PATCHES`, and `quit(1)` on any miss. `.upstream-version` records the last validated version.
 **Repackage:** `asar pack` (preserving `app.asar.unpacked`, which carries the official build's pre-built native modules - we no longer rebuild node-pty) into a tarball, then build the pacman package/our-own-deb/rpm/AppImage/Nix from it.
 
 Several patches that used to *enable* Cowork on Linux (the "cowork-wiring" cluster) were **removed** once the official build started shipping Cowork natively; assert-only regression guards were retired on 2026-07-15 (AGENTS.md Rule 4): only patches that change the bundle remain, and the absorption probe (`scripts/check-upstream-absorbed.py`) flags a patch whose end state upstream now ships.
@@ -45,7 +45,7 @@ Historically this project shipped a sibling Go daemon (`claude-cowork-service`, 
 Anthropic official Claude Desktop Linux .deb  (own Electron + native Cowork VM backend)
         │  download → verify GPG+SHA256 → dpkg-deb -x → asar extract
         ▼
-claude-desktop-extra  (68 JS patches: 45 always-on Linux fixes + core plumbing, 23 opt-in community features)
+claude-desktop-extra  (70 JS patches: 47 always-on Linux fixes + core plumbing, 23 opt-in community features)
         │  asar pack → tarball
         ▼
 our pacman repo / our .deb / .rpm / .AppImage / Nix
