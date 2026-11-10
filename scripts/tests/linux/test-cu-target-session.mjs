@@ -23,7 +23,8 @@
 //
 // CU_EXECUTOR / CU_PREAMBLE / CU_KWIN_EXECUTOR=<file> run the checks against other copies.
 // Exit codes follow the repo convention: 0 = PASS, other = FAIL.
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import path from "node:path";
 import os from "node:os";
@@ -32,6 +33,13 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const EXECUTOR = process.env.CU_EXECUTOR || path.join(ROOT, "js", "cu_linux_executor.js");
 const SRC = readFileSync(EXECUTOR, "utf8");
+// Section 8c compares against a committed golden, cu-path-baseline.json: the
+// spawns of origin/master's executor while upstream's PATH narrowing is not in
+// effect. Regenerate it (only when that base changes on purpose) with
+//   git show origin/master:js/cu_linux_executor.js > /tmp/base.js
+//   CU_EXECUTOR=/tmp/base.js node scripts/tests/linux/test-cu-target-session.mjs --record
+const GOLDEN = path.join(ROOT, "scripts", "tests", "linux", "cu-path-baseline.json");
+const RECORD = process.argv.includes("--record");
 const PREAMBLE = readFileSync(process.env.CU_PREAMBLE || path.join(ROOT, "js", "cu_mode_preamble.js"), "utf8");
 // Read now: makeRig() replaces process.env.
 const KWIN_EXECUTOR = process.env.CU_KWIN_EXECUTOR || path.join(ROOT, "js", "executor_linux.js");
@@ -71,7 +79,18 @@ const readerSrc = PREAMBLE.match(/(?:if\(!globalThis\.__cuTargetIdentity\)[\s\S]
 const SOCKETS = { "/run/user/1000/wayland-0": 10, "/run/user/1000/wayland-1": 11, "/run/user/1000/wayland-7": 17, "/run/user/1000/wayland-9": 19, "/tmp/cutest/alias-own": 11, "/tmp/cutest/rt/wayland-9": 11 };
 // /proc/<pid>/stat of the stub process tree: 4243 is a child of the launched 4242.
 const PROCS = { 4243: "4243 (weird app) S 4242 4243 4242 0 -1" };
-const realpath = (p) => { let s = String(p); s = s.replace(/^\/proc\/self\/root\//, "/").replace(/^\/var\/run\//, "/run/"); if (s === "/tmp/cutest/link-to-own") s = "/run/user/1000/wayland-0"; return s; };
+// LINKS: symlinked dirs (link path -> absolute target), set per rig (opts.links);
+// LINK_UIDS: their owners (opts.linkUids, default root).
+let LINKS = {}, LINK_UIDS = {};
+const realpath = (p) => { let s = String(p); s = s.replace(/^\/proc\/self\/root\//, "/").replace(/^\/var\/run\//, "/run/"); if (s === "/tmp/cutest/link-to-own") s = "/run/user/1000/wayland-0"; for (let n = 0, hit = true; hit && n < 10; n++) { hit = false; for (const [a, b] of Object.entries(LINKS)) { if (s === a || s.startsWith(a + "/")) { s = b + s.slice(a.length); hit = true; break; } } } return s; };
+// Directory owners for upstream's trust rule (lstat uid 0 + W_OK fails with
+// EACCES/EROFS), ancestors included. ro: "EROFS" (read-only mount) or
+// "EACCES"; null = writable by us. opts.dirs adds or overrides entries.
+const DIRS = {
+  "/": { uid: 0, ro: "EACCES" }, "/usr": { uid: 0, ro: "EACCES" }, "/usr/bin": { uid: 0, ro: "EACCES" }, "/bin": { uid: 0, ro: "EACCES" },
+  "/usr/local": { uid: 0, ro: "EACCES" }, "/usr/local/bin": { uid: 0, ro: "EACCES" }, "/nix": { uid: 0, ro: "EACCES" }, "/nix/store": { uid: 0, ro: "EROFS" },
+  "/home": { uid: 0, ro: "EACCES" }, "/home/u": { uid: 1000, ro: null }, "/home/u/.local": { uid: 1000, ro: null }, "/home/u/.local/bin": { uid: 1000, ro: null }
+};
 
 // files: {"name": text}; host: key of HOSTS; opts.screens(bin) -> array | Error.
 function makeRig(host, files = {}, opts = {}) {
@@ -91,7 +110,7 @@ function makeRig(host, files = {}, opts = {}) {
     if (sub === "frontmost-app") return "null";
     return "{}";
   };
-  const rec = (kind, bin, args, o) => spawns.push({ kind, bin: path.basename(String(bin)), args: (args || []).join(" "), opts: o || {} });
+  const rec = (kind, bin, args, o) => spawns.push({ kind, bin: path.basename(String(bin)), raw: String(bin), args: (args || []).join(" "), opts: o || {} });
   const cp = {
     execFileSync(bin, args, o) {
       const b = path.basename(String(bin));
@@ -130,13 +149,29 @@ function makeRig(host, files = {}, opts = {}) {
   };
   const installed = new Set(["/usr/bin/ydotool", "/usr/bin/spectacle", "/usr/bin/convert", "/res/wlroots-bridge", "/res/x11-bridge",
     "/usr/bin/setsid", "/usr/bin/gedit", "/usr/bin/gio", "/usr/bin/gtk-launch", "/usr/bin/kioclient6", "/usr/bin/exo-open", "/usr/bin/xdg-open", ...(opts.installed || [])]);
-  const APPS = { "gedit.desktop": "[Desktop Entry]\nType=Application\nName=Gedit\nExec=gedit %U\n", "top.desktop": "[Desktop Entry]\nType=Application\nName=Top\nExec=top\nTerminal=true\n" };
+  for (const p of opts.uninstalled || []) installed.delete(p);
+  const APPS = { "gedit.desktop": "[Desktop Entry]\nType=Application\nName=Gedit\nExec=gedit %U\n", "top.desktop": "[Desktop Entry]\nType=Application\nName=Top\nExec=top\nTerminal=true\n", ...(opts.apps || {}) };
+  LINKS = opts.links || {}; LINK_UIDS = opts.linkUids || {};
+  const dirs = { ...DIRS, ...(opts.dirs || {}) };
+  const enoent = (p) => { const e = new Error("ENOENT: " + p); e.code = "ENOENT"; return e; };
   const fsStub = {
-    constants: { X_OK: 1 },
+    constants: { X_OK: 1, W_OK: 2 },
     readFileSync: (p) => { if (path.dirname(String(p)) === "/ud") state.reads++; if (/^\/proc\/\d+\/stat$/.test(String(p))) { const pid = +String(p).split("/")[2]; if (pid in PROCS) return PROCS[pid]; const e = new Error("ENOENT"); e.code = "ENOENT"; throw e; } const n = path.basename(String(p)); if (String(p).startsWith("/usr/share/applications/") && n in APPS) return APPS[n]; if (n in state.files) { const f = state.files[n]; if (f instanceof Error) throw f; return f; } if (path.dirname(String(p)) === "/ud") { const e = new Error("ENOENT: " + p); e.code = "ENOENT"; throw e; } return Buffer.alloc(0); },
     existsSync: (p) => { const s = String(p); if (path.dirname(s) === "/ud") return path.basename(s) in state.files; return s.endsWith("/gnome-portal-bridge/session.sock") || s.endsWith(".ydotool_socket"); },
     writeFileSync() {}, unlinkSync() {}, renameSync() {},
-    accessSync(p) { if (!installed.has(String(p)) && !String(p).endsWith(".ydotool_socket")) throw new Error("ENOENT"); },
+    accessSync(p, mode) {
+      if (mode === 2) { const d = dirs[String(p)]; if (!d) throw enoent(p); if (d.ro) { const e = new Error(d.ro + ": " + p); e.code = d.ro; throw e; } return; }
+      if (!installed.has(String(p)) && !installed.has(realpath(p)) && !String(p).endsWith(".ydotool_socket")) throw new Error("ENOENT");
+    },
+    lstatSync(p) {
+      const k = String(p);
+      if (k in LINKS) return { uid: k in LINK_UIDS ? LINK_UIDS[k] : 0, isDirectory: () => false, isSymbolicLink: () => true };
+      const d = dirs[k]; if (d) return { uid: d.uid, isDirectory: () => true, isSymbolicLink: () => false };
+      if (installed.has(k)) return { uid: 0, isDirectory: () => false, isSymbolicLink: () => false };
+      throw enoent(p);
+    },
+    readlinkSync(p) { if (String(p) in LINKS) return LINKS[String(p)]; const e = new Error("EINVAL: " + p); e.code = "EINVAL"; throw e; },
+    realpathSync(p) { const r = realpath(p); if (!dirs[r] && !installed.has(r)) throw enoent(p); return r; },
     readdirSync: (d) => String(d) === "/usr/share/applications" ? Object.keys(APPS) : [],
     // Settings files: a content-derived signature (ino/size/mtime stand-ins), so
     // writing a file changes what the executor's stat sees.
@@ -170,7 +205,7 @@ function makeRig(host, files = {}, opts = {}) {
   if (host === "wlroots") globalThis.__cuWlrootsBridgeBin = "/res/wlroots-bridge";
   if (host === "gnome") globalThis.__cuGnomeBridgeBin = "/res/gnome-portal-bridge";
   if (readerSrc) new Function("_rp", "_rfs", "require", "process", readerSrc[0])(path, fsStub, requireStub, process);
-  new Function("require", "process", SRC)(requireStub, process);
+  new Function("require", "process", opts.src || SRC)(requireStub, process);
   const ex = globalThis.__linuxExecutor;
   const reset = () => { spawns.length = 0; diag.length = 0; dc.length = 0; clip.length = 0; screenCalls.length = 0; stdin.length = 0; state.launched = false; };
   return { ex, spawns, diag, dc, clip, state, reset, screenCalls, stdin };
@@ -570,6 +605,244 @@ try {
   check(!o.e && o.v.action === "launched" && launch.length === 1 && !("env" in launch[0].opts), "desktop launch: inherited env, window found (pin, same as before)", JSON.stringify({ o: o.v || o.e.message, l: launch.map((x) => x.bin + " " + x.args) }));
   check(!r.spawns.some((x) => x.kind === "execSync"), "the poll no longer blocks on `sleep 0.5`", JSON.stringify(r.spawns.filter((x) => x.kind === "execSync").map((x) => x.bin)));
 } finally { fakeClock(false); }
+
+// ------------------------------- 8b. T6 launch: the started PATH, not upstream's narrowed one
+// Upstream narrows process.env.PATH at startup to root-owned system dirs, keeps
+// the launch PATH in CLAUDE_DESKTOP_STARTED_PATH and the narrowed one in
+// CLAUDE_DESKTOP_NARROWED_PATH. An app installed only in a per-user profile
+// (NixOS home-manager, ~/.nix-profile, ~/.local/bin) must still launch on the
+// target: looked up on, and spawned with, the started PATH (relative entries
+// dropped, the narrowed dirs appended).
+// The narrowed list exactly as upstream builds it (index.pre.js), /usr/local
+// included (root-owned, read-only here).
+const NARROWED = "/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/snap/bin:/run/current-system/sw/bin:/run/current-system/profile/bin";
+// The env upstream leaves: PATH = narrowed, both variables set.
+const narrowedEnv = (started) => ({ PATH: NARROWED, CLAUDE_DESKTOP_NARROWED_PATH: NARROWED, CLAUDE_DESKTOP_STARTED_PATH: started });
+const appPath = (started) => [...new Set((started + ":" + NARROWED).split(":").filter((d) => d.startsWith("/")))].join(":");
+const USER_GEDIT = "/home/u/.nix-profile/bin/gedit";
+for (const [label, extraEnv, wantPath] of [
+  ["started PATH present", narrowedEnv("/home/u/.nix-profile/bin:rel/bin:/usr/bin"), "/home/u/.nix-profile/bin:/usr/bin:/usr/local/bin:/usr/local/sbin:/bin:/usr/sbin:/sbin:/snap/bin:/run/current-system/sw/bin:/run/current-system/profile/bin"],
+  ["no started PATH (upstream without narrowing)", {}, null]
+]) {
+  console.log(`\n[T6 started PATH: ${label}]`);
+  fakeClock(true);
+  try {
+    const r = makeRig("gnome", { "claude-desktop-extra.json": cfg({ enabled: true, kind: "wlroots", display: "wayland-9" }) }, { env: extraEnv, installed: [USER_GEDIT], uninstalled: ["/usr/bin/gedit"], windows: (launched) => launched ? [GEDIT_WIN] : [] });
+    await r.ex.__setLockHeld(true);
+    r.reset();
+    const o = await settle(r.ex.openApp("gedit"));
+    const launch = r.spawns.filter((x) => x.kind === "spawn");
+    if (wantPath) {
+      check(!o.e && o.v.action === "launched" && launch.length === 1 && launch[0].args === "gedit" && launch[0].opts.env && launch[0].opts.env.PATH === wantPath, "per-user app found and spawned with the started PATH", JSON.stringify({ o: o.e ? o.e.message : o.v, l: launch.map((x) => [x.bin, x.args, x.opts.env && x.opts.env.PATH]) }));
+      check(process.env.PATH === NARROWED, "our own process.env.PATH is untouched", process.env.PATH);
+    } else {
+      check(o.e && /gedit: command not found/.test(o.e.message) && launch.length === 0, "PATH left as inherited: the per-user app is not found (same as before)", JSON.stringify({ e: o.e && o.e.message, l: launch.map((x) => x.bin) }));
+    }
+  } finally { fakeClock(false); }
+}
+// Our own helpers never come from a user-writable dir, whatever the started
+// PATH says: setsid and the clipboard tools are looked up on the TOOL PATH
+// (narrowed dirs, then started dirs that pass upstream's trust rule) and
+// spawned by absolute path; the app itself gets the APP PATH.
+const PLANT = ["/home/u/.local/bin/setsid", "/home/u/.local/bin/wl-copy", "/home/u/.local/bin/wl-paste", "/home/u/.local/bin/xclip"];
+const STARTED_U = "/home/u/.local/bin:/home/u/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin";
+for (const target of [{ kind: "wlroots", display: "wayland-9" }, { kind: "x11", display: ":99" }]) {
+  console.log(`\n[PATH (1): planted helpers in ~/.local/bin are not chosen - ${target.kind} target]`);
+  fakeClock(true);
+  try {
+    const r = makeRig("gnome", { "claude-desktop-extra.json": cfg({ enabled: true, ...target }) }, { env: narrowedEnv(STARTED_U), installed: [USER_GEDIT, ...PLANT, "/usr/bin/wl-copy", "/usr/bin/wl-paste", "/usr/bin/xclip"], uninstalled: ["/usr/bin/gedit"], windows: (launched) => launched ? [GEDIT_WIN] : [] });
+    await r.ex.__setLockHeld(true);
+    r.reset();
+    const o = await settle(r.ex.openApp("gedit"));
+    const launch = r.spawns.filter((x) => x.kind === "spawn");
+    check(!o.e && launch.length === 1 && launch[0].raw === "/usr/bin/setsid" && launch[0].args === "gedit" && launch[0].opts.env.PATH === appPath(STARTED_U), "setsid from /usr/bin by absolute path; the app gets the APP PATH", JSON.stringify({ e: o.e && o.e.message, l: launch.map((x) => [x.raw, x.args, x.opts.env && x.opts.env.PATH]) }));
+    r.reset();
+    const w = await settle(r.ex.writeClipboard("hi")), rd = await settle(r.ex.readClipboard());
+    const cl = r.spawns.filter((x) => /^(wl-copy|wl-paste|xclip)$/.test(x.bin));
+    const want = target.kind === "x11" ? ["/usr/bin/xclip", "/usr/bin/xclip"] : ["/usr/bin/wl-copy", "/usr/bin/wl-paste"];
+    check(!w.e && !rd.e && JSON.stringify(cl.map((x) => x.raw)) === JSON.stringify(want) && cl.every((x) => x.opts.env.PATH === NARROWED), "clipboard tools from /usr/bin by absolute path, TOOL PATH in their env", JSON.stringify({ e: (w.e || rd.e || {}).message, cl: cl.map((x) => [x.raw, x.opts.env && x.opts.env.PATH]) }));
+    await settle(r.ex.click(5, 5, "left", 1));
+    const br = r.spawns.filter((x) => /-bridge$/.test(x.bin));
+    check(br.length > 0 && br.every((x) => x.opts.env.PATH === NARROWED), "the bridge gets the TOOL PATH, never the APP PATH", JSON.stringify(br.map((x) => x.opts.env && x.opts.env.PATH)));
+    check(!r.spawns.some((x) => x.raw.startsWith("/home/")), "nothing under /home is ever executed", JSON.stringify(r.spawns.map((x) => x.raw)));
+  } finally { fakeClock(false); }
+}
+console.log("\n[PATH (2): a helper only in a user-writable dir reads as missing]");
+{
+  const r = makeRig("gnome", { "claude-desktop-extra.json": cfg({ enabled: true, kind: "wlroots", display: "wayland-9" }) }, { env: narrowedEnv(STARTED_U), installed: PLANT });
+  await r.ex.__setLockHeld(true);
+  r.reset();
+  const w = await settle(r.ex.writeClipboard("x")), w2 = await settle(r.ex.writeClipboard("y"));
+  check(w.e && /install the wl-clipboard package/.test(w.e.message) && /found wl-copy in \/home\/u\/\.local\/bin - a user-writable folder, which Computer Use ignores/.test(w.e.message) && w2.e, "refused as missing; the message names the ignored user-writable copy", w.e ? w.e.message : "resolved");
+  check(!r.spawns.some((x) => x.bin === "wl-copy"), "the planted wl-copy is never spawned", JSON.stringify(r.spawns.map((x) => x.raw)));
+  check(r.diag.filter((d) => /tools: wl-copy found only in \/home\/u\/\.local\/bin, a user-writable folder - ignored/.test(d)).length === 1, "one diagnostics line per tool, not per call", JSON.stringify(r.diag.filter((d) => /tools:/.test(d))));
+}
+console.log("\n[PATH (3): a helper in a trusted started dir is found, by its real path]");
+{
+  // Upstream's rule on the started-PATH entry AS WRITTEN: every directory on
+  // the way and every symlink hop (owned by root, in a dir that passes) must be
+  // root's and read-only for us; tools come from the real dir.
+  //   /etc/profiles/per-user/u        root's link -> /nix/store/cccc-user-env   trusted
+  //   /run/current-system             root's link -> /nix/store/dddd-system     trusted
+  //   /usr/local (Bazzite)            root's link in /usr -> /var/usrlocal      trusted
+  //   /nix/store/aaaa-wl-clipboard/bin plain store dir (our NixOS wrapper)      trusted
+  //   /home/u/.nix-profile            the user's link (in the user's home)      not trusted
+  //   /home/u/rootlink                root's link, but in the user's home       not trusted
+  //   /home/u/rootbin                 root-owned dir under a writable parent    not trusted
+  //   /srv/open/bin                   root-owned but writable                   not trusted
+  // A narrowed PATH of /usr/bin:/bin only, so every entry above is judged.
+  const STORE = "/nix/store/aaaa-wl-clipboard/bin", UENV = "/nix/store/cccc-user-env", SYS = "/nix/store/dddd-system";
+  const ro = (u = 0, r = "EACCES") => ({ uid: u, ro: r });
+  const dirs = { "/etc": ro(), "/etc/profiles": ro(), "/etc/profiles/per-user": ro(), "/run": ro(), "/var": ro(), "/var/usrlocal": ro(), "/var/usrlocal/bin": ro(),
+    [STORE]: ro(0, "EROFS"), "/nix/store/aaaa-wl-clipboard": ro(0, "EROFS"), [UENV]: ro(0, "EROFS"), [UENV + "/bin"]: ro(0, "EROFS"), [SYS]: ro(0, "EROFS"), [SYS + "/sw"]: ro(0, "EROFS"), [SYS + "/sw/bin"]: ro(0, "EROFS"),
+    "/nix/store/eeee-profile": ro(0, "EROFS"), "/nix/store/eeee-profile/bin": ro(0, "EROFS"),
+    "/home/u/rootbin": ro(), "/srv": ro(), "/srv/open": ro(), "/srv/open/bin": ro(0, null) };
+  dirs["/usr/local"] = undefined;
+  const links = { "/etc/profiles/per-user/u": UENV, "/run/current-system": SYS, "/usr/local": "/var/usrlocal", "/home/u/.nix-profile": "/nix/store/eeee-profile", "/home/u/rootlink": "/nix/store/eeee-profile" };
+  const linkUids = { "/home/u/.nix-profile": 1000 };
+  const ENTRIES = ["/etc/profiles/per-user/u/bin", "/run/current-system/sw/bin", "/usr/local/bin", STORE, "/home/u/.nix-profile/bin", "/home/u/rootlink/bin", "/home/u/rootbin", "/srv/open/bin"];
+  const N2 = "/usr/bin:/bin";
+  const env = { PATH: N2, CLAUDE_DESKTOP_NARROWED_PATH: N2, CLAUDE_DESKTOP_STARTED_PATH: ENTRIES.join(":") };
+  const inst = [STORE + "/wl-copy", UENV + "/bin/wl-paste", "/nix/store/eeee-profile/bin/wl-copy", "/nix/store/eeee-profile/bin/wl-paste", "/home/u/rootbin/wl-copy", "/srv/open/bin/wl-copy"];
+  const r = makeRig("gnome", { "claude-desktop-extra.json": cfg({ enabled: true, kind: "wlroots", display: "wayland-9" }) }, { env, installed: inst, links, linkUids, dirs });
+  await r.ex.__setLockHeld(true);
+  r.reset();
+  await settle(r.ex.click(5, 5, "left", 1));
+  const br = r.spawns.find((x) => /-bridge$/.test(x.bin));
+  const want = [N2, UENV + "/bin", SYS + "/sw/bin", "/var/usrlocal/bin", STORE].join(":");
+  check(br && br.opts.env.PATH === want, "TOOL PATH = narrowed, then per-user (/etc/profiles), system profile, Bazzite /usr/local, store dir - by real path; never ~/.nix-profile, a root link in the home dir, a dir under a writable parent or a writable dir", br && br.opts.env.PATH);
+  r.reset();
+  const w = await settle(r.ex.writeClipboard("z")), rd = await settle(r.ex.readClipboard());
+  const cl = r.spawns.filter((x) => /^wl-(copy|paste)$/.test(x.bin)).map((x) => x.raw);
+  check(!w.e && !rd.e && JSON.stringify(cl) === JSON.stringify([STORE + "/wl-copy", UENV + "/bin/wl-paste"]), "clipboard tools spawned by their real path (store dir; per-user profile via root's link)", JSON.stringify({ e: (w.e || rd.e || {}).message, cl }));
+  check(r.diag.some((d) => d === "[claude-cu] tools: wl-copy -> " + STORE + "/wl-copy (a root-owned read-only folder on the PATH Claude Desktop was started with)") && r.diag.some((d) => d.includes("tools: wl-paste -> " + UENV + "/bin/wl-paste")), "one line names the trusted started dir taken", JSON.stringify(r.diag.filter((d) => /tools:/.test(d))));
+  // root repoints the per-user link into the user's home: a fresh lookup (the
+  // clipboard tools look up fresh) walks the chain again and drops it.
+  links["/etc/profiles/per-user/u"] = "/home/u/evil"; dirs["/home/u/evil"] = ro(1000, null); dirs["/home/u/evil/bin"] = ro(1000, null);
+  inst.push("/home/u/evil/bin/wl-paste");
+  r.reset();
+  const rd2 = await settle(r.ex.readClipboard());
+  check(rd2.e && /install the wl-clipboard package/.test(rd2.e.message) && !r.spawns.some((x) => x.raw.startsWith("/home/")), "a link repointed into the home dir is seen by the next fresh lookup: wl-paste is missing, nothing under /home runs", rd2.e ? rd2.e.message.slice(0, 200) : "resolved");
+}
+console.log("\n[PATH (3b): ~/.nix-profile/bin alone is user-managed - not used for tools]");
+{
+  const dirs = { "/nix/store/eeee-profile": { uid: 0, ro: "EROFS" }, "/nix/store/eeee-profile/bin": { uid: 0, ro: "EROFS" } };
+  for (const [label, linkUids] of [["the user's own link", { "/home/u/.nix-profile": 1000 }], ["a root-owned link in the user's home", {}]]) {
+    const r = makeRig("gnome", { "claude-desktop-extra.json": cfg({ enabled: true, kind: "wlroots", display: "wayland-9" }) }, { env: narrowedEnv("/home/u/.nix-profile/bin:/usr/bin"), installed: ["/nix/store/eeee-profile/bin/wl-copy"], links: { "/home/u/.nix-profile": "/nix/store/eeee-profile" }, linkUids, dirs });
+    await r.ex.__setLockHeld(true);
+    r.reset();
+    const w = await settle(r.ex.writeClipboard("q"));
+    check(w.e && /found wl-copy in \/home\/u\/\.nix-profile\/bin/.test(w.e.message) && !r.spawns.some((x) => x.bin === "wl-copy"), label + ": wl-copy reads as missing, named as ignored", w.e ? w.e.message.slice(0, 160) : "resolved");
+  }
+}
+console.log("\n[PATH (3c): R1 - a bare-name fallback never meets a wider PATH]");
+fakeClock(true);
+try {
+  // xdg-open only in ~/.local/bin; setsid in /usr/bin (narrowed) or nowhere
+  // but ~/.local/bin. URL opening must not run anything under /home.
+  for (const [label, uninst] of [["setsid in the narrowed dir, xdg-open only in ~/.local/bin", ["/usr/bin/xdg-open"]], ["setsid and xdg-open only in ~/.local/bin", ["/usr/bin/xdg-open", "/usr/bin/setsid"]]]) {
+    const r = makeRig("x11", {}, { env: narrowedEnv(STARTED_U), installed: [...PLANT, "/home/u/.local/bin/xdg-open"], uninstalled: uninst });
+    r.reset();
+    await settle(r.ex.openApp("https://example.com/"));
+    const sp = r.spawns.filter((x) => x.kind === "spawn");
+    check(sp.length === 1 && sp[0].raw === "setsid" && sp[0].args === "xdg-open https://example.com/" && !("env" in sp[0].opts), label + ": bare names with the inherited (narrowed) env, as before narrowing existed", JSON.stringify(sp.map((x) => [x.raw, x.args, x.opts.env && x.opts.env.PATH])));
+    check(!r.spawns.some((x) => x.raw.startsWith("/home/")), label + ": nothing under /home is spawned", JSON.stringify(r.spawns.map((x) => x.raw)));
+  }
+  // The same with a per-user app: the APP PATH only reaches the app's own spawn.
+  const r = makeRig("x11", {}, { env: narrowedEnv(STARTED_U), installed: [USER_GEDIT, ...PLANT], uninstalled: ["/usr/bin/gedit", "/usr/bin/setsid"], windows: (launched) => launched ? [GEDIT_WIN] : [] });
+  r.reset();
+  await settle(r.ex.openApp("gedit"));
+  const sp = r.spawns.filter((x) => x.kind === "spawn");
+  check(sp.length === 1 && sp[0].raw === "gedit" && sp[0].opts.env.PATH === appPath(STARTED_U), "no system setsid: the app itself is spawned (its own name, APP PATH); the planted setsid is not", JSON.stringify(sp.map((x) => [x.raw, x.args])));
+} finally { fakeClock(false); }
+console.log("\n[PATH (4): desktop mode - per-user app via the APP PATH, helpers by absolute path]");
+fakeClock(true);
+try {
+  const r = makeRig("x11", {}, { env: narrowedEnv(STARTED_U), installed: [USER_GEDIT, ...PLANT], uninstalled: ["/usr/bin/gedit"], windows: (launched) => launched ? [GEDIT_WIN] : [] });
+  r.reset();
+  const o = await settle(r.ex.openApp("gedit"));
+  const launch = r.spawns.filter((x) => x.kind === "spawn");
+  check(!o.e && launch.length === 1 && launch[0].raw === "/usr/bin/setsid" && launch[0].args === "gedit" && launch[0].opts.env && launch[0].opts.env.PATH === appPath(STARTED_U) && launch[0].opts.env.DISPLAY === ":0", "direct spawn: /usr/bin/setsid, the app on the APP PATH, the desktop env otherwise", JSON.stringify({ e: o.e && o.e.message, l: launch.map((x) => [x.raw, x.args, x.opts.env && x.opts.env.PATH]) }));
+  check(r.diag.filter((d) => d === "[claude-cu] openApp: gedit -> " + USER_GEDIT + " (found on the PATH Claude Desktop was started with, not on the narrowed one)").length === 1, "one line says the app came from the started PATH", JSON.stringify(r.diag.filter((d) => /openApp/.test(d))));
+  r.reset();
+  await settle(r.ex.openApp("https://example.com/"));
+  const xo = r.spawns.find((x) => x.kind === "spawn");
+  check(xo && xo.raw === "/usr/bin/setsid" && xo.args === "/usr/bin/xdg-open https://example.com/" && xo.opts.env.PATH === NARROWED, "URL: setsid + xdg-open by absolute path, with the TOOL PATH (xdg-open picks helpers by name), not the APP PATH", JSON.stringify(xo && [xo.raw, xo.args, xo.opts.env && xo.opts.env.PATH]));
+} finally { fakeClock(false); }
+console.log("\n[PATH (6): a PATH change between calls (upstream's flag) is picked up]");
+fakeClock(true);
+try {
+  const r = makeRig("x11", {}, { env: narrowedEnv(STARTED_U), installed: [USER_GEDIT, ...PLANT], uninstalled: ["/usr/bin/gedit"], windows: (launched) => launched ? [GEDIT_WIN] : [] });
+  const one = async () => { r.reset(); const o = await settle(r.ex.openApp("gedit")); const l = r.spawns.find((x) => x.kind === "spawn"); return { e: o.e && o.e.message, raw: l && l.raw, env: l ? ("env" in l.opts ? l.opts.env.PATH : "(inherit)") : null }; };
+  const a = await one();
+  process.env.PATH = STARTED_U; // flag off: upstream restores the started PATH
+  const b = await one();
+  process.env.PATH = NARROWED; // flag on again
+  const c = await one();
+  check(a.raw === "/usr/bin/setsid" && a.env === appPath(STARTED_U), "narrowed: absolute setsid, APP PATH", JSON.stringify(a));
+  check(b.raw === "setsid" && b.env === "(inherit)" && !b.e, "restored: as before narrowing - bare setsid (the PATH is the user's own again), inherited env", JSON.stringify(b));
+  check(c.raw === "/usr/bin/setsid" && c.env === appPath(STARTED_U), "narrowed again: back to the absolute path", JSON.stringify(c));
+} finally { fakeClock(false); }
+console.log("\n[PATH (7): the app index follows the lookup PATH]");
+{
+  const apps = { "tryapp.desktop": "[Desktop Entry]\nType=Application\nName=Tryapp\nExec=tryapp\nTryExec=tryapp\n" };
+  const r = makeRig("x11", {}, { env: { PATH: NARROWED, CLAUDE_DESKTOP_NARROWED_PATH: NARROWED }, installed: ["/home/u/.nix-profile/bin/tryapp"], apps });
+  const ids = globalThis.__cdbCuAppIds;
+  const before = ids.resolveName("Tryapp");
+  process.env.CLAUDE_DESKTOP_STARTED_PATH = "/home/u/.nix-profile/bin:/usr/bin";
+  const after = ids.resolveName("Tryapp");
+  delete process.env.CLAUDE_DESKTOP_STARTED_PATH;
+  const again = ids.resolveName("Tryapp");
+  check(before === null && after && after.bundleId === "tryapp" && again === null, "TryExec on a per-user dir: hidden without the started PATH, listed once it is there, hidden again - within the cache TTL", JSON.stringify({ before, after, again }));
+}
+console.log("\n[T6 started PATH: off -> desktop launch unchanged]");
+fakeClock(true);
+try {
+  const r = makeRig("x11", {}, { env: { CLAUDE_DESKTOP_STARTED_PATH: "/home/u/.nix-profile/bin:/usr/bin" }, windows: (launched) => launched ? [GEDIT_WIN] : [] });
+  r.reset();
+  const o = await settle(r.ex.openApp("gedit"));
+  const launch = r.spawns.filter((x) => x.kind === "spawn");
+  check(!o.e && launch.length === 1 && !("env" in launch[0].opts), "no target: inherited env, no PATH override", JSON.stringify({ o: o.v || o.e.message, l: launch.map((x) => [x.bin, x.args, x.opts.env]) }));
+} finally { fakeClock(false); }
+
+// ---------------- 8c. PATH (5): no narrowing in effect = origin/master, byte for byte
+// The same scenarios run here and were recorded from origin/master's executor
+// (GOLDEN): every spawn's kind, command as given, args, cwd, other options and
+// env (the display / PATH keys verbatim, the whole env as a hash) must match.
+// Host-independent: the rig's env is synthetic, the capture temp file is
+// normalized.
+async function pathTrace(host, files, env) {
+  fakeClock(true);
+  try {
+    const r = makeRig(host, files, { env, installed: ["/usr/bin/xclip", "/usr/bin/wl-copy", "/usr/bin/wl-paste"], windows: (launched) => launched ? [GEDIT_WIN] : [] });
+    await r.ex.__setLockHeld(true);
+    if (r.ex.__targetCheck) await settle(r.ex.__targetCheck("screenshot"));
+    r.reset();
+    const out = [];
+    for (const f of [() => r.ex.openApp("gedit"), () => r.ex.openApp("Top"), () => r.ex.openApp("https://example.com/"), () => r.ex.writeClipboard("t"), () => r.ex.readClipboard(), () => r.ex.click(3, 3, "left", 1), () => r.ex.screenshot({ displayId: 0 })]) {
+      const o = await settle(f()); out.push(o.e ? "E:" + o.e.message : JSON.stringify(o.v));
+    }
+    process.env.COWORK_SCREENSHOT_CMD = "true {FILE}";
+    await settle(r.ex.screenshot({ displayId: 0 }));
+    delete process.env.COWORK_SCREENSHOT_CMD;
+    const norm = (v) => String(v).split(os.tmpdir()).join("$TMP").replace(/claude-cu-\d+-[a-z0-9]+\.png/g, "claude-cu-X.png");
+    const envSum = (e) => { if (!e) return null; const o = {}; for (const k of ["PATH", "DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XDG_SESSION_TYPE", "GDK_BACKEND"]) if (k in e) o[k] = e[k]; o.hash = createHash("sha256").update(JSON.stringify(Object.entries(e).sort())).digest("hex").slice(0, 16); return o; };
+    return { out: out.map(norm), spawns: r.spawns.map((x) => [x.kind, norm(x.raw), norm(x.args), x.opts.cwd || null, Object.keys(x.opts).filter((k) => k !== "env" && k !== "cwd").sort().map((k) => k + "=" + JSON.stringify(x.opts[k])).join(","), envSum(x.opts.env)]) };
+  } finally { fakeClock(false); }
+}
+{
+  const golden = RECORD ? {} : JSON.parse(readFileSync(GOLDEN, "utf8"));
+  for (const [label, env] of [["variables absent", {}], ["started PATH restored by upstream's flag", { PATH: "/home/u/.local/bin:/usr/bin:/bin", CLAUDE_DESKTOP_STARTED_PATH: "/home/u/.local/bin:/usr/bin:/bin", CLAUDE_DESKTOP_NARROWED_PATH: "/usr/bin:/bin" }]]) {
+    for (const [mode, host, files] of [["desktop", "x11", {}], ["x11 target", "gnome", { "claude-desktop-extra.json": cfg({ enabled: true, kind: "x11", display: ":99" }) }], ["wlroots target", "x11", { "claude-desktop-extra.json": cfg({ enabled: true, kind: "wlroots", display: "wayland-9" }) }]]) {
+      const key = label + " / " + mode, t = await pathTrace(host, files, env);
+      if (RECORD) { golden[key] = t; continue; }
+      console.log(`\n[PATH (5): ${key}: identical to origin/master]`);
+      const g = golden[key], a = JSON.stringify(g), b = JSON.stringify(t);
+      check(g && a === b && t.spawns.length > 0, "same spawns, argv, cwd and env", a === b ? undefined : (() => { if (!g) return "no golden entry"; if (JSON.stringify(g.out) !== JSON.stringify(t.out)) return "results differ: " + JSON.stringify([g.out, t.out]); const i = g.spawns.findIndex((x, k) => JSON.stringify(x) !== JSON.stringify(t.spawns[k])); return "spawn " + i + " of " + g.spawns.length + "/" + t.spawns.length + "\n  golden " + JSON.stringify(g.spawns[i]) + "\n  ours   " + JSON.stringify(t.spawns[i]); })());
+    }
+  }
+  if (RECORD) { writeFileSync(GOLDEN, "{\n" + Object.entries(golden).map(([k, v]) => JSON.stringify(k) + ": {\"out\": " + JSON.stringify(v.out) + ", \"spawns\": [\n  " + v.spawns.map((x) => JSON.stringify(x)).join(",\n  ") + "]}").join(",\n") + "\n}\n"); console.log("\nrecorded " + GOLDEN); }
+}
 
 // -------------------------------------------------- 9. T7 target clipboard
 for (const [label, target, inst, wbin, wargs, rbin, rargs] of [
