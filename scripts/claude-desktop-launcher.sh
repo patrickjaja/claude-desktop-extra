@@ -63,9 +63,12 @@ APP_ID='claude'
 # app_id ("com.anthropic.Claude"). On native Wayland there is no WM_CLASS, so
 # GNOME/KDE match the window to its .desktop entry by app_id == .desktop filename;
 # a mismatched filename makes the dock/Alt-Tab icon fall back to a generic one
-# (issue #148). StartupWMClass (also "com.anthropic.Claude", set in every .desktop
-# we write) covers X11/XWayland. So BOTH match keys agree: filename == app_id
-# (Wayland) and StartupWMClass == app_id (X11). The reverse-DNS id also lets
+# (issue #148). StartupWMClass (== DESKTOP_ID, set in every .desktop we write)
+# covers X11/XWayland. So BOTH match keys agree: filename == app_id (Wayland)
+# and StartupWMClass == app_id (X11). A named profile's windows take
+# "com.anthropic.Claude-<name>" as app_id / WM_CLASS whenever its per-profile
+# .desktop file exists (the app picks the identity up from that file), which
+# is why the per-profile files carry StartupWMClass=com.anthropic.Claude-<name>. The reverse-DNS id also lets
 # xdg-desktop-portal persist Computer Use grants on KDE. See the DESKTOP_ID
 # assignment after profile resolution below.
 
@@ -441,8 +444,9 @@ ELECTRON_BIN="${CLAUDE_ELECTRON:-}"
 
 # The bundled Electron binary is named after APP_ID (cosmetic argv[0] / scope
 # hint). NOTE: the binary basename does NOT set the window WM_CLASS - that comes
-# from the app's desktopName ("com.anthropic.Claude"); see the APP_ID header
-# above and issue #148.
+# from the app's desktop name: "com.anthropic.Claude", or for a named profile
+# with a per-profile .desktop file "com.anthropic.Claude-<name>"; see the
+# APP_ID header above and issue #148.
 #
 # The app itself is NEVER passed on the command line: the official build's
 # OnlyLoadAppFromAsar fuse makes Electron load the exe-adjacent
@@ -452,10 +456,8 @@ ELECTRON_BIN="${CLAUDE_ELECTRON:-}"
 #
 # When a profile is active, prefer the user-local copy at
 # ~/.local/lib/claude-desktop/<APP_ID>-<profile> created by --create-profile.
-# (Intent was a per-profile WM_CLASS via the basename for separate icons/Alt-Tab
-# groups; in practice all profiles still report "com.anthropic.Claude" because
-# the shared app.asar desktopName wins - distinct per-profile WM_CLASS would need
-# a per-profile desktopName/CHROME_DESKTOP override, as in fix_quick_entry_app_id.nim.)
+# (The binary basename gives the process its own argv[0] only; the window's
+# WM_CLASS / app_id follows the per-profile .desktop file, see the APP_ID header.)
 if [[ -z "$ELECTRON_BIN" ]]; then
     candidates=()
     if [[ -n "$profile_suffix" ]]; then
@@ -847,6 +849,28 @@ _appimage_mime_current() {
     [[ -f "$_APPIMAGE_MIME_XML" ]] && [[ "$(<"$1")" == "$(<"$_APPIMAGE_MIME_XML")" ]]
 }
 
+# Named profiles never own claude://. An older AppImage entry for a profile did
+# claim it (and may still be the recorded default), so hand the scheme back to
+# the default profile's entry when it is the one on record. Succeeds when the
+# default handler is NOT this profile's entry afterwards.
+_appimage_release_scheme() {
+    command -v xdg-mime &>/dev/null || return 0
+    local cur d base="com.anthropic.Claude.desktop" found=""
+    cur=$(xdg-mime query default x-scheme-handler/claude 2>/dev/null || true)
+    if [[ "$cur" == "${DESKTOP_ID}.desktop" ]]; then
+        local IFS=:
+        for d in "${XDG_DATA_HOME:-$HOME/.local/share}" ${XDG_DATA_DIRS:-/usr/local/share:/usr/share}; do
+            [[ -f "$d/applications/$base" ]] && { found=1; break; }
+        done
+        unset IFS
+        if [[ -n "$found" ]]; then
+            xdg-mime default "$base" x-scheme-handler/claude 2>/dev/null || true
+            cur=$(xdg-mime query default x-scheme-handler/claude 2>/dev/null || true)
+        fi
+    fi
+    [[ "$cur" != "${DESKTOP_ID}.desktop" ]]
+}
+
 _appimage_integrate() {
     local appimage_path="${CLAUDE_APPIMAGE_PATH:-}"
     local quiet="${1:-}"
@@ -877,6 +901,18 @@ _appimage_integrate() {
     fi
 
     local desired_exec="Exec=${appimage_path} %u"
+    # A named profile gets its own menu entry: it must start THAT profile, must
+    # not claim the claude:// scheme (the default profile's entry owns it and
+    # the launcher routes callbacks to the right profile) and carries the
+    # per-profile window class.
+    local desired_mime="$_APPIMAGE_MIME_LINE"
+    local desired_wmclass="com.anthropic.Claude"
+    if [[ -n "$profile_suffix" ]]; then
+        desired_exec="Exec=${appimage_path} --profile=${CLAUDE_PROFILE} %u"
+        desired_mime=""
+        desired_wmclass="$DESKTOP_ID"
+    fi
+    local _scheme_with_default=""
 
     # $ELECTRON_BIN (<AppDir>/usr/lib/claude-desktop/claude) locates the icon.
     # Never expand $CLAUDE_ELECTRON bare: it is the raw env var, unset unless
@@ -892,16 +928,18 @@ _appimage_integrate() {
     [[ -n "$mime_tree" && -f "$mime_src" ]] || mime_src=""
 
     if [[ -f "$_APPIMAGE_DESKTOP_FILE" ]]; then
-        local current_exec current_mime
+        local current_exec current_mime current_wmclass
         current_exec=$(grep '^Exec=' "$_APPIMAGE_DESKTOP_FILE" 2>/dev/null | head -1)
-        current_mime=$(grep '^MimeType=' "$_APPIMAGE_DESKTOP_FILE" 2>/dev/null | head -1)
-        if [[ "$current_exec" == "$desired_exec" && "$current_mime" == "$_APPIMAGE_MIME_LINE" ]] \
+        current_mime=$(grep '^MimeType=' "$_APPIMAGE_DESKTOP_FILE" 2>/dev/null | head -1 || true)
+        current_wmclass=$(grep '^StartupWMClass=' "$_APPIMAGE_DESKTOP_FILE" 2>/dev/null | head -1 || true)
+        if [[ "$current_exec" == "$desired_exec" && "$current_mime" == "$desired_mime" ]] \
+            && { [[ -z "$profile_suffix" ]] || [[ "$current_wmclass" == "StartupWMClass=${desired_wmclass}" ]]; } \
             && { [[ -z "$mime_src" ]] || _appimage_mime_current "$mime_src"; }; then
             log "AppImage integrate: .desktop up to date ($appimage_path)"
             if [[ "$quiet" != "quiet" ]]; then
                 echo "Desktop integration already up to date."
                 echo "  File: $_APPIMAGE_DESKTOP_FILE"
-                echo "  Exec: $appimage_path %u"
+                echo "  Exec: ${desired_exec#Exec=}"
             fi
             return 0
         fi
@@ -915,6 +953,25 @@ _appimage_integrate() {
     # instead of /usr/bin/claude-desktop. We keep %u (not the official %U) on the
     # main Exec= so it matches $desired_exec in the up-to-date check above;
     # the launcher handles a single claude:// URL either way.
+    if [[ -n "$profile_suffix" ]]; then
+        # Named profile: Name= matches _create_profile; no MimeType= and no
+        # Actions (their Exec lines have no --profile and would open the default
+        # profile).
+        cat > "$_APPIMAGE_DESKTOP_FILE" <<DESKTOP_EOF
+[Desktop Entry]
+Name=Claude (${CLAUDE_PROFILE})
+Comment=Desktop application for Claude.ai
+GenericName=AI Assistant
+Keywords=AI;Chat;Assistant;Claude;Code;LLM;
+${desired_exec}
+Icon=claude-desktop
+Type=Application
+StartupNotify=true
+StartupWMClass=${desired_wmclass}
+SingleMainWindow=true
+Categories=Utility;Development;
+DESKTOP_EOF
+    else
     cat > "$_APPIMAGE_DESKTOP_FILE" <<DESKTOP_EOF
 [Desktop Entry]
 Name=Claude
@@ -939,6 +996,7 @@ Exec=${appimage_path} claude://claude.ai/new
 Name=New Claude Code session
 Exec=${appimage_path} claude://code/new
 DESKTOP_EOF
+    fi
 
     local appimage_icon=""
     if [[ -n "$here" ]]; then
@@ -969,18 +1027,32 @@ DESKTOP_EOF
         update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
     fi
 
-    if command -v xdg-mime &>/dev/null; then
-        xdg-mime default "${DESKTOP_ID}.desktop" x-scheme-handler/claude 2>/dev/null || true
+    if [[ -z "$profile_suffix" ]]; then
+        if command -v xdg-mime &>/dev/null; then
+            xdg-mime default "${DESKTOP_ID}.desktop" x-scheme-handler/claude 2>/dev/null || true
+        fi
+    else
+        # Only reached when the entry was (re)written, i.e. it may have just
+        # lost an older claude:// claim; an up-to-date entry returns above.
+        _appimage_release_scheme && _scheme_with_default=1
     fi
 
     log "AppImage integrate: registered ${_APPIMAGE_DESKTOP_FILE} -> ${appimage_path}"
     if [[ "$quiet" != "quiet" ]]; then
         echo "Desktop integration installed."
         echo "  File: $_APPIMAGE_DESKTOP_FILE"
-        echo "  Exec: $appimage_path %u"
-        echo "  Protocol: claude:// -> Claude Desktop (AppImage)"
-        echo
-        echo "The claude:// protocol handler is now active."
+        echo "  Exec: ${desired_exec#Exec=}"
+        if [[ -n "$profile_suffix" ]]; then
+            if [[ -n "$_scheme_with_default" ]]; then
+                echo "  (profile entry: the claude:// handler stays with the default profile)"
+            else
+                echo "  (profile entry: no claude:// handler change was made)"
+            fi
+        else
+            echo "  Protocol: claude:// -> Claude Desktop (AppImage)"
+            echo
+            echo "The claude:// protocol handler is now active."
+        fi
         echo "To remove: claude-desktop --unintegrate"
     fi
     return 0
@@ -1032,6 +1104,40 @@ _appimage_unintegrate() {
     return 0
 }
 
+# The window identity this launch would use: the per-profile id when its
+# .desktop is found the way the app looks it up ($XDG_DATA_HOME/applications,
+# an unset/empty/relative value meaning ~/.local/share, then each absolute
+# $XDG_DATA_DIRS entry; a regular file, symlinks followed; Hidden=true counts as
+# absent). Pure bash, never fails.
+_window_identity() {
+    local base="com.anthropic.Claude"
+    if [[ -z "$profile_suffix" ]]; then
+        echo "$base"
+        return 0
+    fi
+    local d f line hidden dirs=()
+    if [[ "${XDG_DATA_HOME:-}" == /* ]]; then dirs+=("$XDG_DATA_HOME"); else dirs+=("$HOME/.local/share"); fi
+    local IFS=:
+    local x
+    for x in ${XDG_DATA_DIRS:-/usr/local/share:/usr/share}; do
+        [[ "$x" == /* ]] && dirs+=("$x")
+    done
+    unset IFS
+    for d in "${dirs[@]}"; do
+        f="$d/applications/${DESKTOP_ID}.desktop"
+        [[ -f "$f" ]] || continue
+        hidden=""
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            [[ "${line%$'\r'}" == "Hidden=true" ]] && { hidden=1; break; }
+        done < "$f" 2>/dev/null
+        [[ -n "$hidden" ]] && continue
+        echo "$DESKTOP_ID ($f)"
+        return 0
+    done
+    echo "$base (shared: no ${DESKTOP_ID}.desktop in the XDG applications dirs)"
+    return 0
+}
+
 _create_profile() {
     local name="$1"
     if [[ -z "$name" || "$name" == "default" ]]; then
@@ -1048,8 +1154,8 @@ _create_profile() {
     # still isolates the profile's state without one.
     if [[ -n "${CLAUDE_APPIMAGE_PATH:-}" ]]; then
         echo >&2 "claude-desktop: --create-profile is not available in the AppImage (its files move on every launch)."
-        echo >&2 "  Run the AppImage with --profile=$name instead: the profile gets its own login, logs and settings,"
-        echo >&2 "  and shares the default profile's taskbar entry."
+        echo >&2 "  Run the AppImage with --profile=$name instead: the profile gets its own login, logs, settings"
+        echo >&2 "  and its own menu entry and window identity (com.anthropic.Claude-$name)."
         return 1
     fi
 
@@ -1085,10 +1191,10 @@ _create_profile() {
     # /proc/self/exe resolves to the per-profile path (distinct argv[0] / scope).
     # This mirrors how Chrome does multi-channel (google-chrome-stable /
     # google-chrome-beta are real copies). NOTE: this alone does NOT give each
-    # profile a distinct WM_CLASS - Chromium's app_id comes from the shared
-    # app.asar desktopName ("com.anthropic.Claude"), not the binary basename, so the
-    # WM still groups all profiles as one app. See issue #148 / the discovery
-    # comment above for the per-profile-desktopName follow-up.
+    # profile a distinct WM_CLASS - Chromium's app_id comes from the app's
+    # desktop name, not the binary basename. The per-profile .desktop file
+    # written below is what gives the profile its own app_id
+    # (com.anthropic.Claude-<name>); see the APP_ID header.
     #
     # Strategy: hardlink first (zero-cost, same fs only), reflink second
     # (zero-cost on btrfs/xfs), copy fallback (typically ~200 MB per profile).
@@ -1153,13 +1259,12 @@ _create_profile() {
         # binary, so a named profile's right-click "New chat" would open in the
         # default profile. Simpler to drop them than to rewrite each per-action Exec.
         #
-        # StartupWMClass is left as the inherited "com.anthropic.Claude" on
-        # purpose: the window's live app_id is "com.anthropic.Claude" for every
-        # profile (the shared app.asar desktopName wins), so a per-profile
-        # WMClass would never match the window. A distinct per-profile app_id
-        # needs a per-profile desktopName override (out of scope for #148).
-        awk -v name="$name" -v execline="$exec_line" '
-            BEGIN { FS=OFS="="; drop=0 }
+        # StartupWMClass becomes the per-profile DESKTOP_ID: with this file
+        # present the profile's windows carry com.anthropic.Claude-<name> as
+        # app_id / WM_CLASS, so X11 matches the entry by this key and Wayland
+        # by the filename.
+        awk -v name="$name" -v execline="$exec_line" -v wmclass="com.anthropic.Claude-${name}" '
+            BEGIN { FS=OFS="="; drop=0; seenwm=0 }
             /^\[Desktop Action / { drop=1; next }   # drop the whole action block
             /^\[Desktop Entry\]/ { drop=0 }
             drop { next }
@@ -1167,7 +1272,9 @@ _create_profile() {
             /^Exec=/     { print execline; next }
             /^MimeType=/ { next }
             /^Actions=/  { next }
+            /^StartupWMClass=/ { print "StartupWMClass=" wmclass; seenwm=1; next }
             { print }
+            END { if (!seenwm) print "StartupWMClass=" wmclass }
         ' "$source_desktop" > "$desktop_file"
     else
         cat > "$desktop_file" <<EOF
@@ -1177,7 +1284,7 @@ ${exec_line}
 Terminal=false
 Type=Application
 Icon=claude-desktop
-StartupWMClass=com.anthropic.Claude
+StartupWMClass=com.anthropic.Claude-${name}
 Categories=Utility;Development;
 EOF
     fi
@@ -2212,6 +2319,7 @@ _diagnose() {
     echo "CLAUDE_PROFILE = ${CLAUDE_PROFILE:-(unset → default)}"
     echo "config_dir = $config_dir"
     echo "DESKTOP_ID = $DESKTOP_ID"
+    echo "window identity = $(_window_identity)"
     # The system-installed default .desktop is the portal-identity anchor that
     # the systemd scope (app-com.anthropic.Claude-...scope) resolves back to. It
     # is the default "com.anthropic.Claude.desktop"; named-profile .desktop files
@@ -2650,9 +2758,10 @@ Options:
                             a 'claude-desktop-NAME' symlink. Omit for default.
   --create-profile=NAME     Create profile NAME: installs user-local symlinks
                             (~/.local/bin/claude-desktop-NAME, ~/.local/lib/...)
-                            and a menu entry "Claude (NAME)". All profiles
-                            share one taskbar/Alt-Tab identity; the window
-                            title carries the profile name.
+                            and a menu entry "Claude (NAME)". The profile's
+                            windows get their own taskbar/Alt-Tab identity
+                            (com.anthropic.Claude-NAME) through that entry;
+                            the window title carries the profile name.
                             User data is not created until first launch.
   --delete-profile=NAME     Remove the entry points for profile NAME. User data
                             (~/.config/Claude-NAME, ~/.claude-NAME) is preserved.
@@ -2868,8 +2977,7 @@ esac
 # Auto-heal stale per-profile installs after package upgrades or NixOS rebuilds.
 # Also refresh ELECTRON_BIN if path discovery had to fall back to the canonical
 # (e.g. dangling per-profile from a moved Nix store path) - we want the next
-# launch step to use the freshly materialised per-profile binary so WM_CLASS /
-# Wayland app_id reflect the profile.
+# launch step to use the freshly materialised per-profile binary.
 # The AppImage never uses a per-profile binary (see _refresh_profile_binary_if_stale).
 if [[ -z "${_diagnose_requested:-}" && -n "$profile_suffix" && -z "${CLAUDE_APPIMAGE_PATH:-}" ]]; then
     _refresh_profile_binary_if_stale || true
@@ -2879,8 +2987,8 @@ if [[ -z "${_diagnose_requested:-}" && -n "$profile_suffix" && -z "${CLAUDE_APPI
     elif [[ "$ELECTRON_BIN" == "$_profile_bin" ]]; then
         # The per-profile binary was chosen during resolution but is not usable
         # now. Launching it would exec a path that is not there, so fall back to
-        # the canonical binary: the profile keeps its isolated state (window
-        # identity is com.anthropic.Claude either way).
+        # the canonical binary: the profile keeps its isolated state and its
+        # window identity (that follows the per-profile .desktop, not the binary).
         ELECTRON_BIN=''
         for candidate in "/usr/lib/claude-desktop/${APP_ID}" "/usr/lib/claude-desktop-bin/${APP_ID}"; do
             [[ -x "$candidate" ]] && { ELECTRON_BIN="$candidate"; break; }
@@ -2893,8 +3001,8 @@ if [[ -z "${_diagnose_requested:-}" && -n "$profile_suffix" && -z "${CLAUDE_APPI
 
     # Hint for --profile=NAME without --create-profile: state is isolated, but
     # there is no per-profile binary, menu entry or claude-desktop-NAME
-    # shortcut. (The window's WM_CLASS / Wayland app_id is com.anthropic.Claude
-    # for every profile regardless - it comes from the bundle's desktopName.)
+    # shortcut. (Without the per-profile .desktop file the window keeps the
+    # shared com.anthropic.Claude app_id / WM_CLASS; --create-profile writes it.)
     # Suppress with CLAUDE_PROFILE_QUIET=1.
     if [[ ! -e "$_profile_bin" && -z "${CLAUDE_PROFILE_QUIET:-}" ]]; then
         echo >&2 "claude-desktop: profile '$CLAUDE_PROFILE' has isolated state but no menu entry or claude-desktop-$CLAUDE_PROFILE shortcut."
@@ -2902,6 +3010,53 @@ if [[ -z "${_diagnose_requested:-}" && -n "$profile_suffix" && -z "${CLAUDE_APPI
         echo >&2 "    claude-desktop --create-profile=$CLAUDE_PROFILE"
         echo >&2 "  (suppress this message with CLAUDE_PROFILE_QUIET=1)"
     fi
+fi
+
+# Bring the launcher-written per-profile .desktop in step with the window
+# identity: a file made before the per-profile app_id existed still says
+# StartupWMClass=com.anthropic.Claude, which no longer matches the profile's
+# windows on X11. Rewrites only that line, only in the exact file --create-profile
+# writes (recognised by its Exec= carrying --profile=<this profile>), and never
+# creates a file. Pure bash on the common path (no process when nothing needs
+# changing); never fails the launch.
+_heal_profile_wmclass() {
+    local dir f line has_wm has_exec tmp cr
+    local seen=""
+    for dir in "$HOME/.local/share/applications" "${XDG_DATA_HOME:-}/applications"; do
+        [[ "$dir" == "/applications" || "$seen" == *"|$dir|"* ]] && continue
+        seen+="|$dir|"
+        f="$dir/${DESKTOP_ID}.desktop"
+        [[ -f "$f" && ! -L "$f" && -w "$f" ]] || continue
+        has_wm=""
+        has_exec=""
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ "$line" == StartupWMClass=* && "${line%$'\r'}" != "StartupWMClass=${DESKTOP_ID}" ]]; then has_wm=1; fi
+            [[ "$line" == Exec=*" --profile=${CLAUDE_PROFILE} "* || "$line" == Exec=*" --profile=${CLAUDE_PROFILE}" ]] && has_exec=1
+        done < "$f"
+        [[ -n "$has_wm" && -n "$has_exec" ]] || continue
+        tmp="$f.tmp.$$"
+        if { : > "$tmp"; } 2>/dev/null; then
+            while IFS= read -r line || [[ -n "$line" ]]; do
+                if [[ "$line" == StartupWMClass=* ]]; then
+                    cr=""
+                    [[ "$line" == *$'\r' ]] && cr=$'\r'
+                    printf 'StartupWMClass=%s%s\n' "${DESKTOP_ID}" "$cr"
+                else
+                    printf '%s\n' "$line"
+                fi
+            done < "$f" > "$tmp" 2>/dev/null || { rm -f "$tmp"; continue; }
+            chmod --reference="$f" "$tmp" 2>/dev/null || true
+            if mv -f "$tmp" "$f" 2>/dev/null; then
+                log "profile .desktop: StartupWMClass -> ${DESKTOP_ID} ($f)"
+            else
+                rm -f "$tmp"
+            fi
+        fi
+    done
+    return 0
+}
+if [[ -z "${_diagnose_requested:-}" && -n "$profile_suffix" && -z "${CLAUDE_APPIMAGE_PATH:-}" ]]; then
+    _heal_profile_wmclass || true
 fi
 
 # ---------------------------------------------------------------------------

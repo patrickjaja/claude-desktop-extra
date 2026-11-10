@@ -33,6 +33,9 @@
 //        our index is not consulted in kwin mode
 //   [11] capabilitiesNow per backend; static capabilities unchanged but for
 //        hostBundleId
+//   [12] named profile with its own identity (CHROME_DESKTOP=
+//        com.anthropic.Claude-work.desktop): own pid and -work windows are the
+//        host, the default profile's com.anthropic.Claude window is not
 //
 // Exit codes follow the repo convention: 0 = PASS, other = FAIL.
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, chmodSync, symlinkSync, rmSync } from "node:fs";
@@ -422,6 +425,30 @@ console.log("\n[10] kwin-portal-bridge (executor_linux.js): the bridge's ids pas
   ok((await kx.getFrontmostApp()).bundleId === "org.kde.konsole" && (await kx.appUnderPoint(950, 10)).bundleId === "google-chrome", "frontmost / appUnderPoint: the bridge's canonical ids");
   ok(kx.capabilities.hostBundleId === "com.anthropic.claude" && kx.capabilities.screenshotFiltering === "native", "kwin capabilities unchanged", J(kx.capabilities));
   globalThis.__cuKwinMode = false;
+}
+
+// ── [12] named profile with its own window identity (issue #319) ──────────
+// patches/core/fix_profile_app_identity switches CHROME_DESKTOP to
+// <base>-<profile>.desktop when that .desktop exists; _hostId() reads it live.
+// Host test = _isHostWin's rule via the exported pieces: our pid (resolveWindow
+// .host) or the window's canonical id equal to hostId() (owns(hostId, w)).
+console.log("\n[12] named profile: CHROME_DESKTOP=com.anthropic.Claude-work.desktop");
+{
+  const PROF = dataDir("prof", { "com.anthropic.Claude-work": "Name=Claude (work)\nExec=claude-desktop --profile=work %U\nIcon=claude-desktop\nStartupWMClass=com.anthropic.Claude-work\n" });
+  const ownW = x11Win("com.anthropic.Claude-work", "com.anthropic.Claude-work", R(400, 400, 600, 400), { pid: process.pid });
+  const ownQeW = x11Win("claude-quick-entry", "claude-quick-entry", R(500, 50, 400, 60), { pid: process.pid });
+  const defaultInstW = x11Win("com.anthropic.Claude", "com.anthropic.Claude", R(0, 0, 600, 400), { pid: 6100 });
+  const workOtherPidW = x11Win("com.anthropic.Claude-work", "com.anthropic.Claude-work", R(0, 0, 600, 400), { pid: 6101 });
+  for (const [label, data] of [["profile .desktop indexed", [SYS, PROF]], ["profile .desktop not in the index", [SYS]]]) {
+    const rig = makeRig({ data, br: { windows: [ownW, ownQeW, defaultInstW, workOtherPidW] } });
+    process.env.CHROME_DESKTOP = "com.anthropic.Claude-work.desktop";
+    const host = (w) => { const r = rig.ids.resolveWindow(w); return !!(r && (r.host || rig.ids.owns(rig.ids.hostId(), w))); };
+    ok(rig.ids.hostId() === "com.anthropic.Claude-work" && rig.ex.capabilities.hostBundleId === "com.anthropic.Claude-work", label + ": hostId / capabilities.hostBundleId follow CHROME_DESKTOP", J([rig.ids.hostId(), rig.ex.capabilities.hostBundleId]));
+    ok(host(ownW) && host(ownQeW) && rig.ids.resolveWindow(ownQeW).bundleId === "com.anthropic.Claude-work", label + ": the instance's own windows (our pid) are the host, Quick Entry included", J([rig.ids.resolveWindow(ownW), rig.ids.resolveWindow(ownQeW)]));
+    ok(!host(defaultInstW) && rig.ids.resolveWindow(defaultInstW).bundleId === "com.anthropic.Claude", label + ": a com.anthropic.Claude window of another pid (the default profile) is NOT the host", J(rig.ids.resolveWindow(defaultInstW)));
+    ok(host(workOtherPidW), label + ": a com.anthropic.Claude-work window is the host", J(rig.ids.resolveWindow(workOtherPidW)));
+    process.env.CHROME_DESKTOP = "com.anthropic.Claude.desktop";
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -1009,6 +1009,42 @@ safe("D13", () => {
   check("real helper from the source tree: exit 5, nothing on stdout", `${real.status}|${real.stdout}`, "5|");
 });
 
+console.log("D14: --diagnose names the window identity this launch would use");
+safe("D14", () => {
+  const root = join(scratch, "d14");
+  const home = join(root, "home");
+  const electron = fakeTree(join(root, "tree"), {});
+  const apps = join(home, ".local", "share", "applications");
+  const diag = (args, extra = {}) => spawnSync(BASH, [launcherPath, ...args, "--diagnose"], {
+    env: { PATH: "/usr/bin:/bin", HOME: home, CLAUDE_ELECTRON: electron,
+           XDG_RUNTIME_DIR: join(root, "run"), XDG_DATA_DIRS: join(root, "nodata"), ...extra },
+    encoding: "utf8", timeout: 90000,
+  });
+  const idLine = (r) => ((r.stdout || "").split("\n").find((l) => l.startsWith("window identity = ")) || "");
+  const def = diag([]);
+  check("default profile: base id only", idLine(def), "window identity = com.anthropic.Claude");
+  const shared = diag(["--profile=work"]);
+  check("named profile without the file: shared, with the reason",
+    idLine(shared), "window identity = com.anthropic.Claude (shared: no com.anthropic.Claude-work.desktop in the XDG applications dirs)");
+  mkdirSync(apps, { recursive: true });
+  const f = join(apps, "com.anthropic.Claude-work.desktop");
+  writeFileSync(f, "[Desktop Entry]\nName=Claude (work)\n");
+  const own = diag(["--profile=work"]);
+  check("named profile with the file: per-profile id and the file path", idLine(own), `window identity = com.anthropic.Claude-work (${f})`);
+  writeFileSync(f, "[Desktop Entry]\nHidden=true\n");
+  check("Hidden=true counts as absent", idLine(diag(["--profile=work"])).includes("(shared:"), true);
+  rmSync(f);
+  const dd = join(root, "datadir");
+  mkdirSync(join(dd, "applications"), { recursive: true });
+  writeFileSync(join(dd, "applications", "com.anthropic.Claude-work.desktop"), "[Desktop Entry]\nName=x\n");
+  check("found through XDG_DATA_DIRS", idLine(diag(["--profile=work"], { XDG_DATA_DIRS: dd })),
+    `window identity = com.anthropic.Claude-work (${join(dd, "applications", "com.anthropic.Claude-work.desktop")})`);
+  check("a relative XDG_DATA_HOME is ignored (falls back to ~/.local/share)",
+    idLine(diag(["--profile=work"], { XDG_DATA_HOME: "rel" })).includes("(shared:"), true);
+  check("default profile output keeps its single added line",
+    (def.stdout || "").split("\n").filter((l) => l.startsWith("window identity")).length, 1);
+});
+
 rmSync(scratch, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) {

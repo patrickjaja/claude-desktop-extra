@@ -201,7 +201,7 @@ The launcher (`scripts/claude-desktop-launcher.sh`) resolves `CLAUDE_PROFILE` fr
 | Claude Code config | `CLAUDE_CONFIG_DIR` env exported by launcher | Honored by `@anthropic-ai/claude-code` CLI |
 | Quick Entry socket | `process.env.CLAUDE_PROFILE` read in JS | `patches/core/fix_quick_entry_cli_toggle.nim` |
 | systemd scope | `${profile_suffix}` in launcher | `claude-desktop-launcher.sh` |
-| Per-profile Electron binary | hardlink -> reflink -> copy fallback, refreshed from `CLAUDE_ELECTRON` when set (Nix) | `~/.local/lib/claude-desktop/<APP_ID>-<name>`. Does NOT give the window its own identity: WM_CLASS / Wayland app_id is `com.anthropic.Claude` for every profile; `fix_profile_window_title.nim` puts the profile name in the title |
+| Per-profile Electron binary | hardlink -> reflink -> copy fallback, refreshed from `CLAUDE_ELECTRON` when set (Nix) | `~/.local/lib/claude-desktop/<APP_ID>-<name>`. The window identity comes from `fix_profile_app_identity.nim`: WM_CLASS / Wayland app_id is `com.anthropic.Claude-<name>` when that profile's `.desktop` exists, else the shared `com.anthropic.Claude`; `fix_profile_window_title.nim` puts the profile name in the title |
 | SSO callback routing | marker file written by JS hook on `shell.openExternal`; launcher reads it to dispatch an incoming `claude://` URL | `patches/core/fix_profile_url_routing.nim` (writer) + launcher URL-handler block (reader) |
 
 **Rule when adding a patch:** if it writes to a fixed user-level path, prefer `app.getPath("userData")` (auto-isolates) over `os.homedir()+"/.config/Claude"`. If it opens a Unix socket or pipe owned by the Electron process itself, append `process.env.CLAUDE_PROFILE` to the path like `fix_quick_entry_cli_toggle.nim` does. If the socket belongs to a shared user-level daemon, do NOT suffix it - clients across all profiles connect to the same listener. If the patch spawns a long-lived child process that holds state, make sure it gets `CLAUDE_PROFILE` and `CLAUDE_CONFIG_DIR` (`child_process.spawn` inherits `process.env` by default - verify, don't assume).
@@ -226,7 +226,7 @@ Runtime logs are in `~/.config/Claude/logs/`. When 3P mode is active (an `infere
 patches/           # Nim patch sources (.nim) + Makefile, compiled to native binaries (ls patches/*/*.nim)
 patches/linux/     #   Linux compatibility - always on, not user-configurable (37)
 patches/community/ #   Opt-in features, each with a switch in Settings -> Extra -> Community Features (23)
-patches/core/      #   Always-on infrastructure: Extra settings pages, theme engine, GrowthBook overrides, multi-profile (7)
+patches/core/      #   Always-on infrastructure: Extra settings pages, theme engine, GrowthBook overrides, multi-profile (8)
 js/                # Shared JS snippets embedded by Nim patches via staticRead ("../../js/..." from a patch)
 scripts/           # Build, validation, and launcher scripts
 scripts/tests/     # Feature test harnesses, grouped like patches/ (run: scripts/run-feature-tests.sh)

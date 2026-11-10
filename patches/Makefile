@@ -169,5 +169,7 @@ core/add_feature_extra_settings_bridge: ../js/extra_settings_bridge.js
 # .jsonc template at runtime.
 core/add_growthbook_overrides: ../js/growthbook_overrides.js
 
+core/fix_profile_app_identity: ../js/profile_app_identity.js
+
 clean:
 	@rm -rf $(BINS) .nimcache

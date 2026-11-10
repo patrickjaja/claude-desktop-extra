@@ -2,9 +2,11 @@
 # Diagnose the Wayland app_id / X11 WM_CLASS of every open window.
 #
 # Used to verify Quick Entry's app_id handling (fix_quick_entry_app_id.nim):
-# the main Claude window should report app_id "com.anthropic.Claude" and the
-# Quick Entry window "claude-quick-entry"; any window opened after Quick Entry
-# must NOT inherit a stale value. See the "Quick Entry app_id" notes in the
+# the main Claude window should report app_id "com.anthropic.Claude" (or
+# "com.anthropic.Claude-<name>" for a named profile that has its
+# com.anthropic.Claude-<name>.desktop entry) and the Quick Entry window
+# "claude-quick-entry"; any window opened after Quick Entry must NOT inherit a
+# stale value. See the "Quick Entry app_id" notes in the
 # project memory for the full before/after test procedure.
 #
 # MUST be run from a terminal INSIDE the graphical session - it talks to the

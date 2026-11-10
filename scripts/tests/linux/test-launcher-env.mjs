@@ -423,11 +423,11 @@ safe("F2", () => {
   check("a FONTCONFIG_FILE pointing nowhere is replaced by the private config", bad.val, join(bad.home, ".cache", "claude-desktop", "fontconfig", "fonts.conf"));
 });
 
-// Every profile's window reports com.anthropic.Claude (the bundle's
-// desktopName), so no user-facing text may promise a per-profile identity.
-console.log("P1: profile texts do not promise a per-profile window identity");
-check("--help does not claim a per-profile WMClass", /per-profile WMClass/.test(launcherSrc), false);
-check("runtime hint does not claim a per-profile WM identity", /per-profile WM identity/.test(launcherSrc), false);
+// A named profile's windows carry com.anthropic.Claude-<name> when its .desktop
+// exists, so no launcher text may claim that all profiles share one identity.
+console.log("P1: profile texts do not claim a shared window identity");
+check("no text says all profiles share one taskbar identity", /share (one|the default profile's) taskbar/.test(launcherSrc), false);
+check("no text promises a per-profile WMClass without the .desktop", /per-profile WMClass/.test(launcherSrc), false);
 
 rmSync(scratch, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${failures.length} failed`);

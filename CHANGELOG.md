@@ -2,6 +2,15 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-10
+
+### Named profiles get their own window identity (#319)
+
+- A named profile's windows now carry Wayland app_id / X11 WM_CLASS `com.anthropic.Claude-<name>` when the profile's `com.anthropic.Claude-<name>.desktop` exists in the XDG applications directories, so desktops that match windows to `.desktop` entries can show each profile as its own entry (`Claude (work)`); give the profile's `.desktop` its own `Icon=` to tell them apart at a glance (new patch `fix_profile_app_identity`). A profile without that file (`--profile=NAME` without `--create-profile`) keeps the shared `com.anthropic.Claude` identity. The default profile is unchanged; window rules written for `com.anthropic.Claude` do not match a named profile's windows, notifications are still attributed to the default app entry, and the `claude://` handler stays with the default profile. On KDE Plasma a named profile now registers the Quick Entry shortcut under its own entry (`Claude (work)`), so Plasma asks once per profile to confirm the shortcut on the first launch after the update.
+- Quick Entry swaps its own app id in only around its window's construction and restores the previous value right after, so windows opened later always carry the main identity, also when Quick Entry was built but not yet shown.
+- Per-profile `.desktop` files written by `--create-profile` now set `StartupWMClass=com.anthropic.Claude-<name>`, and existing launcher-written profile files are updated on the next launch. The AppImage's named-profile entry starts that profile and no longer claims the `claude://` handler (an entry from an older version hands it back to the default entry). `claude-desktop --diagnose` states which window identity a profile uses.
+- In a named profile, Computer Use treats only that profile's own windows as the Claude host; other profiles' Claude windows are ordinary apps to it.
+
 ## 2026-11-06
 
 ### Cowork on Linux: two backends, Enable KVM access, a "Cowork (Linux)" page and a device icon in every chat

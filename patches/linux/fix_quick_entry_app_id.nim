@@ -74,9 +74,8 @@
 # ============================================================================
 # What actually controls the Wayland app_id
 # ============================================================================
-# Chromium's Ozone-Wayland backend calls `xdg_toplevel.set_app_id`
-# when a BrowserWindow is constructed. The value it sends comes from
-# `GetXdgAppId()` in `chrome/browser/shell_integration_linux.cc`:
+# Chromium derives the window id from `GetXdgAppId()` in
+# `chrome/browser/shell_integration_linux.cc`:
 #
 #     std::optional<std::string> GetXdgAppId() {
 #       auto name = GetDesktopName();  // reads $CHROME_DESKTOP
@@ -86,52 +85,44 @@
 #       return *name;
 #     }
 #
-# So the app_id is the basename of whatever the `CHROME_DESKTOP`
-# environment variable points at, with any `.desktop` suffix stripped.
-# The launcher does NOT export `CHROME_DESKTOP`, so `GetDesktopName()`
-# falls back to Electron's `desktopName` (from the app's package.json).
-# Since v1.19367.0 that is `com.anthropic.Claude`, so every BrowserWindow
-# gets `app_id = com.anthropic.Claude` by default. (This value is upstream's
-# and can be renamed again, which is why the reset below reads it at runtime
-# rather than hardcoding it.)
-#
-# Critically, Chromium re-reads `CHROME_DESKTOP` at each new
-# `xdg_toplevel.set_app_id` call, not once at process start. If we
-# change the env var BEFORE `new BrowserWindow(...)` runs, the
-# resulting window gets whatever id we set. This was verified
-# empirically: with the swap below in place, the extension's debug
-# log reports
-#     wmClass = claude-quick-entry
-# for the Quick Entry window, while the main window keeps
-#     wmClass = com.anthropic.Claude
-#
-# Electron's `app.setDesktopName()` is a thin wrapper around setting
-# the same env var from the JS side, so we call both for safety.
+# Electron's NativeWindowViews constructor copies that value into the widget
+# params (`params.wayland_app_id` on Wayland, the WM_CLASS on X11), so each
+# window keeps the id that `CHROME_DESKTOP` held while ITS constructor ran.
+# Electron sets `CHROME_DESKTOP` from package.json `desktopName` before the
+# main script runs (`com.anthropic.Claude` since v1.19367.0), and
+# `app.setDesktopName()` writes the same env var, so we set both.
 #
 # ============================================================================
 # Fix
 # ============================================================================
-# Two small injections in the Quick Entry setup chain:
+# The Quick Entry `new E.BrowserWindow(opts)` is rewritten to construct
+# through a small wrapper:
 #
-#  1. BEFORE the `new wA.BrowserWindow(...)` that creates `Po`:
-#     set CHROME_DESKTOP to "claude-quick-entry.desktop"
-#     (and call app.setDesktopName).
+#     X||(X=new ((function(B,A){return function(o){
+#         const prev=process.env.CHROME_DESKTOP;
+#         try{ CHROME_DESKTOP = setDesktopName = "claude-quick-entry.desktop";
+#              return new B(o) }
+#         finally{ restore prev (env + setDesktopName) }
+#     }})(E.BrowserWindow,E.app))({titleBarStyle:"hidden",...}),...)
 #
-#  2. ON the window's first "ready-to-show" event: reset CHROME_DESKTOP
-#     (and app.setDesktopName) back to the app's real `desktopName` read
-#     from package.json at runtime (fallback "com.anthropic.Claude"), so
-#     any later BrowserWindow the app creates (dialogs, printing preview,
-#     etc.) gets the original app_id again.
+#  - The swap happens inside the constructor call, after the options object
+#    was evaluated, and the PREVIOUS value is restored in `finally`, i.e.
+#    immediately after the native window exists, and also when the
+#    constructor throws.
+#  - The restore puts back whatever was active before - the package.json
+#    `desktopName`, or a per-profile name another patch set at startup - so
+#    no package.json read or profile-suffix logic is needed here.
+#  - If `CHROME_DESKTOP` was unset before (not possible in a packaged
+#    Electron run, which always sets it), the restore deletes the env var
+#    again; `setDesktopName` has no "unset" form, so it is not called.
+#  - `new` of a function that returns an object yields that object, so `X`
+#    is the real BrowserWindow; the `X||(...)` short-circuit, the comma
+#    chain and its value are unchanged.
 #
-# We use `.once("ready-to-show")` rather than a blind setTimeout
-# because ready-to-show guarantees Chromium has dispatched
-# `xdg_toplevel.set_app_id` to the compositor. Resetting any earlier
-# risks a race where the protocol message goes out with the reset
-# value.
-#
-# Quick Entry itself is only constructed once per session (upstream
-# guards with `Po || (Po = new ...)`), so it retains its custom app_id
-# for its whole lifetime even though the env var is restored.
+# An earlier version reset the name in the window's `ready-to-show` handler.
+# On native Wayland `ready-to-show` never fires for the transparent Quick
+# Entry window (see fix_quick_entry_ready_wayland.nim), so the reset never ran
+# and every window created later inherited `claude-quick-entry`.
 #
 # ============================================================================
 # How users act on this
@@ -148,135 +139,91 @@
 # Users who don't run such an extension see no difference at all.
 #
 # ============================================================================
-# Pattern anchors
+# Pattern anchor
 # ============================================================================
-# Anchor 1: `([\w$]+)||(([\w$]+)=new ([\w$]+).BrowserWindow({titleBarStyle:"hidden"`
-#           The `||` short-circuit plus the exact options prefix is
-#           only present for the Quick Entry constructor in the bundle.
-#           Minifier renames force us to capture the winVar and
-#           electronVar; nim-regex lacks backreferences so we verify
-#           the two identifier captures agree in the callback.
-#
-# Anchor 2: the `Po.loadFile(.../quick-window.html)` call. It's the
-#           cleanest statement in the setup comma-chain to append our
-#           `.once("ready-to-show")` reset to.
+# `([\w$]+)||(([\w$]+)=new ([\w$]+).BrowserWindow({titleBarStyle:"hidden"`
+# The `||` short-circuit plus the exact options prefix is only present for
+# the Quick Entry constructor in the bundle. nim-regex lacks backreferences,
+# so the two window-variable captures are compared in the callback.
 
 import std/[os, strutils]
 import regex
 
-# Fallback only. The reset target is normally read from the app's own
-# package.json `desktopName` at runtime (see the post-create block below):
-# upstream renamed the app identity from "claude" to "com.anthropic.Claude"
-# in v1.19367.0, and hardcoding any literal here goes stale on the next
-# rename. Kept as a last-resort fallback if the package.json read ever fails.
-const MAIN_APP_ID_FALLBACK = "com.anthropic.Claude"
-const QE_APP_ID = "claude-quick-entry"
+const QE_DESKTOP = "claude-quick-entry.desktop"
+
+# The constructor wrapper. Constant text: the minified names are passed in as
+# arguments after it, so the idempotency check can look for this exact string.
+const WRAPPER =
+  "function(__cdbQeB,__cdbQeApp){return function(__cdbQeOpts){" &
+  "const __cdbQePrevDesktop=process.env.CHROME_DESKTOP;" & "try{" &
+  "process.env.CHROME_DESKTOP=\"" & QE_DESKTOP & "\";" &
+  "typeof __cdbQeApp.setDesktopName===\"function\"&&__cdbQeApp.setDesktopName(\"" &
+  QE_DESKTOP & "\");" & "return new __cdbQeB(__cdbQeOpts)" & "}finally{" & "try{" &
+  "if(typeof __cdbQePrevDesktop===\"string\"){" &
+  "process.env.CHROME_DESKTOP=__cdbQePrevDesktop;" &
+  "typeof __cdbQeApp.setDesktopName===\"function\"&&__cdbQeApp.setDesktopName(__cdbQePrevDesktop)" &
+  "}else delete process.env.CHROME_DESKTOP" & "}catch(__cdbQeRestoreErr){" &
+  "try{(globalThis.__cdbDiag||console.log)(\"[quick-entry] app_id restore failed: \"+__cdbQeRestoreErr)}catch(_){}" &
+  "}" & "}" & "}}"
+
+# Legacy end states of earlier versions of this patch. Never accepted as done.
+const LEGACY_MARKERS = ["__qeAppIdReadErr", "||(process.env.CHROME_DESKTOP="]
 
 proc apply*(input: string): string =
   result = input
 
-  # -----------------------------------------------------------------
-  # 0. Idempotency: assert BOTH of our injected end-states are present
-  #    (the pre-create CHROME_DESKTOP swap and the ready-to-show reset),
-  #    never merely that the pre-patch shape is gone.
-  # -----------------------------------------------------------------
-  let swapApplied =
-    ("process.env.CHROME_DESKTOP=\"" & QE_APP_ID & ".desktop\"") in result
-  let resetApplied = "__qeAppIdReadErr" in result
-  if swapApplied and resetApplied:
-    echo "  [OK] Quick Entry app_id swap + reset already present (idempotent)"
-    return result
-  if swapApplied != resetApplied:
-    echo "  [FAIL] Half-applied Quick Entry app_id patch (swap=" & $swapApplied &
-      ", reset=" & $resetApplied & ") -- re-audit"
+  for marker in LEGACY_MARKERS:
+    if marker in result:
+      echo "  [FAIL] Legacy Quick Entry app_id patch shape found (" & marker &
+        ") -- re-extract a pristine bundle"
+      quit(1)
+
+  # Idempotency: OUR wrapper must sit exactly once on the Quick Entry
+  # constructor, called with <electron>.BrowserWindow and <electron>.app and
+  # followed by the Quick Entry options prefix.
+  let wrapped = "=new ((" & WRAPPER & ")("
+  let wrappedCount = result.count(wrapped)
+  if wrappedCount > 0:
+    let idx = result.find(wrapped)
+    let tail = result[idx + wrapped.len .. min(idx + wrapped.len + 160, result.high)]
+    if wrappedCount == 1 and
+        tail.startsWith(
+          re2"""[\w$]+\.BrowserWindow,[\w$]+\.app\)\)\(\{titleBarStyle:["`]hidden"""
+        ):
+      echo "  [OK] Quick Entry app_id swap + constructor-time restore already present (idempotent)"
+      return result
+    echo "  [FAIL] Quick Entry app_id wrapper found " & $wrappedCount &
+      "x but not in the expected shape -- re-audit"
     quit(1)
 
-  # -----------------------------------------------------------------
-  # 1. Pre-create: swap CHROME_DESKTOP to the Quick Entry id.
-  # -----------------------------------------------------------------
-  # v1.26832.0 switched the minifier to backtick template literals for most
-  # string literals (`hidden` instead of "hidden"), so the quote character is
-  # captured and re-emitted verbatim rather than hardcoded.
-  let preCreatePattern = re2(
+  # v1.26832.0 switched the minifier to backtick literals for a while; the
+  # quote character is captured and re-emitted verbatim.
+  let pattern = re2(
     r"""([\w$]+)\|\|\(([\w$]+)=new ([\w$]+)\.BrowserWindow\(\{titleBarStyle:(["`])hidden"""
   )
-  var preCount = 0
+  var count = 0
   result = result.replace(
-    preCreatePattern,
+    pattern,
     proc(m: RegexMatch2, s: string): string =
       let w1 = s[m.group(0)]
       let w2 = s[m.group(1)]
       let electronVar = s[m.group(2)]
       let q = s[m.group(3)]
       if w1 != w2:
-        # The short-circuit target and assignment LHS must be the same
-        # var; bail out by reconstructing the original match.
-        return
-          w1 & "||(" & w2 & "=new " & electronVar & ".BrowserWindow({titleBarStyle:" & q &
-          "hidden"
-      inc preCount
-      w1 & "||(" & "process.env.CHROME_DESKTOP=\"" & QE_APP_ID & ".desktop\"," &
-        "(typeof " & electronVar & ".app.setDesktopName===\"function\"&&" & electronVar &
-        ".app.setDesktopName(\"" & QE_APP_ID & ".desktop\"))," & w2 & "=new " &
-        electronVar & ".BrowserWindow({titleBarStyle:" & q & "hidden",
+        return s[m.boundaries]
+      inc count
+      w1 & "||(" & w2 & "=new ((" & WRAPPER & ")(" & electronVar & ".BrowserWindow," &
+        electronVar & ".app))({titleBarStyle:" & q & "hidden",
   )
-  if preCount != 1:
-    echo "  [FAIL] Expected 1 Quick Entry pre-create pattern, got " & $preCount
+  if count != 1:
+    echo "  [FAIL] Expected 1 Quick Entry constructor, got " & $count
     quit(1)
-  echo "  [OK] CHROME_DESKTOP swap to " & QE_APP_ID & " inserted before BrowserWindow: " &
-    $preCount & " match(es)"
-
-  # -----------------------------------------------------------------
-  # 2. Post-create: schedule reset on the window's ready-to-show.
-  # -----------------------------------------------------------------
-  # The path module is a dotted chain since v1.26832.0 (`p.default.join(...)`,
-  # from the interop `e.a(require("node:path"))` wrapper), and the path literal
-  # is a backtick template literal.
-  let loadFilePattern = re2(
-    r"""(([\w$]+)\.loadFile\(([\w$]+(?:\.[\w$]+)*)\.join\(([\w$]+)\.app\.getAppPath\(\),["`]\.vite/renderer/quick_window/quick-window\.html["`]\)\))"""
-  )
-  var postCount = 0
-  result = result.replace(
-    loadFilePattern,
-    proc(m: RegexMatch2, s: string): string =
-      inc postCount
-      let original = s[m.group(0)]
-      let winVar = s[m.group(1)]
-      # group 2 is the *path* module (`p.default`), group 3 is *electron* (`m`).
-      # These two were transposed before v1.26832.0, which made the whole reset
-      # block below throw into its own catch and silently no-op (path.app is
-      # undefined, electron.join is not a function).
-      let joinVar = s[m.group(2)]
-      let electronVar = s[m.group(3)]
-      # Resolve the main app_id from the app's own package.json `desktopName`
-      # at runtime - that is what Chromium's GetXdgAppId() derives the default
-      # window app_id from, so resetting to it restores the exact identity
-      # later windows (settings, dialogs) would otherwise have. Hardcoding a
-      # literal goes stale on upstream renames (v1.19367.0: claude ->
-      # com.anthropic.Claude), so the literal below is only a fallback.
-      # Then append the per-profile suffix so windows opened after Quick Entry
-      # get <id>-NAME rather than the unsuffixed default. CLAUDE_PROFILE is
-      # exported by the launcher; absent for the default profile.
-      original & "," & winVar & ".once(\"ready-to-show\",()=>{" & "try{" & "let _base=\"" &
-        MAIN_APP_ID_FALLBACK & "\";" & "try{" & "const _dn=require(" & joinVar & ".join(" &
-        electronVar & ".app.getAppPath(),\"package.json\")).desktopName;" &
-        "if(typeof _dn===\"string\"&&_dn)_base=_dn.replace(/\\.desktop$/,\"\");" &
-        "}catch(__qeAppIdReadErr){}" &
-        "const _mid=_base+(process.env.CLAUDE_PROFILE?\"-\"+process.env.CLAUDE_PROFILE:\"\")+\".desktop\";" &
-        "process.env.CHROME_DESKTOP=_mid;" & "typeof " & electronVar &
-        ".app.setDesktopName===\"function\"&&" & electronVar &
-        ".app.setDesktopName(_mid);" & "}catch(__qeAppIdResetErr){}" & "})",
-  )
-  if postCount != 1:
-    echo "  [FAIL] Expected 1 Quick Entry loadFile pattern, got " & $postCount
+  if result.count(wrapped) != 1:
+    echo "  [FAIL] Quick Entry app_id wrapper not present after rewrite"
     quit(1)
-  # Assert our injected end-state (the runtime desktopName read) is present,
-  # not merely that the old pattern is gone.
-  if "desktopName" notin result or "__qeAppIdReadErr" notin result:
-    echo "  [FAIL] Quick Entry reset injection (runtime desktopName read) not found"
-    quit(1)
-  echo "  [OK] CHROME_DESKTOP reset to runtime desktopName (fallback " &
-    MAIN_APP_ID_FALLBACK & ") scheduled on ready-to-show: " & $postCount & " match(es)"
+  echo "  [OK] Quick Entry constructed as " & QE_DESKTOP &
+    ", previous CHROME_DESKTOP restored right after the constructor: " & $count &
+    " match(es)"
 
 when isMainModule:
   if paramCount() != 1:
