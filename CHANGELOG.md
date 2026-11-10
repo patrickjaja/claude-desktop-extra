@@ -11,6 +11,16 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - Per-profile `.desktop` files written by `--create-profile` now set `StartupWMClass=com.anthropic.Claude-<name>`, and existing launcher-written profile files are updated on the next launch. The AppImage's named-profile entry starts that profile and no longer claims the `claude://` handler (an entry from an older version hands it back to the default entry). `claude-desktop --diagnose` states which window identity a profile uses.
 - In a named profile, Computer Use treats only that profile's own windows as the Claude host; other profiles' Claude windows are ordinary apps to it.
 
+### Computer Use: apps installed per user launch again (thanks @aenriii, #321)
+
+- Claude Desktop 4.23118 narrows its own `PATH` to system folders at startup, so an app whose launcher names a program in a per-user folder (`~/.local/bin`, a home-manager or Nix profile) read as "command not found" when Computer Use opened it. Apps are now found and started with the `PATH` Claude Desktop was launched with, on the background display and on your desktop.
+- The tools Computer Use runs itself (`setsid`, clipboard tools, desktop launcher tools, `ydotool`, `spectacle`) are taken from the system folders and from root-managed read-only folders on that `PATH` only, by absolute path; a copy in a folder your user can write to is ignored and named in `claude-patches.log`. On NixOS this finds the tools the package wrapper and the system or per-user profile provide. URLs and files open through the system `xdg-open`. See [Computer Use](docs/computer-use.md).
+
+### NixOS: a background display for Claude (thanks @aenriii, #322)
+
+- New option `programs.claude-desktop-extra.backgroundDisplay` in `nixosModules.default`: a headless sway for one user as a systemd user service (`claude-extra-display`), started at boot through lingering, on a private D-Bus and under a stable socket name (`wayland-claude-extra`) for [Computer Use on a background display](docs/computer-use.md#computer-use-on-a-background-display). It can also run a Chromium-family browser with its own profile and the Claude in Chrome native-messaging manifest, with a gnome-keyring unlocked by a password sealed with `systemd-creds`. Viewing it over VNC is opt-in (`vnc.enable`, or `vnc.unixSocket` for a socket only your user can reach). Everything is off unless `enable = true`. See [docs/nixos-background-display.md](docs/nixos-background-display.md).
+- Settings -> Extra -> Cowork (Linux) -> **Computer Use on a background display** lists a stable-name link to a compositor socket, so `wayland-claude-extra` can be picked there.
+
 ## 2026-11-06
 
 ### Cowork on Linux: two backends, Enable KVM access, a "Cowork (Linux)" page and a device icon in every chat
