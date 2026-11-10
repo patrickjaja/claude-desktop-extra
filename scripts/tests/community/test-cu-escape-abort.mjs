@@ -368,13 +368,13 @@ if (process.argv[2] === "--version") {
   if (m === "garbage") process.stdout.write("this is not json\n");
   else if (m === "oddmech") out({ event: "ready", mechanism: "evdev", syntheticSafe: true });
   else if (m === "oddevent") { out({ event: "ready", mechanism: "xi2", syntheticSafe: true }); out({ event: "hello" }); }
-  else if (m === "slowstop" && fs.readdirSync(dir).some((f) => f.startsWith("alive-"))) { out({ event: "error", message: "the holder lock is busy" }); process.exit(2); }
+  else if (m.endsWith("slowstop") && fs.readdirSync(dir).some((f) => f.startsWith("alive-"))) { out({ event: "error", message: "the holder lock is busy" }); process.exit(2); }
   else if (m === "unsafe-slowready") setTimeout(() => { log("ready-sent"); out({ event: "ready", mechanism: "kglobalaccel", syntheticSafe: false }); }, 400);
   else if (m !== "cleanup" && m !== "noready") out({ event: "ready", mechanism: unsafe ? "kglobalaccel" : "xi2", syntheticSafe: !unsafe });
   // A model Escape that lands on a fresh, unsuspended grab.
   if (fs.existsSync(path.join(dir, "escape-now"))) { log("abort-sent (model Escape on a fresh grab)"); out({ event: "abort" }); }
   const alive = path.join(dir, "alive-" + process.pid);
-  if (m === "slowstop") fs.writeFileSync(alive, "1");
+  if (m.endsWith("slowstop")) fs.writeFileSync(alive, "1");
   process.on("SIGUSR1", () => { log("abort-sent"); out({ event: "abort" }); });
   process.on("SIGTERM", () => { log("SIGTERM"); if (m !== "ignore") process.exit(0); });
   if (m === "runtime") setTimeout(() => { out({ event: "error", message: "sway IPC socket closed" }); process.exit(1); }, 150);
@@ -383,7 +383,7 @@ if (process.argv[2] === "--version") {
   process.stdin.on("data", (d) => { buf += d; let i; while ((i = buf.indexOf("\n")) >= 0) { const l = buf.slice(0, i).trim(); buf = buf.slice(i + 1); cmd(l); } });
   process.stdin.on("end", () => {
     log("EOF");
-    if (m === "slowstop") { setTimeout(() => { try { fs.unlinkSync(alive); } catch {} log("stopped " + process.pid); process.exit(0); }, 800); return; }
+    if (m.endsWith("slowstop")) { setTimeout(() => { try { fs.unlinkSync(alive); } catch {} log("stopped " + process.pid); process.exit(0); }, 800); return; }
     if (m !== "ignore") process.exit(0);
   });
   function cmd(l) {
@@ -700,6 +700,23 @@ if (!escLoaded) {
     await until(() => r.W.state().running && r.W.state().mechanism, 3000);
     ok(during && during.log.includes("EOF") && !during.running && !during.log.some((l) => l === "cmd suspend"), "a window expected over the limit stops the watcher (orderly) before the injection, no suspend", JSON.stringify(during));
     ok(r.starts().length === 2 && r.W.state().running && r.W.state().failures === 0 && hits.length === 0, "  and arms it again after, nothing counted", r.starts().length);
+    r.W.disarm();
+  }
+  {
+    // #324: the watcher stopped for a long window is still cleaning up when the
+    // window's bounded wait (PREV_WAIT_MS, scaled here) ends. Its exit starts
+    // nothing (it was stopping), so the window's rearm must wait for it.
+    const r = escRig("unsafe-slowstop", { timers: { 4500: 100 } });
+    r.W.arm(() => {}, "session_K");
+    await until(() => r.W.state().mechanism === "kglobalaccel");
+    await r.W.suspendAround(async () => { await sleep(50); }, 6000);
+    ok(r.starts().length === 1 && r.W.state().armed && r.log().includes("EOF") && !r.log().some((l) => l.startsWith("stopped ")),
+      "the window ends while the stopped watcher is still cleaning up", JSON.stringify(r.log()));
+    await until(() => r.starts().length === 2 && r.W.state().running, 3000);
+    const L = r.log();
+    const stoppedAt = L.findIndex((l) => l.startsWith("stopped ")), secondAt = L.findIndex((l, i) => l.startsWith("start") && i > L.indexOf("EOF"));
+    ok(r.starts().length === 2 && r.W.state().running && r.W.state().armed && r.W.state().failures === 0, "  armed again once that watcher has exited, nothing counted", JSON.stringify(L));
+    ok(stoppedAt >= 0 && secondAt > stoppedAt, "  and never next to it (started after it stopped)", stoppedAt + " / " + secondAt);
     r.W.disarm();
   }
 

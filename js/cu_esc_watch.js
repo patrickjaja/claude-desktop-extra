@@ -486,9 +486,13 @@ function suspendAround(fn,expectMs){
   return run;
 }
 // After a window whose watcher ended (or was stopped for it): the same arm
-// cycle starts a fresh watcher, once the old one has exited.
+// cycle starts a fresh watcher, once the old one has exited. A watcher stopped
+// for a long window can outlast the window's bounded wait (a slow KDE
+// cleanup); its exit starts nothing (it was stopping), so wait for it here.
 function rearm(g){
-  if(!S.armed||g!==S.gen||S.child||S.dead)return;
+  if(!S.armed||g!==S.gen||S.dead)return;
+  var c=S.child;
+  if(c){if(c.__cdbStopping&&!c.__cdbExited)c.__cdbExitP.then(function(){rearm(g)});return}
   prevStopped().then(function(){if(!S.child)spawn(g)});
 }
 async function suspendWindow(fn,expectMs){
