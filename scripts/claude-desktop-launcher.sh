@@ -2091,7 +2091,7 @@ _diag_bridge_screens() {
 # `screens` when the bridge says it serves this session. Bridges below
 # contract 1 get the checks this launcher made before the contract.
 _diag_bridges() {
-    local name bin doc contract k v line session_match reachable err supported any_session=''
+    local name bin doc contract k v line session_match reachable err supported aw any_session=''
     local state_base="${XDG_STATE_HOME:-$HOME/.local/state}" run_base="${XDG_RUNTIME_DIR:-/tmp}"
     local desk wl=''
     desk="$(printf %s "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')"
@@ -2119,6 +2119,23 @@ _diag_bridges() {
             # until the next session-start.
             if [[ "$(_bridge_json_field "$doc" stopped_by_user || true)" == true ]]; then
                 echo '  stopped_by_user: screen sharing was stopped by the user; the next Computer Use task starts it again'
+            fi
+            # Optional key (contract v2): the "press Escape to stop Computer
+            # Use" watcher, `{"abortWatch":{"available":..,"mechanism":..,"reason":..}}`.
+            # The app picks the watcher by host session (js/cu_esc_watch.js),
+            # so an unavailable one is information, not a problem.
+            # Its three fields are read from the text right after the key (the
+            # object's own fields come first), so a reason with braces or
+            # quotes in it is still read whole by _bridge_json_field.
+            if [[ "$doc" == *'"abortWatch"'* ]]; then
+                aw="${doc#*\"abortWatch\"}"
+                if [[ "$(_bridge_json_field "$aw" available || true)" == true ]]; then
+                    echo "  abortWatch: available ($(_bridge_json_field "$aw" mechanism || echo '?'))"
+                else
+                    k="$(_bridge_json_field "$aw" reason || true)"
+                    [[ -n "$k" && "$k" != null ]] || k='no reason given'
+                    echo "  abortWatch: unavailable ($k)"
+                fi
             fi
             session_match="$(_bridge_json_field "$doc" session_match || true)"
             reachable="$(_bridge_json_field "$doc" backend_reachable || true)"

@@ -546,6 +546,10 @@ async function call(name,input,opts){
   return err("Unknown tool: "+name);
 }
 globalThis.__cdbAxCall=function(name,input,opts){
+  // An accessibility action is a Computer Use action: the Escape watcher
+  // (community switch, js/cu_esc_watch.js) re-arms a watcher it parked at a
+  // cloud turn end. Sync and cheap; absent or off = nothing.
+  try{globalThis.__cdbCuEscWatch?.toolCall?.()}catch(ee){}
   return queue(async function(){
     try{return await call(name,input,opts)}
     catch(e){log(name+" failed: "+(e&&e.axWhy||"error"));return err(name+" failed: "+(e&&e.message||e))}

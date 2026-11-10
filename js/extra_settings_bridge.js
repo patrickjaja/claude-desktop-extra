@@ -137,6 +137,14 @@
       return ipcRenderer.invoke("cdb-cu-ax:set", enabled === true);
     },
 
+    // Escape stops Computer Use (community). Fixed channels, boolean only.
+    cuEscRead: function () {
+      return ipcRenderer.invoke("cdb-cu-esc:read");
+    },
+    cuEscSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-cu-esc:set", enabled === true);
+    },
+
     // Computer Use: ask before controlling an app. Fixed channels, boolean only.
     cuAskRead: function () {
       return ipcRenderer.invoke("cdb-cu-ask:read");

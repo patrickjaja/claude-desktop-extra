@@ -756,9 +756,9 @@
   </div>
 
   <div class="stat-line">
-    <span class="stat"><strong data-count="total">70</strong> <a href="#patches">patches on the official build, and growing</a></span>
-    <span class="stat"><strong data-count="core">47</strong> core: where Anthropic lacks compatibility</span>
-    <span class="stat"><strong data-count="community">23</strong> community: improvements and features</span>
+    <span class="stat"><strong data-count="total">72</strong> <a href="#patches">patches on the official build, and growing</a></span>
+    <span class="stat"><strong data-count="core">48</strong> core: where Anthropic lacks compatibility</span>
+    <span class="stat"><strong data-count="community">24</strong> community: improvements and features</span>
   </div>
 </div>
 
@@ -1155,7 +1155,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
   <p>The optional features in Settings &rarr; Extra &rarr; Community, in the same groups the app uses. Each has its own switch; all but the Theme picker start off, and off keeps Anthropic's behavior.</p>
 
   <div class="cf-search" id="cf-search" hidden>
-    <input type="search" id="cf-filter" data-count-placeholder="features" placeholder="Filter 16 features by name or description" aria-label="Filter community features" autocomplete="off">
+    <input type="search" id="cf-filter" data-count-placeholder="features" placeholder="Filter 17 features by name or description" aria-label="Filter community features" autocomplete="off">
     <button type="button" class="cf-clear" id="cf-clear" aria-label="Clear filter" hidden>&times;</button>
   </div>
 
@@ -1252,6 +1252,17 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
       </div>
     </div>
 
+    <div class="cf-group">
+      <div class="section-label">Computer Use</div>
+      <div class="cf-group-sub">Computer Use on Linux</div>
+      <div class="cf-list">
+        <div class="cf-row">
+          <div class="cf-title">Escape stops Computer Use <span class="cf-hint badge-default">applies live</span></div>
+          <div class="cf-note">Press Escape anywhere to stop Computer Use while Claude is working, on X11, Hyprland, sway and KDE Plasma (Wayland). On X11 and Hyprland Escape still reaches your apps; on sway and KDE it is taken while Claude is working. GNOME and other desktops: use Stop sharing or Stop. Off keeps Anthropic's behavior. Applies from the next Computer Use task.</div>
+        </div>
+      </div>
+    </div>
+
     <div class="cf-empty" id="cf-empty" hidden>No feature matches that filter.</div>
   </div>
   <div class="more-link">Every community patch and what it changes: <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/patches.md#community-features">docs/patches.md</a>.</div>
@@ -1260,7 +1271,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
 <!-- PATCHES -->
 <section id="patches" class="fade-in">
   <div class="section-label">How it works</div>
-  <h2><span data-count="total">70</span> patches on the official build, and growing</h2>
+  <h2><span data-count="total">72</span> patches on the official build, and growing</h2>
   <p>We start from Anthropic's official Claude Desktop Linux <code>.deb</code>, apply small JavaScript patches to its <code>app.asar</code>, and repackage the result for each distro.</p>
 
   <div class="steps-grid">
@@ -1281,13 +1292,13 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
   <div class="cowork-box">
     <div class="cowork-mode">
       <div class="badge badge-default">Always on</div>
-      <div class="tier-count" data-count="core">47</div>
+      <div class="tier-count" data-count="core">48</div>
       <h3>Core patches</h3>
-      <p>Where Anthropic lacks compatibility: general Linux patches for the tray, portals, Wayland and X11, the sandbox, Cowork on non-Debian distros and more, plus the shared infrastructure the features build on (the Extra settings pages, the theme engine, profiles). In the repo they are split into <span data-count="linux">38</span> Linux fixes (<code>patches/linux/</code>) and <span data-count="coreplumbing">9</span> core plumbing patches (<code>patches/core/</code>).</p>
+      <p>Where Anthropic lacks compatibility: general Linux patches for the tray, portals, Wayland and X11, the sandbox, Cowork on non-Debian distros and more, plus the shared infrastructure the features build on (the Extra settings pages, the theme engine, profiles). In the repo they are split into <span data-count="linux">39</span> Linux fixes (<code>patches/linux/</code>) and <span data-count="coreplumbing">9</span> core plumbing patches (<code>patches/core/</code>).</p>
     </div>
     <div class="cowork-mode">
       <div class="badge badge-exp">Switchable</div>
-      <div class="tier-count" data-count="community">23</div>
+      <div class="tier-count" data-count="community">24</div>
       <h3>Community patches</h3>
       <p>Improvements and features, each behind its own switch under Settings &rarr; Extra &rarr; Community (<code>patches/community/</code>); all but the Theme picker start off. Their switches are the <a href="#community">community features</a> above.</p>
     </div>
@@ -1300,18 +1311,18 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
   <!-- Generated by scripts/gen-site-patch-catalog.py from docs/patches.md - do not edit by hand. -->
   <div class="pc-controls" id="pc-controls" hidden>
     <div class="cf-search">
-      <input type="search" id="pc-filter" placeholder="Filter 70 patches by name or description" aria-label="Filter patches" autocomplete="off">
+      <input type="search" id="pc-filter" placeholder="Filter 72 patches by name or description" aria-label="Filter patches" autocomplete="off">
       <button type="button" class="cf-clear" id="pc-clear" aria-label="Clear filter" hidden>&times;</button>
     </div>
     <div class="pc-tiers" role="group" aria-label="Patch tier">
-      <button type="button" class="pc-tier active" data-tier="all" aria-pressed="true">All (70)</button>
-      <button type="button" class="pc-tier" data-tier="core" aria-pressed="false">Core (47)</button>
-      <button type="button" class="pc-tier" data-tier="community" aria-pressed="false">Community (23)</button>
+      <button type="button" class="pc-tier active" data-tier="all" aria-pressed="true">All (72)</button>
+      <button type="button" class="pc-tier" data-tier="core" aria-pressed="false">Core (48)</button>
+      <button type="button" class="pc-tier" data-tier="community" aria-pressed="false">Community (24)</button>
     </div>
   </div>
   <div id="pc-groups">
     <div class="cf-group pc-group" id="pc-community" data-tier="community">
-      <h3 class="pc-group-h">Community features <span class="pc-group-n">23</span></h3>
+      <h3 class="pc-group-h">Community features <span class="pc-group-n">24</span></h3>
       <div class="cf-group-sub">Improvements and features, each behind its own switch in Settings -&gt; Extra -&gt; Community. <code>patches/community/</code></div>
       <div class="cf-list">
         <div class="cf-row pc-row" id="patch-add_feature_theme_picker" data-tier="community">
@@ -1402,6 +1413,10 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
           <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/community/add_feature_session_start_always_allow.nim">add_feature_session_start_always_allow.nim</a> <span class="cf-hint badge-exp">Community</span></div>
           <div class="cf-note">Opt-in <strong>Native dialog with &#x27;Allow always&#x27; for starting other sessions</strong> switch: when Claude asks to start another Code session, a native dialog parented to the main window offers Deny (the default) / Allow once / Allow always instead of the in-chat card, where upstream withholds a lasting approval for this tool. Allow always is remembered for the asking project and displayed local destination (default or explicit <code>cwd</code>) separately; the default destination persists, while an explicit folder is asked again in a new asking session or after a restart (upstream tracks first use in memory); another folder asks for its own consent, while a host, environment, preset, cloud or higher permission mode keeps the original card. Native first-use folder consent stays visible (including Manual mode&#x27;s ordinary ask for a new folder); nothing inside the new session is approved. Off by default (= upstream&#x27;s card), applies live; switching it off forgets remembered approvals; the <code>.jsonc</code> key <code>sessionStartAlwaysAllow</code> locks the switch. A hidden or minimized window, anything the broker would ask about for another reason, or any failure before an answer leaves upstream&#x27;s card in charge, and logs <code>[session-start-always-allow] card kept: &lt;reason&gt;</code>. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/session-start-permission.md">Scope and fail directions</a></div>
         </div>
+        <div class="cf-row pc-row" id="patch-add_feature_cu_escape_abort" data-tier="community">
+          <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/community/add_feature_cu_escape_abort.nim">add_feature_cu_escape_abort.nim</a> <span class="cf-hint badge-exp">Community</span></div>
+          <div class="cf-note">Opt-in <strong>Escape stops Computer Use</strong> switch (group *Computer Use*, also on the Extra -&gt; Computer Use page): Escape stops Computer Use while Claude is working. On X11 a passive listener (<code>x11-bridge abort-watch</code>) stops it and Escape still reaches your apps; on Hyprland a non-consuming bind (<code>wlroots-bridge abort-watch</code>) does the same; on sway and KDE Plasma Wayland (<code>kwin-portal-bridge abort-watch</code>, through kglobalaccel) Escape is taken while Claude is working; GNOME, niri and other compositors have no stop key (use Stop sharing or Stop). The watcher runs only while the model works and three watcher failures in one app run turn it off for that run. Off by default = Anthropic&#x27;s own Escape handling exactly (its grab on X11, nothing on Wayland), applies live from the next task; the <code>.jsonc</code> key <code>computerUseEscapeAbort</code> locks the switch. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/cu-escape-abort.md">Per-desktop behavior, cleanup and log lines</a></div>
+        </div>
         <div class="cf-row pc-row" id="patch-add_feature_custom_models" data-tier="community">
           <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/community/add_feature_custom_models.nim">add_feature_custom_models.nim</a> <span class="cf-hint badge-exp">Community</span></div>
           <div class="cf-note">Adds models from Anthropic-compatible endpoints (DeepSeek, OpenRouter, a gateway, Anthropic&#x27;s API on your API credit) to the Code tab&#x27;s model picker, next to Anthropic&#x27;s. Sessions on them go to that provider with your key; the subscription and the Claude models are untouched, unlike 3P mode. The picker entries are added to claude.ai&#x27;s <code>/api/bootstrap</code> response, and a preload in the Claude Code CLI routes their requests. Providers and models are managed in Settings → Extra → <strong>Models</strong>. Local Code sessions only. See <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/custom-models.md">custom-models.md</a></div>
@@ -1451,7 +1466,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
       </div>
     </div>
     <div class="cf-group pc-group" id="pc-linux" data-tier="core">
-      <h3 class="pc-group-h">Linux compatibility <span class="pc-group-n">38</span></h3>
+      <h3 class="pc-group-h">Linux compatibility <span class="pc-group-n">39</span></h3>
       <div class="cf-group-sub">Always on: where Anthropic lacks compatibility on Linux. <code>patches/linux/</code></div>
       <div class="cf-list">
         <div class="cf-row pc-row" id="patch-enable_local_agent_mode" data-tier="core">
@@ -1476,7 +1491,11 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
         </div>
         <div class="cf-row pc-row" id="patch-fix_computer_use_linux" data-tier="core">
           <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/linux/fix_computer_use_linux.nim">fix_computer_use_linux.nim</a> <span class="cf-hint badge-default">Core: Linux fix</span></div>
-          <div class="cf-note">Enables <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/README.md#computer-use">Computer Use</a> and routes it to the bundled bridge that matches your session. Upstream&#x27;s own Linux backend is a staged rollout (account flag) that needs a RemoteDesktop portal on Wayland and does not cover wlroots; ours is always on and takes precedence. Ends the GNOME and KDE Wayland screen-sharing session when a task ends (it checks the session&#x27;s state every 10 s, so within about 10 seconds of the turn end, with 2 minutes idle as the fallback). Offers the computer tools to cloud Cowork and Dispatch sessions on Wayland when a bundled bridge serves the session. On KDE Plasma Wayland, windows left out of screenshots are restored at every task end (also when &quot;Unhide apps when Claude finishes&quot; is off) and at app start after a crash; sub-patch 4h routes upstream&#x27;s turn-end unhide to our executor. Adds the accessibility tools <code>app_list_windows</code>, <code>app_ax_find</code>, <code>app_click</code> and <code>app_type</code> behind the Experimental &quot;read app controls&quot; switch. With &quot;Ask before Computer Use controls an app&quot; (on by default) Code sessions use upstream&#x27;s approval card, approved apps get full control (sub-patch 6b), the card&#x27;s terminal / file-manager warnings see our app ids (6c), and every tool is checked against the approved apps (<a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/js/cu_consent.js"><code>js/cu_consent.js</code></a>)</div>
+          <div class="cf-note">Enables <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/README.md#computer-use">Computer Use</a> and routes it to the bundled bridge that matches your session. Upstream&#x27;s own Linux backend is a staged rollout (account flag) that needs a RemoteDesktop portal on Wayland and does not cover wlroots; ours is always on and takes precedence. Ends the GNOME and KDE Wayland screen-sharing session when a task ends (it checks the session&#x27;s state every 10 s, so within about 10 seconds of the turn end, with 2 minutes idle as the fallback). Offers the computer tools to cloud Cowork and Dispatch sessions on Wayland when a bundled bridge serves the session: upstream&#x27;s device-bridge platform check is rewritten at its definition (sub-patch 4g), so the tool announce, the call guard and the approval card&#x27;s app icons agree, and when the background display is turned off and no bundled bridge remains usable, cloud and Dispatch calls are refused again until a restart. Describes access truthfully per backend (16a-16e): the local Cowork system-prompt suffix, the <code>computerUsePerAppAccess</code> capability, the enable-prompt approval card and the &quot;Entire screen&quot; pseudo-grant follow what the active backend really does. Teach mode follows the server&#x27;s setting on KDE Plasma Wayland (7d; unchanged on X11). &quot;Stop sharing&quot; on the GNOME / KDE screen-share indicator stops the running Computer Use turn at once (<a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/js/cu_share_stop.js"><code>js/cu_share_stop.js</code></a>, 17c). Our executors mark an Escape the model itself presses as expected (17e), so upstream&#x27;s X11 Escape handler absorbs it instead of stopping the turn. Upstream already grants the OS permissions on Linux, so we no longer touch them. On KDE Plasma Wayland, windows left out of screenshots are restored at every task end (also when &quot;Unhide apps when Claude finishes&quot; is off) and at app start after a crash; sub-patch 4h routes upstream&#x27;s turn-end unhide to our executor. Adds the accessibility tools <code>app_list_windows</code>, <code>app_ax_find</code>, <code>app_click</code> and <code>app_type</code> behind the Experimental &quot;read app controls&quot; switch. With &quot;Ask before Computer Use controls an app&quot; (on by default) Code sessions use upstream&#x27;s approval card, approved apps get full control (sub-patch 6b), the card&#x27;s terminal / file-manager warnings see our app ids (6c), and every tool is checked against the approved apps (<a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/js/cu_consent.js"><code>js/cu_consent.js</code></a>)</div>
+        </div>
+        <div class="cf-row pc-row" id="patch-fix_cowork_install_hint_linux" data-tier="core">
+          <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/linux/fix_cowork_install_hint_linux.nim">fix_cowork_install_hint_linux.nim</a> <span class="cf-hint badge-default">Core: Linux fix</span></div>
+          <div class="cf-note">Makes Cowork&#x27;s &quot;install QEMU&quot; hint name your distro&#x27;s own packages: <code>dnf</code> on Fedora and the RHEL family (<code>qemu-kvm</code>; Fedora atomic variants such as Silverblue, Kinoite and Bazzite keep Anthropic&#x27;s text), <code>pacman</code> on Arch-family, <code>zypper</code> on openSUSE, a NixOS hint; Debian, Ubuntu and unknown distros keep Anthropic&#x27;s text</div>
         </div>
         <div class="cf-row pc-row" id="patch-fix_cowork_firmware_paths_linux" data-tier="core">
           <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/linux/fix_cowork_firmware_paths_linux.nim">fix_cowork_firmware_paths_linux.nim</a> <span class="cf-hint badge-default">Core: Linux fix</span></div>

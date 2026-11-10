@@ -176,8 +176,10 @@ function makeRig({ session = "x11", displays = MAINT, screens = MAINT_SCREENS, w
   new Function("require", "process", read("cu_linux_executor.js"))(requireStub, process);
   const ex = globalThis.__linuxExecutor;
   const reset = () => { calls.length = 0; diag.length = 0; dc.length = 0; spawned.length = 0; };
+  // What executor creation itself started (the doctor warm-up), kept apart.
+  const boot = calls.slice();
   reset();
-  return { ex, calls, diag, dc, spawned, reset };
+  return { ex, calls, diag, dc, spawned, reset, boot };
 }
 const zoomArgs = (rig) => rig.calls.filter((c) => c.args[0] === "zoom").map((c) => c.b + " " + c.args.join(" "));
 const doctorCalls = (rig) => rig.calls.filter((c) => c.args[0] === "doctor").length;
@@ -187,6 +189,7 @@ const exitErr = (code, msg) => { const e = new Error("Command failed\n" + msg); 
 console.log("\n[A] screenshotFiltering per backend");
 {
   const rig = makeRig({});
+  ok(rig.boot.filter((c) => c.args[0] === "doctor" && !c.sync).length === 1 && rig.boot.length === 1, "executor creation warms the capture bridge's doctor (one async call, nothing else)", JSON.stringify(rig.boot.map((c) => c.b + " " + c.args.join(" ") + (c.sync ? " (sync)" : ""))));
   ok(rig.ex.capabilitiesNow().screenshotFiltering === "none", "x11 cold: 'none' until the doctor answered (sync, no blocking spawn)");
   ok(!rig.calls.some((c) => c.sync), "x11 cold: no synchronous bridge call");
   const c = await rig.ex.capabilitiesAsync();
@@ -305,6 +308,12 @@ for (const [label, z, re] of [
   const r = await rig.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
   ok(/could not check whether x11-bridge can hide/.test(r.captureError || "") && zoomArgs(rig).length === 0 && rig.dc.length === 0, "doctor failure + allowlist: captureError, nothing captured", r.captureError);
   ok(rig.ex.capabilitiesNow().screenshotFiltering === "none", "doctor failure: capabilitiesNow says none");
+  // O4: the supported-features path reads the capabilities getter on every
+  // build; a doctor that keeps failing must not be re-spawned per read.
+  await new Promise((r) => setTimeout(r, 30));
+  const n0 = doctorCalls(rig);
+  for (let i = 0; i < 5; i++) { rig.ex.capabilitiesNow(); void rig.ex.capabilities.screenshotFiltering; await new Promise((r) => setTimeout(r, 10)); }
+  ok(doctorCalls(rig) === n0, "a failed doctor is not asked again by capability reads within 30 s (negative TTL)", doctorCalls(rig) + " vs " + n0);
 }
 {
   const rig = makeRig({ windows: () => { throw exitErr(1, "windows failed"); } });
@@ -410,7 +419,7 @@ console.log("\n[G] background Xvfb display (x11 target on a sway desktop)");
   const tw = [xw(4194307, "Xterm", "xterm", R(0, 0, 640, 400)), xw(4194400, "Gedit", "gedit", R(640, 0, 640, 400))];
   const rig = makeRig({ session: "sway", displays: SWAY_DISPLAYS, screens: TS, windows: tw, target: { kind: "x11", display: ":99" } });
   const c = await rig.ex.capabilitiesAsync();
-  const dcall = rig.calls.find((x) => x.args[0] === "doctor");
+  const dcall = rig.boot.concat(rig.calls).find((x) => x.args[0] === "doctor");
   ok(c.screenshotFiltering === "mask" && dcall && dcall.b === "x11-bridge" && dcall.opts.env && dcall.opts.env.DISPLAY === ":99", "target: x11-bridge doctor on :99 -> mask", JSON.stringify([c.screenshotFiltering, dcall && dcall.b, dcall && dcall.opts.env && dcall.opts.env.DISPLAY]));
   rig.reset();
   const r = await rig.ex.resolvePrepareCapture({ allowedBundleIds: ["xterm"], preferredDisplayId: 0 });

@@ -100,6 +100,16 @@ Exit codes: a missing a11y bus, a screen reader, an unknown or ambiguous window,
 
 `doctor` may add the optional key `atspi`: `{"bus": <bool>, "is_enabled": <bool>, "screen_reader": <bool>}`, plus `error` when the session bus is unreachable. It never activates the accessibility bus and never fails the command; on a hung bus it can take up to 5 seconds, so callers use a timeout above that.
 
+## Optional: abort watcher (`abort-watch`)
+
+x11-bridge, wlroots-bridge and kwin-portal-bridge add a long-running `abort-watch` subcommand that reports the user's physical Escape press, for the opt-in [Escape stops Computer Use](cu-escape-abort.md) switch. Additive and optional: the app starts it without asking `doctor` first, and a bridge without it answers with a usage error, which the app treats as "cannot arm". The implementation is the shared crate [`cu-abort-watch`](https://github.com/patrickjaja/cu-abort-watch), which also documents the protocol in full.
+
+- stdout, one JSON object per line: `{"event":"ready","mechanism":"xi2|sway|hyprland|kglobalaccel","syntheticSafe":<bool>}` once armed, `{"event":"abort"}` per press, `{"event":"ack","cmd":"suspend"|"resume"}`, `{"event":"error","message":...}`. `syntheticSafe: true` means an Escape the model injects can never produce an `abort`.
+- stdin, one command per line: `suspend` (stop reporting and consuming Escape) and `resume`.
+- Exit codes: 0 on stdin EOF, SIGTERM/SIGINT/SIGHUP or the parent's death (`CLAUDE_CU_PARENT_PID` names the process to watch); 1 on a runtime failure after an `error` line; 2 when arming failed, after an `error` line, with nothing left behind.
+- Nothing is left bound on exit; binds shared by several profiles are healed by the next first holder.
+- `doctor.abortWatch` says whether and how this bridge can watch on the current session.
+
 ## Older bridges
 
 A bridge whose `doctor` exits 2 or has no `contract` key is contract 0: consumers fall back to their per-bridge behaviour. A `forget-session` that exits 2 means the bridge cannot reset its grant; the launcher says so and tells the user to update.

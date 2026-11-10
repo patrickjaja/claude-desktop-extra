@@ -9,7 +9,7 @@
 # embeds them via staticRead at compile time; Python reads them at runtime.
 # No codegen — the .js files are the single source of truth.
 #
-# All 47 sub-patches use std/nre (PCRE) because many require backreferences.
+# All 54 sub-patches use std/nre (PCRE) because many require backreferences.
 # "Ask before Computer Use controls an app" (js/cu_consent.js, injected by
 # Patch 1 after the executors): sub-patch 6b makes upstream's grants full level
 # in the regular executor mode, 6c lets upstream's terminal / file-manager
@@ -30,13 +30,31 @@
 # only): js/cu_session_check.js (injected by Patch 1 before both executors)
 # polls it while a portal session is up for a cloud Cowork holder and ends the
 # session when the server reports the turn ended (issue #293).
-# Sub-patch 4g lets the remote-tools device announce the computer tools to
-# cloud Cowork and Dispatch on a Wayland session when js/cu_mode_preamble.js
-# decided a first-party bridge is usable (globalThis.__cdbCuWaylandAnnounce).
+# Sub-patch 4g rewrites upstream's isBridgeComputerUsePlatform at its
+# definition, so device-bridge Computer Use (cloud Cowork, hub chat, Dispatch:
+# the tools announce, the call guard, the approval card's app icons) works on a
+# Wayland session when js/cu_mode_preamble.js decided a first-party bridge is
+# usable (globalThis.__cdbCuWaylandAnnounce, issue #323).
+# Sub-patches 16a-16d make upstream's per-app answers follow the active
+# backend (js/cu_consent.js): the system-prompt suffix after the tier rules,
+# the computerUsePerAppAccess feature, the renderer re-signal when that answer
+# changes, and the "Entire screen" pseudo-grant.
 # Sub-patch 4h routes the Linux arm of upstream's unhideComputerUseApps (turn-end
 # auto-unhide) to the active Linux executor's __unhideApps when it has one, so
 # the KWin executor lifts the capture exclusions it set (upstream's own Linux
 # unhide only knows windows its own executor hid).
+# Sub-patch 17c exposes upstream's "user stopped sharing" abort as
+# globalThis.__cdbCuShareEnded, so the executors stop the running turn the
+# moment the user clicks Stop sharing (issue #323; js/cu_share_stop.js,
+# embedded by Patch 1, watches the portal bridges' stopped-by-user marker).
+# Sub-patch 17e exposes upstream's expected-Escape marker as
+# globalThis.__cdbCuExpectEscape: the executors call it right before they
+# inject a lone Escape, as upstream's own executor wrapper does, so upstream's
+# X11 Escape grab (switch "Escape stops Computer Use" off, or its watcher fell
+# back to that grab) absorbs the model's Escape instead of stopping the turn.
+# The Escape abort itself (17a / 17b / 17d) is the community patch
+# add_feature_cu_escape_abort.nim; the executors only call its optional
+# globalThis.__cdbCuEscWatch (suspendAround / toolCall / taskEnded).
 #
 # Idempotency is a MARKER SET (endStateMarkers below): one positive end-state
 # pattern per sub-patch, each with its exact expected count. All present =
@@ -55,6 +73,7 @@ const AX_TOOLS_JS = staticRead("../../js/cu_ax_tools.js")
 const SESSION_CHECK_JS = staticRead("../../js/cu_session_check.js")
 const DISPLAY_TARGET_JS = staticRead("../../js/cu_display_target.js")
 const CONSENT_JS = staticRead("../../js/cu_consent.js")
+const SHARE_STOP_JS = staticRead("../../js/cu_share_stop.js")
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -199,6 +218,92 @@ proc countMatches(content: string, pat: Regex): int =
   for _ in content.findIter(pat):
     inc result
 
+# The orchestrator stages index.js + its chunks as one file, each chunk after a
+# `\n/*__CDB_SPLIT__<file name>__*/\n` line. Each part is its own CommonJS
+# module at run time.
+const CDB_SPLIT = "\n/*__CDB_SPLIT__"
+
+proc partSpan(c: string, at: int): (int, int) =
+  ## [start, end) of the staged part containing offset `at`.
+  let p = c.rfind(CDB_SPLIT, last = at)
+  var e = c.find(CDB_SPLIT, start = at)
+  if e == -1:
+    e = c.len
+  result = ((if p == -1: 0 else: p), e)
+
+proc namedPart(c, fileName: string): string =
+  ## The body of the staged part for chunk `fileName`, "" when not staged.
+  let head = CDB_SPLIT & fileName & "__*/\n"
+  let i = c.find(head)
+  if i == -1:
+    return ""
+  let b = i + head.len
+  var e = c.find(CDB_SPLIT, start = b)
+  if e == -1:
+    e = c.len
+  return c[b ..< e]
+
+proc waylandPredicateDefs(content, name: string): int =
+  ## How often `name` is defined as upstream's XDG_SESSION_TYPE Wayland check:
+  ## `M=()=>{let e=ENV().XDG_SESSION_TYPE;return e?e==="wayland":!!ENV().WAYLAND_DISPLAY}`.
+  let nEsc = escapeRe(name)
+  let envAcc = """(?:[\w$]+\(\)|process\.env)"""
+  let body =
+    """\{let ([\w$]+)=""" & envAcc &
+    """\.XDG_SESSION_TYPE;return \1\?\1===["'`]wayland["'`]:!!""" & envAcc &
+    """\.WAYLAND_DISPLAY\}"""
+  countMatches(
+    content,
+    re("(?:(?<![\\w$.])" & nEsc & "=\\(\\)=>|function " & nEsc & "\\(\\))" & body),
+  )
+
+proc exportTarget(part, alias: string): string =
+  ## The local an `exports.<alias>` getter of this part returns, "" unless the
+  ## getter is defined exactly once.
+  let pat = re(
+    """Object\.defineProperty\(exports,(["`])""" & escapeRe(alias) &
+      """\1,\{enumerable:!0,get:function\(\)\{return ([\w$]+)\}\}\)"""
+  )
+  var names: seq[string] = @[]
+  for m in part.findIter(pat):
+    names.add m.captures[1]
+  if names.len != 1:
+    return ""
+  return names[0]
+
+proc requiredChunk(part, ns: string): string =
+  ## The chunk file `ns=require("./<file>")` names in this part, "" unless
+  ## exactly one such binding.
+  let pat = re("(?<![\\w$.])" & escapeRe(ns) & """=require\(["`]\./([^"`]+)["`]\)""")
+  var files: seq[string] = @[]
+  for m in part.findIter(pat):
+    files.add m.captures[0]
+  if files.len != 1:
+    return ""
+  return files[0]
+
+proc bridgeGuardAlias(content: string): string =
+  ## The local upstream's device-bridge refusal guard
+  ## `if(!<ns>.<alias>())return R("Computer use over the device bridge is not
+  ## supported on this platform ...")` calls, resolved through `<ns>=require(...)`
+  ## and that chunk's export getter. "" when any step is not exactly one.
+  let guardPat =
+    re"""if\(!([\w$]+)\.([\w$]+)\(\)\)return [\w$]+\((["'`])Computer use over the device bridge is not supported on this platform"""
+  var hits: seq[RegexMatch] = @[]
+  for m in content.findIter(guardPat):
+    hits.add m
+  if hits.len != 1:
+    return ""
+  let g = hits[0]
+  let (ps, pe) = partSpan(content, g.matchBounds.a)
+  let file = requiredChunk(content[ps ..< pe], g.captures[0])
+  if file == "":
+    return ""
+  let target = namedPart(content, file)
+  if target == "":
+    return ""
+  return exportTarget(target, g.captures[1])
+
 const CU_PLATFORM_FN_BODY =
   # hasComputerUseExecutor (v2.19675.1+). Upstream added "linux" to its own CU
   # platform Set but drops Wayland sessions whose portal lacks RemoteDesktop v2
@@ -264,6 +369,16 @@ proc endStateMarkers(): seq[EndStateMarker] =
       "1 consent embed",
       """globalThis\.__cdbCuConsent=\{active:active,""",
     ),
+    rx(
+      # js/cu_consent.js: the per-app access helper 16b / 16d call.
+      "1 shared screen helper",
+      """globalThis\.__cdbCuSharedScreen=function\(\)\{""",
+    ),
+    rx(
+      # js/cu_consent.js: the pseudo-grant helper 16d calls.
+      "1 screen grant helper",
+      """globalThis\.__cdbCuNoScreenGrant=function\(\)\{""",
+    ),
     lit(
       "6b full grant level",
       "cuOnlyMode:process.platform===\"linux\"&&!globalThis.__cuKwinMode||process.env.COWORK_CU_ONLY",
@@ -307,16 +422,14 @@ proc endStateMarkers(): seq[EndStateMarker] =
       """refresh:[\w$]+\.refreshRemoteChromeSessionMode\}\}process\.platform==="linux"&&\(globalThis\.__cdbRemoteSessionMode=[\w$]+\);""",
     ),
     rx(
-      "4g remote announce Wayland",
-      """function [\w$]+\(\)\{return [\w$]+\(\)\|\|!\([\w$]+\(\)\|\|process\.platform==="linux"&&globalThis\.__cdbCuWaylandAnnounce===!0\)\|\|![\w$]+\(["'`]4293378213["'`]\)\?!1:""",
+      # The predicate's own definition (isBridgeComputerUsePlatform), so every
+      # consumer follows it.
+      "4g bridge platform predicate",
+      """function [\w$]+\(\)\{return![\w$]+\(\)\|\|process\.platform==="linux"&&globalThis\.__cdbCuWaylandAnnounce===!0\}""",
     ),
     rx(
       "4h unhide routing",
       """if\(process\.platform===["`]linux["`]\)\{if\(typeof globalThis\.__linuxExecutor\?\.__unhideApps==="function"\)\{await globalThis\.__linuxExecutor\.__unhideApps\(([\w$]+)\);return\}let\{unhideComputerUseAppsLinux:([\w$]+)\}=[^{}]{0,300}await \2\(\1\);return\}""",
-    ),
-    lit(
-      "5 ensureOsPermissions",
-      "ensureOsPermissions:process.platform===\"linux\"?async()=>({granted:!0}):",
     ),
     rx(
       "5b screenshot intro note (decl)",
@@ -465,6 +578,43 @@ proc endStateMarkers(): seq[EndStateMarker] =
       "15d.2 dispatch",
       """\{if\(process\.platform==="linux"&&globalThis\.__cdbAxHandles\?\.\([\w$]+\)\)return await globalThis\.__cdbAxCall\([\w$]+,[\w$]+,\{sid:[\w$]+\.__cdbAxSid,ctx:[\w$]+,tier:\(__cdbA,__cdbT\)=>[\w$]+\([\w$]+,__cdbA,__cdbT\)\}\);let [\w$]+=[\w$]+\.executor\.appScoped;""",
     ),
+    rx(
+      "16a prompt suffix",
+      """function [\w$]+\(\)\{if\(process\.platform==="linux"\)\{let __cdbSpx;try\{__cdbSpx=globalThis\.__cdbCuConsent\?\.spSuffix\?\.\(\)\}catch\(__cdbSpe\)\{\}if\(typeof __cdbSpx==="string"\)return __cdbSpx\}return [\w$]+\.[\w$]+\(\)\?[`"]\\n\\nOn this system \(a Linux Wayland session\)""",
+    ),
+    rx(
+      "16b per-app access",
+      """computerUsePerAppAccess:\(process\.platform==="linux"&&typeof globalThis\.__cdbCuSharedScreen==="function"\?globalThis\.__cdbCuSharedScreen\(\):[\w$]+\(\)\)\?\{status:"unsupported",reason:"A Wayland session shares the whole screen""",
+    ),
+    rx(
+      "16c features broadcast",
+      """function ([\w$]+)\(\)\{for\(let ([\w$]+) of [\w$]+\)\2\(\)\}process\.platform==="linux"&&\(globalThis\.__cdbCuFeaturesChanged=\1\);""",
+    ),
+    rx(
+      # js/cu_share_stop.js embedded by Patch 1: its one definition.
+      "1 stop-sharing embed",
+      """globalThis\.__cdbCuShareStop=Object\.freeze\(""",
+    ),
+    rx(
+      # The runtime global's defining assignment, after upstream's function.
+      "17e expected-Escape marker",
+      """function [\w$]+\(\)\{[\w$]+\+\+,setTimeout\(\(?\(\)=>\{[\w$]+>0&&[\w$]+--\}\)?,100\)\}process\.platform==="linux"&&\(globalThis\.__cdbCuExpectEscape=[\w$]+\);""",
+    ),
+    rx(
+      # The runtime global's defining assignment, after upstream's function.
+      "17c share-ended abort",
+      """\}process\.platform==="linux"&&\(globalThis\.__cdbCuShareEnded=[\w$]+\);""",
+    ),
+    rx(
+      "16e enable card screenshot filtering",
+      """screenshotFiltering:\(process\.platform==="linux"&&globalThis\.__cdbCuSharedScreen\?\.\(\)===!1\?globalThis\.__linuxExecutor\?\.capabilities\?\.screenshotFiltering\?\?"mask":[\w$]+\.[\w$]+\.screenshotFiltering\),(?:hostPlatform:[\w$]+\.[\w$]+\.platform,)?featureDisabled:!0""",
+      2,
+    ),
+    rx("7d teach gate", """/\*__cdbTeachKwin\*/"""),
+    rx(
+      "16d screen pseudo-grant",
+      """\{if\(process\.platform==="linux"&&globalThis\.__cdbCuNoScreenGrant\?\.\(\)===!0\|\|[\w$]+\.[\w$]+!==[\w$]+\.[\w$]+\|\|""",
+    ),
   ]
 
 # ─── main patch ─────────────────────────────────────────────────────────────
@@ -474,7 +624,7 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 47
+  const EXPECTED_PATCHES = 54
 
   let gateSet = cuPlatformSetName(content)
   if gateSet == "":
@@ -524,6 +674,9 @@ proc apply*(input: string): string =
     # The consent module ("Ask before Computer Use controls an app") goes last:
     # it reads the executor and the app-id helper only at call time.
     let consentJs = CONSENT_JS.strip()
+    # The Stop-sharing marker watch goes before both executors with the
+    # session check: each calls globalThis.__cdbCuShareStop at run time.
+    let shareStopJs = SHARE_STOP_JS.strip()
     # v1.26832.0 switched minifier: most string literals became backtick
     # template literals (app.on(`ready`)). Accept either quote style here and
     # everywhere else a literal is part of an anchor.
@@ -537,8 +690,9 @@ proc apply*(input: string): string =
       pat,
       proc(m: RegexMatch): string =
         m.captures[0] & "if(process.platform===\"linux\"){" & MODE_PREAMBLE_JS &
-          sessionJs & "\n" & displayTargetJs & "\n" & "if(globalThis.__cuKwinMode){" &
-          kwinJs & "}else{" & regularJs & "}" & axJs & "\n" & consentJs & "}",
+          sessionJs & "\n" & shareStopJs & "\n" & displayTargetJs & "\n" &
+          "if(globalThis.__cuKwinMode){" & kwinJs & "}else{" & regularJs & "}" & axJs &
+          "\n" & consentJs & "}",
     )
     if n >= 1:
       echo &"  [OK] Linux executor: injected session check + regular + kwin-wayland variants ({n} match)"
@@ -923,66 +1077,82 @@ proc apply*(input: string): string =
         else:
           echo "  [FAIL] 4f session check accessor: replacement did not apply"
 
-  # ── Patch 4g: remote-tools device announces Computer Use on Wayland ────
-  # Upstream builds the remote-tools device announce (what cloud Cowork and
-  # Dispatch sessions can call on this desktop) through one gate (4.4212.0:
-  # `yFr` in index.chunk-CvhJZ02X.js; callers: the device bridge build,
-  # cu_gate_reconcile and cu_preference_change):
-  #   function yFr(){return sx()||!UPr()||!jx("4293378213")?!1:QK()?!0:...}
-  #   function UPr(){return!MO()}
-  #   var MO=()=>{let e=AO().XDG_SESSION_TYPE;return e?e==="wayland":
-  #     !!AO().WAYLAND_DISPLAY}
-  # so every computer_* tool is left out of the announce on a Wayland session.
-  # Our bridges drive Wayland, so on Linux the term also passes when
+  # ── Patch 4g: isBridgeComputerUsePlatform passes on a usable Wayland bridge ──
+  # Upstream's device-bridge Computer Use (cloud Cowork, hub chat, Dispatch)
+  # goes through one predicate (4.23118.1: `U2r`, namespace key
+  # isBridgeComputerUsePlatform, export alias `EF`, in index.chunk-k6x_9PBk.js):
+  #   function U2r(){return!WO()}
+  #   var WO=()=>{let e=UO().XDG_SESSION_TYPE;return e?e==="wayland":
+  #     !!UO().WAYLAND_DISPLAY}
+  # It has three consumers, all wrong for our bridges on Wayland (issue #323):
+  #   - the remote-tools announce gate (`E4r`: `return Nb()||!U2r()||
+  #     !X("4293378213")?!1:...`, callers: the device bridge build,
+  #     cu_gate_reconcile, cu_preference_change) - every computer_* tool was
+  #     left out of the announce;
+  #   - the device-bridge call guard in the lazy chunk (`if(!e.EF())return R(
+  #     "Computer use over the device bridge is not supported on this platform
+  #     (on Linux it needs an Xorg session; ...")`) - every call was refused;
+  #   - getAppIconForBundleId (`{isBridgeComputerUsePlatform:i}=await ...;
+  #     if(!i()||...)return null`) - no app icons on the approval card.
+  # So the DEFINITION is rewritten: on Linux it also passes when
   # js/cu_mode_preamble.js decided that a first-party bridge is usable on this
   # session (globalThis.__cdbCuWaylandAnnounce === true, set once per process
-  # before the device connects; fallback routes leave it false). The HIPAA term
-  # (sx()) and the GrowthBook gate 4293378213 stay ahead of ours, unchanged.
+  # before the device connects; fallback routes leave it false). Every
+  # consumer, present or future, follows. X11, darwin and win32 are unchanged
+  # (`!M()` is true there or the global is never true); the HIPAA term and the
+  # GrowthBook gate 4293378213 of each consumer stay as upstream wrote them.
   #
-  # Anchor: the function whose body starts `return A()||!B()||!C("4293378213")?!1:`,
-  # exactly once. Pre-asserts: B is defined once as `function B(){return!M()}`,
-  # and M is the XDG_SESSION_TYPE Wayland check, defined once.
+  # Anchor: the un-minified namespace key `isBridgeComputerUsePlatform:()=>N`,
+  # exactly once. Pre-asserts: N is defined once as `function N(){return!M()}`,
+  # M is the XDG_SESSION_TYPE Wayland check, defined once. Post-asserts (fail
+  # loud, so a consumer moved onto another predicate breaks the build): the
+  # announce gate still calls N, and the device-bridge guard's
+  # `<ns>.<alias>()` resolves to N through the export getter of the chunk its
+  # `<ns>=require(...)` names.
   block:
-    let pat =
-      re"""(function [\w$]+\(\)\{return [\w$]+\(\)\|\|)!([\w$]+)\(\)(\|\|![\w$]+\(["'`]4293378213["'`]\)\?!1:)"""
-    let hits = countMatches(content, pat)
-    if hits != 1:
-      echo &"  [FAIL] 4g remote announce Wayland: {hits} gate matches, expected 1"
+    let keyPat = re"""isBridgeComputerUsePlatform:\(\)=>([\w$]+)[,}]"""
+    var keyNames: seq[string] = @[]
+    for m in content.findIter(keyPat):
+      keyNames.add m.captures[0]
+    if keyNames.len != 1:
+      echo &"  [FAIL] 4g isBridgeComputerUsePlatform namespace key: {keyNames.len} matches, expected 1"
     else:
-      let c2 = content.find(pat).get().captures[1]
-      let c2Def = re("function " & escapeRe(c2) & """\(\)\{return!([\w$]+)\(\)\}""")
-      let c2Hits = countMatches(content, c2Def)
-      if c2Hits != 1:
-        echo &"  [FAIL] 4g remote announce Wayland: {c2} defined as `return!M()` {c2Hits} times, expected 1 - re-audit"
+      let nm = keyNames[0]
+      let nmEsc = escapeRe(nm)
+      let defPat = re("function " & nmEsc & """\(\)\{return!([\w$]+)\(\)\}""")
+      let defHits = countMatches(content, defPat)
+      if defHits != 1:
+        echo &"  [FAIL] 4g bridge platform predicate: {nm} defined as `return!M()` {defHits} times, expected 1 - re-audit"
       else:
-        let mo = content.find(c2Def).get().captures[0]
-        let moEsc = escapeRe(mo)
-        let envAcc = """(?:[\w$]+\(\)|process\.env)"""
-        let moBody =
-          """\{let ([\w$]+)=""" & envAcc &
-          """\.XDG_SESSION_TYPE;return \1\?\1===["'`]wayland["'`]:!!""" & envAcc &
-          """\.WAYLAND_DISPLAY\}"""
-        let moDef = re(
-          "(?:(?<![\\w$.])" & moEsc & "=\\(\\)=>|function " & moEsc & "\\(\\))" & moBody
-        )
-        let moHits = countMatches(content, moDef)
+        let mo = content.find(defPat).get().captures[0]
+        let moHits = waylandPredicateDefs(content, mo)
         if moHits != 1:
-          echo &"  [FAIL] 4g remote announce Wayland: {mo} is not the XDG_SESSION_TYPE Wayland check ({moHits} definitions matched, expected 1) - re-audit"
+          echo &"  [FAIL] 4g bridge platform predicate: {mo} is not the XDG_SESSION_TYPE Wayland check ({moHits} definitions matched, expected 1) - re-audit"
         else:
-          let n = replaceFirst(
-            content,
-            pat,
-            proc(m: RegexMatch): string =
-              m.captures[0] & "!(" & m.captures[1] &
-                "()||process.platform===\"linux\"&&globalThis.__cdbCuWaylandAnnounce===!0)" &
-                m.captures[2],
+          let gatePat = re(
+            """function [\w$]+\(\)\{return [\w$]+\(\)\|\|!""" & nmEsc &
+              """\(\)\|\|![\w$]+\(["'`]4293378213["'`]\)\?!1:"""
           )
-          if n == 1:
-            echo &"  [OK] 4g remote announce Wayland: !{c2}() passes on Linux when a first-party bridge is usable ({c2} = !{mo}, 1 match)"
-            inc changes, n
-            inc patchesApplied
+          let gateHits = countMatches(content, gatePat)
+          let guardAlias = bridgeGuardAlias(content)
+          if gateHits != 1:
+            echo &"  [FAIL] 4g announce gate no longer calls {nm}() ({gateHits} matches of `return A()||!{nm}()||!C(\"4293378213\")?!1:`, expected 1) - re-audit"
+          elif guardAlias != nm:
+            echo &"  [FAIL] 4g device-bridge guard does not resolve to {nm} (resolved: '{guardAlias}') - re-audit"
           else:
-            echo "  [FAIL] 4g remote announce Wayland: replacement did not apply"
+            let n = replaceFirst(
+              content,
+              defPat,
+              proc(m: RegexMatch): string =
+                "function " & nm & "(){return!" & m.captures[0] &
+                  "()||process.platform===\"linux\"&&globalThis.__cdbCuWaylandAnnounce===!0}",
+            )
+            if n == 1:
+              echo &"  [OK] 4g bridge platform predicate: {nm}() = !{mo}() or a usable Linux bridge (announce gate + device-bridge guard + app icons, 1 definition)"
+              inc changes, n
+              inc patchesApplied
+            else:
+              echo "  [FAIL] 4g bridge platform predicate: replacement did not apply"
 
   # ── Patch 4h: turn-end unhide → the Linux executor's __unhideApps ──────
   # Upstream lifts what Computer Use hid during a turn through one function
@@ -1031,23 +1201,6 @@ proc apply*(input: string): string =
         inc patchesApplied
       else:
         echo "  [FAIL] 4h unhide routing: replacement did not apply"
-
-  # ── Patch 5: ensureOsPermissions → skip TCC on Linux ───────────────────
-  block:
-    let pat = re"""ensureOsPermissions:([\w$]+(?:\.[\w$]+)*)"""
-    let n = replaceFirst(
-      content,
-      pat,
-      proc(m: RegexMatch): string =
-        let fnName = m.captures[0]
-        &"ensureOsPermissions:process.platform===\"linux\"?async()=>({{granted:!0}}):{fnName}",
-    )
-    if n >= 1:
-      echo &"  [OK] ensureOsPermissions: skip TCC on Linux ({n} match)"
-      inc changes, n
-      inc patchesApplied
-    else:
-      echo "  [FAIL] ensureOsPermissions pattern: 0 matches"
 
   # ── Patch 5b (kwin-wayland): screenshot intro note workaround ──────────
   block:
@@ -1333,6 +1486,62 @@ proc apply*(input: string): string =
           echo "  [OK] cu side-panel: Linux bridge-backed init"
           inc changes
           inc patchesApplied
+
+  # ── Patch 7d (kwin-wayland): teach mode on KDE Wayland ────────────────
+  # Upstream turns teach mode off on every Wayland session: its overlay is an
+  # Electron click-through window (4.23118.1, k6x_9PBk):
+  #   Z2r=!WO()                          CLICK_THROUGH_WINDOWS
+  #   function t3r(){return Z2r?f4r()?!0:(e3r??=wx(EU,"teachModeEnabled",!0,O()),e3r):!1}
+  #                                      getChicagoTeachModeEnabled
+  # so in kwin mode the teach tools were never listed (session server tool
+  # builder `teachMode:t.iF()`, local agent `hn=dn&&t.iF()`) and 7b's
+  # bridge-backed teach controller never ran. The KWin executor draws teach
+  # steps through kwin-portal-bridge's own overlay and says so with
+  # `__teachOverlay: true` (js/executor_linux.js). The first term becomes
+  # `Z2r || (Linux && kwin mode && that flag)`; the rest of the getter (the
+  # override and the server-side teachModeEnabled value) is kept verbatim.
+  # Anchor: the getter, exactly once. Cross-checks: its first term is
+  # CLICK_THROUGH_WINDOWS (namespace key, once) and is defined once as
+  # `=!M()` with M the XDG_SESSION_TYPE Wayland check.
+  block:
+    let pat =
+      re"""function ([\w$]+)\(\)\{return ([\w$]+)\?([\w$]+)\(\)\?!0:\(([\w$]+)\?\?=([\w$]+)\(([\w$]+),["'`]teachModeEnabled["'`],!0,([\w$]+)\(\)\),\4\):!1\}"""
+    var hits: seq[RegexMatch] = @[]
+    for m in content.findIter(pat):
+      hits.add m
+    if hits.len != 1:
+      echo &"  [FAIL] 7d teach gate (`function G(){{return C?O()?!0:(v??=r(n,\"teachModeEnabled\",!0,o()),v):!1}}`): {hits.len} matches, expected 1"
+    else:
+      let fnName = hits[0].captures[0]
+      let ct = hits[0].captures[1]
+      let ctEsc = escapeRe(ct)
+      let keyHits =
+        countMatches(content, re("""CLICK_THROUGH_WINDOWS:\(\)=>""" & ctEsc & "[,}]"))
+      let defPat = re("(?<![\\w$.])" & ctEsc & """=!([\w$]+)\(\)""")
+      var defs: seq[string] = @[]
+      for m in content.findIter(defPat):
+        defs.add m.captures[0]
+      if keyHits != 1:
+        echo &"  [FAIL] 7d teach gate {fnName}: {ct} is not CLICK_THROUGH_WINDOWS ({keyHits} namespace keys, expected 1) - re-audit"
+      elif defs.len != 1 or waylandPredicateDefs(content, defs[0]) != 1:
+        echo &"  [FAIL] 7d teach gate {fnName}: {ct} is not defined once as `=!M()` with M the XDG_SESSION_TYPE Wayland check ({defs.len} definitions) - re-audit"
+      else:
+        let n = replaceFirst(
+          content,
+          pat,
+          proc(m: RegexMatch): string =
+            let whole = m.match
+            let head = "function " & m.captures[0] & "(){return " & m.captures[1] & "?"
+            "function " & m.captures[0] & "(){return(" & m.captures[1] &
+              "||/*__cdbTeachKwin*/process.platform===\"linux\"&&globalThis.__cuKwinMode===!0&&globalThis.__linuxExecutor?.__teachOverlay===!0)?" &
+              whole[head.len ..^ 1],
+        )
+        if n == 1:
+          echo &"  [OK] 7d teach gate: {fnName}() also on in kwin mode with the bridge's teach overlay ({ct} = !{defs[0]}(), 1 match)"
+          inc changes
+          inc patchesApplied
+        else:
+          echo "  [FAIL] 7d teach gate: replacement did not apply"
 
   # ── Patch 8: teach overlay mouse — tooltip-bounds polling on Linux ─────
   var overlayVar: string
@@ -2330,6 +2539,359 @@ proc apply*(input: string): string =
           inc patchesApplied
         else:
           echo &"  [FAIL] 15d dispatch: {n1}/1 session context, {n2}/1 dispatch rewrites"
+
+  # ─── Patch 16: per-app access follows the active backend ──────────────
+  # Upstream answers "per app?" for its own Wayland portal executor: one shared
+  # screen (`WO()`, the XDG_SESSION_TYPE Wayland check). Our bridges differ per
+  # backend (kwin: native per-app; x11-bridge and wlroots-bridge on sway /
+  # Hyprland: masked screenshots + hit test; GNOME, niri, fallback tools: the
+  # whole screen). js/cu_consent.js answers from the live executor:
+  # spSuffix() for the prompt text, globalThis.__cdbCuSharedScreen() for the
+  # yes/no. Every hook is behind process.platform==="linux" and keeps
+  # upstream's own answer when the helper is missing.
+
+  # 16a: the system-prompt suffix after the tier rules (4.23118.1: `xe` in
+  # index.chunk-D4NaWzj8.js, exported as `ct`; consumers: the local Cowork
+  # computer_use / cu_only sections and the session server's request_access
+  # result in that chunk, the local agent's canUseTool deny message in
+  # index.chunk-DGosOwKd.js via `D.ct()`):
+  #   function xe(){return t.X0()?`\n\nOn this system (a Linux Wayland session)
+  #   those tiers apply to the whole shared screen at once ...`:""}
+  # On Linux, a string from spSuffix() wins ("" in kwin mode); without it
+  # upstream's text stays. Pre-assert: X0 resolves to the Wayland check.
+  block:
+    let pat =
+      re"""(function ([\w$]+)\(\)\{)(return ([\w$]+)\.([\w$]+)\(\)\?([`"])\\n\\nOn this system \(a Linux Wayland session\) those tiers apply to the whole shared screen)"""
+    var hits: seq[RegexMatch] = @[]
+    for m in content.findIter(pat):
+      hits.add m
+    if hits.len != 1:
+      echo &"  [FAIL] 16a prompt suffix (`function F(){{return t.X0()?\"\\n\\nOn this system (a Linux Wayland session) ...`): {hits.len} matches, expected 1"
+    else:
+      let h = hits[0]
+      let fnName = h.captures[1]
+      let (ps, pe) = partSpan(content, h.matchBounds.a)
+      let file = requiredChunk(content[ps ..< pe], h.captures[3])
+      let target = namedPart(content, file)
+      let pred = exportTarget(target, h.captures[4])
+      if pred == "" or waylandPredicateDefs(target, pred) != 1:
+        echo &"  [FAIL] 16a prompt suffix {fnName}: {h.captures[3]}.{h.captures[4]}() does not resolve to the XDG_SESSION_TYPE Wayland check (chunk '{file}', local '{pred}') - re-audit"
+      else:
+        let n = replaceFirst(
+          content,
+          pat,
+          proc(m: RegexMatch): string =
+            m.captures[0] &
+              "if(process.platform===\"linux\"){let __cdbSpx;try{__cdbSpx=globalThis.__cdbCuConsent?.spSuffix?.()}catch(__cdbSpe){}if(typeof __cdbSpx===\"string\")return __cdbSpx}" &
+              m.captures[2],
+        )
+        if n == 1:
+          echo &"  [OK] 16a prompt suffix: {fnName}() asks js/cu_consent.js spSuffix() on Linux ({h.captures[3]}.{h.captures[4]} = {pred}, 1 match)"
+          inc changes
+          inc patchesApplied
+        else:
+          echo "  [FAIL] 16a prompt suffix: replacement did not apply"
+
+  # 16b: the supported-features entry (4.23118.1: in `jG`, index.chunk-
+  # k6x_9PBk.js; read by the enable modal, Settings -> Computer use, the
+  # approval card and the "Unhide apps" row):
+  #   computerUsePerAppAccess:WO()?{status:"unsupported",reason:"A Wayland
+  #   session shares the whole screen",unsupportedCode:"unknown"}:SG
+  # The condition becomes __cdbCuSharedScreen() on Linux (X11 included: with
+  # the ask switch off nothing is per app there either). Pre-assert: the
+  # condition is the Wayland check.
+  block:
+    let pat =
+      re"""computerUsePerAppAccess:([\w$]+)\(\)(\?\{status:"unsupported",reason:"A Wayland session shares the whole screen")"""
+    var hits: seq[RegexMatch] = @[]
+    for m in content.findIter(pat):
+      hits.add m
+    if hits.len != 1:
+      echo &"  [FAIL] 16b computerUsePerAppAccess (`computerUsePerAppAccess:WO()?{{status:\"unsupported\",reason:\"A Wayland session shares the whole screen\"`): {hits.len} matches, expected 1"
+    else:
+      let cond = hits[0].captures[0]
+      let (ps, pe) = partSpan(content, hits[0].matchBounds.a)
+      if waylandPredicateDefs(content[ps ..< pe], cond) != 1:
+        echo &"  [FAIL] 16b computerUsePerAppAccess: {cond}() is not the XDG_SESSION_TYPE Wayland check of its chunk - re-audit"
+      else:
+        let n = replaceFirst(
+          content,
+          pat,
+          proc(m: RegexMatch): string =
+            "computerUsePerAppAccess:(process.platform===\"linux\"&&typeof globalThis.__cdbCuSharedScreen===\"function\"?globalThis.__cdbCuSharedScreen():" &
+              m.captures[0] & "())" & m.captures[1],
+        )
+        if n == 1:
+          echo &"  [OK] 16b computerUsePerAppAccess: follows the active backend on Linux (upstream: {cond}(), 1 match)"
+          inc changes
+          inc patchesApplied
+        else:
+          echo "  [FAIL] 16b computerUsePerAppAccess: replacement did not apply"
+
+  # 16c: upstream's supported-features broadcast (4.23118.1, k6x_9PBk):
+  #   function RG(){for(let e of Usi)e()}
+  #   function qsi(e){if(Usi.add(e),!Hsi){...}return()=>{Usi.delete(e)}}
+  # qsi is onSupportedFeaturesInputsChanged; each window subscribes with
+  # `()=>{e.isDestroyed()||t.dispatchSupportedFeaturesChanged()}` and the
+  # renderer then fetches the features again. RG is exposed (Linux only) as
+  # globalThis.__cdbCuFeaturesChanged, which js/cu_consent.js calls when the
+  # 16b answer changed after the renderer read it (doctor reply, background
+  # display, ask switch). Nothing is called here.
+  block:
+    let keyPat = re"""onSupportedFeaturesInputsChanged:\(\)=>([\w$]+)[,}]"""
+    var keys: seq[string] = @[]
+    for m in content.findIter(keyPat):
+      keys.add m.captures[0]
+    if keys.len != 1:
+      echo &"  [FAIL] 16c onSupportedFeaturesInputsChanged namespace key: {keys.len} matches, expected 1"
+    else:
+      let sub = keys[0]
+      let subPat =
+        re("function " & escapeRe(sub) & """\(([\w$]+)\)\{if\(([\w$]+)\.add\(\1\),""")
+      var sets: seq[string] = @[]
+      for m in content.findIter(subPat):
+        sets.add m.captures[1]
+      if sets.len != 1:
+        echo &"  [FAIL] 16c subscriber {sub}: `function {sub}(e){{if(S.add(e),` {sets.len} matches, expected 1"
+      else:
+        let firePat = re(
+          """(?<=[;{}])(function ([\w$]+)\(\)\{for\(let ([\w$]+) of """ &
+            escapeRe(sets[0]) & """\)\3\(\)\})"""
+        )
+        var fires: seq[RegexMatch] = @[]
+        for m in content.findIter(firePat):
+          fires.add m
+        let listeners = countMatches(
+          content,
+          re"""\.isDestroyed\(\)\|\|[\w$]+\.dispatchSupportedFeaturesChanged\(\)""",
+        )
+        if fires.len != 1:
+          echo &"  [FAIL] 16c broadcast over {sets[0]}: `function F(){{for(let e of {sets[0]})e()}}` {fires.len} matches, expected 1"
+        elif listeners < 1:
+          echo "  [FAIL] 16c no window listener calls dispatchSupportedFeaturesChanged() - re-audit"
+        else:
+          let fire = fires[0].captures[1]
+          let n = replaceFirst(
+            content,
+            firePat,
+            proc(m: RegexMatch): string =
+              m.captures[0] &
+                "process.platform===\"linux\"&&(globalThis.__cdbCuFeaturesChanged=" &
+                m.captures[1] & ");",
+          )
+          if n == 1:
+            echo &"  [OK] 16c features broadcast: {fire} (subscribers of {sub}) exposed as globalThis.__cdbCuFeaturesChanged on Linux (1 match)"
+            inc changes
+            inc patchesApplied
+          else:
+            echo "  [FAIL] 16c features broadcast: replacement did not apply"
+
+  # 16d: the "Entire screen" pseudo-grant (4.23118.1: `ye` in D4NaWzj8, the
+  # dispatch context's getAllowedApps):
+  #   function ye(e,r){if(t.xF!==t.bF||e.some(e=>e.bundleId==="com.anthropic.cu.screen"))
+  #   return e;...return[...e,{bundleId:t.mL,displayName:"Entire screen",...}]}
+  # xF is PLATFORM_CAPABILITIES, bF the Wayland preset, so on every Wayland
+  # session - kwin mode included, where upstream dispatches - the model's
+  # list_granted_applications showed an "Entire screen" grant at the most
+  # permissive tier. On Linux it is left out when __cdbCuNoScreenGrant() says
+  # so (kwin mode, or "Ask before Computer Use controls an app" on in regular
+  # mode: our gate refuses unapproved apps); it is only ever removed, never
+  # added, and with the switch off upstream's rule is unchanged.
+  block:
+    let pat =
+      re"""(function ([\w$]+)\(([\w$]+),[\w$]+\)\{if\()(([\w$]+)\.([\w$]+)!==\5\.([\w$]+)\|\|\3\.some\(\(?([\w$]+)=>\8\.bundleId===(["'`])com\.anthropic\.cu\.screen\9\)\)?\)return \3;)"""
+    var hits: seq[RegexMatch] = @[]
+    for m in content.findIter(pat):
+      hits.add m
+    if hits.len != 1:
+      echo &"  [FAIL] 16d screen pseudo-grant (`function F(e,r){{if(t.A!==t.B||e.some(e=>e.bundleId===\"com.anthropic.cu.screen\"))return e;`): {hits.len} matches, expected 1"
+    else:
+      let h = hits[0]
+      let fnName = h.captures[1]
+      let tail =
+        content[h.matchBounds.b + 1 ..< min(h.matchBounds.b + 600, content.len)]
+      let (ps, pe) = partSpan(content, h.matchBounds.a)
+      let file = requiredChunk(content[ps ..< pe], h.captures[4])
+      let target = namedPart(content, file)
+      let capsName = exportTarget(target, h.captures[5])
+      let wlName = exportTarget(target, h.captures[6])
+      let capsOk =
+        capsName != "" and
+        countMatches(
+          target, re("PLATFORM_CAPABILITIES:\\(\\)=>" & escapeRe(capsName) & "[,}]")
+        ) == 1
+      let wlOk =
+        wlName != "" and
+        countMatches(
+          target,
+          re(
+            "(?<![\\w$.])" & escapeRe(wlName) &
+              """=\{screenshotFiltering:"none",platform:"linux",hitTest:"none"\}"""
+          ),
+        ) == 1
+      if not tail.contains(re"""displayName:(["'`])Entire screen\1"""):
+        echo &"  [FAIL] 16d screen pseudo-grant {fnName}: no `displayName:\"Entire screen\"` after the guard - re-audit"
+      elif not capsOk or not wlOk:
+        echo &"  [FAIL] 16d screen pseudo-grant {fnName}: {h.captures[4]}.{h.captures[5]} / .{h.captures[6]} are not PLATFORM_CAPABILITIES / the Wayland preset (chunk '{file}': '{capsName}' / '{wlName}') - re-audit"
+      else:
+        let n = replaceFirst(
+          content,
+          pat,
+          proc(m: RegexMatch): string =
+            m.captures[0] &
+              "process.platform===\"linux\"&&globalThis.__cdbCuNoScreenGrant?.()===!0||" &
+              m.captures[3],
+        )
+        if n == 1:
+          echo &"  [OK] 16d screen pseudo-grant: {fnName} leaves \"Entire screen\" out on Linux in kwin mode and while ask-before-control is on (1 match)"
+          inc changes
+          inc patchesApplied
+        else:
+          echo "  [FAIL] 16d screen pseudo-grant: replacement did not apply"
+
+  # 16e: the enable-prompt approval card (CU available but not yet enabled:
+  # the session server's request_access and the local agent's canUseTool,
+  # 4.23118.1 D4NaWzj8 / DGosOwKd) is built from the static preset:
+  #   {...,screenshotFiltering:t.xF.screenshotFiltering,[hostPlatform:t.xF.platform,]
+  #   featureDisabled:!0,...}
+  # 2b pins that preset to "none" on Linux, and with "none" + hostPlatform
+  # "linux" the card tells the user "Claude will be able to see your entire
+  # screen and click or type in any app on it. On this system, Claude's access
+  # can't be limited to the apps or levels listed here." - false where access
+  # is per app. On Linux, when __cdbCuSharedScreen() says so, the card gets
+  # the live executor's value (exec-free getter: "mask" on a masking bridge,
+  # "native" in kwin mode), the same value upstream's regular request_access
+  # card already reads; otherwise upstream's preset value stays.
+  # Anchor: both sites (2); the preset must be PLATFORM_CAPABILITIES.
+  block:
+    let pat =
+      re"""screenshotFiltering:(([\w$]+)\.([\w$]+)\.screenshotFiltering),((?:hostPlatform:\2\.\3\.platform,)?featureDisabled:!0)"""
+    var hits: seq[RegexMatch] = @[]
+    for m in content.findIter(pat):
+      hits.add m
+    var bad = ""
+    for h in hits:
+      let (ps, pe) = partSpan(content, h.matchBounds.a)
+      let file = requiredChunk(content[ps ..< pe], h.captures[1])
+      let target = namedPart(content, file)
+      let capsName = exportTarget(target, h.captures[2])
+      if capsName == "" or
+          countMatches(
+            target, re("PLATFORM_CAPABILITIES:\\(\\)=>" & escapeRe(capsName) & "[,}]")
+          ) != 1:
+        bad = h.captures[0]
+    if hits.len != 2:
+      echo &"  [FAIL] 16e enable card (`screenshotFiltering:t.xF.screenshotFiltering,...featureDisabled:!0`): {hits.len} matches, expected 2"
+    elif bad != "":
+      echo &"  [FAIL] 16e enable card: {bad} is not PLATFORM_CAPABILITIES.screenshotFiltering - re-audit"
+    else:
+      let n = replaceAllRegex(
+        content,
+        pat,
+        proc(m: RegexMatch): string =
+          "screenshotFiltering:(process.platform===\"linux\"&&globalThis.__cdbCuSharedScreen?.()===!1?globalThis.__linuxExecutor?.capabilities?.screenshotFiltering??\"mask\":" &
+            m.captures[0] & ")," & m.captures[3],
+      )
+      if n == 2:
+        echo "  [OK] 16e enable card: screenshot filtering follows the active backend on Linux (2 sites)"
+        inc changes, 2
+        inc patchesApplied
+      else:
+        echo &"  [FAIL] 16e enable card: {n}/2 rewrites"
+
+  # ─── Patch 17c: Stop sharing stops the running turn ───────────────────
+  # Upstream (4.23118.1, index.chunk-k6x_9PBk.js):
+  #   function rbi(){fJ&&abi(fJ,"[cu-wayland] user stopped sharing")}
+  # abi stops the CU lock holder and every app-mode holder through the callback
+  # main's view registers (fJ, the same one upstream's Escape uses). Upstream
+  # hands rbi to its native portal binding (`Ei()?.cuWaylandOnShareEnded?.(rbi)`,
+  # in a function that runs once at module load on Wayland only), which never
+  # fires: our bridges run Computer Use. rbi is exposed as
+  # globalThis.__cdbCuShareEnded right after its declaration (module load,
+  # every session type); the gnome / kwin executors call it the moment the
+  # bridge's stopped-by-user marker appears (js/cu_share_stop.js). The
+  # cuWaylandOnShareEnded site must still pass rbi (fail loud otherwise).
+  # 17c: upstream's "user stopped sharing" abort, exposed at its declaration.
+  block:
+    let sitePat = re"""\.cuWaylandOnShareEnded\?\.\(([\w$]+)\)"""
+    var sites: seq[string] = @[]
+    for m in content.findIter(sitePat):
+      sites.add m.captures[0]
+    if sites.len != 1:
+      echo &"  [FAIL] 17c `.cuWaylandOnShareEnded?.(F)`: {sites.len} matches, expected 1 - re-audit"
+    else:
+      let fn = sites[0]
+      let defPat = re(
+        "(?<=[;}])(function " & escapeRe(fn) &
+          """\(\)\{([\w$]+)&&[\w$]+\(\2,(["'`])\[cu-wayland\] user stopped sharing\3\)\})"""
+      )
+      let defHits = countMatches(content, defPat)
+      if defHits != 1:
+        echo &"  [FAIL] 17c share-ended abort {fn}: `function {fn}(){{A&&abort(A,\"[cu-wayland] user stopped sharing\")}}` {defHits} matches, expected 1 - re-audit"
+      else:
+        let n = replaceFirst(
+          content,
+          defPat,
+          proc(m: RegexMatch): string =
+            m.captures[0] &
+              "process.platform===\"linux\"&&(globalThis.__cdbCuShareEnded=" & fn & ");",
+        )
+        if n == 1:
+          echo &"  [OK] 17c share-ended abort: {fn} (handed to cuWaylandOnShareEnded) exposed as globalThis.__cdbCuShareEnded on Linux (1 match)"
+          inc changes
+          inc patchesApplied
+        else:
+          echo "  [FAIL] 17c share-ended abort: replacement did not apply"
+
+  # ─── Patch 17e: a model Escape is expected, as upstream marks its own ──
+  # Upstream (4.23118.1, index.chunk-k6x_9PBk.js):
+  #   var mJ=0;function ebi(){mJ++,setTimeout((()=>{mJ>0&&mJ--}),100)}
+  #   async function tbi(){return ebi(),()=>void 0}
+  #   function nbi(){if(mJ>0){mJ--,P.debug("[cu-esc] escape absorbed
+  #     (model-synthesized)");return}ibi()}
+  #   async function bbi(e,t){let n=vbi(e)?await tbi():()=>void 0;...}
+  # Upstream's own executor wraps each key / holdKey whose keys are exactly
+  # one Escape in bbi, which bumps mJ for 100 ms, so its X11 Escape grab (nbi)
+  # absorbs that press. Our executors bypass that wrapper: ebi is exposed as
+  # globalThis.__cdbCuExpectEscape right after its declaration (Linux only)
+  # and the executors call it right before they inject a lone Escape. Nothing
+  # is called here. Pre-assert: the grab handler with the `[cu-esc] escape
+  # absorbed` branch decrements the same counter.
+  block:
+    let pat =
+      re"""(?<=[;}])(function ([\w$]+)\(\)\{([\w$]+)\+\+,setTimeout\(\(?\(\)=>\{\3>0&&\3--\}\)?,100\)\})"""
+    var hits: seq[RegexMatch] = @[]
+    for m in content.findIter(pat):
+      hits.add m
+    if hits.len != 1:
+      echo &"  [FAIL] 17e expected-Escape marker (`function F(){{N++,setTimeout((()=>{{N>0&&N--}}),100)}}`): {hits.len} matches, expected 1 - re-audit"
+    else:
+      let fn = hits[0].captures[1]
+      let counter = hits[0].captures[2]
+      let absorbHits = countMatches(
+        content,
+        re(
+          """function [\w$]+\(\)\{if\(""" & escapeRe(counter) & """>0\)\{""" &
+            escapeRe(counter) & """--,[\w$]+\.debug\((["'`])\[cu-esc\] escape absorbed"""
+        ),
+      )
+      if absorbHits != 1:
+        echo &"  [FAIL] 17e expected-Escape marker {fn}: the `[cu-esc] escape absorbed` handler does not read {counter} ({absorbHits} matches, expected 1) - re-audit"
+      else:
+        let n = replaceFirst(
+          content,
+          pat,
+          proc(m: RegexMatch): string =
+            m.captures[0] &
+              "process.platform===\"linux\"&&(globalThis.__cdbCuExpectEscape=" & fn &
+              ");",
+        )
+        if n == 1:
+          echo &"  [OK] 17e expected-Escape marker: {fn} (counter {counter}, read by the grab handler) exposed as globalThis.__cdbCuExpectEscape on Linux (1 match)"
+          inc changes
+          inc patchesApplied
+        else:
+          echo "  [FAIL] 17e expected-Escape marker: replacement did not apply"
 
   if patchesApplied < EXPECTED_PATCHES:
     raise newException(

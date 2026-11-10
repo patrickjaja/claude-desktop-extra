@@ -339,16 +339,7 @@ async function execBridgeOnce(command, args, opts = {}) {
       command !== 'session-end'
       && (exitCode === BRIDGE_EXIT_STOPPED_BY_USER || /screen sharing was stopped|stopped by the user/.test(detail))
     ) {
-      if (bridgeSessionActive && !sessionStopPromise && !stoppedByUser) {
-        stoppedByUser = true
-        bridgeDaemonMayExist = true
-        globalThis.__cdbDiag(`[linux-executor] screen sharing was stopped (${command}); no new session until the task ends or ${CU_PORTAL_IDLE_MS / 1000} s without Computer Use actions`)
-        // The daemon is gone, and any held button with it. The idle countdown
-        // starts at the stop (session-start is not a tracked command, so its
-        // exit 5 would otherwise latch with no timer armed).
-        mouseButtonHeld = false
-        touchIdleTimer()
-      }
+      latchStoppedByUser(command)
       throw stoppedByUserError()
     }
     if (
@@ -423,6 +414,7 @@ async function ensureBridgeSession() {
     sessionReadyPromise = startPromise
   }
   await sessionReadyPromise
+  armShareWatch()
   // The command that asked runs next; count from here so the timer cannot
   // fire in the gap (e.g. screenshot's untracked `screens` lookup).
   touchIdleTimer()
@@ -504,6 +496,14 @@ function touchSessionCheck() {
   globalThis.__cdbCuSessionCheck?.touch?.()
 }
 
+// A Computer Use ACTION (capture, input, opening an app; not enumeration,
+// icons or capability probes, which upstream also runs between turns): the
+// Escape watcher (community switch, js/cu_esc_watch.js) re-arms a watcher it
+// parked at a cloud turn end. Sync and cheap; absent or off = nothing.
+function escAction() {
+  try { globalThis.__cdbCuEscWatch?.toolCall?.() } catch {}
+}
+
 function bridgeSessionMayBeUp() {
   return !!sessionReadyPromise || bridgeDaemonMayExist || stoppedByUser
 }
@@ -536,6 +536,55 @@ function onIdleTimer() {
   endBridgeSessionKeepLock('idle')
 }
 
+// Set the stop latch (a command answered exit 5, or the stopped-by-user marker
+// appeared). Only for the session this lock holds, and not while a session-end
+// owns the flags. Returns whether it latched now.
+function latchStoppedByUser(why) {
+  if (!bridgeSessionActive || sessionStopPromise || stoppedByUser) return false
+  stoppedByUser = true
+  bridgeDaemonMayExist = true
+  globalThis.__cdbDiag(`[linux-executor] screen sharing was stopped (${why}); no new session until the task ends or ${CU_PORTAL_IDLE_MS / 1000} s without Computer Use actions`)
+  // The daemon is gone, and any held button with it. The idle countdown
+  // starts at the stop (session-start is not a tracked command, so its
+  // exit 5 would otherwise latch with no timer armed).
+  mouseButtonHeld = false
+  touchIdleTimer()
+  shareEnded(why)
+  return true
+}
+
+// STOP SHARING = ABORT THE TURN (maintainer ruling 2026-11-10). The latch alone
+// only refused the NEXT action. Upstream's own "user stopped sharing" abort
+// (globalThis.__cdbCuShareEnded, sub-patch 17c of fix_computer_use_linux.nim:
+// it stops the lock holder and every app-mode holder, as its Escape does) runs
+// once per lock hold and once per task within a hold (cloud Cowork keeps one
+// lock across tasks). Twin: _gnomeShareEnded in js/cu_linux_executor.js.
+let shareFireArmed = true
+function shareEnded(why) {
+  if (!shareFireArmed) return
+  shareFireArmed = false
+  globalThis.__cdbCuShareStop?.fire?.('kwin-portal-bridge', why)
+}
+
+// The session daemon writes the stopped-by-user marker and exits; it is a
+// setsid'd grandchild (session-start returns once it is ready), so there is no
+// exit event of ours: watch its runtime dir (js/cu_share_stop.js) while a
+// session is up, so the stop is noticed at once instead of on the next action.
+let shareWatch = null
+function armShareWatch() {
+  if (shareWatch) return
+  const helper = globalThis.__cdbCuShareStop
+  if (typeof helper?.watch !== 'function') return
+  shareWatch = helper.watch('kwin-portal-bridge', () => {
+    if (sessionReadyPromise && !sessionStartInFlight) latchStoppedByUser('stopped-by-user marker appeared')
+  })
+}
+function closeShareWatch() {
+  if (!shareWatch) return
+  shareWatch.close()
+  shareWatch = null
+}
+
 function clearStoppedByUser(reason) {
   if (!stoppedByUser) return
   stoppedByUser = false
@@ -549,6 +598,7 @@ function clearStoppedByUser(reason) {
 function endBridgeSessionKeepLock(reason) {
   clearIdleTimer()
   stopSessionCheck(reason)
+  closeShareWatch()
   overlayNeedsReapply = true
   // The daemon goes away with the session, and the button with it.
   mouseButtonHeld = false
@@ -614,6 +664,7 @@ function installExitHook() {
 async function startBridgeSession() {
   installExitHook()
   bridgeSessionActive = true
+  shareFireArmed = true
   clearIdleTimer()
   // __setLockHeld(true) sets the overlay display itself after the start.
   overlayNeedsReapply = false
@@ -635,6 +686,7 @@ async function startBridgeSession() {
 async function stopBridgeSession() {
   bridgeSessionActive = false
   clearIdleTimer()
+  closeShareWatch()
   stopSessionCheck('lock released')
   mouseButtonHeld = false
   if (sessionStopPromise) {
@@ -928,6 +980,39 @@ function buttonFlag(button) {
   }
 }
 
+// A model-injected Escape must not trip the user's Escape watcher (js/
+// cu_esc_watch.js, community switch "Escape stops Computer Use"; kglobalaccel
+// on KDE is not syntheticSafe): every bridge call that can carry one runs
+// inside suspendAround, after the session is up so the window covers the
+// injection only. Other input is never wrapped; without the community patch,
+// or with its switch off, fn just runs.
+function escAround(hasEscape, fn, expectMs) {
+  const watch = globalThis.__cdbCuEscWatch
+  return hasEscape && typeof watch?.suspendAround === 'function' ? watch.suspendAround(fn, expectMs) : fn()
+}
+function escInKeys(keys) {
+  return globalThis.__cdbCuEscWatch?.hasEscape?.(keys) === true
+}
+// Upstream's own executor marks each key / holdKey whose keys are exactly one
+// Escape as expected (sub-patch 17e: globalThis.__cdbCuExpectEscape, a 100 ms
+// counter its X11 Escape grab reads). Same rule, right before the injection:
+// one mark per press (a repeated key marks each repetition).
+function escExpect(keys, repeat) {
+  try {
+    const mark = globalThis.__cdbCuExpectEscape
+    if (typeof mark !== 'function') return
+    const list = (Array.isArray(keys) ? keys : String(keys ?? '').split('+')).filter(k => String(k).length > 0)
+    if (list.length !== 1) return
+    const k = String(list[0]).trim().toLowerCase()
+    if (k !== 'escape' && k !== 'esc') return
+    const n = typeof repeat === 'number' && repeat > 1 ? Math.floor(repeat) : 1
+    for (let i = 0; i < n; i++) mark()
+  } catch {}
+}
+function escInText(text) {
+  return typeof text === 'string' && text.includes('\x1b')
+}
+
 function modifierFlags(modifiers) {
   const flags = []
   for (const modifier of modifiers || []) {
@@ -1147,7 +1232,10 @@ export function createRustLinuxBackend() {
       if (typeof repeat === 'number') {
         args.push('--repeat', String(repeat))
       }
-      await execBridgeJson('key-sequence', args)
+      await escAround(escInKeys(keySequence), () => {
+        escExpect(keySequence, repeat)
+        return execBridgeJson('key-sequence', args)
+      })
     },
 
     async holdKey(keyNames, durationMs) {
@@ -1158,9 +1246,9 @@ export function createRustLinuxBackend() {
         '--duration-ms',
         String(durationMs),
       ]
-      await execBridgeJson('hold-key', args, {
+      await escAround(escInKeys(keyNames), () => (escExpect(keyNames, 1), execBridgeJson('hold-key', args, {
         timeoutMs: KWIN_PORTAL_MS + Math.max(0, Number(durationMs) || 0),
-      })
+      })), Number(durationMs) || 0)
     },
 
     async type(text, opts) {
@@ -1170,9 +1258,9 @@ export function createRustLinuxBackend() {
         return
       }
       await ensureBridgeSession()
-      await execBridgeJson('type', ['--text', text], {
+      await escAround(escInText(text), () => execBridgeJson('type', ['--text', text], {
         timeoutMs: typeTimeoutMs(text),
-      })
+      }), typeTimeoutMs(text) - KWIN_PORTAL_MS)
     },
 
     async typePaced(text, delayMs) {
@@ -1182,9 +1270,9 @@ export function createRustLinuxBackend() {
       if (typeof delayMs === 'number' && Number.isFinite(delayMs)) {
         args.push('--delay-ms', String(Math.max(0, Math.round(delayMs))))
       }
-      await execBridgeJson('type', args, {
+      await escAround(escInText(text), () => execBridgeJson('type', args, {
         timeoutMs: typeTimeoutMs(text, delayMs),
-      })
+      }), typeTimeoutMs(text, delayMs) - KWIN_PORTAL_MS)
     },
 
     async readClipboard() {
@@ -1219,7 +1307,7 @@ export function createRustLinuxBackend() {
         String(count),
         ...modifierFlags(modifiers),
       ]
-      await execBridgeJson('pointer-click', args)
+      await escAround(escInKeys(modifiers), () => execBridgeJson('pointer-click', args))
     },
 
     async mouseDown() {
@@ -1904,6 +1992,9 @@ export function createLinuxExecutor(opts = {}) {
     // timer; upstream's lock is not touched (the next command starts a new
     // session). Safe at any time; never rejects.
     async __cuTaskBoundary(id, source, holder) {
+      // The turn ended: an Escape watcher (community switch) parks until the
+      // next action.
+      try { globalThis.__cdbCuEscWatch?.taskEnded?.(id, source, holder) } catch {}
       try {
         if (id != null && holder != null && cuSessionKey(id) !== cuSessionKey(holder)) {
           globalThis.__cdbDiag(`[linux-executor] task boundary (${source}): ignored, ${id} is not the Computer Use lock holder ${holder}`)
@@ -1915,6 +2006,7 @@ export function createLinuxExecutor(opts = {}) {
           return
         }
         globalThis.__cdbDiag(`[linux-executor] task boundary (${source}): ending the bridge session`)
+        shareFireArmed = true
         stopSessionCheck('task boundary')
         await endBridgeSessionKeepLock(`task boundary (${source})`)
       } catch (error) {
@@ -1970,6 +2062,12 @@ export function createLinuxExecutor(opts = {}) {
 
       debugLog('__initDockController installed')
     },
+
+    // Read by fix_computer_use_linux.nim 7d: upstream turns teach mode off on
+    // every Wayland session (its Electron overlay needs click-through
+    // windows); this executor draws teach steps through the bridge's own
+    // overlay instead, so the getter may follow the server's teachModeEnabled.
+    __teachOverlay: true,
 
     __initTeachController(manager, mainWindow) {
       if (teachControllerState.initialized) return
@@ -2115,6 +2213,7 @@ export function createLinuxExecutor(opts = {}) {
     },
 
     async resolvePrepareCapture(opts) {
+      escAction()
       debugLog('resolvePrepareCapture', opts)
       let hidden = []
       let activated = null
@@ -2166,30 +2265,36 @@ export function createLinuxExecutor(opts = {}) {
     },
 
     async screenshot(opts) {
+      escAction()
       debugLog('screenshot', opts)
       const display = await getDisplaySize(backend, opts.displayId)
       return toScreenshotResult(await backend.screenshot(opts.displayId), display)
     },
 
     async zoom(regionLogical, allowedBundleIds, displayId) {
+      escAction()
       void allowedBundleIds
       return backend.zoom(regionLogical, displayId)
     },
 
     async key(keySequence, repeat) {
+      escAction()
       await backend.key(keySequence, repeat)
     },
 
     async holdKey(keyNames, durationMs) {
+      escAction()
       await backend.holdKey(keyNames, durationMs)
     },
 
     async type(text, opts) {
+      escAction()
       debugLog('type', { textLength: text?.length, opts })
       await backend.type(text, opts)
     },
 
     async typePaced(text, delayMs) {
+      escAction()
       await backend.typePaced(text, delayMs)
     },
 
@@ -2202,18 +2307,22 @@ export function createLinuxExecutor(opts = {}) {
     },
 
     async moveMouse(x, y) {
+      escAction()
       await backend.moveMouse(x, y)
     },
 
     async click(x, y, button, count, modifiers) {
+      escAction()
       await backend.click(x, y, button, count, modifiers)
     },
 
     async mouseDown() {
+      escAction()
       await backend.mouseDown()
     },
 
     async mouseUp() {
+      escAction()
       await backend.mouseUp()
     },
 
@@ -2222,10 +2331,12 @@ export function createLinuxExecutor(opts = {}) {
     },
 
     async drag(from, to) {
+      escAction()
       await backend.drag(from, to)
     },
 
     async scroll(x, y, dx, dy) {
+      escAction()
       await backend.scroll(x, y, dx, dy)
     },
 
@@ -2250,6 +2361,7 @@ export function createLinuxExecutor(opts = {}) {
     },
 
     async openApp(bundleId) {
+      escAction()
       await backend.openApp(bundleId)
     },
   }

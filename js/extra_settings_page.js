@@ -1240,6 +1240,11 @@
       if (typeof spec.hideIf === "function" && spec.hideIf(res)) {
         head.remove();
         host.remove();
+        // A grouped page (Community Features) hides a headline whose rows
+        // are all gone: it marks the row and asks to be told (spec.onGone).
+        spec.gone = true;
+        host.style.display = "none";
+        if (typeof spec.onGone === "function") spec.onGone();
         return;
       }
       if (failed(res)) {
@@ -1594,6 +1599,7 @@
   // they had under Community Features.
   var CU_ROWS = [
     renderCuAskRow,
+    renderCuEscapeAbortCuRow,
     renderCuBackgroundRow,
     renderCuAxRow
   ];
@@ -3148,6 +3154,52 @@
     });
   }
 
+  // --- Computer Use: Escape stops it (issue #323) -------------------------
+  // Off by default. Main side: cdb-cu-esc:* in js/extra_settings_main.js;
+  // patches/community/add_feature_cu_escape_abort.nim reads the switch each
+  // time Computer Use takes its lock, so a flip applies from the next task.
+  // One setting, two views: the same row on Community Features (its own
+  // "Computer Use" group) and on the Cowork (Linux) page under Computer Use ->
+  // Options (cuPage). Both read and write cdb-cu-esc:* and each page reads it
+  // afresh every time it is drawn, so a flip on one shows on the other.
+  function renderCuEscapeAbortCuRow(panel) { return renderCuEscapeAbortRow(panel, true); }
+  function renderCuEscapeAbortRow(panel, cuPage) {
+    return renderToggleRow(panel, {
+      // On the Cowork (Linux) page: under the Options heading renderCu draws.
+      section: cuPage ? "Options" : void 0,
+      sharedSection: !!cuPage,
+      title: "Escape stops Computer Use",
+      note: "Press Escape anywhere to stop Computer Use while Claude is working. X11, and Hyprland 0.55 and " +
+        "newer: Escape still reaches your apps. KDE Plasma (Wayland): while Claude is working Escape only " +
+        "stops Computer Use - it does not close Overview, menus or the launcher, cancel a window move or reach " +
+        "the app (Alt+Tab and the lock screen work as usual); if another global shortcut already uses Escape, " +
+        "the stop key is not enabled. sway: Escape is taken while Claude is working; an Escape binding in " +
+        "sway's default mode keeps the stop key off. GNOME and other desktops: not available - use Stop " +
+        "sharing or Stop. Off keeps Anthropic's behavior (on X11 Escape stops Computer Use and is taken while " +
+        "Claude is working; elsewhere only Escape in Claude's own window). Applies live, from the next Computer Use task.",
+      keywords: "abort cancel keyboard shortcut kglobalaccel xinput hyprland sway kde x11 wayland",
+      ariaLabel: "Escape stops Computer Use",
+      read: "cuEscRead",
+      write: "cuEscSet",
+      lockFile: "claude-desktop-extra.jsonc",
+      // The downstream Windows build carries this page; its main side answers
+      // "Linux only" and the row must not appear there.
+      hideIf: function (res) { return failed(res) && /Linux only/.test(reason(res)); },
+      // Opt-in: only an explicit true is on.
+      isOn: function (res) { return res.enabled === true; },
+      describe: function (on) {
+        return on ? "on - Escape stops Computer Use on supported desktops" : "off - Anthropic's Escape handling";
+      },
+      writeArg: function (next) { return next; },
+      toast: function (next) {
+        return next
+          ? "Escape stops Computer Use from the next task"
+          : "Escape handling is back to Anthropic's behavior";
+      },
+      errorPrefix: "Could not change the setting: "
+    });
+  }
+
   // --- Code: native dialog with "Allow always" for starting other sessions --
   // Off by default. Main side: cdb-session-start:* in js/extra_settings_main.js;
   // the broker hook in patches/community/add_feature_session_start_always_allow.nim
@@ -3626,6 +3678,9 @@
     { title: "Models and 3P", sub: "Extra models and gateway options", items: [
       renderCustomModelsRow,
       renderAllowNonAnthropicModelsRow
+    ] },
+    { title: "Computer Use", sub: "Computer Use on Linux", items: [
+      renderCuEscapeAbortRow
     ] }
   ];
 
@@ -3661,6 +3716,10 @@
         if (!row) return;
         // The group headline stands in for the per-row label.
         row.head.remove();
+        // A row whose read says it does not exist on this platform (hideIf,
+        // e.g. a Linux-only switch on the downstream Windows build) is gone:
+        // draw again so its headline hides when nothing else is left in it.
+        row.spec.onGone = function () { draw(search.value); };
         g.rows.push(row);
         rows.push(row);
       });
@@ -3691,7 +3750,7 @@
       var shown = 0;
       rows.forEach(function (row) {
         var hay = (row.spec.title + " " + row.spec.note + " " + (row.spec.keywords || "")).toLowerCase();
-        var hit = !needle || hay.indexOf(needle) >= 0;
+        var hit = !row.spec.gone && (!needle || hay.indexOf(needle) >= 0);
         row.head.style.display = hit ? "" : "none";
         row.host.style.display = hit ? "" : "none";
         if (hit) shown++;

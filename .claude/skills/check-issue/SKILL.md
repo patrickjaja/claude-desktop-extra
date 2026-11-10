@@ -49,6 +49,7 @@ Each brief carries:
   - Confirm that our patches do not touch that path.
   - Search `anthropics/claude-code` issues for the same symptom.
 - An upstream bug that only breaks on Linux is still ours to patch. It counts as a functional gap, not a cosmetic one.
+- A refusal or a gate that one of our patches already touches: resolve the upstream predicate behind it and list ALL its consumers (export aliases, lazy requires, derived values) before calling it an upstream change. `scripts/check-predicate-consumers.py` on a patched tree does this (docs/census-gates.md); #323 was a call-site patch that covered 1 of 3 consumers. When the cause is a class of gap, dispatch a second read-only worker for the sibling audit in the same phase.
 
 **Reproduce without the user's running app.** The user's Claude is in use: never signal its processes, and identify yours by your own `--user-data-dir`.
 - **Renderer, main-process or Electron behaviour:** run on a private Xvfb display with `env -i` and a throwaway HOME, XDG_RUNTIME_DIR, CLAUDE_CONFIG_DIR and `--user-data-dir`. Use the installed binary or a scratch patched tree. A hung renderer is simulated with `SIGSTOP` on the main renderer.
@@ -74,12 +75,12 @@ Load `agent-skills:spec-driven-development`. Write `.agent/SPEC-<slug>.md`. The 
 - **Commands, testing strategy, boundaries and success criteria.**
 - **A "Rulings during implementation" section,** appended as decisions are made.
 
-Ask the real design forks with AskUserQuestion: one question per fork, with the recommended option first. Approval of the spec covers "break into tasks and dispatch". Save the plan and the ledger to `.agent/tasks/plan-<slug>.md` and `.agent/tasks/todo-<slug>.md`.
+Ask the real design forks with AskUserQuestion: one question per fork, with the recommended option first. Before proposing a default, ask whether an existing user's behaviour changes on update: if it does, the recommended option is a community switch that is off by default, with the upstream path untouched when off (the maintainer corrected two 'on by default' proposals in #323). Approval of the spec covers "break into tasks and dispatch". Save the plan and the ledger to `.agent/tasks/plan-<slug>.md` and `.agent/tasks/todo-<slug>.md`.
 
 ## Phase 4 - implement in parallel
 
 **File ownership:**
-- Two tasks that edit the same file each get their own worktree, or else run in sequence. A worktree task leaves its diff uncommitted. The orchestrator then runs `git apply --check` and `git apply` on the main tree (`-3` fails on a dirty index) and copies over any untracked files.
+- Two tasks that edit the same file each get their own worktree, or else run in sequence. A reviewer of a finished task whose files the next task is already editing gets a snapshot (`git diff` plus a tar of the untracked files) and builds a private clone from it. A worktree task leaves its diff uncommitted. The orchestrator then runs `git apply --check` and `git apply` on the main tree (`-3` fails on a dirty index) and copies over any untracked files.
 - Implementers never touch `CHANGELOG.md`, `docs/`, `README.md`, or `EXPECTED_TEST_HARNESSES` in `scripts/run-feature-tests.sh`. The integration task owns those, so parallel edits cannot conflict. New harnesses run with plain `node <file>` until the count is bumped.
 
 **Rules every brief must state:**
@@ -97,7 +98,9 @@ Ask the real design forks with AskUserQuestion: one question per fork, with the 
 **Reviews:**
 - Every task gets an independent per-task review.
 - Feed the findings back to the same implementer through SendMessage, so it keeps its context.
-- Do not re-review small verified fixes.
+- Do not re-review small verified fixes. A fix round that rewrites whole files is not small: name those files in the final review's brief.
+- Compositor or desktop-service code written from documentation (Hyprland IPC, kglobalaccel) is not done until it ran on the real thing: schedule the VM run right after the task's review, before integration. In #323 it found a compositor crash and a keymap defect that mocks and reviews had passed.
+- A new shared crate is a path dependency until its repo exists: bridge CI, and the local build's container build of the dynamic bridges, cannot see `../<crate>`. Tell the maintainer early that a new GitHub repo is needed.
 
 ## Phase 5 - integrate and gate
 
@@ -178,4 +181,5 @@ Before reporting done, update **this file**: `.claude/skills/check-issue/SKILL.m
 - 2026-10-30 (#305): when a refresh hook calls into upstream code, call upstream's own wrapper (crash containment, retries) rather than the inner function it wraps.
 - 2026-11-02 (#293 round 8): upstream main has no task-end signal for cloud Cowork sessions; the page's `releaseRemoteCuLock` is view-scoped and the model's `computer_release_lock` is optional. The server's `worker_status` (upstream's own `refreshRemoteChromeSessionMode`, cookie-authenticated) flips to idle with the `result` event; poll it instead of guessing with a timer.
 - 2026-11-10 (#319): when a live run on the new build shows odd behaviour (a dialog, a hotkey that does not arm), run the released build through the same steps before calling it a regression; two of three KDE observations were already there. A change to the window identity also changes the portal app id on KDE (shortcut component, one confirmation dialog per profile).
+- 2026-11-10 (#323): harnesses that spawn fake child processes must kill them and remove their temp dirs on exit and on signals; reviewers found orphans after interrupted runs. Workers' `rm` in shared /tmp can be denied: have them register cleanup in the harness instead.
 - 2026-11-10 (#319): tell a host live-check worker up front that the maintainer may log in to an instance it started, so it never quits one; a later message can arrive after the quit. Do not run the full feature suite while other heavy runs are going: one harness flaked under load.

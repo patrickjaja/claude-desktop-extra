@@ -1,0 +1,1160 @@
+{
+  "about": [
+    "Pinned data for scripts/check-refusal-strings.py (issue #323 class). Edited by hand on purpose; there is no --update mode.",
+    "Every string in the PATCHED .vite/build/index*.js (a literal, or a `\"a\"+x+\"b\"` concatenation chain read as one text; texts longer than 300 characters are keyed per sentence) that names the platform, the Linux session, the device or Computer Use and reads like a refusal. Our own js/ strings are subtracted by the script; a string a .nim patch writes inline is pinned here with an 'ours:' reason.",
+    "id = first 12 hex of sha1(text); text = normalised (template expressions and concatenation operands -> ${}, whitespace collapsed, source escapes kept as written). sites = how many places print it: a second site fails until reviewed.",
+    "status: neutralised (our patch makes the guard in front of it pass, or replaces the text, on Linux; 'verify' names the injected shape that makes it true and must match 'count' times in the bundle) | unreachable (no Linux path reaches it while our patches are active) | accepted (true on Linux, or platform-neutral). A reason starting 'needs review' is waiting for a maintainer decision.",
+    "A new 'accepted' entry loosens the gate: it needs @patrickjaja in the commit."
+  ],
+  "strings": [
+    {
+      "id": "b5e9a289b459",
+      "text": "${} broker sign-in unavailable: the OS identity broker isn't available on this device (macOS needs the Company Portal SSO extension; Windows has it built in; Linux is unsupported). Enable it, or ${} to sign in with the system browser.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Entra/SSO broker: upstream states Linux has no OS identity broker; true on Linux."
+    },
+    {
+      "id": "61ce4d98ae2f",
+      "text": "${} is not available: this computer's connector settings could not be read.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "0156bb60c251",
+      "text": "${} is only available on macOS.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "d84124c8741f",
+      "text": "${}=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|${}|--xdg-portal-required-version=99",
+      "status": "accepted",
+      "sites": 2,
+      "reason": "Command-line sanitising regex that mentions --xdg-portal-required-version; not a refusal."
+    },
+    {
+      "id": "b1bc046e4ab8",
+      "text": "**Computer use is your only tool surface in this session.** Bash, file tools, web search, the Chrome MCP, and other connectors are NOT available \\u2014 do not suggest them or ask the user to install them.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "cd5cd6f275ec",
+      "text": "- Fall back to computer-use screenshot+click only for steps whose outcome genuinely can't be reached any other way (e.g. an app with no API, MCP, or file-based interface).",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "System-prompt guidance on tool choice; no gate."
+    },
+    {
+      "id": "65396c6cbfc5",
+      "text": "[Chrome Extension MCP] Unsupported platform: ${}",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Log line when no supported browser profile list exists for this platform; informational."
+    },
+    {
+      "id": "74939e2a8e72",
+      "text": "[computer-use] AUMID cache load failed \\u2014 claude-native may be unavailable. App enumeration degraded; core CU still functional.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "adf83df4cab8",
+      "text": "[computer-use] ensureOsPermissions: claude-swift computerUse unavailable",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS TCC probe; ensureOsPermissions returns granted on win32/linux before reaching it."
+    },
+    {
+      "id": "2c147c932b7d",
+      "text": "[computer-use] resolved protected targets unavailable: ${}",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS save-panel protected-target lookup (debug log); not reached on Linux."
+    },
+    {
+      "id": "ffb50b83dfb9",
+      "text": "[computer-use] save sheet confirmed without its parent folders: this host cannot read them",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "c5cb8f5db2f0",
+      "text": "[computer-use] save-panel probe threw (${}): background ${} refused",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "59526ab69da6",
+      "text": "[edrIntegration] not run: coworkEDRIntegration is set to a macOS or Linux path, and this computer needs a Windows path such as C:\\\\Program Files\\\\Example\\\\package.tgz. Give each platform its own value in device management (config_invalid)",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "6057f9c0fc49",
+      "text": "[linux-vm] claude-native connectUnixSocketSameUid unavailable in this dev build; falling back to net.createConnection without SO_PEERCRED peer verification",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Dev-build fallback log in upstream's Linux Cowork VM client."
+    },
+    {
+      "id": "b65c599a65fc",
+      "text": "[PluginMcpHostConfig] Plugin \"${}\" MCPB server \"${}\": manifest requires user configuration (${}) with no defaults \\u2014 user_config is not supported on the desktop host bridge; dropping server",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Plugin MCP user_config on the desktop host bridge: platform-neutral."
+    },
+    {
+      "id": "2399ca2610b7",
+      "text": "[PluginMcpHostConfig] Plugin \"${}\" server \"${}\": config references plugin user configuration (${}) \\u2014 user_config is not supported on the desktop host bridge; dropping server",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Plugin MCP user_config on the desktop host bridge: platform-neutral."
+    },
+    {
+      "id": "85c73b3b327c",
+      "text": "[quick-entry] cursor: x11-bridge/hyprctl unavailable -- falling back to Electron API (may show on wrong monitor)",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "ours: patches/linux/fix_quick_entry_position.nim log line (inline in the patch, so js/ subtraction cannot see it)."
+    },
+    {
+      "id": "20ff1a26f9c5",
+      "text": "[QuickEntry] Not opened: neither Chat nor Cowork is available. Chat: ${}. Cowork on this computer: ${}. Cowork on a session host: ${}",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "baabc6941c25",
+      "text": "[RemoteServerController] host power ledger unavailable; where the OS parks awake timers (macOS) no connect can be judged sleep-interrupted without it:",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "6308bba60944",
+      "text": "[sableOtter] Wayland session; not starting",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "sableOtter (paste helper) skips Wayland upstream by design; log line only."
+    },
+    {
+      "id": "b19d375f7649",
+      "text": "[Simulator] flow_capture: not saved, macOS refused Desktop access (${})",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Device simulator/emulator support matrix; not a Linux desktop gate."
+    },
+    {
+      "id": "4131b597932e",
+      "text": "[SshMcpServerManager] Not starting MCP server \"${}\" on the SSH host: it belongs to a desktop extension, and those run on this computer only. Its tools are not available in this session.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "59f011c398d0",
+      "text": "[trustedRepositories] ${}: its git dir resolves to an aliased path spelling (a macOS file-ID, automount or firmlink path); refusing to bind a spawn to it",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "ce3eea784800",
+      "text": "[wake-scheduler] suspend but not ready (pref off, or on macOS the daemon is not enabled \\u2014 check Login Items)",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "23633879a32a",
+      "text": "[watch-record] start blocked \\u2014 unsupported platform",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Watch-record is darwin/win32 only upstream; true on Linux."
+    },
+    {
+      "id": "02d2d52d3436",
+      "text": "\\n\\n[Note: ${} connected folder(s) (network or otherwise unsupported locations) are not mounted in this shell and do not appear under $HOME/mnt/. They are still reachable via device_list_dir / device_stage_files / device_commit_files, by their paths on this device.]",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Cowork VM shell note about unmounted network folders; platform-neutral."
+    },
+    {
+      "id": "a80b7351afe7",
+      "text": "\\n\\nComputer use (screenshots + desktop control) is available but disabled. If a task needs it, tell the user to enable it at [Settings \\u2192 This computer \\u2192 Computer use](/settings/desktop).",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "System-prompt note when the user's CU switch is off; true on every platform."
+    },
+    {
+      "id": "941aaa7b50ac",
+      "text": "A double or triple click on a pop-up button is not available to computer use: the first press opens its menu and the next would pick in it before anything can check it. Click it once.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "d3397a54faba",
+      "text": "a macOS file-ID path spelling names a git dir; refusing to resolve it",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "869f610e3ce4",
+      "text": "A prior computer-use call wedged and was force-released; this queued call is refused. Retry.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "dd1e4cc45598",
+      "text": "allowedWorkspaceFolders: ${} read-only ${} a variable that is unset or not supported on this computer. The folder above the variable is read-only instead (every allowed folder, where the entry names no folder above it). Set the variable, use a supported one, or list the folder by its path.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Managed settings warning about an unset variable; platform-neutral."
+    },
+    {
+      "id": "1b37f15521bd",
+      "text": "Also lam_vm_guest_proxy.outcome \\u2014 a closed literal union: the answer of the VM's native side (the macOS addon or the VM service), accepted only when it is one of GUEST_PROXY_REFRESH_OUTCOMES (cowork-vm/vmTypes.ts, checked in guestProxyRefresh.ts), or the app's own 'unsupported' (vmClient.ts, guestProxyRefresh.ts) and 'call-failed' (guestProxyRefresh.ts); never a URL, host or error text.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "32bced032f8b",
+      "text": "An entry whose other fields fail validation runs no helper; from MDM or the managed settings file, any value but 'continue' on it then refuses to start Claude Code until the entry is fixed, unless a static settings payload (the entry's own, kept when it validates, the linux entry's for a wsl one, or the map's \"default\") serves in its place.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Admin or organisation policy; same on every platform."
+    },
+    {
+      "id": "61192ac3bf34",
+      "text": "App ${} is blocked by policy and cannot be used with computer use. Do not attempt to work around this restriction \\u2014 never use scripting, automation tools, shell commands, or any other method to send clicks or keystrokes to this app.",
+      "status": "accepted",
+      "sites": 2,
+      "reason": "Admin or organisation policy; same on every platform."
+    },
+    {
+      "id": "e401dff62c7a",
+      "text": "Artifact \"${}\" is not available on this device.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "17a735001346",
+      "text": "Artifact \"${}\" was shared with the user and is read-only on this device.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "39afc27cf830",
+      "text": "Background app-scoped mode is not yet supported on this macOS version",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "21b30cdf8b30",
+      "text": "Background app-scoped mode requires macOS 15 or later",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "289260767f4a",
+      "text": "Bounce the Dock icon (macOS) or flash the taskbar button (Windows, Linux) when Claude needs the user's attention and the app isn't focused.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Settings description (attention bounce); documentation text."
+    },
+    {
+      "id": "13b5c5440c5f",
+      "text": "Cannot branch: this session type cannot be branched.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind that cannot be branched; platform-neutral."
+    },
+    {
+      "id": "4f5ab7383fac",
+      "text": "Cannot target the host application itself \\u2014 the app-scoped executor introspects its target via Accessibility from the main thread, so pointing it at its own process deadlocks. Claude's own window is never a valid computer-use subject.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "734234a87c7a",
+      "text": "captureFullScreen: unsupported platform",
+      "status": "unreachable",
+      "sites": 1,
+      "reason": "Stub screen capture of the watch-record chunk (Record a skill / Share screen / copperHeron frames). Every caller sits behind watch-record, which is darwin/win32 only (isWatchRecordSupportedPlatform; 'Watch-record is not available on this platform'); Computer Use screenshots on Linux come from our executor, never from this module."
+    },
+    {
+      "id": "2be2cb8351ad",
+      "text": "Changing the app's settings needs the user at this computer to approve it, so it is unavailable in unattended sessions.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "635de9ef0d6a",
+      "text": "Choosing a folder here would move the document at once, and nothing checks where it would land, so it is not available to computer use.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS save-panel (AX) guard of the app-scoped mode; not advertised on Linux."
+    },
+    {
+      "id": "85f520e97e3f",
+      "text": "Claude Code Android Emulator is not supported on this platform.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Device simulator/emulator support matrix; not a Linux desktop gate."
+    },
+    {
+      "id": "49059fb9b4bf",
+      "text": "Claude Code iOS Simulator requires macOS 15 or later. Update macOS to use it.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Device simulator/emulator support matrix; not a Linux desktop gate."
+    },
+    {
+      "id": "9135d674b8c7",
+      "text": "Claude Code iOS Simulator requires macOS.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Device simulator/emulator support matrix; not a Linux desktop gate."
+    },
+    {
+      "id": "469b522fbd54",
+      "text": "Claude Console sign-in is not available on this device",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "d40dd9402150",
+      "text": "Claude in Chrome is connected only on another computer. Ask the user to use Chrome on this computer.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "4de7cc020b4b",
+      "text": "Claude's browser isn't available on this device.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "325e07e7e909",
+      "text": "Cleanup deletes data only on this computer, not anything stored by Anthropic.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "27a82d2048e3",
+      "text": "Computer use could not check this session with the server yet. Wait about 30 seconds before calling computer_* tools again. If you get this reply again, tell the user that computer use can't be used from this session right now.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "5049254e1b77",
+      "text": "Computer Use is available but not enabled, and this session is not wired with a permission handler to show the enable prompt. Computer control is not available here.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "4166932115c2",
+      "text": "Computer Use is available but not enabled, and this session is running unattended so the enable prompt can't be shown. Let the user know you can't complete this without computer use.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "250d22c83c36",
+      "text": "computer use is disabled",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Device-bridge computer tools stub when shouldAnnounceBridgeComputerUse is false; on Linux that predicate follows our patched isBridgeComputerUsePlatform, so this text means CU is really off (switch/flag/HIPAA)."
+    },
+    {
+      "id": "c32e761243c4",
+      "text": "Computer Use is disabled by your organization's policy. If you recently switched organizations, restart the app.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Admin or organisation policy; same on every platform."
+    },
+    {
+      "id": "d4610cadd262",
+      "text": "Computer use is not available from this kind of session.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "ed590c787c45",
+      "text": "Computer use is not available on this device right now. Don't retry computer_* tools this turn.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Device-bridge caller not listed in chicago_config / CU availability collapsed; a server/user decision, platform-neutral."
+    },
+    {
+      "id": "88f8da8b3432",
+      "text": "Computer use is not available on this platform",
+      "status": "unreachable",
+      "sites": 1,
+      "reason": "computerUse feature status, last arm: isCuSupportedPlatform (covered, true on Linux) returns 'supported' first."
+    },
+    {
+      "id": "da4277062f2f",
+      "text": "Computer use is not available to this chat on this computer.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "af5e5abff032",
+      "text": "Computer use is not available to this chat while the app is showing a different organization.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Admin or organisation policy; same on every platform."
+    },
+    {
+      "id": "61f39f7504ba",
+      "text": "Computer use on Wayland needs a desktop portal with remote-control and clipboard support (GNOME 46 or newer, or a current KDE Plasma)",
+      "status": "unreachable",
+      "sites": 1,
+      "reason": "computerUse feature status, Wayland arm: isCuSupportedPlatform (covered, true on Linux) returns 'supported' first."
+    },
+    {
+      "id": "f02c40a236f0",
+      "text": "Computer use over the device bridge is disabled on this device.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Device-bridge CU behind its GrowthBook gate (4293378213) after the platform check; a server rollout decision, same on every platform."
+    },
+    {
+      "id": "73b6d2ee7eb8",
+      "text": "Computer use over the device bridge is not supported on this platform (on Linux it needs an Xorg session; a Wayland session can only be driven from the desktop app itself).",
+      "status": "neutralised",
+      "sites": 1,
+      "reason": "Issue #323 device-bridge refusal: isBridgeComputerUsePlatform is patched at its definition (fix_computer_use_linux bridge-platform), so the guard passes on Wayland when a usable bridge announced itself; it still refuses on Wayland without one, which is then true.",
+      "verify": {
+        "regex": "function [\\w$]+\\(\\)\\{return![\\w$]+\\(\\)\\|\\|process\\.platform===\"linux\"&&globalThis\\.__cdbCuWaylandAnnounce===!0\\}",
+        "count": 1
+      }
+    },
+    {
+      "id": "3b77c07df509",
+      "text": "Computer use requires macOS 14 or later",
+      "status": "unreachable",
+      "sites": 1,
+      "reason": "macOS floor arm of the computerUse status; darwin-only term, never true on Linux."
+    },
+    {
+      "id": "0db18e05284d",
+      "text": "Computer Use was turned on, but it isn't available on this device right now. Don't retry computer-use tools this turn; let the user know you can't complete this without computer use.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "CU_UNAVAILABLE_POST_DIALOG_MESSAGE: availability collapsed after the enable dialog (isComputerUseEnabled, covered on Linux: false only under the HIPAA gate)."
+    },
+    {
+      "id": "540477cdd928",
+      "text": "Computer-use access to ${} can't be approved during a scheduled run. To grant it, send a message in this conversation (the approval card will appear), or add ${} to the scheduled task's settings. (Retrying returns this same result.)",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "539f511e2e80",
+      "text": "Computer-use tools require a server-asserted session id, which the remote-devices bridge did not supply. Retrying will not help \\u2014 ask the user to report this.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "22884cf2826e",
+      "text": "Cowork isn't available on this device: the operating system's kernel doesn't include the virtualization support Cowork needs, and it can't be added manually. This is common on ChromeOS and other container-based Linux environments.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "True host limitation (kernel without virtualization support)."
+    },
+    {
+      "id": "e0808a7ec584",
+      "text": "Cowork requires hardware virtualization (KVM), which isn't available on this device. Enable virtualization in your firmware settings to use this feature.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "True host limitation (no KVM); our patches never force Cowork support."
+    },
+    {
+      "id": "d461220a2f8e",
+      "text": "Cowork requires macOS 14.0 (Sonoma) or later. Update your operating system to use this feature.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "82f81f348c98",
+      "text": "Detaching an Android device with \\u2318Q requires macOS",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Device simulator/emulator support matrix; not a Linux desktop gate."
+    },
+    {
+      "id": "641a108023b9",
+      "text": "device_bash is unavailable on this device, so file deletion can't be enabled (delete permission only affects device_bash), and no other bridge tool can move or delete files. Tell the user exactly which files should be deleted and why, so they can delete them themselves.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "9baf9a829f9f",
+      "text": "device_bash is unavailable on this device. Use device_stage_files / device_commit_files instead.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "79c2eee1cf68",
+      "text": "Dpapi is not supported on this platform",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Windows DPAPI stub, constructed only off win32 and never used on Linux."
+    },
+    {
+      "id": "b968f987a221",
+      "text": "Dragging from or onto a pop-up button is not available to computer use: the release would pick a menu item before anything can check it. Click the pop-up to open its menu instead.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "7f6caf4c06a2",
+      "text": "electron app.getAppPath is unavailable (partial mock or early startup); cannot resolve cowork Linux asset paths",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Dev/test-only guard (partial mock or early startup)."
+    },
+    {
+      "id": "d471150af971",
+      "text": "Electron safeStorage encryption is not available on this system",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "No keyring on this system: true statement; our KWallet probe patch handles the KDE case."
+    },
+    {
+      "id": "d8b441308837",
+      "text": "Electron safeStorage encryption is not available on this system, cannot store allowlist cache",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "No keyring on this system: true statement; our KWallet probe patch handles the KDE case."
+    },
+    {
+      "id": "91be4a3befe5",
+      "text": "Encryption not available on this system",
+      "status": "accepted",
+      "sites": 5,
+      "reason": "No keyring on this system: true statement."
+    },
+    {
+      "id": "4f2c7e7b8c74",
+      "text": "Entries marked `requiresGrantBeforeListing` can't be listed until granted but CAN be requested (approval may add a macOS permission prompt); request them instead of trying device_list_dir.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "a55bf553354c",
+      "text": "Exit with an error at startup if sandbox.enabled is true but the sandbox cannot start (missing dependencies or unsupported platform). When false (default), a warning is shown and commands run unsandboxed. Intended for managed-settings deployments that require sandboxing as a hard gate.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Settings schema description; documentation text."
+    },
+    {
+      "id": "89dc5f78dff2",
+      "text": "FileStore requires O_NOFOLLOW support on this platform",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Linux has O_NOFOLLOW, so it never fires there."
+    },
+    {
+      "id": "cabfabc258f3",
+      "text": "From a session running on an SSH host: no places on this computer, and folders only for that host.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "d4de0692d6cf",
+      "text": "Global keyboard shortcuts require the GlobalShortcuts desktop portal, which this Wayland session does not provide",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "True on Wayland without the portal; our Quick Entry --toggle path and the KDE rebind patch are the documented answer. predicate-consumers allowlist: intentional."
+    },
+    {
+      "id": "10560aedf737",
+      "text": "Inside the Linux environment only (the user cannot see that location):",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Cowork VM prompt text (the Linux VM, not the host); no gate."
+    },
+    {
+      "id": "ee9a091d5403",
+      "text": "Installing an app without opening it is not supported on this device.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Android emulator APK install capability; not a Linux desktop gate."
+    },
+    {
+      "id": "d82d64c34f5c",
+      "text": "iOS Simulator panel requires macOS",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Device simulator/emulator support matrix; not a Linux desktop gate."
+    },
+    {
+      "id": "71d0bc2e5fa8",
+      "text": "is not supported by this platform",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Bundled zip library feature check; platform-neutral."
+    },
+    {
+      "id": "346a176d5f44",
+      "text": "Linux only: Run without the fresh /proc mount, for hosts such as unprivileged Docker containers that cannot create one. **Reduces security** \\u2014 the host /proc stays readable by sandboxed commands. Default: false.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Settings schema description for a Linux sandbox option; documentation text."
+    },
+    {
+      "id": "a603b4c4ab7e",
+      "text": "Linux/WSL only: Let sandboxed commands create user namespaces of their own, which the sandbox refuses by default.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Settings schema description for a Linux sandbox option; documentation text."
+    },
+    {
+      "id": "310d47b9df25",
+      "text": "linux_keyring_unavailable",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Telemetry key of the no-keyring notice."
+    },
+    {
+      "id": "6d7c0e82f6c5",
+      "text": "list_apps is not available on this platform.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "list_apps belongs to the macOS per-app background mode (appScoped), only advertised on darwin; our AT-SPI tools are the Linux equivalent."
+    },
+    {
+      "id": "30a72e4fe685",
+      "text": "Local sessions are not available on this device because its managed settings could not be read.",
+      "status": "accepted",
+      "sites": 4,
+      "reason": "Admin or organisation policy; same on every platform."
+    },
+    {
+      "id": "8470b033ad2f",
+      "text": "Local sessions are not available on this device because its managed settings could not be read. ${}",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Admin or organisation policy; same on every platform."
+    },
+    {
+      "id": "f9baeaceaf3c",
+      "text": "Local sessions are not available on this device because its managed settings could not be read. Ask your IT team to fix or remove any broken files in {folder}.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Admin or organisation policy; same on every platform."
+    },
+    {
+      "id": "c486b3641b9a",
+      "text": "Local sessions are not available on this device because your organization has turned them off.",
+      "status": "accepted",
+      "sites": 4,
+      "reason": "Admin or organisation policy; same on every platform."
+    },
+    {
+      "id": "0843d6a04ee4",
+      "text": "Local sessions are not available on this device because your organization has turned them off. ${}",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Admin or organisation policy; same on every platform."
+    },
+    {
+      "id": "7eab7ab08781",
+      "text": "macOS Accessibility / Screen Recording permissions aren't granted, and the grant prompt can't be shown during a scheduled run. Grant them in the Claude desktop app, then re-run the task. (Retrying returns this same result.)",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "c4c405381870",
+      "text": "macOS delivered no picture of this window. Nothing in ${} was changed. Call ${} again; if it keeps failing, check with app_list_windows that the window is still there, or tell the user that this window cannot be captured.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "3e438eadbd93",
+      "text": "macOS only: Unix socket paths to allow. Ignored on Linux (seccomp cannot filter by path). Merged across settings sources.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Settings schema description (macOS-only sandbox option, ignored on Linux)."
+    },
+    {
+      "id": "e7f463f85669",
+      "text": "macOS: staging cloud-only (not downloaded) files downloads them to the device first. A call needing more than ${} such files or ${}MB of them is refused until this is true. Set it only after telling the user what will be downloaded and why.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "b7859b2cffee",
+      "text": "Moving a document with File > Move To\\u2026 is not available to computer use: nothing checks where the file would land. Click the sheet's Cancel button (allowed). To put a copy somewhere else use File > Duplicate and save it, or ask the user to move the file.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "9f3de3a9d4ae",
+      "text": "Moving to the cloud is only available from a session on this computer, not an SSH or WSL session.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "9e2bbc4bbfa4",
+      "text": "Moving windows between Spaces isn't available on this macOS version. Ask the user to bring the window to the current Space themselves, or use open_application and then the display-scope tools.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "4cc71143f2f1",
+      "text": "msal broker: unsupported platform",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Microsoft identity broker exists only on macOS/Windows; true on Linux (sign-in falls back to the system browser)."
+    },
+    {
+      "id": "f98126736e6a",
+      "text": "Native notifications are not supported on this platform",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Electron Notification.isSupported() false: true statement on a Linux session without a notification server."
+    },
+    {
+      "id": "eee7f17cda64",
+      "text": "No supported editor is installed on this computer (VS Code, Cursor, Windsurf, or Zed). Tell the user the path instead, or use reveal_path.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "883153f2e7f9",
+      "text": "No supported editor that can open files on a remote host is installed on this computer (VS Code, Cursor, or Windsurf). Tell the user the path instead.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "b0ebaf720b71",
+      "text": "not supported on this device",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Cowork bash tool: upstream's own VM support probe (architecture, bundled helpers, QEMU/OVMF/virtiofsd, /dev/kvm missing or not permitted, secureVmFeaturesEnabled off) is not 'supported'; each cause is a real host limitation or an admin choice, same text on every platform; our patches only fix false negatives (firmware paths, qemu shim) and deliberately never force support."
+    },
+    {
+      "id": "e823b2275203",
+      "text": "not supported on this platform",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "3P Claude in Chrome (managed mcp.claudeInChromeEnabled): upstream's Linux build compiles the platform check away; only the CLAUDE_E2E_LOCAL_PAIRING_* test override passes and the hybrid checks after it are dead code. True for the Linux build; 1P Claude in Chrome is unaffected. Re-check when upstream ships the Linux branch."
+    },
+    {
+      "id": "fccacdc90b1a",
+      "text": "Number of days to retain chat transcripts before automatic cleanup (default: 30). Minimum 1. Use a large value for long retention; use --no-session-persistence to disable transcript writes entirely. Cleanup deletes data only on this computer, not anything stored by Anthropic.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "7b1875773ee1",
+      "text": "Office add-in integration is only available on macOS and Windows",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Office add-in integration is macOS/Windows only upstream; true on Linux."
+    },
+    {
+      "id": "eaf802abba6b",
+      "text": "On macOS, the add-in is opened using the Accessibility API (requires Accessibility permissions).",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "41c0b9ce49bf",
+      "text": "On this system (a Linux Wayland session) those tiers apply to the whole shared screen at once rather than per app: the screen takes the most permissive tier among the apps the user granted, screenshots show everything on it, typing is refused while one of Claude's own windows has keyboard focus, and everything is refused while one of its dialogs is open.",
+      "status": "neutralised",
+      "sites": 1,
+      "reason": "Wayland system-prompt suffix: per-app-truth A puts globalThis.__cdbCuConsent.spSuffix() in front of it on Linux; upstream's text stays only as the fallback when that helper is missing.",
+      "verify": {
+        "regex": "if\\(process\\.platform===[\"`]linux[\"`]\\)\\{let (__cdb\\w+);try\\{\\1=globalThis\\.__cdbCuConsent\\?\\.spSuffix\\?\\.\\(\\)\\}catch\\(__cdb\\w+\\)\\{\\}if\\(typeof \\1===[\"`]string[\"`]\\)return \\1\\}return [\\w$]+\\.[\\w$]+\\(\\)\\?`",
+        "count": 1
+      }
+    },
+    {
+      "id": "2a8bfe5917ef",
+      "text": "One or more of these folders is in a location this device's OS protects (on macOS: Desktop, Documents, Downloads, iCloud Drive or an external volume) and the OS hasn't let Claude read it yet, so the request can't be verified from a remote prompt.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "f3626bc00c63",
+      "text": "Opening an installed app by its package id is not supported on this device.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Android emulator launch-by-package capability; not a Linux desktop gate."
+    },
+    {
+      "id": "019c9c487b4c",
+      "text": "Platform and/or architecture combination is unsupported. Supported: Windows (x64, ia32, arm64), macOS (arm64, x64) and Linux (RHEL 8+ and Ubuntu 22/24)",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Bundled dependency's support matrix error (Linux x64/arm64 included); not reached on supported hosts."
+    },
+    {
+      "id": "063e19d8f631",
+      "text": "Pop-out title bar overlay is not available under Wayland",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Electron limitation under ozone Wayland."
+    },
+    {
+      "id": "9bf0941a6637",
+      "text": "product-defined first-party tool names, enumerated from the five product groups (probe/file/bash/computer-use/project-memory) into productToolNames \\u2014 built by enumeration, never by subtracting from the announce list, so user-named local-MCP entries structurally cannot appear (those are reported as local_mcp_tool_count only)",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Telemetry schema description; documentation text."
+    },
+    {
+      "id": "4ef1d1702d4a",
+      "text": "Remote sessions are not available with ${}: that endpoint is this computer, which a remote host cannot reach \\u2014 and its credential would be sent to the remote machine's own localhost.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "9a6fd5ec6a70",
+      "text": "Remote sessions are not available with ${}: those credentials are read from a file on this computer and can't reach the remote host.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "792a68428f83",
+      "text": "Run a shell command in a Linux VM on the user's machine (the desktop Cowork workspace); it can't control their apps.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Cowork VM tool description; no gate."
+    },
+    {
+      "id": "c1cf954f65a5",
+      "text": "safeStorage unavailable on macOS at startup",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "feac7516a9c3",
+      "text": "Security and trust settings (permission modes, sandboxing, browser tools, allowed sites, trusted hosts, computer use) can't be changed here; tell the user where in Settings instead.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "0aa96da04e88",
+      "text": "sshClientPath cannot be a local file on this computer. Where one configuration reaches every platform, a Windows path stops SSH on Macs and Linux: send each platform its own value.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "f9b64c12891d",
+      "text": "start_code_task is not available on this device.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "aa80c658a583",
+      "text": "Taking over the screen needs the user's approval, and nobody is present to answer (unattended session). Computer use isn't possible in this run; do what you can without it and say in your reply that screen access was unavailable. (Retrying returns this same result.)",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session cannot show the approval card (no permission handler); platform-neutral."
+    },
+    {
+      "id": "eb9e607156e9",
+      "text": "Taking over the screen needs the user's approval, and this session has no way to ask for it. Continue without computer use and tell the user you couldn't use the screen.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session cannot show the approval card (no permission handler); platform-neutral."
+    },
+    {
+      "id": "324a3467f3df",
+      "text": "target \"cloud\" is only available from a session on this computer; ${}",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "82b4ce0bfe18",
+      "text": "target \"cloud\" is only available from a session on this computer; propose it with target \"local\" instead.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "92ea49e6510c",
+      "text": "target \"cloud\" is only available from a session on this computer; start it here (target \"local\") instead.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "13897118fb94",
+      "text": "Tear-off halo overlay requires macOS",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "820e7a517ea5",
+      "text": "The \"${}\" connector can't connect because Claude couldn't access the operating system's secure storage (the keychain on macOS) when it started. Retries keep failing while this run of the app lasts; access normally returns after the user quits and reopens Claude.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "d032e87f177c",
+      "text": "The browser pane is not available to this chat on this computer.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "97a554559e75",
+      "text": "The browser pane is not available to this thread on this computer.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "698fe9bc443a",
+      "text": "The Browser tools are not available on this computer right now.",
+      "status": "accepted",
+      "sites": 2,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "955830bcb636",
+      "text": "The Browser tools are not available to this session on this computer.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "da86baf1cd6a",
+      "text": "The built_in_browser section below says what it can do; in this session use it only for pages on this computer (this project's dev servers, other localhost pages, local file previews), when the user asks for it by name or description, or when Claude in Chrome is unavailable.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "b18462d243da",
+      "text": "The Cowork artifact store is not available on this device.",
+      "status": "accepted",
+      "sites": 4,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "a9193191fd8a",
+      "text": "The device simulator is not enabled on this platform.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Device simulator/emulator support matrix; not a Linux desktop gate."
+    },
+    {
+      "id": "a5eb7a6e645e",
+      "text": "The screen is locked. app_screenshot continues to work in background mode, but actions (click, type, key, scroll, drag) need the screen unlocked \\u2014 macOS blocks window-level Accessibility while locked. Screenshot to observe; act once the user returns.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS background (app-scoped) mode prompt; not advertised on Linux."
+    },
+    {
+      "id": "14339fc830fc",
+      "text": "The user saw the enable prompt and chose not to turn on Computer Use. Do not retry in this turn. Let the user know you can't complete this without computer use and offer an alternative if one exists. If the user sends a new request that requires computer use, you may call request_access again.",
+      "status": "accepted",
+      "sites": 2,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "e408f35bf50a",
+      "text": "The VM may run on this computer: ${}",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Cowork VM support probe summary; true host statement."
+    },
+    {
+      "id": "fa0bf6601a63",
+      "text": "the web-origin mark cannot be carried on this platform",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS quarantine xattr / Windows mark-of-the-web; Linux has no web-origin mark."
+    },
+    {
+      "id": "909f7f9f9a42",
+      "text": "This chat is not available to the signed-in account on this device (deleted, or another account's).",
+      "status": "accepted",
+      "sites": 2,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "7e279a20c4b6",
+      "text": "This computer-use action needs a person's approval, and the session is running unattended \\u2014 nobody is present to approve it. It can be retried in an attended session.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "13dbd9a0b9c3",
+      "text": "This feature requires macOS 14.0 or higher",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "d4719625deff",
+      "text": "This session runs on a remote host over SSH, and these tools manage the disk of the computer the Claude app runs on, so they are unavailable here. Tell the user they can do this from Settings \\u203a This computer \\u203a Storage in the app.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "fb549f807b6a",
+      "text": "This session stays here (nothing was pushed, so its local commits exist only on this computer); do no further work on the task here: reply with one line linking the cloud session, then end your turn.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "fe4af59b575a",
+      "text": "trafficLightPosition only works on macOS",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Electron option documentation/warning; macOS-only by design."
+    },
+    {
+      "id": "5f184a125a74",
+      "text": "Typing text while a pop-up button holds the keyboard focus is not available to computer use: the first key opens its menu and the rest would pick in it before anything can check it. Press one key at a time, or click the pop-up.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "c4054d65e52f",
+      "text": "Unable to request X11",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "SSH library X11-forwarding error; not a desktop session gate."
+    },
+    {
+      "id": "2e8633a1ac4c",
+      "text": "unsupported platform tokens",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Remote SSH host probe parse error; about the remote host."
+    },
+    {
+      "id": "cf250d760634",
+      "text": "Unsupported platform: ${}",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Remote SSH host platform not recognised; about the remote host, not this desktop."
+    },
+    {
+      "id": "0430139c2e89",
+      "text": "Unsupported platform: ${}-${}",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Native binary picker; linux-x64/linux-arm64 handled before the throw."
+    },
+    {
+      "id": "49a35c4dc1ee",
+      "text": "Watch-record is not available on this platform",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Watch-record is darwin/win32 only upstream; true on Linux."
+    },
+    {
+      "id": "7f7f3374cd8a",
+      "text": "What happens when this entry's helper fails at startup (bad path, missing file or interpreter, non-zero exit, timeout, oversize or invalid output) and no static settings payload (this entry's own, the linux entry's on WSL, or the map's \"default\") applies in its place: 'refuse' \\u2014 Claude Code does not start, naming the failure; 'continue' \\u2014 Claude Code starts without the helper's output, on the delivering source's own settings, with a /status notice.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Session kind / approval / server-side condition; platform-neutral."
+    },
+    {
+      "id": "68616f53485d",
+      "text": "Workspace unavailable. The isolated Linux environment failed to start${}. You can still use file tools directly.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Cowork VM failed to start; true on any platform."
+    },
+    {
+      "id": "b0b4e1103a47",
+      "text": "Workspace unavailable. The isolated Linux environment on this device failed to start. Use device_stage_files / device_commit_files instead.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Cowork VM failed to start; true on any platform."
+    },
+    {
+      "id": "fe208496371d",
+      "text": "WSL sessions are not available because this device could not be verified as unmanaged.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Admin or organisation policy; same on every platform."
+    },
+    {
+      "id": "17545e9c2965",
+      "text": "WSL sessions are not available because this device is managed by your organization.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Admin or organisation policy; same on every platform."
+    },
+    {
+      "id": "4680102c8403",
+      "text": "xdg-portal-required-version",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Chromium switch name / test regex for the xdg portal version; not a refusal."
+    }
+  ]
+}

@@ -867,7 +867,6 @@ Uses `createDarwinExecutor()` -> `@ant/claude-swift` native module for screen ca
 | 1 | Inject `__linuxExecutor` | Linux executor using xdotool/scrot/Electron APIs at `app.on("ready")` |
 | 2 | Add "linux" to `BoA` Set | `new Set(["darwin","win32"])` -> `new Set(["darwin","win32","linux"])` - fixes all `QoA()` gates (server push, chicagoEnabled, overlay init) |
 | 3 | Patch `createDarwinExecutor` | Return `__linuxExecutor` on Linux instead of throwing |
-| 4 | Patch `ensureOsPermissions` | Return `{granted: true}` on Linux (skip macOS TCC checks) |
 | 5 | Bypass permission model | Direct tool dispatch on Linux, skip allowlist/tier system |
 | 6 | Teach overlay controller | Verify `vee()` gate runs on Linux (handled by Set fix) |
 | 7 | Teach overlay mouse polling | Tooltip-bounds polling for Linux (X11 {forward:true} not supported) |

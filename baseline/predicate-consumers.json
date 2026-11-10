@@ -1,0 +1,390 @@
+{
+  "about": [
+    "Pinned data for scripts/check-predicate-consumers.py (issue #323 class). Edited by hand on purpose; there is no --update mode.",
+    "predicates: upstream Linux-session predicates, resolved WITHOUT minified names - by an un-minified namespace member (find.namespaceKey) or by the definition's shape (find.bodyRegex, named group 'name' = local name; find.prefilter = a literal the definition contains; expectDefinitions when upstream ships copies). The script hard-requires the tracked set.",
+    "predicates[].definitionShape: regexes anchored at the definition's body that match OUR injected start or || operand; a match covers the predicate at its definition, i.e. every alias. predicates[].transitiveIgnore: callees (matched by body shape, with a reason) that cannot decide the result on Linux; a predicate is transitively covered only when its body is covered tracked calls and those callees joined by boolean operators.",
+    "coveredSites: OUR exact injected shape around one consumer ('@@' marks the consumer's reference), with a pinned consumer count and a reason. decides: 'opt-in' = our term decides only while a user switch is on; reported as opt-in-site, not covered.",
+    "allowlist: consumers that stay upstream on purpose, keyed by a stable anchor (string literal, log tag or un-minified namespace name; anchorRegex for a [\\w$]+ shape) in the consumer's function (scope 'function', default) or its own statement (scope 'statement'), with a pinned consumer count, a verdict (intentional | upstream-ok | open, open needs an 'issue') and a reason. via: omitted = the root predicate's own consumers; 'derived' = consumers of any derived value (a chunk-level NAME=<expr of predicate>, or a function whose single return is the predicate expression); '<NAME>' = consumers of the derived value exported under that un-minified name.",
+    "envSites: upstream occurrences of XDG_SESSION_TYPE / WAYLAND_DISPLAY / XDG_CURRENT_DESKTOP / ozone-platform outside every tracked definition and outside our own injected code, with a pinned count and a reason.",
+    "A new or widened allowlist / coveredSites / envSites / transitiveIgnore entry or definitionShape, a raised count, decides: 'opt-in' or via: 'derived' loosens the gate: it needs @patrickjaja in the commit."
+  ],
+  "predicates": [
+    {
+      "id": "isWaylandSession",
+      "about": "XDG_SESSION_TYPE === wayland, else WAYLAND_DISPLAY set",
+      "find": {
+        "prefilter": "XDG_SESSION_TYPE",
+        "bodyRegex": "(?<![\\w$.])(?P<name>[\\w$]+)=\\(\\)=>\\{let (?P<v>[\\w$]+)=[\\w$]+\\(\\)\\.XDG_SESSION_TYPE;return (?P=v)\\?(?P=v)===[\"`]wayland[\"`]:!![\\w$]+\\(\\)\\.WAYLAND_DISPLAY\\}"
+      }
+    },
+    {
+      "id": "isOzoneWayland",
+      "about": "--ozone-platform=wayland, else the session test",
+      "find": {
+        "prefilter": "ozone-platform",
+        "bodyRegex": "function (?P<name>[\\w$]+)\\(\\)\\{let (?P<v>[\\w$]+)=[\\w$]+\\.app\\.commandLine\\.getSwitchValue\\([\"`]ozone-platform[\"`]\\);return (?P=v)\\?(?P=v)===[\"`]wayland[\"`]:[\\w$]+\\(\\)\\}"
+      }
+    },
+    {
+      "id": "desktopEnvironment",
+      "about": "XDG_CURRENT_DESKTOP classifier -> kde | gnome | other; one copy in the main chunk, one in index.pre.js",
+      "expectDefinitions": 2,
+      "find": {
+        "prefilter": "XDG_CURRENT_DESKTOP",
+        "bodyRegex": "(?<![\\w$.])(?P<name>[\\w$]+)=\\(\\)=>\\{let (?P<v>[\\w$]+)=\\([\\w$]+\\(\\)\\.XDG_CURRENT_DESKTOP\\?\\?[\"`][\"`]\\)\\.toUpperCase\\(\\)\\.split\\([\"`]:[\"`]\\);return (?P=v)\\.includes\\([\"`]KDE[\"`]\\)"
+      }
+    },
+    {
+      "id": "isBridgeComputerUsePlatform",
+      "about": "!isWaylandSession(); gates the device-bridge (cloud Cowork / Dispatch) computer tools and the approval card's app icons",
+      "find": {
+        "namespaceKey": "isBridgeComputerUsePlatform"
+      },
+      "definitionShape": [
+        "^\\{return![\\w$]+\\(\\)\\|\\|process\\.platform===[\"`]linux[\"`]&&globalThis\\.__cdbCuWaylandAnnounce===!0\\}$"
+      ]
+    },
+    {
+      "id": "hasComputerUseExecutor",
+      "find": {
+        "namespaceKey": "hasComputerUseExecutor"
+      },
+      "definitionShape": [
+        "^\\{if\\(process\\.platform===[\"`]linux[\"`]\\)return!0;"
+      ]
+    },
+    {
+      "id": "isCuSupportedPlatform",
+      "find": {
+        "namespaceKey": "isCuSupportedPlatform"
+      },
+      "transitiveIgnore": [
+        {
+          "calleeBody": "^\\{return process\\.platform===[\"`]darwin[\"`]&&[\\w$]+\\(\\)\\.major<\\d+\\}$",
+          "reason": "isMacosBelowComputerUseFloor: darwin-only term (false on Linux), so it never decides the result here."
+        }
+      ]
+    },
+    {
+      "id": "isComputerUseEnabled",
+      "find": {
+        "namespaceKey": "isComputerUseEnabled"
+      },
+      "definitionShape": [
+        "^\\{if\\(process\\.platform===[\"`]linux[\"`]\\)return globalThis\\.__cdbCuHipaa=[\\w$]+,![\\w$]+\\(\\);"
+      ]
+    }
+  ],
+  "allowlist": [
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "[sableOtter] Wayland session; not starting",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "sableOtter (paste helper) skips Wayland upstream; not a Computer Use path."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "sableOtterAvailable",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "Feature status of the same sableOtter helper: unavailable on Wayland, matching its Wayland skip."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "computer-use executor not implemented for",
+      "consumers": 1,
+      "verdict": "upstream-ok",
+      "reason": "Upstream's executor choice (portal vs X11) right after our globalThis.__linuxExecutor early return: reached only when our executor failed to install, and then upstream's own choice is the right fallback."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "cuLockChanged",
+      "consumers": 1,
+      "verdict": "upstream-ok",
+      "reason": "Exi(), called once at module load. On every Wayland session it installs (1) the webContents input guard (computer-use/linux/waylandInputGuard), which drops input only while upstream's own Wayland executor has an injection in flight - those counters are raised only from upstream's portal executor (B-NXT-PY chunk) - and whose keyDown Escape hook calls upstream's CU abort (in-window Escape stop, wanted); (2) the dialog counter around dialog.show*, read only by upstream's Wayland executor; (3) cuLockChanged -> stop the portal session and the will-quit token persist, both no-ops without an upstream portal session (restore token undefined); (4) the share-ended callback registration, fired only by upstream's portal session. Our injected executor replaces upstream's, so none of these change behaviour. The Escape work's share-ended capture (fix_computer_use_linux 17c) hooks the callback where it is declared, not this function, so nothing of ours runs here."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "restoreComputerUseClipboard",
+      "consumers": 1,
+      "verdict": "upstream-ok",
+      "reason": "Clipboard restore after CU: on Wayland upstream restores through its portal clipboard, which falls back to Electron's clipboard when no portal session exists (our executor's case)."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "Computer use on Wayland needs a desktop portal",
+      "consumers": 1,
+      "verdict": "upstream-ok",
+      "reason": "computerUse feature status: unreachable on Linux, the isCuSupportedPlatform arm (covered, true on Linux) returns 'supported' before it, and 'not enabled for this account' precedes it otherwise."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "legacyQuickEntryEnabled",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "Quick Entry registration waits for main-window focus on Wayland (portal shortcuts need a focused window). Documented; our --toggle path does not depend on it."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "ready_first_awaits_done",
+      "via": "derived",
+      "consumers": 2,
+      "verdict": "intentional",
+      "reason": "App-ready awaits the GlobalShortcuts portal probe (CLn) and the RemoteDesktop/Clipboard portal probe (TLn) before continuing; both resolve false at once off Wayland. The GlobalShortcuts probe is our documented Wayland hotkey design (Quick Entry --toggle, KDE rebind); the RemoteDesktop probe only feeds upstream's own portal executor, which ours replaces."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "linux_session_type",
+      "via": "derived",
+      "consumers": 2,
+      "verdict": "intentional",
+      "reason": "Startup warm-up calls of the same two portal probes (GlobalShortcuts, RemoteDesktop/Clipboard); results are cached, nothing is decided here."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "Global shortcut registration refused",
+      "via": "derived",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "globalShortcut registration refuses when the GlobalShortcuts portal is absent on Wayland ('global shortcuts usable' wrapper); our Quick Entry --toggle path and the KDE rebind patch are the documented answer."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "quickEntryGlobalShortcut",
+      "scope": "statement",
+      "via": "derived",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "quickEntryGlobalShortcut feature status built from the same 'global shortcuts usable' wrapper; truthful (the portal decides), same design as above."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "[cu] app enumeration failed, tool description will omit list",
+      "via": "PLATFORM_CAPABILITIES",
+      "consumers": 1,
+      "verdict": "upstream-ok",
+      "reason": "Reads only PLATFORM_CAPABILITIES.platform, which is 'linux' in every Linux preset."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "supportsRawInput",
+      "via": "PLATFORM_CAPABILITIES",
+      "consumers": 2,
+      "verdict": "intentional",
+      "reason": "CU tool definitions (Code/Cowork session server and the device-bridge tools) spread the static preset: on Linux both arms carry screenshotFiltering 'none' (Wayland upstream, X11 via fix_computer_use_linux sub-patch 2b); what each backend really filters is told by our consent text and prompt suffix, not by this preset."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "via": "PLATFORM_CAPABILITIES",
+      "consumers": 1,
+      "verdict": "upstream-ok",
+      "reason": "Enable-prompt card's hostPlatform: reads only PLATFORM_CAPABILITIES.platform, 'linux' in every Linux preset.",
+      "anchorRegex": "^hostPlatform:[\\w$]+\\.[\\w$]+\\.platform$",
+      "scope": "statement"
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "showBadge",
+      "via": "CLICK_THROUGH_WINDOWS",
+      "consumers": 1,
+      "verdict": "upstream-ok",
+      "reason": "Upstream's Electron glow window needs a click-through always-on-top window, unavailable on Wayland; X11 shows upstream's glow, KDE Wayland draws the bridge's own layer-shell glow (kwin-portal-bridge session_overlay), GNOME has the portal's screen-share indicator."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchorRegex": "^\\{return [\\w$]+\\.[\\w$]+,!1\\}",
+      "via": "CLICK_THROUGH_WINDOWS",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "Action-label overlay: compiled off on every platform in this build (returns false regardless of the predicate)."
+    },
+    {
+      "predicate": "isOzoneWayland",
+      "anchor": "display-metrics-changed",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "Window-state persistence listeners skipped under ozone Wayland (Electron cannot read/restore positions there)."
+    },
+    {
+      "predicate": "isOzoneWayland",
+      "anchor": "mainView bounds were stale on focus",
+      "consumers": 2,
+      "verdict": "intentional",
+      "reason": "Main-window creation: the maximize/full-screen restore flag and the Wayland border-radius handlers (both in the same function). Window-chrome behaviour, no Computer Use relevance."
+    },
+    {
+      "predicate": "isOzoneWayland",
+      "anchor": "simulatorScreenshotEditor",
+      "via": "supportsTrayIcon",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "Feature list resolves supportsTrayIcon (StatusNotifier host probe under ozone Wayland / GNOME); truthful, our tray patches build on it."
+    },
+    {
+      "predicate": "isOzoneWayland",
+      "anchor": "Quitting app on main window close since this desktop shows no tray icon",
+      "via": "supportsTrayIcon",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "Closing the main window quits when no tray host exists (otherwise the app would be unreachable); upstream's behaviour is right on Linux."
+    },
+    {
+      "predicate": "isOzoneWayland",
+      "anchor": "popoutTitleBarOverlay",
+      "scope": "statement",
+      "via": "derived",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "Pop-out title bar overlay is not available under ozone Wayland (Electron limitation); no Computer Use relevance."
+    },
+    {
+      "predicate": "desktopEnvironment",
+      "anchor": "preflight-unavailable",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "KWallet preflight only on KDE."
+    },
+    {
+      "predicate": "desktopEnvironment",
+      "anchor": "password-store",
+      "scope": "statement",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "index.pre.js: picks the kwallet password store on KDE before app ready."
+    },
+    {
+      "predicate": "desktopEnvironment",
+      "anchor": "linux_keyring_unavailable",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "Keyring name in the no-keyring notice text only."
+    },
+    {
+      "predicate": "desktopEnvironment",
+      "anchor": "tray_crash_contained",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "Tray flavour diagnostics in a crash report (passes the classifier as a value)."
+    },
+    {
+      "predicate": "desktopEnvironment",
+      "anchor": "TrayIconLinux-Dark.png",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "Tray icon flavour: GNOME gets the dark glyph. Our 'Always use the white tray icon' switch (globalThis.__cdbTrayAlwaysWhite) overrides it only when ON; with the switch off upstream's GNOME rule applies, which is the intended default."
+    },
+    {
+      "predicate": "desktopEnvironment",
+      "anchor": "[ChromeImport] keyring unavailable",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "Chrome import reads the browser keyring from KWallet on KDE, Secret Service elsewhere."
+    },
+    {
+      "predicate": "desktopEnvironment",
+      "via": "derived",
+      "consumers": 1,
+      "verdict": "intentional",
+      "reason": "GNOME-only (XDG_CURRENT_DESKTOP) suppression of upstream's bare-Alt-tap app-menu popup (flag 1550954491, gated by 1116624256) in the main-window before-input-event handler; window UX, not a Wayland or Computer Use path; flag left at the upstream default (template comment only).",
+      "anchorRegex": "\\.onKey\\([\\w$]+\\)===[\"`]open[\"`]"
+    }
+  ],
+  "coveredSites": [
+    {
+      "predicate": "isWaylandSession",
+      "shape": "function [\\w$]+\\(\\)\\{if\\(process\\.platform===[\"`]linux[\"`]\\)\\{let (__cdb\\w+);try\\{\\1=globalThis\\.__cdbCuConsent\\?\\.spSuffix\\?\\.\\(\\)\\}catch\\(__cdb\\w+\\)\\{\\}if\\(typeof \\1===[\"`]string[\"`]\\)return \\1\\}return @@\\(\\)\\?",
+      "consumers": 1,
+      "reason": "Wayland system-prompt suffix (per-app-truth A, 16a): on Linux our spSuffix() text returns before upstream's arm; upstream's text stays only as the fallback when js/cu_consent.js is missing or throws."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "shape": "computerUsePerAppAccess:\\(process\\.platform===[\"`]linux[\"`]&&typeof globalThis\\.__cdbCuSharedScreen===[\"`]function[\"`]\\?globalThis\\.__cdbCuSharedScreen\\(\\):@@\\(\\)\\)\\?",
+      "consumers": 1,
+      "reason": "computerUsePerAppAccess (per-app-truth B): on Linux our __cdbCuSharedScreen() decides; upstream's Wayland test only when that helper is missing."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "shape": "if\\(process\\.platform===[\"`]linux[\"`]&&globalThis\\.__cdbCuNoScreenGrant\\?\\.\\(\\)===!0\\|\\|@@!==",
+      "consumers": 1,
+      "reason": "'Entire screen' pseudo-grant (16d): on Linux it is left out in kwin mode or while ask-before-control is on (__cdbCuNoScreenGrant() true); our term only ever removes it, otherwise upstream's preset test adds it."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "shape": "screenshotFiltering:\\(process\\.platform===[\"`]linux[\"`]&&globalThis\\.__cdbCuSharedScreen\\?\\.\\(\\)===!1\\?globalThis\\.__linuxExecutor\\?\\.capabilities\\?\\.screenshotFiltering\\?\\?[\"`]mask[\"`]:@@\\.screenshotFiltering\\)",
+      "consumers": 2,
+      "reason": "Enable-prompt card (16e, session server and local agent canUseTool): on Linux, when __cdbCuSharedScreen() is false, the live executor's screenshotFiltering (mask / native) replaces the preset's none."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "shape": "function [\\w$]+\\(\\)\\{return\\(@@\\|\\|/\\*__cdbTeachKwin\\*/process\\.platform===[\"`]linux[\"`]&&globalThis\\.__cuKwinMode===!0&&globalThis\\.__linuxExecutor\\?\\.__teachOverlay===!0\\)\\?",
+      "consumers": 1,
+      "reason": "Teach-mode getter getChicagoTeachModeEnabled (7d), rewritten at its definition: on Wayland (CLICK_THROUGH_WINDOWS false) our term enables teach mode exactly when the kwin bridge drives the teach overlay; X11 keeps upstream's click-through overlay. Covering the getter's own read means its consumers inherit it."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "decides": "opt-in",
+      "shape": "function [\\w$]+\\(\\)\\{if\\(process\\.platform===[\"`]linux[\"`]&&globalThis\\.__cdbCuEscapeAbortEnabled\\?\\.\\(\\)===true&&globalThis\\.__cdbCuEscWatch\\?\\.arm\\([\\w$]+,[\\w$]+\\.currentHolder,[\\w$]+\\)===true\\)\\{if\\([\\w$]+\\)\\{[\\w$]+\\.globalShortcut\\.unregister\\([\"`]Escape[\"`]\\);[\\w$]+=!1;[\\w$]+=0\\}return\\}process\\.platform===[\"`]linux[\"`]&&globalThis\\.__cdbCuEscapeAbortEnabled\\?\\.\\(\\)!==true&&globalThis\\.__cdbCuEscWatch\\?\\.disarm\\([\"`]switch off[\"`]\\);if\\(!\\([\\w$]+\\|\\|@@\\(\\)\\)\\)",
+      "consumers": 1,
+      "reason": "Community switch 'Escape stops Computer Use' (add_feature_cu_escape_abort, default off): with it on and a watcher armed, our watcher replaces upstream's Escape register; with it off, or when no watcher can run, upstream's path runs untouched by design, its Wayland skip included."
+    }
+  ],
+  "envSites": [
+    {
+      "token": "WAYLAND_DISPLAY",
+      "anchor": "SSH_ASKPASS_REQUIRE",
+      "scope": "function",
+      "count": 1,
+      "reason": "SSH child env: clears SSH_ASKPASS when a display is set (DISPLAY or WAYLAND_DISPLAY); no gate."
+    },
+    {
+      "token": "WAYLAND_DISPLAY",
+      "anchor": "GTK_MODULES",
+      "scope": "function",
+      "count": 1,
+      "reason": "Environment allow-list regex for child processes (passes WAYLAND_DISPLAY through); no gate."
+    },
+    {
+      "token": "WAYLAND_DISPLAY",
+      "anchor": "VSCODE_GIT_ASKPASS_MAIN",
+      "scope": "function",
+      "count": 2,
+      "reason": "Env-var schema registry (WAYLAND_DISPLAY: string); names only, no test."
+    },
+    {
+      "token": "XDG_SESSION_TYPE",
+      "anchorRegex": "return [\\w$]+==null\\?null:[\\w$]+\\.has\\([\\w$]+\\)\\?[\\w$]+:\"other\"",
+      "scope": "function",
+      "count": 1,
+      "reason": "Telemetry: raw session type reported as linux_session_type; nothing is decided by it."
+    },
+    {
+      "token": "XDG_CURRENT_DESKTOP",
+      "anchorRegex": "return [\\w$]+==null\\?null:[\\w$]+\\.test\\([\\w$]+\\)\\?[\\w$]+:\"other\"",
+      "scope": "function",
+      "count": 1,
+      "reason": "Telemetry: raw desktop reported as linux_desktop_environment; nothing is decided by it."
+    },
+    {
+      "token": "XDG_CURRENT_DESKTOP",
+      "anchor": "xdg_current_desktop_set",
+      "scope": "function",
+      "count": 1,
+      "reason": "Tray crash diagnostics (xdg_current_desktop_set); nothing is decided by it."
+    },
+    {
+      "token": "WAYLAND_DISPLAY",
+      "anchor": "KDE_SESSION_VERSION",
+      "scope": "function",
+      "count": 2,
+      "reason": "Ours: fix_builtin_mcp_browser_env appends its EXTRA_VARS list (DISPLAY, WAYLAND_DISPLAY, ... KDE_SESSION_VERSION) to upstream's env pass-through list in the main and device-tools chunks. This first entry's left context is upstream's list, so the both-sided ours check cannot claim it; names only, no test."
+    },
+    {
+      "token": "XDG_SESSION_TYPE",
+      "anchor": "__cdbCuConsent?.text(\"access\")",
+      "scope": "function",
+      "count": 1,
+      "reason": "Ours: fix_computer_use_linux's Code-tab access text picks the kwin/Wayland wording (globalThis.__cuKwinMode||XDG_SESSION_TYPE==='wayland') in front of upstream's fallback text; it sits at the boundary with upstream's string, so the both-sided ours check cannot claim it."
+    }
+  ]
+}

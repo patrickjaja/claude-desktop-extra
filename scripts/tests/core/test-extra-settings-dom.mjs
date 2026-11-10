@@ -1015,10 +1015,29 @@ async function featuresPanel(featuresItem) {
   // Transparent window is both: its switch needs a restart, its slider is live,
   // and its note has to say each.
   const MIXED_ROWS = ["Transparent window"];
-  // Computer Use has its own entry now: none of its rows is left here.
-  ok(!/Computer Use/.test(panel.textContent) &&
-     !Array.prototype.some.call(panel.querySelectorAll(".cdbx-sec-t"), function (n) { return /Computer Use|Options/.test(n.textContent); }),
-     "no Computer Use row or heading in Community Features");
+  // Computer Use has its own entry now: none of its rows is left here. The one
+  // exception is the community switch "Escape stops Computer Use" under its own
+  // Computer Use group headline: without exactly that row and that headline,
+  // no "Computer Use" text may appear anywhere in Community Features.
+  (function () {
+    const copy = panel.cloneNode(true);
+    let escRows = 0, cuHeads = 0;
+    Array.prototype.forEach.call(copy.querySelectorAll(".cdbx-row"), function (r) {
+      const id = r.querySelector(".cdbx-id");
+      if (id && id.textContent === "Escape stops Computer Use") { escRows++; r.remove(); }
+    });
+    Array.prototype.forEach.call(copy.querySelectorAll(".cdbx-group"), function (g) {
+      if (g.firstElementChild && g.firstElementChild.textContent === "Computer Use") {
+        cuHeads++;
+        const sub = g.children[1];
+        g.firstElementChild.remove();
+        if (sub && sub.textContent === "Computer Use on Linux") sub.remove();
+      }
+    });
+    ok(escRows === 1 && cuHeads === 1 && !/Computer Use/.test(copy.textContent) &&
+       !Array.prototype.some.call(panel.querySelectorAll(".cdbx-sec-t"), function (n) { return /Computer Use|Options/.test(n.textContent); }),
+       "no Computer Use text in Community Features except the one Escape switch row and its group headline (" + escRows + " row, " + cuHeads + " headline)");
+  })();
   const rowNotes = Array.from(panel.querySelectorAll(".cdbx-row")).map(function (r) {
     return {
       title: r.querySelector(".cdbx-id").textContent,
@@ -1056,14 +1075,14 @@ async function featuresPanel(featuresItem) {
     ok(document.activeElement === box, "the filter has the caret when the panel opens, ready to type into");
     ok(/^Filter \d+ features by name or description$/.test(box.placeholder),
        "which says what it filters: " + box.placeholder);
-    // Group headlines: three, in order, with the Pull requests subgroup under Code.
+    // Group headlines: four, in order, with the Pull requests subgroup under Code.
     const groupNodes = Array.from(panel.querySelectorAll(".cdbx-group"));
     const topGroups = groupNodes.filter(function (g) { return !g.classList.contains("cdbx-group-sub"); });
     const gtitle = function (g) { return g.firstElementChild.textContent; };
-    ok(topGroups.map(gtitle).join("|") === "Code|App and window|Models and 3P",
-       "three group headlines in order: " + topGroups.map(gtitle).join("|"));
+    ok(topGroups.map(gtitle).join("|") === "Code|App and window|Models and 3P|Computer Use",
+       "four group headlines in order: " + topGroups.map(gtitle).join("|"));
     ok(topGroups.map(function (g) { return g.children[1].textContent; }).join("|") ===
-       "Code tab: panels, files, diffs and sessions|Look and behavior of the app window, tray and theme|Extra models and gateway options",
+       "Code tab: panels, files, diffs and sessions|Look and behavior of the app window, tray and theme|Extra models and gateway options|Computer Use on Linux",
        "each headline has its one-line subtitle");
     const subGroup = groupNodes.filter(function (g) { return g.classList.contains("cdbx-group-sub"); });
     ok(subGroup.length === 1 && gtitle(subGroup[0]) === "Pull requests" && subGroup[0].parentElement === topGroups[0] &&
@@ -1222,6 +1241,27 @@ async function featuresPanel(featuresItem) {
     window.__tlState = undefined;
   }
   window.__pickerState = { ok: true, enabled: true, lockedByJsonc: null };
+
+  // The downstream Windows build carries this page; there the Escape switch's
+  // main side answers "Linux only": the row hides, and so does the "Computer
+  // Use" group it was the only row of (no empty headline left behind).
+  {
+    window.__cuEscState = { ok: false, error: "Escape stops Computer Use is Linux only" };
+    featuresItem.click();
+    await sleep(150);
+    const wp = document.querySelector(".cdbx-panel");
+    const heads = Array.from(wp.querySelectorAll(".cdbx-group")).filter(function (g) { return g.style.display !== "none"; })
+      .map(function (g) { return g.firstElementChild.textContent; });
+    const escRow = Array.from(wp.querySelectorAll(".cdbx-row .cdbx-id")).some(function (n) { return n.textContent === "Escape stops Computer Use"; });
+    ok(heads.indexOf("Computer Use") < 0 && !escRow && heads.join("|") === "Code|Pull requests|App and window|Models and 3P",
+       "win32 ('Linux only'): no Escape row and no 'Computer Use' headline; the other groups stay: " + heads.join("|"));
+    window.__cuEscState = undefined;
+    featuresItem.click();
+    await sleep(150);
+    const lp = document.querySelector(".cdbx-panel");
+    ok(Array.from(lp.querySelectorAll(".cdbx-group")).some(function (g) { return g.style.display !== "none" && g.firstElementChild.textContent === "Computer Use"; }),
+       "Linux again: the Computer Use group is back");
+  }
 }
 
 // Anthropic Features: everything that used to sit below our own switches -
@@ -1478,6 +1518,47 @@ async function cubgPanel(cuItem) {
 // (in a closed "What this does") before anything runs, the actions call their
 // channel with no argument and re-read afterwards, and a failed Enable shows
 // the command to run instead.
+// "Escape stops Computer Use": one setting, two rows - Community Features (its
+// own Computer Use group) and the Cowork (Linux) page's Computer Use Options,
+// next to "Ask before Computer Use controls an app". Each page reads it when
+// drawn, so a flip on one page shows on the other.
+async function escTwoPages(featuresItem, cuItem) {
+  const ESC_SW = '.cdbx-switch[aria-label="Escape stops Computer Use"]';
+  const ASK_SW = '.cdbx-switch[aria-label="ask before Computer Use controls an app"]';
+  const BG_SW = '.cdbx-switch[aria-label="let Computer Use work on a background display instead of your desktop"]';
+  const open = async function (item) { document.getElementById("row-account").click(); await sleep(20); item.click(); await sleep(150); return document.querySelector(".cdbx-panel"); };
+  const before = function (a, b) { return !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING); };
+  window.__cuEscState = undefined;
+  window.__cuEscCalls = [];
+  let cu = await open(cuItem);
+  let sw = cu.querySelector(ESC_SW);
+  const row = sw && sw.closest(".cdbx-row");
+  ok(!!row && row.querySelector(".cdbx-id").textContent === "Escape stops Computer Use", "Computer Use page: the Escape row is there, same title");
+  ok(!!sw && sw.getAttribute("aria-checked") === "false" && /^off - /.test(row.querySelector(".cdbx-state").textContent), "  off by default");
+  ok(!!sw && sw.closest("[data-cdbx-section]") && sw.closest("[data-cdbx-section]").getAttribute("data-cdbx-section") === "cu" &&
+     before(cu.querySelector(ASK_SW), sw) && before(sw, cu.querySelector(BG_SW)),
+     "  under Computer Use -> Options, after the ask switch and before the background display");
+  ok(!!row && /Applies live, from the next Computer Use task/.test(row.querySelector(".cdbx-note").textContent), "  the same note (applies live)");
+  if (sw) { sw.click(); await sleep(60); }
+  ok(JSON.stringify(window.__cuEscCalls) === "[true]" && sw.getAttribute("aria-checked") === "true", "  clicking it calls cuEscSet(true)");
+  let cf = await open(featuresItem);
+  let csw = cf.querySelector(ESC_SW);
+  ok(!!csw && csw.getAttribute("aria-checked") === "true", "Community Features shows the flip made on the Computer Use page");
+  if (csw) { csw.click(); await sleep(60); }
+  cu = await open(cuItem);
+  sw = cu.querySelector(ESC_SW);
+  ok(JSON.stringify(window.__cuEscCalls) === "[true,false]" && !!sw && sw.getAttribute("aria-checked") === "false", "and the Computer Use page shows the flip made on Community Features");
+  window.__cuEscState = { ok: true, enabled: true, lockedByJsonc: true };
+  cu = await open(cuItem);
+  sw = cu.querySelector(ESC_SW);
+  ok(!!sw && sw.disabled && /set in claude-desktop-extra\.jsonc/.test(sw.closest(".cdbx-row").querySelector(".cdbx-state").textContent), "a .jsonc value locks it on the Computer Use page too");
+  window.__cuEscState = { ok: false, error: "Escape stops Computer Use is Linux only" };
+  cu = await open(cuItem);
+  ok(!cu.querySelector(ESC_SW) && !!cu.querySelector(ASK_SW), "a 'Linux only' answer hides only this row on the Computer Use page");
+  window.__cuEscState = undefined;
+  window.__cuEscCalls = [];
+}
+
 async function cusPanel(cuItem) {
   async function remount() {
     document.getElementById("row-account").click();
@@ -3200,6 +3281,7 @@ async function run() {
       await featuresPanel(items[1]);
       await cubgPanel(items[2]);
       await cusPanel(items[2]);
+      await escTwoPages(items[1], items[2]);
       await modelsPanel(items[3]);
       await flagsPanel(items[4]);
       await deployPanel(items[5]);
@@ -3710,6 +3792,14 @@ window.cdbExtra = {
   // Wake Auto-fix sessions when a PR is ready to merge: opt-in, live.
   autoFixMergeReadyRead: function () { return Promise.resolve(window.__afmrState || { ok: true, enabled: false, lockedByJsonc: null }); },
   autoFixMergeReadySet: function (enabled) { window.__afmrCalls = (window.__afmrCalls || []).concat([enabled]); return Promise.resolve({ ok: true, enabled: enabled, path: "/tmp/afmr.json" }); },
+  // Escape stops Computer Use: the one Computer Use row in Community Features (opt-in).
+  cuEscRead: function () { return Promise.resolve(window.__cuEscState || { ok: true, enabled: false, lockedByJsonc: null }); },
+  cuEscSet: function (enabled) {
+    window.__cuEscCalls = (window.__cuEscCalls || []).concat([enabled]);
+    // One stored setting behind both rows (Community Features and Computer Use).
+    window.__cuEscState = { ok: true, enabled: enabled === true, lockedByJsonc: null };
+    return Promise.resolve({ ok: true, enabled: enabled, path: "/tmp/cu-esc.json" });
+  },
   pickerRead: function () { return Promise.resolve(window.__pickerState); },
   pickerSet: function (enabled) {
     window.__pickerCalls.push(enabled);

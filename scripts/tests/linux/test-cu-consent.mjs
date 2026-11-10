@@ -28,6 +28,14 @@
 //     accessibility tools' grant check, batches, kwin mode.
 // [3] the compiled patch on the real extract: 6b / 6c applied once, and a
 //     drifted anchor fails the build. SKIPs without binary or extract.
+// [3b] per-app truth (16a-16d): upstream's patched prompt-suffix function, its
+//     patched computerUsePerAppAccess entry and its patched "Entire screen"
+//     pseudo-grant, cut from the patched chunks and run in vm with the real
+//     js/cu_consent.js over one stub backend per row of the spec's table
+//     (kwin, x11 mask + hit test, sway mask with gaps, background display,
+//     niri / GNOME / fallback without a mask, the switch off; Wayland and X11
+//     hosts), the suffix's consumer in another chunk, and the features
+//     re-signal (16c).
 // [4] patches/Makefile lists every js/ file a patch staticRead's (a change to
 //     an unlisted one leaves a stale binary).
 //
@@ -465,6 +473,292 @@ const H = buildHandler();
   delete globalThis.__cuKwinMode;
 }
 
+// --- [3b] per-app truth on the patched chunks ---------------------------------------
+const SPLIT_RE = /\n\/\*__CDB_SPLIT__([^*\n]+?)__\*\/\n/;
+function splitParts(b) {
+  const pieces = b.split(SPLIT_RE);
+  const names = ["index.js"], bodies = [pieces[0]];
+  for (let i = 1; i < pieces.length; i += 2) { names.push(pieces[i]); bodies.push(pieces[i + 1]); }
+  return { names, bodies, get: (n) => bodies[names.indexOf(n)] };
+}
+const escRe = (x) => x.replace(/[$.\-]/g, "\\$&");
+// `function NAME(...){...}` by brace matching (template text without braces).
+function fnSource(body, name) {
+  const at = body.indexOf("function " + name + "(");
+  if (at < 0) return null;
+  let d = 0;
+  for (let i = body.indexOf("{", at); i < body.length; i++) {
+    if (body[i] === "{") d++;
+    else if (body[i] === "}" && --d === 0) return body.slice(at, i + 1);
+  }
+  return null;
+}
+function exportOf(body, alias) {
+  const all = [...body.matchAll(new RegExp('Object\\.defineProperty\\(exports,"' + escRe(alias) + '",\\{enumerable:!0,get:function\\(\\)\\{return ([\\w$]+)\\}\\}\\)', "g"))];
+  return all.length === 1 ? all[0][1] : null;
+}
+function aliasesOf(body, local) {
+  return [...body.matchAll(new RegExp('Object\\.defineProperty\\(exports,"([\\w$]+)",\\{enumerable:!0,get:function\\(\\)\\{return ' + escRe(local) + "\\}\\}\\)", "g"))].map((m) => m[1]);
+}
+// The real js/cu_linux_executor.js on an X11 session with an x11-bridge that
+// masks (stubbed child_process / electron / fs; one display, two windows).
+async function realX11Executor() {
+  const pathM = await import("node:path"), osM = await import("node:os");
+  const saved = { env: { ...process.env }, keys: new Set(Object.keys(globalThis)), ex: globalThis.__linuxExecutor, ids: globalThis.__cdbCuAppIds, diag: globalThis.__cdbDiag };
+  for (const k of ["SWAYSOCK", "HYPRLAND_INSTANCE_SIGNATURE", "NIRI_SOCKET", "COWORK_SCREENSHOT_CMD", "X11_BRIDGE_BIN", "WLROOTS_BRIDGE_BIN", "GNOME_PORTAL_BRIDGE_BIN", "WAYLAND_DISPLAY", "CHROME_DESKTOP"]) delete process.env[k];
+  Object.assign(process.env, { XDG_CURRENT_DESKTOP: "XFCE", XDG_SESSION_TYPE: "x11", DISPLAY: ":0", PATH: "/usr/bin:/bin" });
+  const R = (x, y, width, height) => ({ x, y, width, height });
+  const win = (id, cls, name, g) => ({ id: String(id), title: name, geometry: g, pid: 2000 + id, desktop_file_name: null, resource_class: cls, resource_name: name, output: null, window_type: "normal", is_dock: false, is_desktop: false, is_visible: true, is_minimized: false, is_normal_window: true, stacking_order: id });
+  const wins = [win(1, "firefox", "firefox", R(0, 0, 960, 1080)), win(2, "Gedit", "gedit", R(960, 0, 960, 1080))];
+  const rig = { calls: [], under: null };
+  const reply = (args) => {
+    const sub = args[0];
+    if (sub === "doctor") return JSON.stringify({ contract: 1, bridge: "x11-bridge", capabilities: { screenshot_mask: true } });
+    if (sub === "screens") return JSON.stringify([{ id: "screen", name: "screen", geometry: R(0, 0, 1920, 1080), scale: 1, is_primary: true }]);
+    if (sub === "windows") return JSON.stringify(wins);
+    if (sub === "frontmost-app") return JSON.stringify({ bundleId: "firefox", displayName: "Firefox" });
+    if (sub === "app-under-point") return JSON.stringify(rig.under);
+    if (sub === "zoom" || sub === "screenshot") {
+      const keep = []; for (let i = 0; i < args.length; i++) if (args[i] === "--keep-window") keep.push(args[i + 1]);
+      return JSON.stringify({ base64: "MASKED", width: 1920, height: 1080, mask: { mode: args.includes("--mask-all") ? "all" : "keep", fill: "#1E1E1E", kept: keep, kept_hidden: [], kept_missing: [], auto_kept: [], masked: wins.filter((w) => !keep.includes(w.id)).map((w) => ({ id: w.id, frame: w.id, pid: w.pid, desktop_file_name: null, resource_class: w.resource_class, resource_name: w.resource_name, override_redirect: false })) } });
+    }
+    return "{}";
+  };
+  const cp = {
+    execFileSync(bin, args) { const b = pathM.basename(String(bin)); if (b === "systemd-detect-virt") return "none\n"; if (b !== "x11-bridge") throw new Error("not found: " + b); rig.calls.push({ b, args, sync: true }); return reply(args); },
+    execSync() { throw new Error("nope"); },
+    spawnSync() { return { status: 1 }; },
+    execFile(bin, args, opts, cb) { const b = pathM.basename(String(bin)); if (b !== "x11-bridge") { setTimeout(() => cb(new Error("not found"), "", ""), 0); return; } rig.calls.push({ b, args }); setTimeout(() => cb(null, reply(args), ""), 0); },
+    spawn() { return { on() {}, unref() {} }; },
+  };
+  const d = { id: 1, label: "Screen", bounds: R(0, 0, 1920, 1080), size: { width: 1920, height: 1080 }, workArea: R(0, 0, 1920, 1080), scaleFactor: 1, nativeOrigin: { x: 0, y: 0 } };
+  const electron = {
+    app: { commandLine: { getSwitchValue: () => "" }, getPath: () => "/ud" },
+    screen: { getAllDisplays: () => [d], getPrimaryDisplay: () => d, getCursorScreenPoint: () => ({ x: 0, y: 0 }) },
+    desktopCapturer: { getSources: async () => [] }, clipboard: { readText: () => "", writeText: () => {} }, nativeImage: {},
+  };
+  const fsStub = { constants: { X_OK: 1 }, readFileSync: () => Buffer.alloc(0), writeFileSync() {}, unlinkSync() {}, existsSync: () => false, renameSync() {}, accessSync() { throw new Error("ENOENT"); }, readdirSync: () => [], statSync: () => ({ isDirectory: () => false }), readlinkSync() { throw new Error("no"); }, realpathSync: (p) => p, promises: { stat: async () => { throw new Error("ENOENT"); } } };
+  const req = (id) => ({ child_process: cp, electron, path: pathM.default || pathM, os: osM.default || osM, fs: fsStub })[id] || (() => { throw new Error("unexpected require " + id); })();
+  globalThis.__cdbDiag = () => {};
+  delete globalThis.__cuGnomeBridgeBin; delete globalThis.__cuWlrootsBridgeBin; delete globalThis.__cuTargetRead; delete globalThis.__cuTargetSig; delete globalThis.__cuBridgeFail;
+  globalThis.__cuX11BridgeBin = "/res/x11-bridge";
+  globalThis.__cuKwinMode = false;
+  new Function("process", readFileSync(join(ROOT, "js", "cu_display_target.js"), "utf8"))(process);
+  new Function("require", "process", readFileSync(join(ROOT, "js", "cu_linux_executor.js"), "utf8"))(req, process);
+  rig.ex = globalThis.__linuxExecutor;
+  rig.restore = () => {
+    for (const k of Object.keys(process.env)) delete process.env[k];
+    Object.assign(process.env, saved.env);
+    for (const k of Object.keys(globalThis)) if (!saved.keys.has(k)) delete globalThis[k];
+    globalThis.__linuxExecutor = saved.ex; globalThis.__cdbCuAppIds = saved.ids; globalThis.__cdbDiag = saved.diag;
+  };
+  return rig;
+}
+const SCREEN_ID = "com.anthropic.cu.screen";
+async function perAppTruth(patched, pristineBlob) {
+  const vm = await import("node:vm");
+  const P = splitParts(patched);
+  // --- the three patched sites, cut from their chunks
+  const SUFFIX_RE = /function ([\w$]+)\(\)\{if\(process\.platform==="linux"\)\{let __cdbSpx;try\{__cdbSpx=globalThis\.__cdbCuConsent\?\.spSuffix\?\.\(\)\}catch\(__cdbSpe\)\{\}if\(typeof __cdbSpx==="string"\)return __cdbSpx\}return ([\w$]+)\.([\w$]+)\(\)\?/;
+  const sIdx = P.bodies.findIndex((b) => SUFFIX_RE.test(b));
+  ok(sIdx >= 0 && patched.match(new RegExp(SUFFIX_RE.source, "g")).length === 1, "16a: the patched suffix function is in the bundle once");
+  if (sIdx < 0) return;
+  const sb = P.bodies[sIdx], sm = SUFFIX_RE.exec(sb);
+  const suffixSrc = fnSource(sb, sm[1]);
+  const upstreamText = /\?(`[^`]*`):""\}$/.exec(suffixSrc);
+  ok(!!upstreamText && /whole shared screen/.test(upstreamText[1]) && /dialogs is open/.test(upstreamText[1]), "16a: upstream's own text stays as the fallback (" + sm[1] + ")");
+  // Its consumers: local calls in its chunk, and `X.<alias>()` in chunks that require it.
+  // Calls in its own chunk, the definition left out: computer_use, cu_only, request_access.
+  const localCalls = [...sb.matchAll(new RegExp("(?<![\\w$.])" + escRe(sm[1]) + "\\(\\)", "g"))].filter((m) => sb.slice(Math.max(0, m.index - 9), m.index) !== "function ").length;
+  ok(localCalls === 3, "16a: the suffix is called 3 times in its own chunk (computer_use / cu_only / request_access): " + localCalls);
+  const aliases = aliasesOf(sb, sm[1]);
+  let outside = 0;
+  P.bodies.forEach((b, i) => {
+    if (i === sIdx) return;
+    for (const r of b.matchAll(new RegExp('(?<![\\w$.])([\\w$]+)=require\\("\\./' + escRe(P.names[sIdx]) + '"\\)', "g")))
+      for (const a of aliases) {
+        const n = b.split(r[1] + "." + a + "()").length - 1;
+        if (n) { outside += n; console.log("    (" + P.names[i] + ": " + r[1] + "." + a + "() -> " + P.names[sIdx] + " exports." + a + " = " + exportOf(sb, a) + ")"); }
+      }
+  });
+  ok(outside >= 1 && aliases.every((a) => exportOf(sb, a) === sm[1]), "16a: the other chunk's consumer (canUseTool deny message) resolves to the patched function");
+
+  const PA_RE = /computerUsePerAppAccess:(\(process\.platform==="linux"&&typeof globalThis\.__cdbCuSharedScreen==="function"\?globalThis\.__cdbCuSharedScreen\(\):([\w$]+)\(\)\)\?(\{status:"unsupported",reason:"[^"]*",unsupportedCode:"[^"]*"\}):([\w$]+)),/;
+  const pIdx = P.bodies.findIndex((b) => PA_RE.test(b));
+  ok(pIdx >= 0, "16b: the patched computerUsePerAppAccess entry is in the bundle");
+  if (pIdx < 0) return;
+  const pm = PA_RE.exec(P.bodies[pIdx]);
+  const paExpr = pm[1], paWl = pm[2], paSupported = pm[4];
+
+  const YE_RE = /function ([\w$]+)\(([\w$]+),[\w$]+\)\{if\(process\.platform==="linux"&&globalThis\.__cdbCuNoScreenGrant\?\.\(\)===!0\|\|([\w$]+)\.([\w$]+)!==\3\.([\w$]+)\|\|/;
+  const yIdx = P.bodies.findIndex((b) => YE_RE.test(b));
+  ok(yIdx >= 0, "16d: the patched pseudo-grant function is in the bundle");
+  if (yIdx < 0) return;
+  const ym = YE_RE.exec(P.bodies[yIdx]);
+  const yeSrc = fnSource(P.bodies[yIdx], ym[1]);
+  // The helper namespace the pseudo-grant reads tiers from (`n.l(...).explicitGrants`, `n.u[tier]`).
+  const yeNs = /new ([\w$]+)\.([\w$]+)\(/.exec(yeSrc);
+
+  // 16e: both enable-prompt approval cards (session server, local agent canUseTool).
+  const CARD_RE = /screenshotFiltering:(\(process\.platform==="linux"&&globalThis\.__cdbCuSharedScreen\?\.\(\)===!1\?globalThis\.__linuxExecutor\?\.capabilities\?\.screenshotFiltering\?\?"mask":([\w$]+)\.([\w$]+)\.screenshotFiltering\)),(?:hostPlatform:[\w$]+\.[\w$]+\.platform,)?featureDisabled:!0/g;
+  const cards = [];
+  P.bodies.forEach((b, i) => { for (const m of b.matchAll(CARD_RE)) cards.push({ part: P.names[i], expr: m[1], ns: m[2], key: m[3] }); });
+  ok(cards.length === 2 && new Set(cards.map((c) => c.part)).size === 2, "16e: both enable cards patched, one per chunk: " + cards.map((c) => c.part).join(", "));
+
+  // --- one sandbox per row: real js/cu_consent.js, a stub executor
+  const consentSrc = readFileSync(CONSENT, "utf8");
+  function rowCtx(row) {
+    const ctx = { console };
+    ctx.globalThis = ctx;
+    ctx.process = { platform: row.platform || "linux", env: row.host === "x11" ? { XDG_SESSION_TYPE: "x11", DISPLAY: ":0" } : { XDG_SESSION_TYPE: "wayland", WAYLAND_DISPLAY: "wayland-0" } };
+    ctx.__cdbDiag = (m) => (ctx.diag = (ctx.diag || []).concat(String(m)));
+    if (row.kwin) ctx.__cuKwinMode = true;
+    ctx.__cdbCuAskBeforeControl = () => row.ask !== false;
+    const caps = row.caps || {};
+    ctx.nowCalls = 0;
+    ctx.__linuxExecutor = {
+      // The live getter upstream reads (exec-free); capabilitiesNow() may run pgrep.
+      capabilities: { get screenshotFiltering() { return caps.screenshotFiltering || "none"; }, platform: "linux", hostBundleId: "com.anthropic.Claude" },
+      capabilitiesNow() { ctx.nowCalls++; return Object.assign({ platform: "linux", hostBundleId: "com.anthropic.Claude", screenshotMaskGaps: [] }, caps); },
+    };
+    vm.createContext(ctx);
+    if (!row.noConsent && (row.platform || "linux") === "linux") vm.runInContext(consentSrc, ctx);
+    const wayland = row.host !== "x11";
+    const ns = (n) => (ctx[n] = ctx[n] || {});
+    ns(sm[2])[sm[3]] = () => wayland;
+    ctx[paWl] = () => wayland;
+    ctx[paSupported] = { status: "supported" };
+    // PLATFORM_CAPABILITIES is the Wayland preset on a Wayland host (2b: X11 gets its own object).
+    const WL = { screenshotFiltering: "none", platform: "linux", hitTest: "none" };
+    Object.assign(ns(ym[3]), { [ym[4]]: wayland ? WL : { screenshotFiltering: "none", platform: "linux" }, [ym[5]]: WL });
+    ns(ym[3])[/\{bundleId:([\w$]+)\.([\w$]+),displayName:"Entire screen"/.exec(yeSrc)[2]] = SCREEN_ID;
+    if (yeNs) Object.assign(ns(yeNs[1]), { [yeNs[2]]: class { constructor(e) { this.explicitGrants = e; } }, u: { read: 0, click: 1, full: 2 } });
+    for (const c of cards) ns(c.ns)[c.key] = ns(ym[3])[ym[4]];
+    vm.runInContext(suffixSrc + ";" + yeSrc, ctx);
+    return {
+      ctx,
+      suffix: () => vm.runInContext(sm[1] + "()", ctx),
+      perApp: () => vm.runInContext("(" + paExpr + ")", ctx),
+      cards: () => cards.map((c) => vm.runInContext(c.expr, ctx)),
+      pseudo: () => vm.runInContext(ym[1] + "([{bundleId:'org.mozilla.firefox',displayName:'Firefox',tier:'click',grantedAt:1},{bundleId:'foot',displayName:'foot',tier:'full',grantedAt:2}],[])", ctx).some((a) => a.bundleId === SCREEN_ID),
+    };
+  }
+  const MASK = { screenshotFiltering: "mask", hitTest: "native", frontmost: "native" };
+  const ROWS = [
+    // label, row, want {suffix: "" | "mask" | "none" | "off", perApp, pseudo}
+    ["kwin-portal-bridge (kwin mode)", { kwin: true, caps: { screenshotFiltering: "native" } }, { suffix: "", perApp: "supported", pseudo: false, card: "native" }],
+    ["kwin mode, ask switch off", { kwin: true, ask: false, caps: { screenshotFiltering: "native" } }, { suffix: "", perApp: "supported", pseudo: false, card: "native" }],
+    ["x11-bridge on X11 (mask + hit test)", { host: "x11", caps: { ...MASK, backend: "x11-bridge" } }, { suffix: "mask", hit: "native", perApp: "supported", pseudo: false, card: "mask" }],
+    ["wlroots-bridge on sway (mask with gaps)", { caps: { ...MASK, screenshotMaskGaps: ["popups", "layer_shell_top_overlay"], backend: "wlroots-bridge" } }, { suffix: "mask", hit: "native", gaps: true, perApp: "supported", pseudo: false, card: "mask" }],
+    ["background display x11 on Wayland", { caps: { ...MASK, backend: "x11-bridge (background display :99)" } }, { suffix: "mask", hit: "native", perApp: "supported", pseudo: false, card: "mask" }],
+    ["background display wlroots on Wayland", { caps: { ...MASK, backend: "wlroots-bridge (background display wayland-9)" } }, { suffix: "mask", hit: "native", perApp: "supported", pseudo: false, card: "mask" }],
+    ["wlroots-bridge on niri (no mask)", { caps: { screenshotFiltering: "none", hitTest: "none", frontmost: "native", backend: "wlroots-bridge" } }, { suffix: "none", hit: "frontmost", perApp: "unsupported", pseudo: false, card: "none" }],
+    ["gnome-portal-bridge", { caps: { screenshotFiltering: "none", hitTest: "none", frontmost: "native", backend: "gnome-portal-bridge" } }, { suffix: "none", hit: "frontmost", perApp: "unsupported", pseudo: false, card: "none" }],
+    ["fallback tools on Wayland", { caps: { screenshotFiltering: "none", hitTest: "none", frontmost: "none", backend: "none" } }, { suffix: "none", hit: "none", perApp: "unsupported", pseudo: false, card: "none" }],
+    ["fallback tools on X11 (no bridge)", { host: "x11", caps: { screenshotFiltering: "none", hitTest: "none", frontmost: "none", backend: "none" } }, { suffix: "none", hit: "none", perApp: "unsupported", pseudo: false, card: "none" }],
+    ["ask switch off, sway mask-capable", { ask: false, caps: { ...MASK, backend: "wlroots-bridge" } }, { suffix: "off", perApp: "unsupported", pseudo: true, card: "none" }],
+    ["ask switch off, x11-bridge on X11", { host: "x11", ask: false, caps: { ...MASK, backend: "x11-bridge" } }, { suffix: "off", perApp: "unsupported", pseudo: false, card: "none" }],
+  ];
+  for (const [label, row, w] of ROWS) {
+    const r = rowCtx(row);
+    const s = r.suffix();
+    if (w.suffix === "") ok(s === "", label + ": suffix empty (upstream's per-app rules hold)");
+    else {
+      ok(typeof s === "string" && s.startsWith("\n\nOn this system (Linux)"), label + ": our suffix, not upstream's: " + JSON.stringify(s.slice(0, 60)));
+      ok(!/Linux Wayland session|whole shared screen at once|most permissive tier/.test(s), label + ": none of upstream's shared-screen claims");
+    }
+    ok(!/dialog/i.test(s), label + ": never claims the dialog refusal");
+    if (w.suffix === "mask") {
+      ok(!/whole screen|show everything|not filtered/.test(s) && /Screenshots show only the approved apps' windows/.test(s), label + ": masked - never says screenshots show everything");
+      ok(/granted at tier "full"/.test(s), label + ": every approved app at tier full");
+    }
+    if (w.suffix === "none" || w.suffix === "off") ok(/show the whole screen/.test(s), label + ": unmasked - says screenshots show the whole screen");
+    if (w.suffix === "off") ok(/not checked/.test(s) && /Act only in the apps the user asked for/.test(s), label + ": switch off - apps not checked, act only in the asked-for apps");
+    if (w.hit === "native") ok(/Clicks, scrolls and drags on a window of an app that is not approved are refused/.test(s), label + ": hit-test input sentence");
+    if (w.hit === "frontmost") ok(/cannot tell which window is under a point: clicks and keystrokes go to whatever is there, and they are refused while an app that is not approved is in front/.test(s), label + ": frontmost-only input sentence");
+    if (w.hit === "none") ok(/cannot tell which window is under a point or in front/.test(s), label + ": no-input-check sentence");
+    if (w.suffix === "mask") ok(w.gaps ? /popup menus, panels and overlays can still show/.test(s) : !/covering is approximate/.test(s), label + ": mask gaps " + (w.gaps ? "stated" : "absent"));
+    const pa = r.perApp();
+    ok((pa && pa.status) === w.perApp, label + ": computerUsePerAppAccess " + w.perApp + " (got " + JSON.stringify(pa) + ")");
+    if (w.perApp === "unsupported") ok(pa.reason === "A Wayland session shares the whole screen", label + ": upstream's reason kept");
+    ok(r.pseudo() === w.pseudo, label + ": \"Entire screen\" pseudo-grant " + (w.pseudo ? "added" : "left out"));
+    ok(JSON.stringify(r.cards()) === JSON.stringify([w.card, w.card]), label + ": enable cards show screenshotFiltering " + w.card + (w.card === "none" ? " (upstream's whole-screen warning)" : " (no whole-screen warning)") + ", got " + JSON.stringify(r.cards()));
+    const before = r.ctx.nowCalls;
+    r.perApp(); r.pseudo();
+    ok(r.ctx.nowCalls === before, label + ": per-app answer never calls capabilitiesNow() (exec-free)");
+    if (!row.kwin) ok((r.ctx.diag || []).some((l) => l.startsWith("[claude-cu] prompt suffix: ")), label + ": the suffix hook logged on entry");
+  }
+  // The REAL executor (x11-bridge on X11, the rig of test-cu-screenshot-mask.mjs
+  // trimmed): what the suffix promises is what the executor and the gate do.
+  {
+    const real = await realX11Executor();
+    try {
+      const caps = await real.ex.capabilitiesAsync();
+      ok(caps.screenshotFiltering === "mask" && caps.hitTest === "native", "real executor: x11-bridge doctor answers mask, hit test native", JSON.stringify(caps));
+      const r = rowCtx({ host: "x11" });
+      r.ctx.__linuxExecutor = real.ex;
+      r.ctx.__cdbCuAppIds = globalThis.__cdbCuAppIds;
+      const s = r.suffix();
+      ok(/Screenshots show only the approved apps' windows/.test(s) && /Clicks, scrolls and drags on a window of an app that is not approved are refused/.test(s), "real executor: suffix promises masked screenshots and a hit test");
+      ok(r.perApp().status === "supported" && JSON.stringify(r.cards()) === '["mask","mask"]' && r.pseudo() === false, "real executor: per-app supported, cards 'mask', no pseudo-grant");
+      const C = r.ctx.__cdbCuConsent;
+      const sess = { sessionId: "real-1", getCuAllowedApps: () => [{ bundleId: "firefox", displayName: "Firefox", tier: "full" }], getCuGrantFlags: () => ({}) };
+      real.under = { bundleId: "gedit", displayName: "Text Editor" };
+      const refused = await C.gate(sess, "pointer", [[200, 200]]);
+      ok(refused && refused.isError && /would land on "Text Editor"/.test(refused.content[0].text), "real executor: a click on an unapproved window is refused (the sentence holds)", JSON.stringify(refused));
+      real.under = { bundleId: "firefox", displayName: "Firefox" };
+      ok((await C.gate(sess, "pointer", [[200, 200]])) === null, "real executor: a click on the approved app passes");
+      real.calls.length = 0;
+      const shot = await real.ex.screenshot({ allowedBundleIds: C.shotIds(sess) });
+      const z = real.calls.find((c) => c.args[0] === "zoom" || c.args[0] === "screenshot");
+      ok(shot && shot.masked === true && !!z && z.args.includes("--keep-window"), "real executor: the screenshot is masked to the approved app's windows", JSON.stringify(z && z.args));
+    } finally {
+      real.restore();
+    }
+  }
+  // Off Linux and without js/cu_consent.js: upstream's answers.
+  {
+    const r = rowCtx({ platform: "darwin", host: "x11" });
+    ok(r.suffix() === "" && r.perApp().status === "supported" && r.pseudo() === false && r.cards().every((v) => v === "none"), "darwin: upstream's answers (no suffix, supported, no pseudo-grant, preset card)");
+    const r2 = rowCtx({ noConsent: true });
+    ok(r2.suffix() === JSON.parse(JSON.stringify(vm.runInNewContext(upstreamText[1]))) && r2.perApp().status === "unsupported" && r2.pseudo() === true && r2.cards().every((v) => v === "none"), "Linux Wayland without js/cu_consent.js: upstream's text, unsupported, pseudo-grant, preset card");
+    const r3 = rowCtx({ caps: { ...MASK } });
+    r3.ctx.__cdbCuConsent.spSuffix = () => { throw new Error("boom"); };
+    ok(r3.suffix() === vm.runInNewContext(upstreamText[1]), "16a: a throwing spSuffix() falls back to upstream's text");
+  }
+  // The pristine bundle: upstream's text on Wayland, per-app unsupported - the old code fails the rows above.
+  ok(!pristineBlob.includes("__cdbCuSharedScreen") && !pristineBlob.includes("spSuffix"), "pristine bundle carries none of 16a / 16b / 16d");
+
+  // --- 16c: the captured broadcast is upstream's subscriber loop, and a change re-signals once
+  const FC_RE = /function ([\w$]+)\(\)\{for\(let ([\w$]+) of ([\w$]+)\)\2\(\)\}process\.platform==="linux"&&\(globalThis\.__cdbCuFeaturesChanged=\1\);function ([\w$]+)\(([\w$]+)\)\{if\(\3\.add\(\5\),/;
+  const fIdx = P.bodies.findIndex((b) => FC_RE.test(b));
+  ok(fIdx >= 0, "16c: __cdbCuFeaturesChanged is the loop over the set onSupportedFeaturesInputsChanged adds to");
+  if (fIdx >= 0) {
+    const fm = FC_RE.exec(P.bodies[fIdx]);
+    ok(new RegExp("onSupportedFeaturesInputsChanged:\\(\\)=>" + escRe(fm[4]) + "[,}]").test(P.bodies[fIdx]), "16c: " + fm[4] + " is onSupportedFeaturesInputsChanged");
+    const c = { process: { platform: "linux" }, hits: 0 };
+    c.globalThis = c;
+    vm.createContext(c);
+    vm.runInContext("var " + fm[3] + "=new Set([()=>globalThis.hits++,()=>globalThis.hits++]);" + fnSource(P.bodies[fIdx], fm[1]) + ";process.platform===\"linux\"&&(globalThis.__cdbCuFeaturesChanged=" + fm[1] + ");globalThis.__cdbCuFeaturesChanged()", c);
+    ok(c.hits === 2, "16c: calling it notifies every subscriber (every window re-fetches)");
+  }
+  {
+    const r = rowCtx({ caps: { screenshotFiltering: "none", hitTest: "native", frontmost: "native" } });
+    let sig = 0;
+    r.ctx.__cdbCuFeaturesChanged = () => sig++;
+    const C = r.ctx.__cdbCuConsent;
+    ok(C.capChanged("doctor answered") === false && sig === 0, "re-signal: nothing before the renderer's first read");
+    ok(r.perApp().status === "unsupported", "re-signal: first read before the doctor answered = unsupported");
+    r.ctx.__linuxExecutor.capabilities = { screenshotFiltering: "mask" };
+    ok(C.capChanged("x11-bridge doctor answered") === true && sig === 1, "re-signal: the doctor's mask answer re-signals once");
+    ok(C.capChanged("x11-bridge doctor answered") === false && sig === 1, "re-signal: an unchanged answer does not");
+    ok(r.perApp().status === "supported", "re-signal: the re-fetch reads supported");
+    r.ctx.__cdbCuAskBeforeControl = () => false;
+    ok(C.capChanged("ask-before-control switch") === true && sig === 2, "re-signal: the switch turned off re-signals");
+    ok((r.ctx.diag || []).filter((l) => l.startsWith("[claude-cu] per-app access check (")).length === 4, "re-signal: each check logs one line on entry");
+  }
+}
+
 // --- [3] the patch on the real bundle ----------------------------------------------
 let skipped = false;
 let haveBin = true;
@@ -517,6 +811,9 @@ if (!haveBin || !existsSync(join(BUILD_DIR, "index.js"))) {
     ok(r3.status !== 0 && /\[FAIL\] 6b cuOnlyMode context flag/.test(r3.out), "a moved cuOnlyMode flag fails the build");
     const r4 = run(blob.replace(/(return"system_settings"\}return null\}function [\w$]+\(([\w$]+)\)\{return )([\w$]+)\(\2\)!==null\}/, (_m, pre, v, cls) => pre + "!!" + cls + "(" + v + ")}"));
     ok(r4.status !== 0 && /\[FAIL\] 6c sentinel predicate/.test(r4.out), "a moved sentinel predicate fails the build");
+
+    console.log("\n[3b] per-app truth: 16a prompt suffix, 16b computerUsePerAppAccess, 16c re-signal, 16d pseudo-grant");
+    await perAppTruth(patched, blob);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

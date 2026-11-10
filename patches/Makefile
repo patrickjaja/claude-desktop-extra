@@ -49,6 +49,7 @@ linux/fix_computer_use_linux: \
   ../js/cu_session_check.js \
   ../js/cu_display_target.js \
   ../js/cu_consent.js \
+  ../js/cu_share_stop.js \
   ../js/executor_linux.js
 
 community/add_feature_auto_archive_grace: ../js/auto_archive_grace.js
@@ -61,6 +62,7 @@ linux/fix_cowork_device_icon_web: \
   ../js/cowork_device_icon_web_page.js
 
 community/add_feature_autofix_merge_ready: ../js/autofix_merge_ready.js
+community/add_feature_cu_escape_abort: ../js/cu_esc_watch.js
 
 community/add_feature_autofix_post_merge: ../js/autofix_post_merge.js
 community/add_feature_session_start_always_allow: ../js/session_start_permission.js

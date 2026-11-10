@@ -192,7 +192,7 @@ Check it with `curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/gpg
 Settings → **Extra** holds everything this project adds, no config file or `sudo` needed:
 
 - **[Themes](docs/themes.md)** - pick one of 97 palettes or your own, applied live.
-- **[Community](docs/patches.md#community-features)** - opt-in switches such as Files quick open, panel tabs, diff view modes and custom models.
+- **[Community](docs/patches.md#community-features)** - opt-in switches such as Files quick open, panel tabs, diff view modes, custom models and Escape stops Computer Use (see [Computer Use](docs/cu-escape-abort.md)).
 - **[Models](docs/custom-models.md)** - providers and models for the Code tab's model picker.
 - **[Anthropic](docs/feature-flags.md)** - every upstream feature flag as a switch.
 - **[Deployment](docs/third-party-inference.md#route-a-the-in-app-deployment-panel)** - the 1P/3P switch and the full third-party inference config.
@@ -255,7 +255,7 @@ Override Anthropic's server-side feature flags in `~/.config/Claude/claude-deskt
 
 ## Patches
 
-We patch the official `app.asar` at repackage time: [`patches/community/`](docs/patches.md#community-features) (23 patches, opt-in features), [`patches/core/`](docs/patches.md#core-infrastructure) (9, infrastructure) and [`patches/linux/`](docs/patches.md#linux-compatibility) (38, Linux fixes). A patch that stops matching fails the build, and a patch is removed once upstream ships the behavior. Catalog: [docs/patches.md](docs/patches.md).
+We patch the official `app.asar` at repackage time: [`patches/community/`](docs/patches.md#community-features) (24 patches, opt-in features), [`patches/core/`](docs/patches.md#core-infrastructure) (9, infrastructure) and [`patches/linux/`](docs/patches.md#linux-compatibility) (39, Linux fixes). A patch that stops matching fails the build, and a patch is removed once upstream ships the behavior. Catalog: [docs/patches.md](docs/patches.md).
 
 ## Command-line flags
 

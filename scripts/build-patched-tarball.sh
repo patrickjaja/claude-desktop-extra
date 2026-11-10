@@ -523,6 +523,34 @@ if ! {
 fi
 log_info "JavaScript syntax validation passed"
 
+# Census of upstream Linux-session gates (issue #323): every consumer of a
+# tracked predicate - through export aliases, lazy chunks and namespace
+# members - must be covered by our patches or listed in
+# baseline/predicate-consumers.json; every platform/session refusal string
+# must be pinned in baseline/refusal-strings.json. Both read the PATCHED tree.
+# The baselines live in baseline/, which the CI build containers copy next to
+# scripts/ - a missing file is a broken checkout/copy, not a pass.
+CENSUS_PRED_BASELINE="$PROJECT_DIR/baseline/predicate-consumers.json"
+CENSUS_REFUSAL_BASELINE="$PROJECT_DIR/baseline/refusal-strings.json"
+for f in "$CENSUS_PRED_BASELINE" "$CENSUS_REFUSAL_BASELINE"; do
+    if [ ! -f "$f" ]; then
+        log_error "Census baseline missing: $f - copy baseline/ next to scripts/ (CI: the 'cp -r scripts patches js packaging baseline' line)"
+        exit 1
+    fi
+done
+log_info "Checking upstream Linux-session predicate consumers..."
+if ! python3 -I "$SCRIPT_DIR/check-predicate-consumers.py" --quiet \
+    --baseline "$CENSUS_PRED_BASELINE" "$APP_DIR/app.asar.contents"; then
+    log_error "Predicate census failed - patch the predicate at its definition, or add an allowlist entry (needs @patrickjaja)"
+    exit 1
+fi
+log_info "Checking platform/session refusal strings..."
+if ! python3 -I "$SCRIPT_DIR/check-refusal-strings.py" --baseline "$CENSUS_REFUSAL_BASELINE" \
+    --js-dir "$PROJECT_DIR/js" "$APP_DIR/app.asar.contents"; then
+    log_error "Refusal-string census failed - review the new/stale strings and update baseline/refusal-strings.json"
+    exit 1
+fi
+
 # Drop upstream's V8 bytecode compile-cache (new in v1.34493.1). index.pre.js
 # feeds each .jsc to `new vm.Script(..., {cachedData})`; V8 validates it against
 # the source and silently recompiles on mismatch, so patched code runs correctly

@@ -435,6 +435,27 @@
     };
   }
 
+  // --- Computer Use: Escape stops it (community, issue #323) --------------
+  // patches/community/add_feature_cu_escape_abort.nim asks
+  // globalThis.__cdbCuEscapeAbortEnabled() each time upstream's CU lock is
+  // taken (and before re-arming at the next action of a cloud turn): only true
+  // arms the Escape watcher of js/cu_esc_watch.js; anything else keeps
+  // upstream's own Escape handling. Off is the default and the absence of the
+  // key; a boolean in the .jsonc wins and locks the row. No cache: each call
+  // reads the two small settings files, so a flip applies from the next lock.
+  var __cdbEx_CUESC_KEY = "computerUseEscapeAbort";
+  function __cdbEx_cuEscPref() {
+    var p = __cdbEx_paths();
+    var jsonc = __cdbEx_readFileKey(p.jsonc, __cdbEx_CUESC_KEY);
+    if (typeof jsonc === "boolean") return { value: jsonc, locked: true };
+    return { value: __cdbEx_readFileKey(p.json, __cdbEx_CUESC_KEY) === true, locked: false };
+  }
+  if (process.platform === "linux") {
+    globalThis.__cdbCuEscapeAbortEnabled = function () {
+      try { return __cdbEx_cuEscPref().value === true; } catch (e) { return false; }
+    };
+  }
+
   // --- Code: auto-archive delay after a PR merges or closes -----------------
   // patches/community/add_feature_auto_archive_grace.nim asks
   // globalThis.__cdbAutoArchiveMergeDelayMinutes() once per auto-archive sweep
@@ -1041,7 +1062,12 @@
       label: "Show widgets from session host connectors",
       note: "For self-hosted sessions only: lets the session host pass connector widgets to the app; no session host reads it yet (in the schema since v4.4212.0, which marks it for an upcoming release)." },
     { key: "claudeInChromeEnabled", kind: "bool", group: "connectors", scope: "3p",
-      label: "Enable Claude in Chrome" },
+      label: "Enable Claude in Chrome",
+      // Linux only: the downstream Windows build carries this file unedited and
+      // its upstream bundle may differ.
+      note: process.platform === "linux"
+        ? "Not available in Anthropic's Linux build yet: with this on, the app reports Claude in Chrome as disabled because it is not supported on this platform (checked on v4.23118.1)."
+        : undefined },
     { key: "claudeInChromePasswordManagersEnabled", kind: "bool", group: "connectors", scope: "3p",
       label: "Enable password managers in Claude in Chrome",
       lock: "set by the Anthropic control plane from the organization's Claude in Chrome password-manager setting and hidden in upstream's own wizard, so this page never writes it" },
@@ -3733,6 +3759,31 @@
       return { ok: true, enabled: enabled, path: res.path };
     },
 
+    // Escape stops Computer Use (community). Pref and reader above; read at
+    // each arm, so there is nothing to refresh.
+    "cdb-cu-esc:read": function () {
+      var s = __cdbEx_cuEscPref();
+      return { ok: true, enabled: s.value, lockedByJsonc: s.locked ? true : null };
+    },
+
+    "cdb-cu-esc:set": function (enabled) {
+      if (typeof enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
+      if (__cdbEx_cuEscPref().locked) {
+        return { ok: false, lockedByJsonc: true,
+          error: __cdbEx_CUESC_KEY + " is set in claude-desktop-extra.jsonc - edit that file to change it" };
+      }
+      var res = __cdbEx_writeCfg(function (cfg) {
+        if (enabled) cfg[__cdbEx_CUESC_KEY] = true;
+        else delete cfg[__cdbEx_CUESC_KEY];
+        return enabled;
+      });
+      if (!res.ok) return res;
+      // Setting the switch (either way) is a fresh start for the watcher's
+      // breaker: a key the user freed after a refusal is tried again.
+      try { var w = globalThis.__cdbCuEscWatch; if (w && typeof w.reset === "function") w.reset(); } catch (e) {}
+      return { ok: true, enabled: enabled, path: res.path };
+    },
+
     "cdb-archive-grace:read": function (sessionId) {
       if (sessionId !== undefined) {
         if (typeof sessionId !== "string" || sessionId.length < 1 || sessionId.length > 256)
@@ -3810,6 +3861,14 @@
         return enabled;
       });
       if (!res.ok) return res;
+      // The per-app access answer upstream's UI shows follows this switch
+      // (js/cu_consent.js re-signals the renderer when it changed). Only this
+      // setter re-signals: a hand edit of claude-desktop-extra.jsonc / .json
+      // takes effect on the next features read (window open, app restart).
+      try {
+        var cc = globalThis.__cdbCuConsent;
+        if (cc && typeof cc.capChanged === "function") cc.capChanged("ask-before-control switch");
+      } catch (e) {}
       return { ok: true, enabled: enabled, path: res.path };
     },
 
@@ -4354,6 +4413,8 @@
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use status is Linux only" }; };
       } else if (ch.indexOf("cdb-cu-ask:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use app approval is Linux only" }; };
+      } else if (ch.indexOf("cdb-cu-esc:") === 0) {
+        __cdbEx_handlers[ch] = function () { return { ok: false, error: "Escape stops Computer Use is Linux only" }; };
       } else if (ch.indexOf("cdb-cu-ax:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use app controls are Linux only" }; };
       } else if (ch.indexOf("cdb-autofix-author:") === 0) {

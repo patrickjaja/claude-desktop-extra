@@ -36,12 +36,15 @@ python3 scripts/check-upstream-absorbed.py tmp/app.asar.contents \
 bash scripts/run-feature-tests.sh <community|core|linux>  # feature harnesses for the category you touched
 ./scripts/validate-patches.sh ./tmp/app.asar.contents
 node --check <patched.js>
+# census gates need a PATCHED tree (the dir apply_patches.py patched, holding .vite/build/index*.js):
+python3 -I scripts/check-predicate-consumers.py <patched tree>
+python3 -I scripts/check-refusal-strings.py <patched tree>   # add --strict to fail on warnings too (/update)
 ```
 
 Where each check runs:
 - **Commit:** `.githooks/pre-commit` runs `nph --check`, `nim check` and `shellcheck -S error` on staged files, and the landing-page catalogue sync when `docs/patches.md`, `site/index.html` or `js/extra_settings_page.js` is staged.
-- **Task end** (any change under `patches/` or `js/`, budget under 90 s): `make`, the absorption probe against a fresh extract, and the feature tests for the touched category.
-- **Build** (local + CI): `scripts/build-patched-tarball.sh` runs the probe, the orchestrator, and `node --check` per chunk.
+- **Task end** (any change under `patches/` or `js/`, budget under 90 s): `make`, the absorption probe against a fresh extract, and the feature tests for the touched category. A patch that touches Computer Use or session/platform gates also runs the two census commands above against a patched scratch copy.
+- **Build** (local + CI): `scripts/build-patched-tarball.sh` runs the probe, the orchestrator, `node --check` per chunk, and the predicate and refusal censuses ([docs/census-gates.md](docs/census-gates.md)).
 - **CI:** all of the above plus the full harness suite, sibling-noop check, jsonc template sync, the landing-page patch catalogue sync (`scripts/check-site-catalog-sync.sh`: `site/index.html` renders every row of `docs/patches.md`; after editing that file run `python3 -I scripts/gen-site-patch-catalog.py --write`), `desktop-file-validate`, and the smoke test. After a release, `verify-install-channels` runs the README install commands (apt, dnf, pacman, AUR, nix) in fresh containers via `scripts/verify-install-channel.sh`; changing an install command in the README changes what CI tests.
 
 ## Adding a feature
@@ -148,7 +151,7 @@ Also enforced:
 - A patch writes only its own `@patch-target`. The orchestrator stages each target alone, so a sibling write is a silent no-op (`bash scripts/check-patch-sibling-noop.sh`).
 - The count pins `EXPECTED_PATCH_COUNT` (`scripts/apply_patches.py`) and `EXPECTED_TEST_HARNESSES` (`scripts/run-feature-tests.sh`) only change in the commit that adds or `git rm`s the file.
 - Every patched JS part must pass `node --check`.
-- Loosening a gate (an `IDEMPOTENCY_EXCEPTIONS` entry in `scripts/check-upstream-absorbed.py`, a lowered count) needs @patrickjaja in the commit.
+- Loosening a gate (an `IDEMPOTENCY_EXCEPTIONS` entry in `scripts/check-upstream-absorbed.py`, a lowered count, a census `allowlist` / `coveredSites` / `envSites` / `transitiveIgnore` entry or `accepted` refusal pin, a raised census count) needs @patrickjaja in the commit.
 
 ## Debugging patch failures
 
@@ -168,6 +171,8 @@ These embed assumptions about upstream internals and **must be challenged on eve
 | `js/extra_settings_main.js` (`__cdbEx_DEPLOY_KEYS`) | The managed-settings key catalog the Extra -> Deployment panel renders, pinned from the bundle's zod schema; also the port of the 3p-dir resolver and mode decision | ``rg -ao 'flatKey:[`"][A-Za-z0-9_]+[`"]' tmp/app.asar.contents/.vite/build/index.pre.js \| sort -u`` and diff against the catalog; `node scripts/tests/core/test-deployment-main.mjs` |
 | `kwin-portal-bridge/src/teach_overlay.rs` (`TeachStepPayload`) | The only place our CU bridges are pinned to upstream DATA: `js/executor_linux.js` forwards upstream's teach-step payload verbatim and the Rust side requires `explanation`. A rename is a runtime serde failure on a green build, KDE Wayland only. Maintained in `patrickjaja/kwin-portal-bridge` (our fork of mosi0815's original; CI builds that fork's HEAD) - fix it there directly | ``grep -ao 'onTeachStep({[^}]*}' <new-bundle-concat>``; keys must still be `explanation` / `nextPreview` / `anchorLogical` |
 | `packaging/nix/background-display.nix` | Pins upstream DATA for the NixOS background display's Claude in Chrome manifest: the three extension IDs (`browser.claudeExtensionIds`), the manifest name `com.anthropic.claude_browser_extension` and the native host's path `lib/claude-desktop/resources/chrome-native-host` in the package. A change is a browser that never reaches Claude on a green build | ``grep -aohE '[A-Za-z0-9_$]+="[a-p]{32}",[A-Za-z0-9_$]+="[a-p]{32}",[A-Za-z0-9_$]+="[a-p]{32}",[A-Za-z0-9_$]+="com\.anthropic\.[a-z_]+",[A-Za-z0-9_$]+="[a-z-]+"' tmp/app.asar.contents/.vite/build/index*.js`` (cross-check ``grep -aoh 'allowed_origins:\[[^]]*\]'``) must print the module's three IDs, the manifest name and `chrome-native-host`; `tmp/extract/usr/lib/claude-desktop/resources/chrome-native-host` must exist |
+| `baseline/predicate-consumers.json` | Consumers of upstream's session/Computer Use predicates (a new consumer = a Linux/Wayland decision our patches may not cover); hand-edited | `python3 -I scripts/check-predicate-consumers.py <patched tree>` must exit 0; red: audit the new path, patch at the definition or add a reviewed entry ([docs/census-gates.md](docs/census-gates.md)) |
+| `baseline/refusal-strings.json` | Every upstream Linux/Wayland/Xorg/platform refusal string with its status; hand-edited | `python3 -I scripts/check-refusal-strings.py <patched tree>` must exit 0 (fails on strong-topic strings and regressed pins, warns on the rest; `/update` runs it with `--strict`); red: new string or stale verify regex, see [docs/census-gates.md](docs/census-gates.md) |
 | `baseline/PANEL_TABS_ANCHORS.md` | Panel-tabs DOM/fiber anchors and the `[cdb-tabs]` warning keys that mean an anchor moved | Re-run the console recipes in that file against the new build |
 | `baseline/FILES_QUICK_OPEN_ANCHORS.md` | Files quick-open anchors and the `[cdb-qopen]` warning keys | Re-run its console recipes; `grep -o 'of this\.index\.search(' fileIndexWorker.js` must hit exactly once |
 | `baseline/AUTO_ARCHIVE_GRACE_WEB_ANCHORS.md` | 1P archive-grace UI: the claude.ai hold-notice and session-rail anchors (fiber props `{hold, sessionRef}` / `{session, pullRequests, outputsSession}`) and the `[archive-grace-ui]` warning keys | Re-run its console recipes on the Code tab; the debug hook renders without a merged PR |
@@ -225,8 +230,8 @@ Runtime logs are in `~/.config/Claude/logs/`. When 3P mode is active (an `infere
 
 ```
 patches/           # Nim patch sources (.nim) + Makefile, compiled to native binaries (ls patches/*/*.nim)
-patches/linux/     #   Linux compatibility - always on, not user-configurable (38)
-patches/community/ #   Opt-in features, each with a switch in Settings -> Extra -> Community Features (23)
+patches/linux/     #   Linux compatibility - always on, not user-configurable (39)
+patches/community/ #   Opt-in features, each with a switch in Settings -> Extra -> Community Features (24)
 patches/core/      #   Always-on infrastructure: Extra settings pages, theme engine, GrowthBook overrides, multi-profile, shared tool lookup (9)
 js/                # Shared JS snippets embedded by Nim patches via staticRead ("../../js/..." from a patch)
 scripts/           # Build, validation, and launcher scripts

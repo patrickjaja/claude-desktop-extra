@@ -271,5 +271,78 @@ function axOpts(s){
   var list=grants(s);
   return{allowedApps:list,tier:function(id){return grantFor(id,list)?null:{error:err("\""+id+"\" is not in the allowed applications. Call request_access with it in the apps array first.")}}};
 }
-globalThis.__cdbCuConsent={active:active,mode:mode,key:key,text:text,grants:grants,ids:ids,grantFor:grantFor,gate:gate,clipboard:clipboard,openApp:openApp,needsGrant:needsGrant,shotIds:shotIds,shotNote:shotNote,lockReleased:lockReleased,axOpts:axOpts,systemCombo:systemCombo,_notedSize:function(){return _noted.size}};
+function diag(m){try{var d=globalThis.__cdbDiag;if(typeof d==="function")d(m)}catch(e){}}
+// ── What upstream tells the model and the UI about per-app access ──
+// Upstream describes its own Wayland portal executor: one shared screen, the
+// most permissive tier for all of it, screenshots of everything, and refusals
+// while one of its dialogs is open. Our bridges differ per backend, so two of
+// its answers come from here (fix_computer_use_linux.nim 16a / 16b / 16d):
+//   spSuffix()   the system-prompt suffix after the tier rules (local Cowork
+//                computer_use / cu_only sections, the session server's
+//                request_access result, the canUseTool deny message), on every
+//                Linux session in regular mode: "" in kwin mode (per-app,
+//                upstream's own rules hold), else what the live backend does.
+//   __cdbCuSharedScreen()  true = upstream's "shares the whole screen" answer
+//                (computerUsePerAppAccess unsupported, the "Entire screen"
+//                pseudo-grant). False in kwin mode; else true unless "Ask
+//                before Computer Use controls an app" is on AND the capture
+//                bridge masks (mask with gaps counts). Exec-free: it runs on
+//                every supported-features build (#184), so it reads the
+//                executor's capabilities getter (cached doctor), never
+//                capabilitiesNow() (which may run pgrep).
+var SP_OFF="\n\nOn this system (Linux) the apps you name are not checked before you act: screenshots show the whole screen, including apps the user did not ask for, and clicks and keystrokes go to whatever is under them. Act only in the apps the user asked for and leave everything else alone.";
+function spSuffix(){
+  var kw=!!globalThis.__cuKwinMode,m=kw?null:mode(),s;
+  if(kw)s="";
+  else if(!m.consent)s=SP_OFF;
+  else s=("\n\nOn this system (Linux) every app the user approves is granted at tier \"full\", whatever its category. "+shotSentence(m)+inputSentence(m)).replace(/\s+$/,"");
+  diag("[claude-cu] prompt suffix: "+(kw?"kwin mode (upstream's per-app rules, no suffix)":!m.consent?"ask-before-control off (apps not checked)":"screenshots "+(m.filtering==="mask"?"masked"+(m.gaps.length?" (gaps: "+m.gaps.join(",")+")":""):"unfiltered")+", hit test "+m.hitTest+", frontmost "+m.frontmost+(m.backend?" ("+m.backend+")":"")));
+  return s;
+}
+function waylandEnv(){var st=String(process.env.XDG_SESSION_TYPE||"");return st?st==="wayland":!!process.env.WAYLAND_DISPLAY}
+function sharedScreen(){
+  try{
+    if(globalThis.__cuKwinMode)return!1;
+    var e=ex(),f=e&&e.capabilities?e.capabilities.screenshotFiltering:"none";
+    return!(switchOn()&&f==="mask");
+  }catch(err){return waylandEnv()}
+}
+// The answer last handed to upstream (undefined before the first features
+// build) and the last one logged. A change after that first build re-signals
+// the renderer through upstream's own supported-features broadcast (16c,
+// globalThis.__cdbCuFeaturesChanged), so the UI does not keep the answer from
+// before the doctor replied or the background display / switch changed.
+var _ssLast,_ssLogged;
+globalThis.__cdbCuSharedScreen=function(){
+  var v=sharedScreen();
+  _ssLast=v;
+  if(v!==_ssLogged){_ssLogged=v;diag("[claude-cu] per-app access: "+(v?"whole shared screen (unsupported)":"per app (supported)"))}
+  return v;
+};
+// "Entire screen" pseudo-grant (16d): upstream adds it on Wayland, at the most
+// permissive tier of the grants, as if the whole screen were one app. Left out
+// (true here) in kwin mode (per app) and whenever "Ask before Computer Use
+// controls an app" is on in regular mode: our gate refuses unapproved apps, so
+// a listed whole-screen grant would mislead the model. This only removes the
+// pseudo-grant; with the switch off upstream's own rule decides.
+var _ngLogged;
+globalThis.__cdbCuNoScreenGrant=function(){
+  var v;
+  try{v=!!globalThis.__cuKwinMode||switchOn()}catch(e){v=!1}
+  if(v!==_ngLogged){_ngLogged=v;diag("[claude-cu] \"Entire screen\" grant: "+(v?"left out (per-app rules apply)":"upstream's rule"))}
+  return v;
+};
+function capChanged(why){
+  diag("[claude-cu] per-app access check ("+why+")");
+  if(_ssLast===void 0)return!1;
+  var v=sharedScreen();
+  if(v===_ssLast)return!1;
+  var f=globalThis.__cdbCuFeaturesChanged;
+  if(typeof f!=="function"){diag("[claude-cu] per-app access changed to "+(v?"unsupported":"supported")+" ("+why+"), but upstream's features broadcast is not captured");return!1}
+  _ssLast=v;
+  diag("[claude-cu] per-app access changed to "+(v?"unsupported":"supported")+" ("+why+") - re-signalling the renderer");
+  try{f()}catch(err){diag("[claude-cu] features re-signal failed: "+(err&&err.message||err));return!1}
+  return!0;
+}
+globalThis.__cdbCuConsent={active:active,mode:mode,key:key,text:text,grants:grants,ids:ids,grantFor:grantFor,gate:gate,clipboard:clipboard,openApp:openApp,needsGrant:needsGrant,shotIds:shotIds,shotNote:shotNote,lockReleased:lockReleased,axOpts:axOpts,systemCombo:systemCombo,spSuffix:spSuffix,capChanged:capChanged,_notedSize:function(){return _noted.size}};
 })();

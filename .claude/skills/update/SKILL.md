@@ -61,6 +61,8 @@ If patches fail (upstream renamed identifiers / refactored / removed a feature):
    The staged concatenation never passes `node --check` as a whole; the per-chunk `node --check` in the build is authoritative. A syntax error there means the patch replaced only part of a construct.
 4. Re-run the build until all patches pass. **Every sub-patch must succeed or `quit(1)`** - never `[WARN]`+continue. If a feature was upstreamed, **remove the patch** (`git rm`, bump `EXPECTED_PATCH_COUNT` in `scripts/apply_patches.py`). The absorption probe (`scripts/check-upstream-absorbed.py`, run by the build) flags ABSORBED/PARTIAL patches: audit that upstream ships the same behavior on Linux, then remove. FAILED means re-fit, not remove. A PARTIAL verdict can also be a false "already patched" in our own idempotency check (a prefix regex matching new, unrelated upstream code): read the matched site before removing anything. See AGENTS.md Rules 4/6.
 
+5. The build then runs the two census gates on the patched tree (`python3 -I scripts/check-predicate-consumers.py <patched tree>`, `python3 -I scripts/check-refusal-strings.py --strict <patched tree>`, which turns warnings (weak-topic new strings, stale pins, `accepted` site-count changes) into failures so the pins are refreshed on every bump; see `docs/census-gates.md`). Red after a bump means a new consumer or refusal string, or a stale anchor/shape: audit the new code path, patch it at the definition, or add a reviewed baseline entry (loosening needs @patrickjaja in the commit); re-fit a stale anchor like a patch anchor.
+
 ## Step 2 - Linux-compat analysis (new gates?)
 Diff old vs new for newly darwin/win32-gated features that need Linux support (`OLD`/`NEW` = the two concatenations from the search rules):
 ```bash

@@ -323,7 +323,7 @@ function _tgtLatch(why,keep){
   if(keep&&_tgtKey(r)===(prev?prev.key:""))return !1;
   if(_tgtKey(r)!==(prev?prev.key:""))_tgtGen++;
   _tgtResetShot(prev?prev.key:"",_tgtKey(r));
-  if(!r){_tgt=null;if(prev){_wlScreensInvalidate();_x11ScreensInvalidate();globalThis.__cdbDiag("[claude-cu] diagnostics: target=off - back on the desktop session ("+why+")")}return !!prev}
+  if(!r){_tgt=null;if(prev){_wlScreensInvalidate();_x11ScreensInvalidate();globalThis.__cdbDiag("[claude-cu] diagnostics: target=off - back on the desktop session ("+why+")");_cuAnnounceCheck("background display off");_cuCapChanged("background display off")}return !!prev}
   var t={kind:r.kind,display:r.display,bin:null,env:null,refuse:null,why:null,probe:null,key:_tgtKey(r)};
   if(r.invalid){t.why="invalid";t.refuse="Computer Use is set to a background display, but the setting is invalid: "+r.invalid+". Fix it, or "+_CU_TGT_OFF}
   else{
@@ -333,6 +333,8 @@ function _tgtLatch(why,keep){
   }
   _tgt=t;_wlScreensInvalidate();_x11ScreensInvalidate();
   globalThis.__cdbDiag("[claude-cu] diagnostics: target="+(r.invalid?"invalid ("+r.invalid+")":r.kind+" "+r.display+" via "+(t.bin||"(no bridge)")+(r.env&&Object.keys(r.env).length?" env+"+Object.keys(r.env).join(","):""))+" ("+why+")");
+  _cuAnnounceCheck("background display changed");
+  _cuCapChanged("background display changed");
   return !0;
 }
 // What follows a (re)latch: a GNOME portal session left from a desktop lock
@@ -1180,7 +1182,35 @@ function _gnomeLatchStopped(why){
   _gnomeStoppedByUser=!0;_gnomeSessionActive=!1;_gnomeDaemonMayExist=!0;_gnomeMouseHeld=!1;_wlScreensInvalidate();
   globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge: screen sharing was stopped ("+why+"); no new session until the task ends or "+Math.round(CU_PORTAL_IDLE_MS/1000)+" s pass without Computer Use actions");
   _gnomeIdleArm();_gnomeCheckArm();
+  _gnomeShareEnded(why);
 }
+// STOP SHARING = ABORT THE TURN (maintainer ruling 2026-11-10). The latch alone
+// only refused the NEXT action; the turn kept going until the model tried one.
+// Upstream's own "user stopped sharing" abort (globalThis.__cdbCuShareEnded,
+// sub-patch 17c; it stops the lock holder and every app-mode holder, as its
+// Escape does) runs once per lock hold and once per task within a hold (cloud
+// Cowork holds one lock across tasks): the watch below and a command's exit 5
+// both end up here.
+var _gnomeShareFireArmed=!0;
+function _gnomeShareEnded(why){
+  if(!_gnomeShareFireArmed)return;
+  _gnomeShareFireArmed=!1;
+  var s=globalThis.__cdbCuShareStop;
+  if(s&&typeof s.fire==="function")s.fire("gnome-portal-bridge",why);
+}
+// The daemon writes the stopped-by-user marker and exits; it is a setsid'd
+// grandchild (session-start returns once it is ready), so there is no exit
+// event of ours to wait for: watch its runtime dir (js/cu_share_stop.js) from
+// the moment a session is up until it ends.
+var _gnomeShareWatch=null;
+function _gnomeShareWatchArm(){
+  if(_gnomeShareWatch)return;
+  var s=globalThis.__cdbCuShareStop;if(!s||typeof s.watch!=="function")return;
+  _gnomeShareWatch=s.watch("gnome-portal-bridge",function(){
+    if(_gnomeSessionActive&&!_gnomeSessionEnding&&!_gnomeStoppedByUser&&_gnomeStoppedMarker())_gnomeMarkStopped("stopped-by-user marker appeared");
+  });
+}
+function _gnomeShareWatchClose(){if(_gnomeShareWatch){_gnomeShareWatch.close();_gnomeShareWatch=null}}
 // A portal COMMAND answered exit 5: latch and return the error for the model.
 // Not while a start or an end is in flight: those own the flags (a marker left
 // from before this lock's session-start is that start's to remove), so the
@@ -1387,9 +1417,9 @@ function _gnomeEnsureSessionSync(){
   var bin=_gnomeBridgeBin();if(!bin)return !1;
   if(!_gnomeExitHooked){_gnomeExitHooked=!0;process.once("exit",function(){if(_gnomeSessionActive||_gnomeDaemonMayExist){try{_cp.execFileSync(_gnomeBridgeBin(),["session-end"],{timeout:5000,stdio:"ignore"})}catch(e){}}})}
   _gnomeDaemonMayExist=!0;
-  try{_bridge(bin,["session-start"],GNOME_SYNC_START_MS);_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();_gnomeCheckArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session started (sync backstop)");return !0}
+  try{_bridge(bin,["session-start"],GNOME_SYNC_START_MS);_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();_gnomeCheckArm();_gnomeShareWatchArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session started (sync backstop)");return !0}
   catch(e){
-    if(_gnomeAlreadyActive(e)){_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();_gnomeCheckArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session already active (sync backstop); using it");return !0}
+    if(_gnomeAlreadyActive(e)){_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();_gnomeCheckArm();_gnomeShareWatchArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session already active (sync backstop); using it");return !0}
     // Closed before it became ready: a stop, not a fault - latch, no cooldown, no retry.
     if(e&&e.__cdbStoppedByUser){_gnomeLatchStopped("sync backstop session-start exit 5");return !1}
     // No restore token (the user left "Remember this selection" unticked, or
@@ -1575,9 +1605,9 @@ function _gnomeAlreadyActive(e){return /already active/i.test(String(e&&(e.messa
 async function _gnomeSessionStart(){
   var bin=_gnomeBridgeBin();if(!bin)return;
   _gnomeDaemonMayExist=!0;
-  try{await _bridgeAsync(bin,["session-start"],GNOME_SESSION_START_MS);_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();_gnomeCheckArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session started")}
+  try{await _bridgeAsync(bin,["session-start"],GNOME_SESSION_START_MS);_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();_gnomeCheckArm();_gnomeShareWatchArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session started")}
   catch(e){
-    if(_gnomeAlreadyActive(e)){_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();_gnomeCheckArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session already active; using it");return}
+    if(_gnomeAlreadyActive(e)){_gnomeSessionActive=!0;_gnomePortalClearDown();_wlScreensInvalidate();_gnomeIdleArm();_gnomeCheckArm();_gnomeShareWatchArm();globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge session already active; using it");return}
     // The new daemon was closed before it became ready (the user stopped
     // sharing, or the desktop ended the session): latch for this lock instead
     // of the cooldown, so nothing starts it again until the lock ends.
@@ -1611,7 +1641,7 @@ async function _gnomeSessionEnd(why){
   // Every end cancels the idle timer and drops a held button (the daemon that
   // pressed it goes away); the next session arms the timer afresh.
   _gnomeIdleCancel();_gnomeMouseHeld=!1;_gnomeHeldDeferred=!1;
-  _gnomeCheckStop(why||"lock released");
+  _gnomeCheckStop(why||"lock released");_gnomeShareWatchClose();
   if(_gnomeSessionEnding)return _gnomeSessionEnding;
   var bin=_gnomeBridgeBin();
   // Snapshot BEFORE clearing: the skip below has to ask whether a session was up
@@ -1975,6 +2005,12 @@ function _tgtMonitors(){
 }
 // Async entry points call this first, so the sync _getMonitors has the
 // target's list even when upstream calls in before our handler's gate.
+// A Computer Use ACTION (capture, input, opening an app; not enumeration,
+// icons or capability probes, which upstream also runs between turns): the
+// Escape watcher (community switch, js/cu_esc_watch.js) re-arms a watcher it
+// parked at a cloud turn end. Sync and cheap (a flag check); absent or off =
+// nothing.
+function _escAct(){try{globalThis.__cdbCuEscWatch?.toolCall?.()}catch(ee){}}
 async function _tgtPrime(){var g=_tgtGen;await _tgtSync("tool call");if(_tgtGen!==g)throw _tgtChangedErr();if(!_tgt||_tgt.mons||!_tgt.bin||_tgt.refuse)return;var c=_tgt.kind==="x11"?_x11ScreensCache:_wlScreensCache;if(!(Array.isArray(c)&&c.length))await _tgtProbe(_tgt)}
 function _getMonitors(){
   if(_tgt)return _tgtMonitors();
@@ -2097,6 +2133,30 @@ function _x11PxRect(x,y,w,h,displayIdx){
 }
 var _inputLogDone={mouse:false,click:false,key:false,type:false,scroll:false,drag:false,window:false,app:false};
 function _logFirstUse(op,backend){if(!_inputLogDone[op]){_inputLogDone[op]=true;globalThis.__cdbDiag("[claude-cu] "+op+": using "+backend)}}
+// A model-injected Escape must not trip the user's Escape watcher (js/
+// cu_esc_watch.js, community switch "Escape stops Computer Use"): every input
+// that can carry one runs inside its suspendAround, which only talks to an
+// armed watcher that is not syntheticSafe (KDE kglobalaccel) and else just runs
+// it. Other input is never wrapped; without the community patch, or with its
+// switch off, fn just runs.
+function _escAround(esc,fn,ms){var w=globalThis.__cdbCuEscWatch;return esc&&typeof w?.suspendAround==="function"?w.suspendAround(fn,ms):fn()}
+function _escKeys(v){var w=globalThis.__cdbCuEscWatch;return typeof w?.hasEscape==="function"&&w.hasEscape(v)===!0}
+// Upstream's own executor marks each key / holdKey whose keys are exactly one
+// Escape as expected (sub-patch 17e: globalThis.__cdbCuExpectEscape, a 100 ms
+// counter its X11 Escape grab reads), so the grab absorbs the model's Escape
+// instead of stopping the turn. Same rule here, called right before the
+// injection: one mark per press (a repeated key marks each repetition).
+function _escExpect(keys,n){
+  try{
+    var f=globalThis.__cdbCuExpectEscape;if(typeof f!=="function")return;
+    var t=(Array.isArray(keys)?keys:String(keys==null?"":keys).split("+")).filter(function(k){return String(k).length>0});
+    if(t.length!==1)return;
+    var k=String(t[0]).trim().toLowerCase();
+    if(k!=="escape"&&k!=="esc")return;
+    for(var i=0,m=Math.max(1,n|0);i<m;i++)f();
+  }catch(e){}
+}
+function _escText(t){return typeof t==="string"&&t.indexOf("\x1b")>=0}
 // True when a covered Wayland session (wlroots/GNOME) has a resolved bridge —
 // input/screenshot/windows all route through it and the ydotool path is skipped.
 function _useWlBridge(){return(_tgt||_wayland)&&!!_wlBridge()}
@@ -2286,6 +2346,12 @@ async function _dtResolve(bundleIds){
 // GNOME, ydotool, XWayland-only, COWORK_SCREENSHOT_CMD and the desktopCapturer
 // fallback have no masking bridge at all (_bcBridge null).
 var CU_BRIDGE_CAPS_TTL_MS=60000,CU_BRIDGE_DOCTOR_MS=8000;
+// A failed doctor is asked again on the next capture (_bcProbe), but the sync
+// capability reads (_bcNow: capabilitiesNow, the capabilities getter, which
+// upstream's supported-features build reads on every call) wait this long
+// before they start another one, so a doctor that keeps failing cannot be
+// spawned per read.
+var CU_BRIDGE_CAPS_FAIL_TTL_MS=30000;
 var _bcCache={};
 // windows=true: the bridge whose window list is used (COWORK_SCREENSHOT_CMD
 // only replaces the capture).
@@ -2320,9 +2386,12 @@ function _bcProbe(be){
     if(_bcCache[k]!==ent)return res;
     ent.p=null;
     // A failed doctor is asked again on the next capture, not kept a minute.
-    if(res.error){ent.res=null;ent.at=0}else{ent.res=res;ent.at=Date.now()}
+    if(res.error){ent.res=null;ent.at=0;ent.failAt=Date.now()}else{ent.res=res;ent.at=Date.now();ent.failAt=0}
     var line="[claude-cu] "+be.name+" capabilities: "+(res.error?res.error:"screenshot mask "+(res.mask?"yes"+(res.gaps.length?" (not covered: "+res.gaps.join(", ")+")":""):"no"+(res.why?" ("+res.why+")":""))+", window geometry "+(res.geometry?"yes":"no"));
     if(ent.line!==line){ent.line=line;globalThis.__cdbDiag(line)}
+    // The per-app access answer upstream's UI shows may follow the mask
+    // (js/cu_consent.js capChanged re-signals the renderer when it changed).
+    _cuCapChanged(be.name+" doctor answered");
     return res;
   });
   return ent.p;
@@ -2332,10 +2401,27 @@ function _bcProbe(be){
 function _bcNow(be){
   if(!be)return null;
   var c=_bcCache[_bcKey(be)];
-  if(!c||!c.res||Date.now()-c.at>=CU_BRIDGE_CAPS_TTL_MS){try{_bcProbe(be).catch(function(){})}catch(e){}}
+  var recentFail=!!(c&&!c.res&&c.failAt&&Date.now()-c.failAt<CU_BRIDGE_CAPS_FAIL_TTL_MS);
+  if(!recentFail&&(!c||!c.res||Date.now()-c.at>=CU_BRIDGE_CAPS_TTL_MS)){try{_bcProbe(be).catch(function(){})}catch(e){}}
   return c&&c.res||null;
 }
 function _bcWarm(){try{_bcNow(_bcBridge(!0))}catch(e){}}
+// Remote device (cloud Cowork / Dispatch): js/cu_mode_preamble.js decides once
+// at start whether a first-party bridge is usable on this Wayland session
+// (globalThis.__cdbCuWaylandAnnounce, which sub-patch 4g's
+// isBridgeComputerUsePlatform follows). A background display turned off or
+// broken at run time can leave only paths the preamble reserves for Code
+// sessions (XWayland x11-bridge, ydotool, spectacle), so the latch only ever
+// moves to false here (exec-free: env, globals and the latched target), with
+// one log line; a display turned on later stays refused until a restart.
+function _cuAnnounceCheck(why){
+  if(globalThis.__cdbCuWaylandAnnounce!==!0)return;
+  var ok=_tgt?!_tgt.refuse&&!!_tgt.bin:!!(_wayland&&_useWlBridge());
+  if(ok)return;
+  globalThis.__cdbCuWaylandAnnounce=!1;
+  globalThis.__cdbDiag("[claude-cu] remote device: computer tools withdrawn on Wayland ("+why+"): no first-party bridge usable now - cloud Cowork and Dispatch are refused until a restart");
+}
+function _cuCapChanged(why){try{var cc=globalThis.__cdbCuConsent;if(cc&&typeof cc.capChanged==="function")cc.capChanged(why)}catch(e){}}
 function _bcForget(be){if(be)delete _bcCache[_bcKey(be)]}
 function _filteringNow(){var r=_bcNow(_bcBridge());return r&&r.mask?"mask":"none"}
 // ── Allowlist mask (screenshot / zoom / resolvePrepareCapture) ──
@@ -2501,6 +2587,7 @@ var _ex=globalThis.__linuxExecutor={
     // (4b passes upstream's exclusiveHolder; 4b.2 releases without one).
     _gnomeHolder=held&&typeof holder==="string"?holder:null;
     globalThis.__cdbDiag?.("[claude-cu] "+(held?"lock taken by "+(_gnomeHolder||"none"):"lock released"));
+    if(held)_gnomeShareFireArmed=!0;
     if(!held)_gnomeCheckStop("lock released");
     // The ask-before-control notes ("screenshots are not filtered") are once
     // per session and lock (js/cu_consent.js).
@@ -2539,12 +2626,15 @@ var _ex=globalThis.__linuxExecutor={
   // Then it does what the idle expiry does: end the portal session and lift a
   // stop-sharing latch. Nothing up: silent, it fires on every turn end.
   async __cuTaskBoundary(id,source,holder){
+    // The turn ended: an Escape watcher (community switch) parks until the next action.
+    try{globalThis.__cdbCuEscWatch?.taskEnded?.(id,source,holder)}catch(ee){}
     globalThis.__cdbDiag("[claude-cu] task boundary ("+source+"): received id="+id+" holder="+holder+" active="+_gnomeSessionActive+" starting="+_gnomeSessionStarting+" daemonMayExist="+_gnomeDaemonMayExist+" stoppedByUser="+_gnomeStoppedByUser+" gnomeCovered="+_isGnomeCovered());
     if(!_isGnomeCovered()||!_gnomeBridgeBin())return;
     if(!_gnomeSessionActive&&!_gnomeSessionStarting&&!_gnomeDaemonMayExist&&!_gnomeStoppedByUser)return;
     function key(v){return String(v).toLowerCase().replace(/^(?:session_|cse_)/,"")}
     if(id!=null&&holder!=null&&key(id)!==key(holder)){globalThis.__cdbDiag("[claude-cu] task boundary ("+source+"): ignored, it names another session than the Computer Use lock holder");return}
     globalThis.__cdbDiag("[claude-cu] task boundary ("+source+"): ending the portal session");
+    _gnomeShareFireArmed=!0;
     _gnomeCheckStop("task boundary");
     await _gnomeSessionEnd("task boundary");
   },
@@ -2621,6 +2711,7 @@ var _ex=globalThis.__linuxExecutor={
   // unmasked; an array = mask mode (see "Allowlist mask"), which throws
   // rather than capture unmasked.
   async screenshot(opts){
+    _escAct();
     await _tgtPrime();
     var mon=_findMon(opts&&opts.displayId);
     var al=opts?opts.allowedBundleIds:void 0,mk=await _maskFor(al);
@@ -2645,6 +2736,7 @@ var _ex=globalThis.__linuxExecutor={
     }
   },
   async __resolvePrepareCapture(opts){
+    _escAct();
     await _tgtPrime();
     var did=opts&&opts.preferredDisplayId;
     if(did==null){var sdid=await _gnomeSharedDefaultDisplayId();if(sdid!=null)did=sdid}
@@ -2678,6 +2770,7 @@ var _ex=globalThis.__linuxExecutor={
   // (rect, 1, displayId) call) = unmasked, global coordinates, as before.
   // scale is not used: every tier downscales by the bridges' rule.
   async zoom(rect,allowedBundleIds,displayId,scale,opts){
+    _escAct();
     await _tgtPrime();
     var legacy=allowedBundleIds!==void 0&&!Array.isArray(allowedBundleIds);
     var mon=displayId!=null?_findMon(displayId):_findMonByPoint(rect.x,rect.y);
@@ -2834,6 +2927,7 @@ var _ex=globalThis.__linuxExecutor={
   appAliases(bundleId){return _aAliases(bundleId)},
   async getAppIcon(appPath){return null},
   async openApp(name){
+    _escAct();
     await _tgtPrime();
     var _appDirs=_xdgAppDirs();
     // Parse all .desktop entries once (shared parser: [Desktop Entry] group,
@@ -3034,11 +3128,13 @@ var _ex=globalThis.__linuxExecutor={
     // emits the original "Opened app" text byte-for-byte.
     return{action:"opened",app:name};
   },
-  async moveMouse(x,y){await _tgtPrime();_moveMouse(x,y)},
+  async moveMouse(x,y){_escAct();await _tgtPrime();_moveMouse(x,y)},
   async click(x,y,button,count,holdKeys){
+    _escAct();
     await _tgtPrime();
     _moveMouse(x,y);
     var rep=count||1;
+    return _escAround(_escKeys(holdKeys),function(){
     if(_useWlBridge()){
       _logFirstUse("click",_wlBridge().name);
       var _wbtn={left:"left",right:"right",middle:"middle"}[button]||"left";
@@ -3065,14 +3161,17 @@ var _ex=globalThis.__linuxExecutor={
       if(holdKeys&&holdKeys.length>0){for(var i=0;i<holdKeys.length;i++){_cargs.push("--modifier",holdKeys[i])}}
       _x11Bridge(_cargs);
     }
+    });
   },
   async mouseDown(){
+    _escAct();
     await _tgtPrime();
     if(_useWlBridge()){_logFirstUse("drag",_wlBridge().name);_wlBridgeCall(["left-mouse-down"])}
     else if(_wayland&&_checkYdotool()){_logFirstUse("drag","ydotool");_ydotool(["click","0x40"])}
     else{_logFirstUse("drag","x11-bridge");_x11Bridge(["left-mouse-down"])}
   },
   async mouseUp(){
+    _escAct();
     await _tgtPrime();
     if(_useWlBridge()){_wlBridgeCall(["left-mouse-up"])}
     else if(_wayland&&_checkYdotool()){_ydotool(["click","0x80"])}
@@ -3089,6 +3188,7 @@ var _ex=globalThis.__linuxExecutor={
     return{x:p.x,y:p.y};
   },
   async drag(start,end){
+    _escAct();
     await _tgtPrime();
     if(_useWlBridge()){
       _logFirstUse("drag",_wlBridge().name);
@@ -3113,6 +3213,7 @@ var _ex=globalThis.__linuxExecutor={
     }
   },
   async scroll(x,y,horizontal,vertical){
+    _escAct();
     await _tgtPrime();
     _moveMouse(x,y);
     if(_useWlBridge()){
@@ -3132,8 +3233,11 @@ var _ex=globalThis.__linuxExecutor={
     }
   },
   async key(combo,count){
+    _escAct();
     await _tgtPrime();
     var n=count||1;
+    return _escAround(_escKeys(combo),function(){
+    _escExpect(combo,n);
     if(_useWlBridge()){
       // Both Wayland bridges parse the CU key-spec grammar themselves — pass through.
       _logFirstUse("key",_wlBridge().name);
@@ -3158,10 +3262,14 @@ var _ex=globalThis.__linuxExecutor={
       if(n>1){_kargs.push("--repeat",String(n))}
       _x11Bridge(_kargs);
     }
+    });
   },
   async holdKey(keyName,seconds){
+    _escAct();
     await _tgtPrime();
     var secs=Math.min(seconds||0.5,10);
+    return _escAround(_escKeys(keyName),function(){
+    _escExpect([keyName],1);
     if(_useWlBridge()){
       _logFirstUse("key",_wlBridge().name);
       _wlBridgeCall(["hold-key","--key",keyName,"--duration-ms",String(Math.round(secs*1000))]);
@@ -3175,8 +3283,10 @@ var _ex=globalThis.__linuxExecutor={
       _logFirstUse("key","x11-bridge");
       _x11Bridge(["hold-key","--key",keyName,"--duration-ms",String(Math.round(secs*1000))]);
     }
+    },secs*1000);
   },
   async type(text,opts){
+    _escAct();
     await _tgtPrime();
     if(_tgt&&opts&&opts.viaClipboard){
       // Paste through the target's own clipboard (never the desktop's).
@@ -3191,7 +3301,7 @@ var _ex=globalThis.__linuxExecutor={
         await _electron.clipboard.writeText(text,"clipboard");
         _wlBridgeCall(["key-sequence","--keys","ctrl+v"]);
       }else{
-        _wlBridgeCall(["type","--text",text]);
+        return _escAround(_escText(text),function(){_wlBridgeCall(["type","--text",text])},text.length*12);
       }
     }else if(_wayland&&_checkYdotool()){
       _logFirstUse("type","ydotool"+(opts&&opts.viaClipboard?" (clipboard)":""));
@@ -3199,7 +3309,7 @@ var _ex=globalThis.__linuxExecutor={
         await _electron.clipboard.writeText(text,"clipboard");
         _ydotool(["key","29:1","47:1","47:0","29:0"]);
       }else{
-        _ydotool(["type","--",text]);
+        return _escAround(_escText(text),function(){_ydotool(["type","--",text])},text.length*12);
       }
     }else{
       _logFirstUse("type","x11-bridge"+(opts&&opts.viaClipboard?" (clipboard)":""));
@@ -3207,7 +3317,7 @@ var _ex=globalThis.__linuxExecutor={
         await _electron.clipboard.writeText(text,"clipboard");
         _x11Bridge(["key-sequence","--keys","ctrl+v"]);
       }else{
-        _x11Bridge(["type","--text",text]);
+        return _escAround(_escText(text),function(){_x11Bridge(["type","--text",text])},text.length*12);
       }
     }
   },
@@ -3226,4 +3336,7 @@ var _ex=globalThis.__linuxExecutor={
     await _electron.clipboard.writeText(text||"","clipboard");
   }
 };
+// Ask the capture bridge's doctor now (async), so the first prompt suffix and
+// supported-features answer (js/cu_consent.js) already know whether it masks.
+_bcWarm();
 })();
