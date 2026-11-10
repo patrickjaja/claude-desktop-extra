@@ -97,7 +97,7 @@ function makeRig(host, files = {}, opts = {}) {
   const spawns = [], diag = [], dc = [], clip = [], screenCalls = [], stdin = [];
   // state.windows(launched) -> the bridge `windows` list; launched = an app
   // was spawned. state.clipErr: stderr of a failing clipboard read.
-  const state = { reads: 0, stats: 0, files, screens: opts.screens || (() => SCREENS), zoomFail: opts.zoomFail || false, windows: opts.windows || (() => []), launched: false, clipErr: null, throwScreen: false };
+  const state = { reads: 0, stats: 0, files, screens: opts.screens || (() => SCREENS), zoomFail: opts.zoomFail || false, windows: opts.windows || (() => []), launched: false, clipErr: null, throwScreen: false, ydotoold: opts.ydotoold !== false };
   const reply = (bin, args) => {
     const b = path.basename(String(bin)), sub = args[0];
     if (/^(xclip|xsel|wl-paste)$/.test(b)) { if (state.clipErr) { const e = new Error("Command failed: " + b); e.code = 1; e.stderr = state.clipErr; throw e; } if (state.clipLag > 0) { state.clipLag--; return "old"; } return state.clipVal !== undefined ? state.clipVal : "clip:" + b; }
@@ -116,7 +116,7 @@ function makeRig(host, files = {}, opts = {}) {
       const b = path.basename(String(bin));
       if (b === "systemd-detect-virt") return "none\n";
       rec("sync", bin, args, o);
-      if (b === "pgrep") return "1\n";
+      if (b === "pgrep") { if (!state.ydotoold) { const e = new Error("Command failed: pgrep"); e.status = 1; throw e; } return "1\n"; }
       if (b === "ydotool" || b === "spectacle" || b === "convert") return "";
       return reply(bin, args);
     },
@@ -161,7 +161,7 @@ function makeRig(host, files = {}, opts = {}) {
     writeFileSync() {}, unlinkSync() {}, renameSync() {},
     accessSync(p, mode) {
       if (mode === 2) { const d = dirs[String(p)]; if (!d) throw enoent(p); if (d.ro) { const e = new Error(d.ro + ": " + p); e.code = d.ro; throw e; } return; }
-      if (!installed.has(String(p)) && !installed.has(realpath(p)) && !String(p).endsWith(".ydotool_socket")) throw new Error("ENOENT");
+      if (!installed.has(String(p)) && !installed.has(realpath(p)) && !(String(p).endsWith(".ydotool_socket") && state.ydotoold)) throw new Error("ENOENT");
     },
     lstatSync(p) {
       const k = String(p);
@@ -1339,6 +1339,35 @@ for (const [label, files, wantKwin] of [["off", {}, true], ["on", { "claude-desk
   await new AsyncFunction("require", "process", PREAMBLE)(reqP, process);
   check(globalThis.__cuKwinMode === wantKwin, `KDE 6.6 + kwin-portal-bridge, setting ${label}: kwin mode ${wantKwin}`, String(globalThis.__cuKwinMode));
   if (!wantKwin) check(!spawned.some((s) => /kwin/.test(s)), "no kwin probe spawned", JSON.stringify(spawned));
+}
+
+// ---------------- ydotoold started while the app runs (KDE Wayland, regular executor)
+// A false ydotool check is re-checked after MISS_TTL_MS (5 s), only when a
+// caller asks; a true one is kept.
+{
+  console.log("\n[ydotool: daemon started after a failed check is picked up after 5 s, then kept]");
+  const r = makeRig("kde", {}, { ydotoold: false });
+  await r.ex.__setLockHeld(true);
+  // No reset between calls: pgrep counts are deltas, the log count is the total.
+  let seen = 0;
+  const pgTotal = () => r.spawns.filter((s) => s.bin === "pgrep").length;
+  const via = async () => { const from = r.spawns.length, p0 = pgTotal(); const o = await settle(r.ex.click(100, 100, "left", 1)); const sp = r.spawns.slice(from); const v = o.e ? "E:" + o.e.message : sp.some((s) => s.bin === "ydotool") ? "ydotool" : sp.some((s) => s.bin === "x11-bridge") ? "x11-bridge" : JSON.stringify(sp.map((s) => s.bin)); seen = p0; return v; };
+  const pg = () => pgTotal() - seen;
+  const logs = () => r.diag.filter((l) => l.includes("ydotoold not running")).length;
+  const a = await via(), aPg = pgTotal();
+  r.state.ydotoold = true;
+  NOW_OFF += 4000;
+  const b = await via(), bPg = pg();
+  NOW_OFF += 1000;
+  const c = await via(), cPg = pg();
+  r.state.ydotoold = false;
+  NOW_OFF += 3600000;
+  const d = await via(), dPg = pg();
+  check(a === "x11-bridge" && aPg >= 1, "no ydotoold: x11-bridge fallback after a pgrep check", JSON.stringify({ a, aPg }));
+  check(b === "x11-bridge" && bPg === 0, "daemon up, within 5 s: still the fallback, no new pgrep", JSON.stringify({ b, bPg }));
+  check(c === "ydotool" && cPg === 1, "after 5 s: re-checked once on the next call, ydotool used", JSON.stringify({ c, cPg }));
+  check(d === "ydotool" && dPg === 0, "a true result is kept (no pgrep an hour later, daemon gone)", JSON.stringify({ d, dPg }));
+  check(logs() === 1, "'ydotoold not running' logged once, not on every re-check", logs());
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

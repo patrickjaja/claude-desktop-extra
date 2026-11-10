@@ -231,13 +231,17 @@ function _toolPath(){
 // does not (as before), null when it is missing. A helper present only in a
 // started dir that fails the rule (~/.local/bin/wl-copy) is missing; that is
 // logged once per tool and named by _toolIgnoredMsg. Cached per (PATH, started
-// PATH, tool); fresh bypasses the cache (launch pre-checks: a tool installed
-// after the first attempt must work without a restart).
-var _toolCache={},_toolIgn={},_toolSaid={};
+// PATH, tool): a hit for good, a miss for MISS_TTL_MS only, so a tool
+// installed while the app runs is seen a few seconds later without a restart
+// (the old bare-name spawn saw it at once). fresh bypasses the cache (launch
+// pre-checks, the clipboard tools: seen at once).
+var MISS_TTL_MS=5000;
+var _toolCache={},_toolMissAt={},_toolIgn={},_toolSaid={};
 function _toolCmd(bin,fresh){
   var s=_startedRaw(),P=process.env.PATH||"",ck=P+"\0"+(s===null?"":s)+"\0"+bin;
   if(fresh)delete _toolCache[ck];
-  if(_toolCache[ck]!==void 0)return _toolCache[ck];
+  var c=_toolCache[ck];
+  if(c!==void 0&&(c!==null||Date.now()-_toolMissAt[ck]<MISS_TTL_MS))return c;
   var r=null;
   if(s===null)r=_walk(P.split(":"),bin)?bin:null;
   else{
@@ -252,7 +256,7 @@ function _toolCmd(bin,fresh){
     if(r)delete _toolIgn[bin];
     else if(ign){_toolIgn[bin]=ign;if(!_toolSaid[bin+"\0"+ign]){_toolSaid[bin+"\0"+ign]=1;globalThis.__cdbDiag("[claude-cu] tools: "+bin+" found only in "+ign+", a user-writable folder - ignored (Computer Use runs its own tools only from system folders)")}}
   }
-  _toolCache[ck]=r;return r;
+  _toolCache[ck]=r;if(r===null)_toolMissAt[ck]=Date.now();return r;
 }
 // " (<tool> was found in <dir>, a user-writable folder, ...)" for the tools of
 // a "missing" message that were ignored, else "".
@@ -906,8 +910,13 @@ async function _launchEntry(e,label){
   throw new Error("Could not launch "+label+": "+reasons.join("; "));
 }
 function _desktopId(){return(process.env.XDG_CURRENT_DESKTOP||"").toLowerCase()}
-var _ydotoolOk=null;
-function _checkYdotool(){if(_tgt)return false;if(_ydotoolOk!==null)return _ydotoolOk;if(!_hasCmd("ydotool")){_ydotoolOk=false;return false}try{_cp.execFileSync(_toolCmd("pgrep")||"pgrep",["-x","ydotoold"],{timeout:2000,stdio:"pipe"});_ydotoolOk=true}catch(e){var sock=(process.env.YDOTOOL_SOCKET||"")||((process.env.XDG_RUNTIME_DIR||"/tmp")+"/.ydotool_socket");try{_fs.accessSync(sock);_ydotoolOk=true}catch(se){globalThis.__cdbDiag("[claude-cu] ydotool found but ydotoold not running — falling back to x11-bridge (XWayland)");_ydotoolOk=false}}return _ydotoolOk}
+// ydotool usable (installed, and ydotoold running or its socket present). Like
+// _toolCmd: true is kept for good, false for MISS_TTL_MS only, so installing
+// ydotool or starting ydotoold while the app runs is seen a few seconds later
+// without a restart. Re-checked only when a caller asks (at most one pgrep per
+// MISS_TTL_MS), never on a timer.
+var _ydotoolOk=null,_ydotoolNoAt=0,_ydotoolSaid=!1;
+function _checkYdotool(){if(_tgt)return false;if(_ydotoolOk===true||_ydotoolOk===false&&Date.now()-_ydotoolNoAt<MISS_TTL_MS)return _ydotoolOk;_ydotoolOk=false;if(_hasCmd("ydotool")){try{_cp.execFileSync(_toolCmd("pgrep")||"pgrep",["-x","ydotoold"],{timeout:2000,stdio:"pipe"});_ydotoolOk=true}catch(e){var sock=(process.env.YDOTOOL_SOCKET||"")||((process.env.XDG_RUNTIME_DIR||"/tmp")+"/.ydotool_socket");try{_fs.accessSync(sock);_ydotoolOk=true}catch(se){if(!_ydotoolSaid){_ydotoolSaid=!0;globalThis.__cdbDiag("[claude-cu] ydotool found but ydotoold not running - falling back to x11-bridge (XWayland)")}}}}_ydotoolNoAt=Date.now();return _ydotoolOk}
 // ── x11-bridge: first-party X11/XWayland backend (replaces xdotool/scrot/import/wmctrl) ──
 // The binary is resolved in cu_mode_preamble.js into globalThis.__cuX11BridgeBin.
 function _x11BridgeBin(){if(_tgt)return _tgt.kind==="x11"?_tgt.bin:null;return process.env.X11_BRIDGE_BIN||globalThis.__cuX11BridgeBin}

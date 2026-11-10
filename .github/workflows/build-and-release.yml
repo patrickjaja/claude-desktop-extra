@@ -1337,8 +1337,7 @@ jobs:
               bash -c "
                 set -e
                 export DEBIAN_FRONTEND=noninteractive
-                apt-get update
-                apt-get install -y xvfb libgtk-3-0 libnss3 libasound2 libgbm1 libnotify4
+                sh /scripts/apt-install-retry.sh xvfb libgtk-3-0 libnss3 libasound2 libgbm1 libnotify4
 
                 cp /dist/Claude_Desktop-*-x86_64.AppImage /tmp/
                 chmod +x /tmp/Claude_Desktop-*-x86_64.AppImage
@@ -1473,8 +1472,7 @@ jobs:
               bash -c "
                 set -e
                 export DEBIAN_FRONTEND=noninteractive
-                apt-get update
-                apt-get install -y /dist/claude-desktop-extra_*_arm64.deb
+                sh /scripts/apt-install-retry.sh /dist/claude-desktop-extra_*_arm64.deb
                 test -f /usr/lib/claude-desktop/claude
                 test -f /usr/lib/claude-desktop/resources/app.asar
                 test -x /usr/bin/claude-desktop
@@ -1489,8 +1487,7 @@ jobs:
               bash -c "
                 set -e
                 export DEBIAN_FRONTEND=noninteractive
-                apt-get update
-                apt-get install -y xvfb /dist/claude-desktop-extra_*_amd64.deb
+                sh /scripts/apt-install-retry.sh xvfb /dist/claude-desktop-extra_*_amd64.deb
                 bash /scripts/smoke-test.sh \
                   /usr/lib/claude-desktop/claude
               "
@@ -1503,8 +1500,7 @@ jobs:
               bash -c "
                 set -e
                 export DEBIAN_FRONTEND=noninteractive
-                apt-get update
-                apt-get install -y xvfb /dist/claude-desktop-extra_*_amd64.deb
+                sh /scripts/apt-install-retry.sh xvfb /dist/claude-desktop-extra_*_amd64.deb
                 test -f /usr/lib/claude-desktop/claude
                 test -f /usr/lib/claude-desktop/resources/app.asar
                 test -x /usr/bin/claude-desktop
@@ -1522,8 +1518,7 @@ jobs:
               bash -c '
                 set -e
                 export DEBIAN_FRONTEND=noninteractive
-                apt-get update
-                apt-get install -y weston /dist/claude-desktop-extra_*_amd64.deb
+                sh /scripts/apt-install-retry.sh weston /dist/claude-desktop-extra_*_amd64.deb
                 export XDG_RUNTIME_DIR=/tmp/xdg-smoke
                 mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
                 weston --backend=headless --socket=wayland-1 --idle-time=0 >/tmp/weston.log 2>&1 &
@@ -3085,16 +3080,38 @@ jobs:
     needs: [deploy-rpm-repo]
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    # Two attempts of up to 30 min each plus the pause between them.
+    timeout-minutes: 75
     permissions:
       pages: write
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      # Whichever attempt ran last and succeeded; the retry step only has
+      # outputs when it actually ran.
+      url: ${{ steps.deployment_retry.outputs.page_url || steps.deployment.outputs.page_url }}
     steps:
+      # The Pages backend sometimes sits in "syncing_files" until the action's
+      # timeout, or cancels a deployment within seconds; a rerun later goes
+      # through. The first attempt may fail without failing the job, one
+      # automatic second attempt follows, and the job ends red if that fails too.
       - name: Deploy to GitHub Pages
         id: deployment
+        continue-on-error: true
         uses: actions/deploy-pages@v5
+        with:
+          timeout: 1800000
+      - name: Wait before retrying the Pages deployment
+        if: steps.deployment.outcome == 'failure'
+        run: |
+          echo "::warning::First Pages deployment attempt failed; retrying once in 90 s"
+          sleep 90
+      - name: Deploy to GitHub Pages (retry)
+        id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v5
+        with:
+          timeout: 1800000
 
   # ================================================================
   # Job 6b: LEGACY MIRROR (retire with the rename transition window)

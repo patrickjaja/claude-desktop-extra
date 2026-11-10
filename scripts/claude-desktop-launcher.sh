@@ -863,11 +863,11 @@ _appimage_release_scheme() {
     local cur d base="com.anthropic.Claude.desktop" found=""
     cur=$(xdg-mime query default x-scheme-handler/claude 2>/dev/null || true)
     if [[ "$cur" == "${DESKTOP_ID}.desktop" ]]; then
-        local IFS=:
-        for d in "${XDG_DATA_HOME:-$HOME/.local/share}" ${XDG_DATA_DIRS:-/usr/local/share:/usr/share}; do
-            [[ -f "$d/applications/$base" ]] && { found=1; break; }
+        local _xdd=()
+        IFS=: read -r -a _xdd <<< "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" || true
+        for d in "${XDG_DATA_HOME:-$HOME/.local/share}" ${_xdd[@]+"${_xdd[@]}"}; do
+            [[ -n "$d" && -f "$d/applications/$base" ]] && { found=1; break; }
         done
-        unset IFS
         if [[ -n "$found" ]]; then
             xdg-mime default "$base" x-scheme-handler/claude 2>/dev/null || true
             cur=$(xdg-mime query default x-scheme-handler/claude 2>/dev/null || true)
@@ -1122,12 +1122,12 @@ _window_identity() {
     fi
     local d f line hidden dirs=()
     if [[ "${XDG_DATA_HOME:-}" == /* ]]; then dirs+=("$XDG_DATA_HOME"); else dirs+=("$HOME/.local/share"); fi
-    local IFS=:
-    local x
-    for x in ${XDG_DATA_DIRS:-/usr/local/share:/usr/share}; do
+    local x _xdd=()
+    # Split into an array: an unquoted expansion would glob-expand entries.
+    IFS=: read -r -a _xdd <<< "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" || true
+    for x in ${_xdd[@]+"${_xdd[@]}"}; do
         [[ "$x" == /* ]] && dirs+=("$x")
     done
-    unset IFS
     for d in "${dirs[@]}"; do
         f="$d/applications/${DESKTOP_ID}.desktop"
         [[ -f "$f" ]] || continue
@@ -1533,8 +1533,9 @@ _fontconfig_var_usable() {
     [[ -n "$_v" ]] || return 0
     case "$1" in
         FONTCONFIG_PATH)
-            local IFS=:
-            for _d in $_v; do [[ -d "$_d" ]] && return 0; done
+            local _fcp=()
+            IFS=: read -r -a _fcp <<< "$_v" || true
+            for _d in ${_fcp[@]+"${_fcp[@]}"}; do [[ -n "$_d" && -d "$_d" ]] && return 0; done
             return 1
             ;;
         *)

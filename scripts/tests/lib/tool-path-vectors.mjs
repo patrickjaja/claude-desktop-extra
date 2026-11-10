@@ -86,7 +86,8 @@ export function makeHost(spec) {
 
 // The vectors. Step ops: startedRaw, appPath, appWhich [bin], toolPath, cmd [bin, fresh],
 // trusted [dir, fresh], ignored [bin], diag [{took|ignored: count, bin, at}],
-// env {set: {...}, del: [...]}, host {files+: [...], files-: [...], links: {...}}.
+// env {set: {...}, del: [...]}, host {files+: [...], files-: [...], links: {...}},
+// clock [ms] (advances the stub clock; it stands still otherwise).
 export const VECTORS = [
   {
     name: "narrowed only: a system tool comes from /usr/bin, by absolute path",
@@ -224,6 +225,43 @@ export const VECTORS = [
     ]
   },
   {
+    // MISS_TTL_MS = 5000 in both copies. A hit is kept for good, also when the
+    // binary goes away later: the lookup does not re-check it, the spawn fails.
+    name: "a miss expires after 5 s, a hit is kept for good: an installed tool is seen without fresh or a restart",
+    host: { dirs: { [HM]: R("EROFS"), [HM + "/bin"]: R("EROFS") }, links: { "/etc/profiles/per-user/u": HM } },
+    env: narrowed("/etc/profiles/per-user/u/bin:/usr/bin"),
+    steps: [
+      ["cmd", ["ydotool"], null],
+      ["cmd", ["pgrep"], null],
+      ["host", { "files+": [HM + "/bin/ydotool", "/usr/bin/pgrep"] }],
+      ["clock", 4999],
+      ["cmd", ["ydotool"], null],
+      ["cmd", ["pgrep"], null],
+      ["clock", 1],
+      ["cmd", ["ydotool"], HM + "/bin/ydotool"],
+      ["cmd", ["pgrep"], "/usr/bin/pgrep"],
+      ["host", { "files-": [HM + "/bin/ydotool", "/usr/bin/pgrep"] }],
+      ["clock", 3600000],
+      ["cmd", ["ydotool"], HM + "/bin/ydotool"],
+      ["cmd", ["pgrep"], "/usr/bin/pgrep"],
+      ["cmd", ["pgrep", true], null],
+      ["cmd", ["pgrep"], null],
+      ["diag", [{ took: 1, ignored: 0, bin: "ydotool", at: HM + "/bin/ydotool" }]]
+    ]
+  },
+  {
+    name: "narrowing off: a missing tool's bare name is seen 5 s after it is installed",
+    host: {},
+    env: { PATH: "/home/u/.local/bin:/usr/bin" },
+    steps: [
+      ["cmd", ["spectacle"], null],
+      ["host", { "files+": ["/home/u/.local/bin/spectacle"] }],
+      ["cmd", ["spectacle"], null],
+      ["clock", 5000],
+      ["cmd", ["spectacle"], "spectacle"]
+    ]
+  },
+  {
     name: "fresh re-walks a link: a root link repointed into a user dir loses trust",
     host: {
       dirs: { [HM]: R("EROFS"), [HM + "/bin"]: R("EROFS"), "/home/u/evil": U(), "/home/u/evil/bin": U() },
@@ -314,8 +352,10 @@ export const VECTORS = [
 function sandbox(host, env) {
   const diag = [];
   const proc = { platform: "linux", env };
+  // A stub clock: both copies read only Date.now() (the miss TTL).
+  const clock = { t: 1000000 };
   const ctx = {
-    process: proc, console: { log() {}, warn() {} },
+    process: proc, console: { log() {}, warn() {} }, Date: { now: () => clock.t },
     require: (id) => {
       if (id === "fs") return host.fs;
       if (id === "path") return path;
@@ -324,16 +364,16 @@ function sandbox(host, env) {
   };
   ctx.globalThis = ctx;
   ctx.__cdbDiag = (m) => diag.push(String(m));
-  return { ctx, diag, proc };
+  return { ctx, diag, proc, clock };
 }
 
 export function loadResolver(src, host, env) {
-  const { ctx, diag, proc } = sandbox(host, env);
+  const { ctx, diag, proc, clock } = sandbox(host, env);
   vm.runInNewContext(src, ctx);
   const t = ctx.__cdbToolPath;
   if (!t) throw new Error("js/tool_path.js did not define globalThis.__cdbToolPath");
   return {
-    diag, proc, raw: t,
+    diag, proc, clock, raw: t,
     api: {
       startedRaw: () => t.startedPath(), appPath: () => t.appPath(), appWhich: (b) => t.appWhich(b), toolPath: () => t.toolPath(),
       cmd: (b, f) => t.cmd(b, f), trusted: (d, f) => t.trusted(d, f), ignored: (b) => t.ignored(b)
@@ -349,11 +389,11 @@ export function executorSection(src) {
   return src.slice(a, b);
 }
 export function loadExecutorCopy(src, host, env) {
-  const { ctx, diag, proc } = sandbox(host, env);
+  const { ctx, diag, proc, clock } = sandbox(host, env);
   const body = "var _fs=require('fs'),_path=require('path');\n" + executorSection(src) +
     "\nglobalThis.__x={startedRaw:_startedRaw,appPath:_startedPath,appWhich:function(b){return _walk(_lookupPath().split(':'),b)},toolPath:_toolPath,cmd:_toolCmd,trusted:_dirTrusted,ignored:function(b){return Object.prototype.hasOwnProperty.call(_toolIgn,b)?_toolIgn[b]:null}};";
   vm.runInNewContext(body, ctx);
-  return { diag, proc, api: ctx.__x };
+  return { diag, proc, clock, api: ctx.__x };
 }
 
 // Runs one vector against a loader; returns [{label, ok, got, want}].
@@ -364,6 +404,7 @@ export function runVector(v, load, src) {
   const out = [];
   v.steps.forEach((st, i) => {
     const [op, args, want] = st;
+    if (op === "clock") { inst.clock.t += args; return; }
     if (op === "env") { Object.assign(inst.proc.env, args.set || {}); (args.del || []).forEach((k) => delete inst.proc.env[k]); return; }
     if (op === "host") {
       (args["files+"] || []).forEach((f) => host.files.add(f));

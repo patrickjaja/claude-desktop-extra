@@ -4,6 +4,13 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-10
 
+### Follow-ups: tools installed while the app runs, local-build bridges, release pipeline
+
+- Computer Use picks up a tool installed, or `ydotoold` started, while Claude Desktop is running: a "not found" is re-checked after 5 seconds instead of lasting until restart.
+- Local builds (`build-local.sh`) check every bundled Computer Use bridge against its glibc floor. A pre-built gnome or kwin bridge above glibc 2.39 (built on a rolling distro) is rebuilt in an `ubuntu:24.04` container as CI does, cached per checkout state; without docker the build warns and bundles the host binary, or fails with `--strict-bridges`. The build log names each bridge's source and glibc requirement.
+- The launcher no longer expands glob characters in `XDG_DATA_DIRS` / `FONTCONFIG_PATH` entries.
+- Release pipeline: the Pages deployment gets a longer timeout and one automatic second attempt, and the package test containers retry `apt-get` when a mirror is briefly out of step.
+
 ### Tools the app runs itself are found again under upstream's PATH narrowing (4.23118+)
 
 - Claude Desktop 4.23118 narrows its own `PATH` to system folders at startup. A new shared lookup (`add_tool_path_resolver`) lets our patches find the tools they run in those system folders plus the root-owned read-only folders of the `PATH` Claude Desktop was started with, by absolute path; a copy in a folder your user can write to is never used and is named in `claude-patches.log`.

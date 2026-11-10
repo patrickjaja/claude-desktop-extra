@@ -349,6 +349,18 @@ safe("D5b", () => {
   check("helper: relative file name is left alone", fns.includes("C=usable"), true);
   check("helper: path list with one existing dir is usable", fns.includes("D=usable"), existsSync("/etc/fonts"));
   check("helper: unset variable is usable", fns.includes("E=usable"), true);
+
+  // Colon lists are split without globbing: an entry with `*` is one literal path.
+  const gl = join(scratch, "d5glob");
+  mkdirSync(join(gl, "real"), { recursive: true });
+  const globRun = (list) => runFns(["_fontconfig_var_usable"],
+    `FONTCONFIG_PATH=${JSON.stringify(list)}; _fontconfig_var_usable FONTCONFIG_PATH && echo usable || echo unusable`,
+    { PATH: "/usr/bin:/bin" }).out;
+  check("helper: `*` entry is NOT glob-expanded onto a sibling dir", globRun(join(gl, "*")), "unusable");
+  check("helper: `*` entry is unusable even after a missing entry", globRun(`/nonexistent/claude-test:${join(gl, "*")}`), "unusable");
+  mkdirSync(join(gl, "*"), { recursive: true });
+  check("helper: a directory literally named `*` is found", globRun(join(gl, "*")), "usable");
+  check("helper: empty entries are skipped, real dir still found", globRun(`::${join(gl, "real")}:`), "usable");
 });
 
 // ---------------------------------------------------------------- D6
@@ -1076,10 +1088,54 @@ safe("D14", () => {
   writeFileSync(join(dd, "applications", "com.anthropic.Claude-work.desktop"), "[Desktop Entry]\nName=x\n");
   check("found through XDG_DATA_DIRS", idLine(diag(["--profile=work"], { XDG_DATA_DIRS: dd })),
     `window identity = com.anthropic.Claude-work (${join(dd, "applications", "com.anthropic.Claude-work.desktop")})`);
+  // A `*` in XDG_DATA_DIRS is one literal path, never expanded onto siblings.
+  const gd = join(root, "globdirs");
+  mkdirSync(join(gd, "sib", "applications"), { recursive: true });
+  writeFileSync(join(gd, "sib", "applications", "com.anthropic.Claude-work.desktop"), "[Desktop Entry]\nName=x\n");
+  check("XDG_DATA_DIRS entry with `*` is not glob-expanded",
+    idLine(diag(["--profile=work"], { XDG_DATA_DIRS: join(gd, "*") })).includes("(shared:"), true);
+  mkdirSync(join(gd, "*", "applications"), { recursive: true });
+  writeFileSync(join(gd, "*", "applications", "com.anthropic.Claude-work.desktop"), "[Desktop Entry]\nName=x\n");
+  check("XDG_DATA_DIRS entry that is literally `*` is found as itself",
+    idLine(diag(["--profile=work"], { XDG_DATA_DIRS: join(gd, "*") })),
+    `window identity = com.anthropic.Claude-work (${join(gd, "*", "applications", "com.anthropic.Claude-work.desktop")})`);
+  check("XDG_DATA_DIRS with empty entries still finds the real dir",
+    idLine(diag(["--profile=work"], { XDG_DATA_DIRS: `::${dd}:` })).startsWith("window identity = com.anthropic.Claude-work ("), true);
   check("a relative XDG_DATA_HOME is ignored (falls back to ~/.local/share)",
     idLine(diag(["--profile=work"], { XDG_DATA_HOME: "rel" })).includes("(shared:"), true);
   check("default profile output keeps its single added line",
     (def.stdout || "").split("\n").filter((l) => l.startsWith("window identity")).length, 1);
+});
+
+// ---------------------------------------------------------------- D15
+console.log("D15: _appimage_release_scheme splits XDG_DATA_DIRS without globbing");
+safe("D15", () => {
+  const root = join(scratch, "d15");
+  const bin = join(root, "bin");
+  const marker = join(root, "handed-back");
+  mkdirSync(join(root, "home"), { recursive: true });
+  // Fake xdg-mime: the default is this profile's entry until `default` is called.
+  writeExe(join(bin, "xdg-mime"), `#!/bin/sh
+if [ "$1" = query ]; then
+  if [ -e ${marker} ]; then echo com.anthropic.Claude.desktop; else echo work.desktop; fi
+else touch ${marker}; fi
+`);
+  const run = (dirs) => {
+    rmSync(marker, { force: true });
+    runFns(["_appimage_release_scheme"],
+      `DESKTOP_ID=work; _appimage_release_scheme || true`,
+      { PATH: `${bin}:/usr/bin:/bin`, HOME: join(root, "home"), XDG_DATA_HOME: join(root, "nohome"), XDG_DATA_DIRS: dirs });
+    return existsSync(marker);
+  };
+  const dd = join(root, "dd");
+  mkdirSync(join(dd, "sib", "applications"), { recursive: true });
+  writeFileSync(join(dd, "sib", "applications", "com.anthropic.Claude.desktop"), "x");
+  check("plain list entry holding the default entry: scheme handed back", run(join(dd, "sib")), true);
+  check("`*` entry is not glob-expanded onto a sibling: nothing handed back", run(join(dd, "*")), false);
+  mkdirSync(join(dd, "*", "applications"), { recursive: true });
+  writeFileSync(join(dd, "*", "applications", "com.anthropic.Claude.desktop"), "x");
+  check("a directory literally named `*` is found", run(join(dd, "*")), true);
+  check("empty entries are skipped", run(`::${join(dd, "sib")}:`), true);
 });
 
 rmSync(scratch, { recursive: true, force: true });
