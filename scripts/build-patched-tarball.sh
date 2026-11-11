@@ -387,6 +387,15 @@ ELECTRON_VERSION="$(cat "$TREE_DIR/version" 2>/dev/null | tr -d '[:space:]' || t
 log_info "Extracting app.asar..."
 APP_DIR="$WORK_DIR/app"
 mkdir -p "$APP_DIR"
+# Upstream's own unpacked file set (relative paths, with the executable bit).
+# The repack below must reproduce it: the app runs these files from
+# resources/app.asar.unpacked/ (native modules, and since 5.1231.x the GitHub
+# connector binary resources/github-mcp/github-mcp-server).
+UPSTREAM_UNPACKED_LIST="$WORK_DIR/upstream-unpacked.txt"
+: > "$UPSTREAM_UNPACKED_LIST"
+if [ -d "$TREE_DIR/resources/app.asar.unpacked" ]; then
+    ( cd "$TREE_DIR/resources/app.asar.unpacked" && find . -type f -printf '%P\t%m\n' | LC_ALL=C sort ) > "$UPSTREAM_UNPACKED_LIST"
+fi
 asar extract "$TREE_DIR/resources/app.asar" "$APP_DIR/app.asar.contents"
 
 # App identity: we ride upstream's own desktopName ("com.anthropic.Claude.desktop")
@@ -579,7 +588,37 @@ fi
 # (The .deb's node-pty uses the prebuilds/<platform>-<arch>/ layout, which loads
 # from the unpacked dir; we preserve whatever the .deb shipped.)
 log_info "Repacking app.asar..."
-( cd "$APP_DIR" && asar pack app.asar.contents app.asar --unpack "{**/*.node,**/spawn-helper}" )
+# Every file upstream ships unpacked stays unpacked, whatever its name.
+UNPACK_GLOB="**/*.node,**/spawn-helper"
+while IFS=$'\t' read -r _unpacked_rel _unpacked_mode; do
+    [ -n "$_unpacked_rel" ] || continue
+    case "$_unpacked_rel" in
+        *[,{}\[\]\*\?\!\(\)\\]*)
+            log_error "upstream unpacked file has glob characters in its path: $_unpacked_rel - teach the repack to keep it unpacked"
+            exit 1 ;;
+    esac
+    UNPACK_GLOB="$UNPACK_GLOB,**/$_unpacked_rel"
+done < "$UPSTREAM_UNPACKED_LIST"
+( cd "$APP_DIR" && asar pack app.asar.contents app.asar --unpack "{$UNPACK_GLOB}" )
+# The repacked set must contain upstream's, file by file. asar extract writes
+# unpacked files without their mode, so each one gets upstream's mode back (the
+# GitHub connector binary is executed, not loaded).
+_unpacked_missing=0
+while IFS=$'\t' read -r _unpacked_rel _unpacked_mode; do
+    [ -n "$_unpacked_rel" ] || continue
+    if [ ! -f "$APP_DIR/app.asar.unpacked/$_unpacked_rel" ]; then
+        log_error "repack lost an upstream unpacked file: app.asar.unpacked/$_unpacked_rel (the app loads it from there)"
+        _unpacked_missing=1
+        continue
+    fi
+    chmod "$_unpacked_mode" "$APP_DIR/app.asar.unpacked/$_unpacked_rel"
+    if [ $(( 0$_unpacked_mode & 0111 )) -ne 0 ] && [ ! -x "$APP_DIR/app.asar.unpacked/$_unpacked_rel" ]; then
+        log_error "app.asar.unpacked/$_unpacked_rel is not executable after the repack"
+        _unpacked_missing=1
+    fi
+done < "$UPSTREAM_UNPACKED_LIST"
+[ "$_unpacked_missing" -eq 0 ] || exit 1
+log_info "app.asar.unpacked: $(wc -l < "$UPSTREAM_UNPACKED_LIST") upstream file(s) kept unpacked"
 rm -rf "$APP_DIR/app.asar.contents"
 rm -rf "$TREE_DIR/resources/app.asar" "$TREE_DIR/resources/app.asar.unpacked"
 mv "$APP_DIR/app.asar" "$TREE_DIR/resources/app.asar"

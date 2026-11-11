@@ -15,6 +15,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - The GrowthBook flag catalogue in `claude-desktop-extra.jsonc` covers 5.1231.0 (854 flags: 79 new, 2 removed).
 - New upstream, behind server flags and without a platform restriction: Chrome Web Store extensions in the built-in browser, with Linux native-messaging host folders (`/etc/claude-desktop/native-messaging-hosts`, Chrome's own). Upstream keeps them off while the app runs with `--no-sandbox`, which AppImage launches and `CLAUDE_DISABLE_SANDBOX=1` do.
 
+### The GitHub connector binary is shipped where the app runs it (5.1231.x)
+
+- Upstream 5.1231 ships `github-mcp-server` in `resources/app.asar.unpacked/` and starts it from there. The repack now keeps every file upstream ships unpacked, with its file mode, and the build fails if one is lost.
+
 ### Computer Use in cloud sessions on GNOME Wayland, niri and river, screenshots inside action batches (#326)
 
 - Cloud Cowork, Dispatch and chats linked to this computer work on desktops that cannot tell which window is in front or under the pointer (GNOME Wayland, and niri and river where the compositor gives no window positions). Clicks were refused as landing "on the desktop shell" and typing as "no app is frontmost". These sessions now follow the whole-screen rules Anthropic's own Wayland code uses: once at least one app is approved, clicks and keystrokes go to whatever is on screen, except Claude's own windows: a click aimed at one is discarded by Anthropic's own input guard, which the Linux backends arm around every input they send on GNOME Wayland, niri, river and the fallback Wayland paths (where that guard does not exist, an X11 session without the bundled x11-bridge, the click is refused). A read-only approval still blocks input, nothing is allowed before an app is approved, typing is refused while Claude's own window has keyboard focus, and input is refused while one of Claude's dialogs is open. `list_granted_applications` lists "Entire screen" there. X11, sway, Hyprland and KDE Plasma Wayland keep the per-app check, and on niri and river input is still refused while an unapproved app is in front.
