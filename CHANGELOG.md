@@ -54,6 +54,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - `claude-desktop --diagnose` no longer starts KWallet on desktops that do not use it (#330), and shows each bridge's screenshot filter (how screenshots are filtered and what the filter cannot cover).
 - The build fails when the bundled wlroots-bridge predates the per-window mask report (`scripts/check-bridge-contract.sh --wlroots-caps`).
 
+### Release pipeline: package installs when the runner cannot resolve Ubuntu's mirrors
+
+- Release jobs that install packages check the runner's resolver first; when it cannot resolve Ubuntu's package mirrors, the job uses public DNS resolvers for its remaining steps (`scripts/ci-dns-fallback.sh`). Nothing changes while the runner's own resolver answers.
+
 ## 2026-11-10
 
 ### Computer Use from cloud Cowork and Dispatch on Wayland, truthful access descriptions, an opt-in Escape stop key (#323)
