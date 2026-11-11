@@ -1601,7 +1601,9 @@
     renderCuAskRow,
     renderCuEscapeAbortCuRow,
     renderCuBackgroundRow,
-    renderCuAxRow
+    renderCuAxRow,
+    renderCuGlowRow,
+    renderCuDrawnCursorRow
   ];
 
   // What the wlroots-bridge mask does not cover (doctor screenshot_mask_gaps).
@@ -1741,7 +1743,7 @@
   // hosts (`hosts.status` takes the wait line and a failed read, the others
   // their section's rows). `scope` is the element whose buttons a running
   // action disables; `recheck` the page's Re-check button.
-  function renderCuStatusBlock(scope, hosts, recheck) {
+  function renderCuStatusBlock(scope, hosts, recheck, onState) {
     var running = false;
     var all = [hosts.status, hosts.cloud, hosts.local, hosts.cu];
     function setBusy(on) {
@@ -1782,6 +1784,7 @@
           return;
         }
         draw(st, failure);
+        if (typeof onState === "function") onState(st);
       }, function (err) {
         stopSlowTimer();
         recheck.disabled = false;
@@ -2026,6 +2029,23 @@
 
     var apiOk = cuStatusApiOk();
     var hosts = {};
+    // What the status read answered, for rows that need a session fact:
+    // watch(fn) calls fn with the latest read now and after every Re-check.
+    // glowOn / onGlow: the glow switch's state (null until its read lands),
+    // for the drawn-cursor row, which needs the glow.
+    var ctx = {
+      status: null,
+      watchers: [],
+      watch: function (fn) { ctx.watchers.push(fn); if (ctx.status) fn(ctx.status); },
+      glowOn: null,
+      glowWatchers: [],
+      onGlow: function (fn) { ctx.glowWatchers.push(fn); if (ctx.glowOn !== null) fn(ctx.glowOn); },
+      setGlow: function (on) {
+        if (on === ctx.glowOn) return;
+        ctx.glowOn = on;
+        ctx.glowWatchers.forEach(function (fn) { fn(on); });
+      }
+    };
     if (apiOk) {
       hosts.status = el("div", "cdbx-cus cdbx-cus-status");
       panel.appendChild(hosts.status);
@@ -2051,7 +2071,10 @@
     if (apiOk) {
       cuWrap.appendChild(el("div", "cdbx-note cdbx-cus-foot",
         "Full report for an issue: run claude-desktop --diagnose in a terminal."));
-      renderCuStatusBlock(panel, hosts, recheck);
+      renderCuStatusBlock(panel, hosts, recheck, function (st) {
+        ctx.status = st;
+        ctx.watchers.forEach(function (fn) { fn(st); });
+      });
     }
 
     // The switches share one "Options" heading inside the Computer Use
@@ -2062,7 +2085,7 @@
     opts.appendChild(el("span", "cdbx-sec-t", "Options"));
     cuWrap.appendChild(opts);
     var rows = 0;
-    CU_ROWS.forEach(function (render) { if (render(cuWrap, panel)) rows++; });
+    CU_ROWS.forEach(function (render) { if (render(cuWrap, panel, ctx)) rows++; });
     if (!rows) opts.remove();
     jsoncFootnote(panel);
   }
@@ -4658,6 +4681,283 @@
     draw(state);
   }
 
+  // --- Anthropic flag state, shared ----------------------------------------
+  // What the Anthropic Features page and the Computer Use page's drawn-cursor
+  // row both read: the maps of one cdb-flags:read answer, and the two questions
+  // asked of them. One definition, so the pages cannot disagree.
+  function gbFlagMaps(state) {
+    return {
+      server: state.server || {},
+      effective: state.effective || {},
+      overrides: state.overridesJson || {},
+      jsoncIds: state.overridesJsonc || {},
+      builtins: state.builtins || {}
+    };
+  }
+
+  // The value the switch shows: the one SAVED to apply, so a click always
+  // writes its opposite. A .jsonc override wins, then a .json override; with
+  // none, what the running store (the server payload with overrides merged,
+  // once it has loaded) or the account serves, then the saved files' built-ins.
+  function gbFlagIsOn(m, id) {
+    var has = Object.prototype.hasOwnProperty;
+    if (has.call(m.jsoncIds, id)) return m.jsoncIds[id] === true;
+    if (has.call(m.overrides, id)) return m.overrides[id] === true;
+    var entry = m.effective[id] || m.server[id];
+    if (entry) return entry.on === true;
+    if (has.call(m.builtins, id)) return m.builtins[id] === true;
+    return false;
+  }
+
+  // What the running app reports for the flag right now, or null when the
+  // feature store has not loaded (unknown).
+  function gbFlagRunning(m, id) {
+    var entry = m.effective[id] || m.server[id];
+    return entry ? entry.on === true : null;
+  }
+
+  function gbFlagOrigin(m, id) {
+    var has = Object.prototype.hasOwnProperty;
+    var saved = has.call(m.jsoncIds, id) || has.call(m.overrides, id);
+    var running = gbFlagRunning(m, id);
+    // A saved override the running app has not picked up yet says so.
+    var tail = saved && running !== null && running !== gbFlagIsOn(m, id)
+      ? ", applies after a restart (" + (running ? "on" : "off") + " right now)" : "";
+    if (has.call(m.jsoncIds, id)) return "set in claude-desktop-extra.jsonc" + tail;
+    if (has.call(m.overrides, id)) return "your override (" + JSON.stringify(m.overrides[id]) + ")" + tail;
+    if (has.call(m.builtins, id)) return "forced on by claude-desktop-extra for Linux";
+    var entry = m.server[id];
+    if (entry) return entry.on === true ? "on for your account" : "off for your account";
+    return "not in your account's flag payload";
+  }
+
+  // --- Computer Use: the drawn cursor in the glow (Anthropic flag) ----------
+  // Not one of our switches: Anthropic's GrowthBook flag 1916550538, shown here
+  // because it changes what Computer Use looks like. It goes through the very
+  // channels the Anthropic Features page uses (flagsRead / flagsSet /
+  // flagsUnset, the one growthbookOverrides writer in the main half) and reads
+  // the state through the same gbFlag* helpers, so an override made on either
+  // page shows on the other the next time that page is drawn. Offered states:
+  // follow Anthropic (no override, the default), forced on, forced off - the
+  // switch writes on/off, "clear" removes the override.
+  var CU_DRAWN_CURSOR_FLAG = "1916550538";
+
+  // --- Computer Use: show the glow ----------------------------------------
+  // On by default (main answers enabled unless the key is false). Main side:
+  // cdb-cu-glow:* in js/extra_settings_main.js; js/cu_linux_executor.js reads
+  // it at every Computer Use start (its __cdbCuGlowOff), so a flip applies
+  // from the next one. It tells the drawn-cursor row below whether the glow
+  // is on (ctx.setGlow).
+  function cusGlowLine(st) {
+    var s = st && st.screenshots;
+    if (!s || typeof s !== "object") return "";
+    var sess = typeof s.session === "string" && s.session ? s.session : "this session";
+    if (s.glow === "kwin" || s.kwin === true) {
+      return "On this session (" + sess + ") the KDE bridge draws its own glow while it shares the screen; this switch does not turn that one off.";
+    }
+    if (s.glow === "x11") return "On this session (" + sess + ") Anthropic's own glow is shown (it needs a compositing manager).";
+    if (s.glow === "overlay") return "On this session (" + sess + ") the bundled bridge draws the glow.";
+    if (s.glow === "none") return "On this session (" + sess + ") no glow is shown: the bridge for this desktop does not draw it.";
+    return "";
+  }
+  function renderCuGlowRow(host, panel, ctx) {
+    var row = renderToggleRow(host, {
+      section: "Options",
+      // Under the Options heading renderCu draws.
+      sharedSection: true,
+      title: "Show the glow while Claude uses the computer",
+      note: "An orange glow around the screen shows that Claude is using the computer; with Anthropic's drawn " +
+        "cursor it becomes a thin rim with Claude's own arrow. X11 with a compositing manager shows Anthropic's " +
+        "glow; sway, Hyprland and niri (Wayland) show it when the bundled bridge can draw it. KDE Plasma " +
+        "(Wayland) keeps the glow its own bridge draws. Off: no glow, rim or drawn cursor; Computer Use itself " +
+        "works the same. Applies from the next Computer Use task.",
+      ariaLabel: "show the glow while Claude uses the computer",
+      read: "cuGlowRead",
+      write: "cuGlowSet",
+      lockFile: "claude-desktop-extra.jsonc",
+      // The downstream Windows build carries this page; its main side answers
+      // "Linux only" and the row must not appear there.
+      hideIf: function (res) { return failed(res) && /Linux only/.test(reason(res)); },
+      isOn: function (res) {
+        var on = res.enabled !== false;
+        if (ctx && typeof ctx.setGlow === "function") ctx.setGlow(on);
+        return on;
+      },
+      describe: function (on) {
+        return on ? "on - the glow shows while Claude uses the computer" : "off - no glow, rim or drawn cursor";
+      },
+      writeArg: function (next) { return next; },
+      toast: function (next) {
+        if (ctx && typeof ctx.setGlow === "function") ctx.setGlow(next);
+        return next
+          ? "The glow shows again from the next Computer Use task"
+          : "No glow from the next Computer Use task";
+      },
+      errorPrefix: "Could not change the setting: "
+    });
+    if (!row || !ctx || typeof ctx.watch !== "function") return row;
+    var main = row.host.querySelector(".cdbx-row-main");
+    var state = main && main.querySelector(".cdbx-state");
+    if (!main || !state) return row;
+    var sess = el("div", "cdbx-note cdbx-hide");
+    sess.setAttribute("data-cdbx-glow-session", "1");
+    main.insertBefore(sess, state);
+    ctx.watch(function (st) {
+      var t = cusGlowLine(st);
+      sess.textContent = t;
+      sess.classList.toggle("cdbx-hide", !t);
+    });
+    return row;
+  }
+
+  function renderCuDrawnCursorRow(host, panel, ctx) {
+    if (!api || typeof api.flagsRead !== "function" || typeof api.flagsSet !== "function" ||
+        typeof api.flagsUnset !== "function") return;
+    var id = CU_DRAWN_CURSOR_FLAG;
+    var list = el("div", "cdbx-list");
+    var node = el("div", "cdbx-row");
+    node.setAttribute("data-cdbx-flag", id);
+    var main = el("div", "cdbx-row-main");
+    var title = el("div", "cdbx-id", "Drawn cursor in the glow");
+    title.appendChild(el("span", "cdbx-exp", "Anthropic flag " + id));
+    main.appendChild(title);
+    main.appendChild(el("div", "cdbx-note",
+      "Anthropic's GrowthBook flag " + id + ", not a switch of this package. While Claude uses the computer, the " +
+      "glow becomes a thin rim and an arrow glides to each click target before the real pointer follows - about " +
+      "half a second per click. It shows wherever the glow is shown: X11 with a compositing manager, and sway, " +
+      "Hyprland and niri (Wayland) when the bundled bridge draws the glow. It has none on GNOME or KDE Plasma " +
+      "(Wayland), on a background display, on X11 without a compositing manager, or with the glow switched off."));
+    main.appendChild(el("div", "cdbx-note",
+      "Saved at once. Overrides are re-read on every flag load (startup, about hourly, account changes), but most " +
+      "flags are wired up while the app starts, so restart Claude Desktop to be sure a change applies. " +
+      "Without an override the flag follows Anthropic's setting for your account."));
+    var sessionNote = el("div", "cdbx-note cdbx-hide");
+    sessionNote.setAttribute("data-cdbx-flag-session", "1");
+    main.appendChild(sessionNote);
+    var stateLine = el("div", "cdbx-state", "Loading...");
+    main.appendChild(stateLine);
+    node.appendChild(main);
+
+    var aside = el("div", "cdbx-row-aside");
+    node.appendChild(aside);
+    var toggle = el("button", "cdbx-switch");
+    toggle.type = "button";
+    toggle.setAttribute("role", "switch");
+    toggle.setAttribute("aria-checked", "false");
+    toggle.setAttribute("aria-label", "Anthropic flag " + id + ": drawn cursor in the glow");
+    toggle.disabled = true;
+    aside.appendChild(toggle);
+    var restart = null;
+    if (typeof api.appRelaunch === "function") {
+      restart = restartButton();
+      restart.classList.add("cdbx-hide");
+      aside.insertBefore(restart, toggle);
+    }
+    list.appendChild(node);
+    host.appendChild(list);
+
+    // Why this session shows no drawn cursor, if it does not: the glow switch
+    // above is off, or the status block's session facts (what draws the glow
+    // here; nothing new is detected on this page).
+    var lastSt = null;
+    function sessionWhy() {
+      if (ctx && ctx.glowOn === false) {
+        return "The drawn cursor needs the glow, which is off (Show the glow while Claude uses the computer, above).";
+      }
+      var s = lastSt && lastSt.screenshots;
+      if (!s || typeof s !== "object") return "";
+      var sess = typeof s.session === "string" && s.session ? s.session : "this session";
+      if (s.glow === "kwin" || s.kwin === true) return "This session (" + sess + ") shows no drawn cursor: the KDE bridge draws its own glow, without one.";
+      if (s.glow === "none") return "This session (" + sess + ") shows no drawn cursor: no glow is drawn here.";
+      return "";
+    }
+    function syncSessionNote() {
+      var t = sessionWhy();
+      sessionNote.textContent = t;
+      sessionNote.classList.toggle("cdbx-hide", !t);
+    }
+    if (ctx && typeof ctx.watch === "function") ctx.watch(function (st) { lastSt = st; syncSessionNote(); });
+    if (ctx && typeof ctx.onGlow === "function") ctx.onGlow(syncSessionNote);
+
+    function flash() {
+      node.classList.add("cdbx-flash");
+      setTimeout(function () { node.classList.remove("cdbx-flash"); }, 700);
+    }
+    function fail(prefix, err) {
+      toast(prefix + (err && err.message ? err.message : String(err)), true);
+    }
+
+    Promise.all([
+      typeof api.flagsCatalog === "function" ? api.flagsCatalog() : Promise.resolve(null),
+      api.flagsRead()
+    ]).then(function (both) {
+      var catalog = both[0];
+      var state = both[1];
+      // A build that no longer knows this flag has nothing to show.
+      if (catalog && !failed(catalog) && Array.isArray(catalog.entries) &&
+          !catalog.entries.some(function (e) { return e && e.id === id; })) {
+        list.remove();
+        return;
+      }
+      // The downstream Windows build carries this page; its main side says so.
+      if (failed(state) && /Linux only/.test(reason(state))) { list.remove(); return; }
+      if (failed(state)) { stateLine.textContent = "Unavailable: " + reason(state); return; }
+
+      var maps = gbFlagMaps(state);
+      var has = function () { return Object.prototype.hasOwnProperty.call(maps.overrides, id); };
+      var locked = Object.prototype.hasOwnProperty.call(maps.jsoncIds, id);
+      var clearBtn = null;
+      function sync() {
+        var on = gbFlagIsOn(maps, id);
+        toggle.setAttribute("aria-checked", on ? "true" : "false");
+        stateLine.textContent = (on ? "on - " : "off - ") + gbFlagOrigin(maps, id);
+        if (has() && !clearBtn) {
+          clearBtn = el("button", "cdbx-clear", "clear");
+          clearBtn.type = "button";
+          clearBtn.title = "Remove this override and follow Anthropic again";
+          clearBtn.addEventListener("click", function () {
+            api.flagsUnset(id).then(function (res) {
+              if (failed(res)) { toast("Could not clear " + id + ": " + reason(res), true); return; }
+              delete maps.overrides[id];
+              delete maps.effective[id];
+              sync();
+              flash();
+              if (restart) restart.classList.remove("cdbx-hide");
+              toast("Cleared the override for " + id + " - restart to pick it up");
+            }, function (err) { fail("Could not clear " + id + ": ", err); });
+          });
+          aside.insertBefore(clearBtn, toggle);
+        } else if (!has() && clearBtn) {
+          clearBtn.remove();
+          clearBtn = null;
+        }
+      }
+      sync();
+      if (locked) {
+        toggle.title = "Edit claude-desktop-extra.jsonc to change this flag";
+        return;
+      }
+      toggle.disabled = false;
+      toggle.addEventListener("click", function () {
+        if (toggle.disabled) return;
+        var next = toggle.getAttribute("aria-checked") !== "true";
+        toggle.disabled = true;
+        api.flagsSet(id, next).then(function (res) {
+          toggle.disabled = false;
+          if (failed(res)) { toast("Could not save " + id + ": " + reason(res), true); return; }
+          maps.overrides[id] = next;
+          sync();
+          flash();
+          if (restart) restart.classList.remove("cdbx-hide");
+          toast(id + " set to " + next + " - saved, restart to pick it up");
+        }, function (err) { toggle.disabled = false; fail("Could not save " + id + ": ", err); });
+      });
+    }, function (err) {
+      stateLine.textContent = "Unavailable: " + (err && err.message ? err.message : String(err));
+    });
+    return list;
+  }
+
   // --- anthropic features panel --------------------------------------------
   // Anthropic's own GrowthBook flags. Nothing here applies live: the app reads
   // most of them once at startup, so this panel carries the restart notice the
@@ -4723,33 +5023,18 @@
           "The feature store has not loaded yet in this session, so the switches below show your saved overrides only."));
       }
 
-      var server = state.server || {};
-      var effective = state.effective || {};
-      var overrides = state.overridesJson || {};
-      var jsoncIds = state.overridesJsonc || {};
-      var builtins = state.builtins || {};
+      // The maps are shared by reference with the state helpers below, so a
+      // write that updates `overrides` / `effective` here is what isOn() and
+      // origin() read next.
+      var maps = gbFlagMaps(state);
+      var server = maps.server;
+      var effective = maps.effective;
+      var overrides = maps.overrides;
+      var jsoncIds = maps.jsoncIds;
+      var builtins = maps.builtins;
 
-      // Pre-toggle state: what the app is actually going to see. The effective
-      // map is the server payload with every override already merged, so it is
-      // the truth when the store has loaded; before that, fall back to the saved
-      // override files.
-      function isOn(id) {
-        var entry = effective[id] || server[id];
-        if (entry) return entry.on === true;
-        if (Object.prototype.hasOwnProperty.call(jsoncIds, id)) return jsoncIds[id] === true;
-        if (Object.prototype.hasOwnProperty.call(overrides, id)) return overrides[id] === true;
-        if (Object.prototype.hasOwnProperty.call(builtins, id)) return builtins[id] === true;
-        return false;
-      }
-
-      function origin(id) {
-        if (Object.prototype.hasOwnProperty.call(jsoncIds, id)) return "set in claude-desktop-extra.jsonc";
-        if (Object.prototype.hasOwnProperty.call(overrides, id)) return "your override (" + JSON.stringify(overrides[id]) + ")";
-        if (Object.prototype.hasOwnProperty.call(builtins, id)) return "forced on by claude-desktop-extra for Linux";
-        var entry = server[id];
-        if (entry) return entry.on === true ? "on for your account" : "off for your account";
-        return "not in your account's flag payload";
-      }
+      function isOn(id) { return gbFlagIsOn(maps, id); }
+      function origin(id) { return gbFlagOrigin(maps, id); }
 
       function row(entry) {
         var id = entry.id;
@@ -4835,7 +5120,6 @@
             toggle.disabled = false;
             if (failed(res)) { toast("Could not save " + id + ": " + reason(res), true); return; }
             overrides[id] = next;
-            effective[id] = { on: next, value: next };
             toggle.setAttribute("aria-checked", next ? "true" : "false");
             stateLine.textContent = origin(id);
             syncClear();

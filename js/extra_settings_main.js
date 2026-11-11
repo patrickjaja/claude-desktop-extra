@@ -263,6 +263,7 @@
   // here so there is still exactly one place that rewrites the .json.
   function __cdbEx_writeCfg(mutate) {
     __cdbEx_cuAskCache = null;
+    __cdbEx_cuGlowCache = null;
     var p = __cdbEx_paths();
     var raw = null;
     try {
@@ -530,6 +531,36 @@
         if (c && c.sig === sig) return c.value;
         var v = __cdbEx_cuAskPref().value !== false;
         __cdbEx_cuAskCache = { sig: sig, value: v };
+        return v;
+      } catch (e) { return true; }
+    };
+  }
+
+  // --- Computer Use: the "Claude is using your computer" glow ---------------
+  // ON by default (key computerUseGlow; only an explicit false turns it off; a
+  // boolean in the .jsonc wins and locks the row). js/cu_linux_executor.js
+  // asks globalThis.__cdbCuGlowEnabled() through __cdbCuGlowOff() every time
+  // upstream shows the glow - that is, at every Computer Use start - so a flip
+  // applies from the next start. Off: no glow, no rim and no drawn cursor on
+  // any session (upstream's Electron glow on X11, the Wayland bridge overlay of
+  // js/cu_wl_glow.js); KDE Wayland's own kwin-portal-bridge glow has no switch
+  // in that bridge and stays. A read that fails answers true (glow on). Cached
+  // like the ask switch: two stat calls per read, dropped by every write of ours.
+  var __cdbEx_CUGLOW_KEY = "computerUseGlow";
+  var __cdbEx_cuGlowCache = null;
+  function __cdbEx_cuGlowPref() {
+    var p = __cdbEx_paths();
+    var jsonc = __cdbEx_readFileKey(p.jsonc, __cdbEx_CUGLOW_KEY);
+    if (typeof jsonc === "boolean") return { value: jsonc, locked: true };
+    return { value: __cdbEx_readFileKey(p.json, __cdbEx_CUGLOW_KEY) !== false, locked: false };
+  }
+  if (process.platform === "linux") {
+    globalThis.__cdbCuGlowEnabled = function () {
+      try {
+        var c = __cdbEx_cuGlowCache, sig = __cdbEx_cuAskSig(__cdbEx_paths());
+        if (c && c.sig === sig) return c.value;
+        var v = __cdbEx_cuGlowPref().value !== false;
+        __cdbEx_cuGlowCache = { sig: sig, value: v };
         return v;
       } catch (e) { return true; }
     };
@@ -3019,7 +3050,7 @@
   // the switch's two small files.
   function __cdbEx_cusShots() {
     var d = __cdbEx_cusDecision();
-    var out = { ask: true, kwin: false, filtering: "unknown", gaps: [], session: d ? __cdbEx_cusSession(d) : "", backend: d ? d.backend : null };
+    var out = { ask: true, kwin: false, filtering: "unknown", gaps: [], session: d ? __cdbEx_cusSession(d) : "", backend: d ? d.backend : null, glow: null };
     try { out.ask = __cdbEx_cuAskPref().value !== false; } catch (e) { out.ask = true; }
     try {
       var ex = globalThis.__linuxExecutor;
@@ -3037,6 +3068,13 @@
             if (out.filtering === "filtered" && Array.isArray(src.gaps)) out.gaps = src.gaps.filter(function (g) { return typeof g === "string" && g; });
           }
           if (c && typeof c.backend === "string" && c.backend) out.backend = c.backend;
+        }
+        // What draws the glow here (x11 / overlay / none / unknown); kwin mode:
+        // its bridge's own session glow.
+        if (out.kwin) out.glow = "kwin";
+        else if (typeof ex.__glowNow === "function") {
+          var g = ex.__glowNow();
+          if (g && typeof g.where === "string") out.glow = g.where;
         }
       }
     } catch (e2) { out.filtering = "unknown"; }
@@ -3902,6 +3940,28 @@
       return { ok: true, enabled: enabled, path: res.path };
     },
 
+    // Computer Use: the glow. Pref and reader above. On is the absence of the
+    // key, off an explicit false.
+    "cdb-cu-glow:read": function () {
+      var s = __cdbEx_cuGlowPref();
+      return { ok: true, enabled: s.value !== false, lockedByJsonc: s.locked ? true : null };
+    },
+
+    "cdb-cu-glow:set": function (enabled) {
+      if (typeof enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
+      if (__cdbEx_cuGlowPref().locked) {
+        return { ok: false, lockedByJsonc: true,
+          error: __cdbEx_CUGLOW_KEY + " is set in claude-desktop-extra.jsonc - edit that file to change it" };
+      }
+      var res = __cdbEx_writeCfg(function (cfg) {
+        if (enabled) delete cfg[__cdbEx_CUGLOW_KEY];
+        else cfg[__cdbEx_CUGLOW_KEY] = false;
+        return enabled;
+      });
+      if (!res.ok) return res;
+      return { ok: true, enabled: enabled, path: res.path };
+    },
+
     "cdb-autofix-author:read": function () {
       var s = __cdbEx_autoFixAuthorPref();
       return { ok: true, entries: s.entries, warning: s.warning || null, lockedByJsonc: s.locked };
@@ -4445,6 +4505,8 @@
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use app approval is Linux only" }; };
       } else if (ch.indexOf("cdb-cu-esc:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Escape stops Computer Use is Linux only" }; };
+      } else if (ch.indexOf("cdb-cu-glow:") === 0) {
+        __cdbEx_handlers[ch] = function () { return { ok: false, error: "the Computer Use glow switch is Linux only" }; };
       } else if (ch.indexOf("cdb-cu-ax:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "Computer Use app controls are Linux only" }; };
       } else if (ch.indexOf("cdb-autofix-author:") === 0) {

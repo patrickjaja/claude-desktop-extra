@@ -619,12 +619,12 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
   check("page: the cu entry is labelled Cowork (Linux) and not carried on Windows",
     /\{ kind: "cu", label: "Cowork \(Linux\)", icon: ICON_CU, tooltip: "Cowork and Computer Use on Linux" \}/.test(page) && /var WINDOWS_NAV = \{ models: true \};/.test(page) &&
     /cu: renderCu,/.test(page), true);
-  check("page: CU_ROWS is ask before control, Escape stops Computer Use, background display, then read app controls",
-    /var CU_ROWS = \[\s*renderCuAskRow,\s*renderCuEscapeAbortCuRow,\s*renderCuBackgroundRow,\s*renderCuAxRow\s*\];/.test(page), true);
+  check("page: CU_ROWS is ask before control, Escape stops Computer Use, background display, read app controls, the glow, then the drawn cursor",
+    /var CU_ROWS = \[\s*renderCuAskRow,\s*renderCuEscapeAbortCuRow,\s*renderCuBackgroundRow,\s*renderCuAxRow,\s*renderCuGlowRow,\s*renderCuDrawnCursorRow\s*\];/.test(page), true);
   check("page: no Computer Use row left in FEATURE_GROUPS",
     /var FEATURE_GROUPS = [\s\S]*?renderCu(Status|Background|Ax)/.test(page) || /function renderCuStatusRow\b/.test(page), false);
-  check("page: the three switches share the one Options heading",
-    (page.match(/section: "Options"/g) || []).length === 3 && (page.match(/sharedSection: true/g) || []).length === 3 &&
+  check("page: the four switches share the one Options heading",
+    (page.match(/section: "Options"/g) || []).length === 4 && (page.match(/sharedSection: true/g) || []).length === 4 &&
     !/section: "Computer Use"/.test(page), true);
   const cuPage = /function renderCu\(panel\) \{[\s\S]*?\n {2}\}\n/.exec(page);
   check("page: renderCu draws the status block first, then the Options heading, then CU_ROWS",

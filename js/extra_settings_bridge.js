@@ -145,6 +145,14 @@
       return ipcRenderer.invoke("cdb-cu-esc:set", enabled === true);
     },
 
+    // Computer Use: show the glow. Fixed channels, boolean only.
+    cuGlowRead: function () {
+      return ipcRenderer.invoke("cdb-cu-glow:read");
+    },
+    cuGlowSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-cu-glow:set", enabled === true);
+    },
+
     // Computer Use: ask before controlling an app. Fixed channels, boolean only.
     cuAskRead: function () {
       return ipcRenderer.invoke("cdb-cu-ask:read");

@@ -1559,6 +1559,299 @@ async function escTwoPages(featuresItem, cuItem) {
   window.__cuEscCalls = [];
 }
 
+// "Drawn cursor in the glow": Anthropic's flag 1916550538 as a row of the
+// Cowork (Linux) page's Computer Use section. It must go through the very
+// channels the Anthropic page uses (flagsSet(id, bool) / flagsUnset(id)),
+// show the same state, delete the key when cleared, and the Anthropic page
+// must show whatever was done on it - and the other way round.
+async function drawnCursorRow(cuItem, flagsItem) {
+  const ID = "1916550538";
+  const SW = '.cdbx-switch[aria-label="Anthropic flag ' + ID + ': drawn cursor in the glow"]';
+  const BG_SW = '.cdbx-switch[aria-label="let Computer Use work on a background display instead of your desktop"]';
+  const AX_SW = '.cdbx-switch[aria-label="let Computer Use read app controls through the accessibility service"]';
+  const real = {};
+  ["flagsCatalog", "flagsRead", "flagsSet", "flagsUnset"].forEach(function (k) { real[k] = window.cdbExtra[k]; });
+  const realCus = window.__cusState;
+  const calls = [];
+  const st = { server: {}, effective: {}, overridesJson: {}, overridesJsonc: {} };
+  let catalog = [{ id: ID, note: "Computer Use glow when Claude has the pointer: default value of the glow preference (cu-glow)", valueFlag: false, warn: "" },
+    { id: "1001", note: "Cowork sandbox sessions on the desktop", valueFlag: false, warn: "" }];
+  window.cdbExtra.flagsCatalog = function () { return Promise.resolve({ ok: true, count: catalog.length, entries: catalog }); };
+  window.cdbExtra.flagsRead = function () {
+    return Promise.resolve({ ok: true, storeSeen: true, server: JSON.parse(JSON.stringify(st.server)),
+      effective: JSON.parse(JSON.stringify(st.effective)), overridesJson: JSON.parse(JSON.stringify(st.overridesJson)),
+      overridesJsonc: JSON.parse(JSON.stringify(st.overridesJsonc)), builtins: {},
+      paths: { json: "/home/u/.config/Claude/claude-desktop-extra.json", jsonc: "/home/u/.config/Claude/claude-desktop-extra.jsonc", userData: "/home/u/.config/Claude" } });
+  };
+  // Same effect as the main side's writer: set stores the value, unset deletes the key.
+  window.cdbExtra.flagsSet = function (id, value) { calls.push("set:" + id + ":" + typeof value + ":" + value); st.overridesJson[id] = value; return Promise.resolve({ ok: true }); };
+  window.cdbExtra.flagsUnset = function (id) { calls.push("unset:" + id + ":" + arguments.length); delete st.overridesJson[id]; return Promise.resolve({ ok: true }); };
+  const open = async function (item) { document.getElementById("row-account").click(); await sleep(20); item.click(); await sleep(150); return document.querySelector(".cdbx-panel"); };
+  const anthropicRow = function (panel) {
+    return Array.from(panel.querySelectorAll(".cdbx-list .cdbx-row")).filter(function (r) { return r.querySelector(".cdbx-id").textContent === ID; })[0] || null;
+  };
+  const before = function (a, b) { return !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING); };
+  try {
+    // --- follow Anthropic: no override, the account serves it off
+    st.server[ID] = { on: false, value: false };
+    st.effective[ID] = { on: false, value: false };
+    window.__cusState = Object.assign({}, realCus, { screenshots: { session: "GNOME X11" } });
+    let cu = await open(cuItem);
+    let sw = cu.querySelector(SW);
+    let row = sw && sw.closest(".cdbx-row");
+    ok(!!row, "Computer Use section: the drawn-cursor row is there");
+    if (!row) return;
+    ok(!!row.closest('[data-cdbx-section="cu"]') && before(cu.querySelector(AX_SW), sw) && before(cu.querySelector(BG_SW), sw),
+       "  inside Computer Use, after our own switches");
+    ok(row.querySelector(".cdbx-id").textContent === "Drawn cursor in the glowAnthropic flag " + ID, "  titled, with the flag id: " + row.querySelector(".cdbx-id").textContent);
+    const notes = Array.from(row.querySelectorAll(".cdbx-note")).map(function (n) { return n.textContent; }).join(" ");
+    ok(/GrowthBook flag 1916550538, not a switch of this package/.test(notes) && /thin rim/.test(notes) && /arrow glides to each click target/.test(notes) &&
+       /about half a second per click/.test(notes), "  says what it is and does");
+    ok(/wherever the glow is shown: X11 with a compositing manager, and sway, Hyprland and niri \(Wayland\) when the bundled bridge draws the glow/.test(notes) &&
+       /none on GNOME or KDE Plasma \(Wayland\), on a background display, on X11 without a compositing manager, or with the glow switched off/.test(notes),
+       "  says where it has an effect and where none");
+    ok(/re-read on every flag load \(startup, about hourly, account changes\)/.test(notes) && /restart Claude Desktop/.test(notes) && !/applies live/i.test(notes),
+       "  says when a change applies, as the flag file does");
+    ok(!/\u2014/.test(row.textContent), "  no U+2014 dash");
+    ok(sw.getAttribute("aria-checked") === "false" && /^off - off for your account$/.test(row.querySelector(".cdbx-state").textContent) && !row.querySelector(".cdbx-clear"),
+       "  follows Anthropic by default: off for your account, no override, no clear button: " + row.querySelector(".cdbx-state").textContent);
+    ok(row.querySelector(".cdbx-note.cdbx-hide") && row.querySelector("[data-cdbx-flag-session]").classList.contains("cdbx-hide"), "  no session note on an X11 session");
+
+    // --- write through it: same channel, same payload as the Anthropic page
+    sw.click();
+    await sleep(60);
+    ok(calls.join("|") === "set:" + ID + ":boolean:true" && sw.getAttribute("aria-checked") === "true", "  clicking forces it on: flagsSet(id, true): " + calls.join("|"));
+    ok(/^on - your override \(true\), applies after a restart \(off right now\)$/.test(row.querySelector(".cdbx-state").textContent) && !!row.querySelector(".cdbx-clear"), "  state line shows the override and that the running app is still off, clear appears: " + row.querySelector(".cdbx-state").textContent);
+    ok(!!row.querySelector(".cdbx-aside .cdbx-btn, .cdbx-row-aside .cdbx-btn") && !row.querySelector(".cdbx-row-aside .cdbx-btn").classList.contains("cdbx-hide"), "  Restart now is offered after a change");
+
+    // the Anthropic page shows it
+    let fl = await open(flagsItem);
+    let arow = anthropicRow(fl);
+    ok(!!arow && arow.querySelector(".cdbx-switch").getAttribute("aria-checked") === "true" && /your override \(true\), applies after a restart \(off right now\)/.test(arow.querySelector(".cdbx-state").textContent) && !!arow.querySelector(".cdbx-clear"),
+       "the Anthropic page shows the override made on the Computer Use page, with the restart tail");
+
+    // --- forced off from the Computer Use page
+    cu = await open(cuItem);
+    sw = cu.querySelector(SW);
+    ok(!!sw && sw.getAttribute("aria-checked") === "true", "the Computer Use page shows the saved override when drawn again");
+    sw.click();
+    await sleep(60);
+    ok(calls[calls.length - 1] === "set:" + ID + ":boolean:false" && sw.getAttribute("aria-checked") === "false" &&
+       /^off - your override \(false\)$/.test(sw.closest(".cdbx-row").querySelector(".cdbx-state").textContent), "  clicking again forces it off (running app off too, so no tail): flagsSet(id, false)");
+    fl = await open(flagsItem);
+    arow = anthropicRow(fl);
+    ok(!!arow && arow.querySelector(".cdbx-switch").getAttribute("aria-checked") === "false" && /your override \(false\)/.test(arow.querySelector(".cdbx-state").textContent),
+       "the Anthropic page shows the forced-off state");
+
+    // --- clear removes the key; the account's value is back on both pages
+    st.server[ID] = { on: true, value: true };
+    cu = await open(cuItem);
+    sw = cu.querySelector(SW);
+    row = sw.closest(".cdbx-row");
+    const clear = row.querySelector(".cdbx-clear");
+    ok(!!clear && sw.getAttribute("aria-checked") === "false", "a forced-off flag over an account that serves it on: off, clear offered");
+    clear.click();
+    await sleep(60);
+    ok(calls[calls.length - 1] === "unset:" + ID + ":1" && !(ID in st.overridesJson), "  clear calls flagsUnset(id) and the key is gone: " + calls[calls.length - 1]);
+    ok(sw.getAttribute("aria-checked") === "false" || sw.getAttribute("aria-checked") === "true", "  switch still there");
+    st.effective[ID] = { on: true, value: true };
+    cu = await open(cuItem);
+    sw = cu.querySelector(SW);
+    row = sw.closest(".cdbx-row");
+    ok(sw.getAttribute("aria-checked") === "true" && /^on - on for your account$/.test(row.querySelector(".cdbx-state").textContent) && !row.querySelector(".cdbx-clear"),
+       "after a re-draw it follows Anthropic again: on for your account, no clear");
+    fl = await open(flagsItem);
+    arow = anthropicRow(fl);
+    ok(!!arow && arow.querySelector(".cdbx-switch").getAttribute("aria-checked") === "true" && /on for your account/.test(arow.querySelector(".cdbx-state").textContent) && !arow.querySelector(".cdbx-clear"),
+       "the Anthropic page agrees");
+
+    // --- an override made on the Anthropic page shows on the Computer Use page
+    arow.querySelector(".cdbx-switch").click();
+    await sleep(60);
+    ok(calls[calls.length - 1] === "set:" + ID + ":boolean:false", "the Anthropic page writes through the same channel and payload shape: " + calls[calls.length - 1]);
+    cu = await open(cuItem);
+    sw = cu.querySelector(SW);
+    ok(!!sw && sw.getAttribute("aria-checked") === "false" && /your override \(false\)/.test(sw.closest(".cdbx-row").querySelector(".cdbx-state").textContent) && !!sw.closest(".cdbx-row").querySelector(".cdbx-clear"),
+       "the Computer Use page shows an override made on the Anthropic page");
+
+    // --- revisit: the switch shows the SAVED override, not the running value
+    async function revisit(label, running, saved) {
+      st.server[ID] = { on: running, value: running };
+      st.effective[ID] = { on: running, value: running };
+      st.overridesJson[ID] = saved;
+      const tail = running === saved ? "" : ", applies after a restart (" + (running ? "on" : "off") + " right now)";
+      const want = (saved ? "on" : "off") + " - your override (" + saved + ")" + tail;
+      // Computer Use page: shows the override, one click writes the opposite
+      let c = await open(cuItem);
+      let w = c.querySelector(SW);
+      let r = w.closest(".cdbx-row");
+      ok(w.getAttribute("aria-checked") === String(saved) && r.querySelector(".cdbx-state").textContent === want,
+         label + ": Computer Use row shows the saved override and the tail: " + r.querySelector(".cdbx-state").textContent);
+      const n = calls.length;
+      w.click();
+      await sleep(60);
+      ok(calls.length === n + 1 && calls[n] === "set:" + ID + ":boolean:" + (!saved), label + ": one click writes the opposite: " + calls.slice(n).join("|"));
+      // clearing returns to the account value
+      st.overridesJson[ID] = saved;
+      c = await open(cuItem);
+      w = c.querySelector(SW);
+      w.closest(".cdbx-row").querySelector(".cdbx-clear").click();
+      await sleep(60);
+      ok(!(ID in st.overridesJson) && w.getAttribute("aria-checked") === String(st.server[ID].on) &&
+         /for your account$/.test(w.closest(".cdbx-row").querySelector(".cdbx-state").textContent), label + ": clear drops the key and shows the account value");
+      // Anthropic page: same
+      st.overridesJson[ID] = saved;
+      st.effective[ID] = { on: running, value: running };
+      let f = await open(flagsItem);
+      let a = anthropicRow(f);
+      ok(a.querySelector(".cdbx-switch").getAttribute("aria-checked") === String(saved) && a.querySelector(".cdbx-state").textContent === want.replace(/^(on|off) - /, ""),
+         label + ": Anthropic page shows the saved override and the tail: " + a.querySelector(".cdbx-state").textContent);
+      const m2 = calls.length;
+      a.querySelector(".cdbx-switch").click();
+      await sleep(60);
+      ok(calls.length === m2 + 1 && calls[m2] === "set:" + ID + ":boolean:" + (!saved), label + ": Anthropic page: one click writes the opposite");
+      delete st.overridesJson[ID];
+    }
+    await revisit("override true, running off", false, true);
+    await revisit("override false, running on", true, false);
+    // store not loaded: the running value is unknown, plain wording
+    st.server = {}; st.effective = {}; st.overridesJson[ID] = true;
+    cu = await open(cuItem);
+    ok(cu.querySelector(SW).getAttribute("aria-checked") === "true" && cu.querySelector(SW).closest(".cdbx-row").querySelector(".cdbx-state").textContent === "on - your override (true)",
+       "store not loaded: the switch shows the override, plain wording");
+    delete st.overridesJson[ID];
+    st.server[ID] = { on: false, value: false };
+    st.effective[ID] = { on: false, value: false };
+
+    // --- a hand-edited .jsonc locks it
+    st.overridesJsonc[ID] = true;
+    cu = await open(cuItem);
+    sw = cu.querySelector(SW);
+    ok(!!sw && sw.disabled && /set in claude-desktop-extra\.jsonc/.test(sw.closest(".cdbx-row").querySelector(".cdbx-state").textContent), "a flag set in the .jsonc locks the switch");
+    delete st.overridesJsonc[ID];
+
+    // --- a failed write says so and changes nothing
+    window.cdbExtra.flagsSet = function () { return Promise.resolve({ ok: false, error: "cannot write x" }); };
+    cu = await open(cuItem);
+    sw = cu.querySelector(SW);
+    const was = sw.getAttribute("aria-checked");
+    sw.click();
+    await sleep(60);
+    ok(sw.getAttribute("aria-checked") === was && /Could not save 1916550538: cannot write x/.test((document.querySelector(".cdbx-toast") || {}).textContent || ""),
+       "a refused write is toasted and the switch stays");
+
+    // --- the session note: where no glow (or no drawn cursor) is drawn
+    window.__cusState = Object.assign({}, realCus, { screenshots: { session: "KDE Wayland", kwin: true, glow: "kwin" } });
+    cu = await open(cuItem);
+    row = cu.querySelector(SW).closest(".cdbx-row");
+    let sn = row.querySelector("[data-cdbx-flag-session]");
+    ok(!sn.classList.contains("cdbx-hide") && /^This session \(KDE Wayland\) shows no drawn cursor: the KDE bridge draws its own glow, without one\.$/.test(sn.textContent) && !!cu.querySelector(SW),
+       "KDE Wayland: the row stays and says its bridge's own glow has none: " + sn.textContent);
+    window.__cusState = Object.assign({}, realCus, { screenshots: { session: "sway (Wayland)", glow: "none" } });
+    cu = await open(cuItem);
+    sn = cu.querySelector(SW).closest(".cdbx-row").querySelector("[data-cdbx-flag-session]");
+    ok(!sn.classList.contains("cdbx-hide") && /^This session \(sway \(Wayland\)\) shows no drawn cursor: no glow is drawn here\.$/.test(sn.textContent),
+       "a Wayland row without the overlay says no glow is drawn: " + sn.textContent);
+    window.__cusState = Object.assign({}, realCus, { screenshots: { session: "sway (Wayland)", glow: "overlay" } });
+    cu = await open(cuItem);
+    sn = cu.querySelector(SW).closest(".cdbx-row").querySelector("[data-cdbx-flag-session]");
+    ok(sn.classList.contains("cdbx-hide"), "a Wayland row whose bridge draws the overlay: no note");
+
+    // --- the build does not know the flag: no row
+    catalog = [{ id: "1001", note: "x", valueFlag: false, warn: "" }];
+    cu = await open(cuItem);
+    ok(!cu.querySelector(SW) && !!cu.querySelector(AX_SW), "a catalog without the flag leaves no row");
+    catalog = [{ id: ID, note: "n", valueFlag: false, warn: "" }];
+    window.cdbExtra.flagsRead = function () { return Promise.resolve({ ok: false, error: "Linux only" }); };
+    cu = await open(cuItem);
+    ok(!cu.querySelector(SW) && !!cu.querySelector(AX_SW), "a 'Linux only' answer removes only this row");
+  } finally {
+    Object.keys(real).forEach(function (k) { window.cdbExtra[k] = real[k]; });
+    window.__cusState = realCus;
+  }
+}
+
+// "Show the glow while Claude uses the computer": our switch on the Computer
+// Use page, on by default, directly above the drawn-cursor row; off tells the
+// drawn-cursor row it needs the glow; a session line from main's glow fact.
+async function cuGlowRow(cuItem) {
+  const GSW = '.cdbx-switch[aria-label="show the glow while Claude uses the computer"]';
+  const DSW = '.cdbx-switch[aria-label="Anthropic flag 1916550538: drawn cursor in the glow"]';
+  const AX_SW = '.cdbx-switch[aria-label="let Computer Use read app controls through the accessibility service"]';
+  const realCus = window.__cusState;
+  const open = async function () { document.getElementById("row-account").click(); await sleep(20); cuItem.click(); await sleep(150); return document.querySelector(".cdbx-panel"); };
+  const before = function (a, b) { return !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING); };
+  const toastText = function () { const t = document.querySelector(".cdbx-toast"); return t ? t.textContent : ""; };
+  const real = { flagsCatalog: window.cdbExtra.flagsCatalog, flagsRead: window.cdbExtra.flagsRead };
+  window.cdbExtra.flagsCatalog = function () { return Promise.resolve({ ok: true, count: 1, entries: [{ id: "1916550538", note: "n", valueFlag: false, warn: "" }] }); };
+  window.cdbExtra.flagsRead = function () { return Promise.resolve({ ok: true, storeSeen: true, server: {}, effective: {}, overridesJson: {}, overridesJsonc: {}, builtins: {}, paths: {} }); };
+  try {
+    window.__cuGlowState = { ok: true, enabled: true, lockedByJsonc: null };
+    window.__cuGlowSets = [];
+    window.__cusState = Object.assign({}, realCus, { screenshots: { session: "GNOME X11", glow: "x11" } });
+    let cu = await open();
+    let sw = cu.querySelector(GSW);
+    const row = sw && sw.closest(".cdbx-row");
+    ok(!!row, "glow switch: the row is on the Computer Use page");
+    if (!row) return;
+    const drawn = cu.querySelector(DSW);
+    const nextRow = row.closest(".cdbx-list").nextElementSibling;
+    ok(!!row.closest('[data-cdbx-section="cu"]') && before(cu.querySelector(AX_SW), sw) && before(sw, drawn) && !!nextRow && nextRow.contains(drawn),
+       "  inside Computer Use, directly above the drawn-cursor row");
+    ok(row.querySelector(".cdbx-id").textContent === "Show the glow while Claude uses the computer", "  titled: " + row.querySelector(".cdbx-id").textContent);
+    const note = row.querySelector(".cdbx-note").textContent;
+    ok(/Off: no glow, rim or drawn cursor; Computer Use itself works the same/.test(note) && /Applies from the next Computer Use task/.test(note) &&
+       /KDE Plasma \(Wayland\) keeps the glow its own bridge draws/.test(note), "  says what off does, when it applies, and the KDE exception");
+    ok(!/\u2014/.test(row.textContent), "  no U+2014 dash");
+    ok(sw.getAttribute("aria-checked") === "true" && /^on - the glow shows while Claude uses the computer$/.test(row.querySelector(".cdbx-state").textContent),
+       "  on by default: " + row.querySelector(".cdbx-state").textContent);
+    const gs = row.querySelector("[data-cdbx-glow-session]");
+    ok(!!gs && !gs.classList.contains("cdbx-hide") && /^On this session \(GNOME X11\) Anthropic's own glow is shown/.test(gs.textContent), "  X11 session line: " + (gs && gs.textContent));
+    ok(drawn.closest(".cdbx-row").querySelector("[data-cdbx-flag-session]").classList.contains("cdbx-hide"), "  glow on, X11: the drawn-cursor row has no note");
+    sw.click();
+    await sleep(60);
+    ok(JSON.stringify(window.__cuGlowSets) === "[false]" && sw.getAttribute("aria-checked") === "false" && /^off - no glow, rim or drawn cursor$/.test(row.querySelector(".cdbx-state").textContent),
+       "  clicking it writes false: " + JSON.stringify(window.__cuGlowSets));
+    ok(/No glow from the next Computer Use task/.test(toastText()), "  with its toast: " + toastText());
+    const dn = drawn.closest(".cdbx-row").querySelector("[data-cdbx-flag-session]");
+    ok(!dn.classList.contains("cdbx-hide") && /^The drawn cursor needs the glow, which is off/.test(dn.textContent), "  the drawn-cursor row now says it needs the glow: " + dn.textContent);
+    sw.click();
+    await sleep(60);
+    ok(dn.classList.contains("cdbx-hide") && sw.getAttribute("aria-checked") === "true", "  back on: the note goes away");
+    // Drawn again with the glow off (read from main): the note is there at once.
+    window.__cuGlowState = { ok: true, enabled: false, lockedByJsonc: null };
+    cu = await open();
+    ok(!cu.querySelector(DSW).closest(".cdbx-row").querySelector("[data-cdbx-flag-session]").classList.contains("cdbx-hide"), "  off from main: the drawn-cursor note shows when drawn");
+    // Session lines.
+    for (const [facts, re] of [
+      [{ session: "sway (Wayland)", glow: "overlay" }, /^On this session \(sway \(Wayland\)\) the bundled bridge draws the glow\.$/],
+      [{ session: "sway (Wayland)", glow: "none" }, /^On this session \(sway \(Wayland\)\) no glow is shown: the bridge for this desktop does not draw it\.$/],
+      [{ session: "KDE Wayland", kwin: true, glow: "kwin" }, /^On this session \(KDE Wayland\) the KDE bridge draws its own glow while it shares the screen; this switch does not turn that one off\.$/],
+    ]) {
+      window.__cusState = Object.assign({}, realCus, { screenshots: facts });
+      cu = await open();
+      const n = cu.querySelector(GSW).closest(".cdbx-row").querySelector("[data-cdbx-glow-session]");
+      ok(!n.classList.contains("cdbx-hide") && re.test(n.textContent), "  session line (" + facts.glow + "): " + n.textContent);
+    }
+    window.__cusState = Object.assign({}, realCus, { screenshots: { session: "sway (Wayland)", glow: "unknown" } });
+    cu = await open();
+    ok(cu.querySelector(GSW).closest(".cdbx-row").querySelector("[data-cdbx-glow-session]").classList.contains("cdbx-hide"), "  unknown: no session line");
+    // Locked by the .jsonc, and the win32 refusal.
+    window.__cuGlowState = { ok: true, enabled: false, lockedByJsonc: true };
+    cu = await open();
+    sw = cu.querySelector(GSW);
+    ok(!!sw && sw.getAttribute("aria-checked") === "false" && /set in claude-desktop-extra\.jsonc/.test(sw.closest(".cdbx-row").querySelector(".cdbx-state").textContent), "  a .jsonc false locks it off and says where");
+    window.__cuGlowState = { ok: false, error: "the Computer Use glow switch is Linux only" };
+    cu = await open();
+    ok(!cu.querySelector(GSW) && !!cu.querySelector(AX_SW), "  a Linux-only refusal hides only this row");
+  } finally {
+    window.cdbExtra.flagsCatalog = real.flagsCatalog;
+    window.cdbExtra.flagsRead = real.flagsRead;
+    window.__cuGlowState = { ok: true, enabled: true, lockedByJsonc: null };
+    window.__cusState = realCus;
+  }
+}
+
 async function cusPanel(cuItem) {
   async function remount() {
     document.getElementById("row-account").click();
@@ -3286,6 +3579,8 @@ async function run() {
       await escTwoPages(items[1], items[2]);
       await modelsPanel(items[3]);
       await flagsPanel(items[4]);
+      await drawnCursorRow(items[2], items[4]);
+      await cuGlowRow(items[2]);
       await deployPanel(items[5]);
       // Last: it re-mounts the nav, so the items above are stale afterwards.
       await deepLink();
@@ -3665,6 +3960,8 @@ window.__cusKvmDisable = { ok: true, changed: true, message: "cdb-kvm-access: di
 window.__cuAxState = { ok: true, enabled: false, lockedByJsonc: null };
 window.__cuAskState = { ok: true, enabled: true, lockedByJsonc: null };
 window.__cuAskSets = [];
+window.__cuGlowState = { ok: true, enabled: true, lockedByJsonc: null };
+window.__cuGlowSets = [];
 window.__cusState = { ok: true, rows: window.__cusRows(), actions: { tpmEnable: window.__cusPkEnable, tpmDisable: null,
   restart: false, resetScreenSharing: false, tssCommand: null } };
 window.__cusCalls = { read: 0, enable: 0, disable: 0, reset: 0, kvmEnable: 0, kvmDisable: 0 };
@@ -3868,6 +4165,8 @@ window.cdbExtra = {
   },
   cuAxRead: function () { return Promise.resolve(window.__cuAxState); },
   cuAskRead: function () { return Promise.resolve(window.__cuAskState); },
+  cuGlowRead: function () { return Promise.resolve(window.__cuGlowState); },
+  cuGlowSet: function (v) { window.__cuGlowSets.push(v); window.__cuGlowState = Object.assign({}, window.__cuGlowState, { enabled: v === true }); return Promise.resolve({ ok: true, enabled: v === true }); },
   cuAskSet: function (v) { window.__cuAskSets.push(v); window.__cuAskState = Object.assign({}, window.__cuAskState, { enabled: v === true }); return Promise.resolve({ ok: true, enabled: v === true }); },
   cuAxSet: function (v) { window.__cuAxState = Object.assign({}, window.__cuAxState, { enabled: v === true }); return Promise.resolve({ ok: true, enabled: v === true }); },
   cuStatusRead: function () { window.__cusCalls.read++; return Promise.resolve(window.__cusState); },
@@ -3930,10 +4229,10 @@ for (const [name, fixture] of scenarios) {
   try {
     // Virtual time, so the budget costs no wall clock: it only has to cover the
     // sum of the driver's sleep() calls in the longest scenario.
-    // 20 s: the background-display setup page tests (issue #300) and the Models link tests.
+    // 30 s: the background-display setup page tests (issue #300), the Models link tests and the drawn-cursor row tests.
     dump = execFileSync(CHROMIUM, [
       "--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",
-      "--window-size=1000,700", "--virtual-time-budget=20000",
+      "--window-size=1000,700", "--virtual-time-budget=30000",
       "--dump-dom", "file://" + file
     ], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
   } catch (e) {

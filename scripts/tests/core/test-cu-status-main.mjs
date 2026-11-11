@@ -1069,7 +1069,7 @@ section("ask before Computer Use controls an app: switch and screenshot facts");
   delete globalThis.__cuKwinMode;
   globalThis.__linuxExecutor = { capabilitiesNow: () => ({ screenshotFiltering: "mask", backend: "x11-bridge", hitTest: "native" }) };
   let st = await read();
-  ok(J(st.screenshots) === J({ ask: true, kwin: false, filtering: "filtered", gaps: [], session: "X11", backend: "x11-bridge" }), "mask -> filtered", J(st.screenshots));
+  ok(J(st.screenshots) === J({ ask: true, kwin: false, filtering: "filtered", gaps: [], session: "X11", backend: "x11-bridge", glow: null }), "mask -> filtered", J(st.screenshots));
   // R2: the last capture's own answer wins over the capability probe; O3: gaps
   globalThis.__linuxExecutor = { capabilitiesNow: () => ({ screenshotFiltering: "mask", backend: "x11-bridge", hitTest: "native" }), __lastCapture: () => ({ filtering: "none", gaps: [], at: 1 }) };
   st = await read();
@@ -1109,6 +1109,52 @@ section("ask before Computer Use controls an app: switch and screenshot facts");
   const w = load({ platform: "win32" });
   r = await w.call("cdb-cu-ask:read");
   ok(r.ok === false && /Linux only/.test(r.error), "win32: cdb-cu-ask answers Linux only", J(r));
+}
+
+section("Computer Use: show the glow (switch, reader, status fact)");
+{
+  const J1 = join(userData, "claude-desktop-extra.json");
+  const JC = join(userData, "claude-desktop-extra.jsonc");
+  const saved = [J1, JC].map((f) => (existsSync(f) ? readFileSync(f, "utf8") : null));
+  rmSync(J1, { force: true }); rmSync(JC, { force: true });
+  ok(typeof m.handlers["cdb-cu-glow:read"] === "function" && typeof m.handlers["cdb-cu-glow:set"] === "function", "both cdb-cu-glow channels are registered");
+  let r = await m.call("cdb-cu-glow:read");
+  ok(r.ok === true && r.enabled === true && r.lockedByJsonc === null, "on by default (no key)", J(r));
+  ok(typeof globalThis.__cdbCuGlowEnabled === "function" && globalThis.__cdbCuGlowEnabled() === true, "the executor-side reader says on");
+  r = await m.call("cdb-cu-glow:set", 0);
+  ok(r.ok === false && /boolean/.test(r.error), "a non-boolean is refused", J(r));
+  r = await m.call("cdb-cu-glow:set", false);
+  ok(r.ok === true && r.enabled === false && JSON.parse(readFileSync(J1, "utf8")).computerUseGlow === false, "off writes computerUseGlow: false", J(r));
+  ok(globalThis.__cdbCuGlowEnabled() === false && (await m.call("cdb-cu-glow:read")).enabled === false, "the reader sees it at once (cache dropped by the write)");
+  r = await m.call("cdb-cu-glow:set", true);
+  ok(r.ok === true && !("computerUseGlow" in JSON.parse(readFileSync(J1, "utf8"))) && globalThis.__cdbCuGlowEnabled() === true, "on again removes the key");
+  writeFileSync(JC, '{ "computerUseGlow": false }');
+  r = await m.call("cdb-cu-glow:read");
+  ok(r.enabled === false && r.lockedByJsonc === true && globalThis.__cdbCuGlowEnabled() === false, "a .jsonc boolean wins, locks, and the reader follows a hand edit", J(r));
+  r = await m.call("cdb-cu-glow:set", true);
+  ok(r.ok === false && r.lockedByJsonc === true, "and the switch cannot override it", J(r));
+  rmSync(JC, { force: true });
+  ok(globalThis.__cdbCuGlowEnabled() === true, "the .jsonc removed: on again");
+  // The status fact: what draws the glow on this session.
+  reset();
+  delete globalThis.__cuKwinMode;
+  globalThis.__linuxExecutor = { capabilitiesNow: () => ({ screenshotFiltering: "none", backend: "wlroots-bridge" }), __glowNow: () => ({ where: "overlay", bridge: "wlroots-bridge" }) };
+  let st = await read();
+  ok(st.screenshots.glow === "overlay", "the executor's __glowNow() answer is the glow fact", J(st.screenshots));
+  globalThis.__linuxExecutor = { capabilitiesNow: () => ({ screenshotFiltering: "none" }) };
+  st = await read();
+  ok(st.screenshots.glow === null, "an executor without __glowNow: null (unknown)", J(st.screenshots));
+  globalThis.__linuxExecutor = { capabilities: { screenshotFiltering: "native", platform: "linux" } };
+  globalThis.__cuKwinMode = true;
+  st = await read();
+  ok(st.screenshots.glow === "kwin", "kwin mode: its bridge's own glow", J(st.screenshots));
+  delete globalThis.__cuKwinMode;
+  delete globalThis.__linuxExecutor;
+  reset();
+  [J1, JC].forEach((f, i) => { if (saved[i] === null) rmSync(f, { force: true }); else writeFileSync(f, saved[i]); });
+  const w = load({ platform: "win32" });
+  r = await w.call("cdb-cu-glow:read");
+  ok(r.ok === false && /Linux only/.test(r.error), "win32: cdb-cu-glow answers Linux only", J(r));
 }
 
 
