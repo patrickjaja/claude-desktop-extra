@@ -17,25 +17,31 @@ import std/[os]
 import regex
 
 proc apply*(input: string): string =
-  # Check if already patched.
-  # Since v1.26832.0 the minifier emits template literals for most string
-  # literals (case`idle`) and the state enum is reached through a namespace
-  # alias (D.r.Idle), so accept either quoting and one-or-more member hops.
+  # Since v5.1231.0 the idle case is a ternary on the Low Data hold:
+  #   case`idle`:return e.heldOnLowData===void 0
+  #     ?{status:X.Idle}
+  #     :{status:X.Idle,versionNumber:e.heldOnLowData,heldOnLowData:!0,heldOnExpensiveNetwork:...}
+  # The plain branch is the only one reachable on Linux (the hold needs a
+  # discovered update), and it is the one without version/versionNumber, so
+  # that is the branch we extend. The held branch already carries a string
+  # versionNumber and is left alone.
+  # Check if already patched (positive assertion of OUR injected end-state).
   let already =
-    re2"""case["`]idle["`]:return\{status:[\w$]+(?:\.[\w$]+)+,version:"",versionNumber:""\}"""
+    re2"""case["`]idle["`]:return [\w$]+\.heldOnLowData===void 0\?\{status:[\w$]+(?:\.[\w$]+)+,version:"",versionNumber:""\}:\{status:[\w$]+(?:\.[\w$]+)+,versionNumber:[\w$]+\.heldOnLowData,heldOnLowData:!0"""
   if input.contains(already):
     echo "  [OK] Updater idle state: already patched (skipped)"
     return input
 
-  # Pattern: case"idle":return{status:<var>.Idle}  (or case`idle` / <ns>.<var>.Idle)
-  # We need to add version:"",versionNumber:"" before the closing brace.
-  let pattern = re2"""(case["`]idle["`]:return\{status:[\w$]+(?:\.[\w$]+)+)\}"""
+  # Pattern: case`idle`:return e.heldOnLowData===void 0?{status:<ns>.Idle}:{status:<ns>.Idle,versionNumber:e.heldOnLowData,heldOnLowData:!0
+  # Add version:"",versionNumber:"" before the closing brace of the plain branch.
+  let pattern =
+    re2"""(case["`]idle["`]:return [\w$]+\.heldOnLowData===void 0\?\{status:[\w$]+(?:\.[\w$]+)+)(\}:\{status:[\w$]+(?:\.[\w$]+)+,versionNumber:[\w$]+\.heldOnLowData,heldOnLowData:!0)"""
   var count = 0
   result = input.replace(
     pattern,
     proc(m: RegexMatch2, s: string): string =
       inc count
-      s[m.group(0)] & """,version:"",versionNumber:""}""",
+      s[m.group(0)] & ",version:\"\",versionNumber:\"\"" & s[m.group(1)],
   )
   if count == 1:
     echo "  [OK] Updater idle state: added version/versionNumber (1 match)"

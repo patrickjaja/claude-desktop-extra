@@ -644,7 +644,7 @@
     };
   }
 
-  // The managed-config key catalog of Claude Desktop v4.16336.0 (203 keys), read out of the
+  // The managed-config key catalog of Claude Desktop v5.1231.0 (213 keys), read out of the
   // bundle's own schema (flat key, zod leaf type, scopes, title). Upstream drives
   // its 3P Setup wizard from that schema; we cannot reach it from here (it is
   // module-scoped in index.pre.js), so this is a PINNED COPY and is therefore
@@ -840,9 +840,6 @@
     { key: "entraAzureCloud", kind: "enum", group: "connection", scope: "3p",
       label: "Azure cloud", options: ["global", "us-gov-high", "us-gov-dod", "china"],
       note: "Microsoft cloud the add-in signs in against; anything other than global needs your own client ID (upstream gates this @next)." },
-    { key: "entraScope", kind: "text", group: "connection", scope: "3p",
-      label: "Entra delegated scope",
-      note: "Delegated scopes the add-in requests, space- or comma-separated and all for one resource, e.g. api://.../.default; requires your own client ID (upstream gates this @next)." },
 
     { key: "coworkVmIpv6Enabled", kind: "bool", group: "connection", scope: "3p",
       label: "Enable IPv6 in the workspace VM" },
@@ -1015,6 +1012,12 @@
     { key: "officeAccessPolicies", kind: "json", group: "sandbox", scope: "3p",
       label: "Document access policies",
       note: "JSON array of { effect, action, resource } statements keyed on the Microsoft Purview sensitivity label of the open or attached file (upstream gates this @next)." },
+    { key: "computerUseEnabled", kind: "bool", group: "sandbox", scope: "1p",
+      label: "Allow computer use",
+      note: "false turns Computer Use off on this computer, on Linux too; unset or true leaves it available. Upstream reads it from the administrator-managed configuration (added in v5.1231.0, availableInVersion @next)." },
+    { key: "remoteFileDownloads", kind: "enum", group: "sandbox", scope: "3p",
+      label: "SSH and WSL file downloads", options: ["all", "limited", "none"],
+      note: "Which files the app's Download action may fetch from SSH and WSL sessions: all = all but blocked file types, limited = documents, images and small text files (the default), none = no downloads (added in v5.1231.0, availableInVersion @next)." },
     { key: "artifactsEnabled", kind: "bool", group: "sandbox", scope: "3p",
       label: "Reserved setting 1 (Claude Docs/Slides/Designs editors: all editors)",
       lock: "upstream titles it \"Reserved setting 1\" with no wizard group and a one-line description (\"Off until set to true.\"), available since v3.1623.0; it belongs to the Docs, Slides, Designs, Dashboards and Motion editors (\"Make Claude Docs, Slides, Designs and more\"), whose 3P switches are not documented yet, so this page never writes it" },
@@ -1030,6 +1033,27 @@
     { key: "artifactsMotionEnabled", kind: "bool", group: "sandbox", scope: "3p",
       label: "Reserved setting 5 (Claude Docs/Slides/Designs editors: Motion)",
       lock: "upstream titles it \"Reserved setting 5\" with no wizard group and a one-line description (\"Off until set to true.\"), available since v3.1623.0; it belongs to the Docs, Slides, Designs, Dashboards and Motion editors (\"Make Claude Docs, Slides, Designs and more\"), whose 3P switches are not documented yet, so this page never writes it" },
+    { key: "artifactsClaudeEnabled", kind: "bool", group: "sandbox", scope: "3p",
+      label: "Reserved setting 6 (Claude Docs/Slides/Designs editors: calls to Claude)",
+      lock: "upstream titles it \"Reserved setting 6\" with no wizard group and a one-line description, availableInVersion @next (added in v5.1231.0); it belongs to the Docs, Slides, Designs, Dashboards and Motion editors, whose 3P switches are not documented yet, so this page never writes it" },
+    { key: "artifactsDesignSystemPlugins", kind: "lines", group: "sandbox", scope: "3p",
+      label: "Reserved setting 7 (Claude Docs/Slides/Designs editors: design system plugins)",
+      lock: "upstream titles it \"Reserved setting 7\" with no wizard group and a one-line description, availableInVersion @next (added in v5.1231.0); it belongs to the Docs, Slides, Designs, Dashboards and Motion editors, whose 3P switches are not documented yet, so this page never writes it" },
+    { key: "artifactsRetentionDays", kind: "int", group: "sandbox", scope: "3p", max: 3650,
+      label: "Reserved setting 8 (Claude Docs/Slides/Designs editors: retention days)",
+      lock: "upstream titles it \"Reserved setting 8\" with no wizard group and a one-line description, availableInVersion @next (added in v5.1231.0); it belongs to the Docs, Slides, Designs, Dashboards and Motion editors, whose 3P switches are not documented yet, so this page never writes it" },
+    { key: "ExtensionSettings", kind: "json", group: "sandbox", scope: "both",
+      label: "Administrator setting (browser extension policy)",
+      lock: "internal-only upstream (hidden in its own wizard, read from the device's own configuration, availableInVersion @next in v5.1231.0), so this page never writes it" },
+    { key: "NativeMessagingAllowlist", kind: "lines", group: "sandbox", scope: "both",
+      label: "Allowed helper programs",
+      lock: "internal-only upstream (hidden in its own wizard, read from the device's own configuration, availableInVersion @next in v5.1231.0), so this page never writes it" },
+    { key: "NativeMessagingBlocklist", kind: "lines", group: "sandbox", scope: "both",
+      label: "Blocked helper programs",
+      lock: "internal-only upstream (hidden in its own wizard, read from the device's own configuration, availableInVersion @next in v5.1231.0), so this page never writes it" },
+    { key: "NativeMessagingUserLevelHosts", kind: "bool", group: "sandbox", scope: "both",
+      label: "Per-user helper programs",
+      lock: "internal-only upstream (hidden in its own wizard, read from the device's own configuration, availableInVersion @next in v5.1231.0), so this page never writes it" },
     { key: "disableDeploymentModeChooser", kind: "bool", group: "sandbox", scope: "3p",
       label: "Disable claude.ai sign-in",
       lock: "this is the key that locks a machine into 3P - it overrides the switch above, so this page never writes it" },
@@ -1151,6 +1175,9 @@
       label: "Release channel", options: ["stable", "staggered"],
       note: "Staggered devices get newer releases, security fixes included, later than Stable; unset means stable and an unreadable value counts as staggered. Applies to a running app (available since v3.1623.0)." },
 
+    { key: "allowStandardUserUpdates", kind: "bool", group: "telemetry", scope: "3p",
+      label: "Update without an administrator on macOS",
+      note: "macOS only upstream (how the app's own updates are installed); no effect on Linux (added in v5.1231.0, availableInVersion @next)." },
     { key: "otlpAttrMaxChars", kind: "int", group: "telemetry", scope: "3p", max: 32000,
       label: "Telemetry attribute length limit",
       note: "Maximum characters per content-bearing span attribute sent to the collector, 256 to 32000; default 4000 (available since v2.31226.0)." },
@@ -1173,6 +1200,9 @@
     { key: "deploymentDisplaySubtitle", kind: "text", group: "appearance", scope: "3p",
       label: "Deployment display subtitle" },
     { key: "banner", kind: "json", group: "appearance", scope: "both", label: "Organization banner" },
+    { key: "organizationAnnouncement", kind: "json", group: "appearance", scope: "3p",
+      label: "Organization announcement",
+      note: "JSON object { \"title\": up to 80 characters, \"body\": up to 1000 characters, \"placement\": \"inline\" (card on the start screen, default) or \"modal\" (dialog), \"id\": optional, up to 256 characters } that the app draws in its own window (added in v5.1231.0, availableInVersion @next)." },
     { key: "disableFeatureDiscovery", kind: "bool", group: "appearance", scope: "3p",
       label: "Hide feature announcements" },
     { key: "sessionStatusLine", kind: "json", group: "appearance", scope: "3p",

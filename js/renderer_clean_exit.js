@@ -6,15 +6,17 @@
  * handler. It installs two globals; each is defined with ||= so a second
  * evaluation keeps the first instance (and its state).
  *
- * Upstream's reason filter (v4.29.0 names Wnr / znr / XN, re-minified every
- * release) first asks znr(), which takes one "we crashed it ourselves" token;
- * with a token it drops every reason, without one it drops clean-exit and a
- * `killed` while quitting. The unresponsive watchdog adds a token each time it
- * starts a kill attempt on the main view; the token expires 10 s after the
- * attempt, or 5 min later while upstream's recovery reload is pending. That
- * attempt also arms upstream's 30 s re-check, which reloads the view again
- * when no page committed (at most 3 times per 5 min, then its error card).
- * XN() is upstream's own quitting predicate.
+ * Upstream's reason filter (v5.1231.0 names Ltr / Mtr / eI, re-minified every
+ * release) first asks Mtr(), which takes one "we crashed it ourselves" token;
+ * with a token its verdict is own kill, without one a clean-exit and a
+ * `killed` while quitting are teardown, everything else needs recovery. The
+ * unresponsive watchdog adds a token each time it starts a kill attempt on the
+ * main view; the token expires 10 s after the attempt, or 5 min later while
+ * upstream's recovery reload is pending. The watchdog reloads the view 1 s
+ * after its crash request when no death was reported, and again when the
+ * own-kill death arrives later; a 30 s re-check reloads once more when no page
+ * committed (at most 3 times per 5 min, then its error card). eI() is
+ * upstream's own quitting predicate.
  * (Spelled out in words on purpose: this comment is inlined into the bundle
  * and must not match the patch's own anchors.)
  *
@@ -41,8 +43,8 @@
  *    or rejects, and the guards above still hold, the renderer gets SIGKILL
  *    (about 7 s after the crash request at most). Electron then reports it
  *    gone (reason killed); the attempt's token is still pending, so upstream's
- *    filter drops that event, and the 30 s re-check armed by the same attempt
- *    reloads the view into a new renderer. One `responsive` listener per
+ *    filter calls it an own kill and the watchdog's post-kill reload loads
+ *    the view into a new renderer. One `responsive` listener per
  *    WebContents (WeakSet) cancels a pending kill, and one probe at most is in
  *    flight per WebContents. Never throws.
  *

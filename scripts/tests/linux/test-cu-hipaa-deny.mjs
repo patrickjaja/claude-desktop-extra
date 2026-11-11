@@ -28,7 +28,9 @@
 //
 // Exit codes follow the repo convention: 0 = PASS, 3 = SKIP, other = FAIL.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdtempSync, rmSync, accessSync, constants } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -172,12 +174,97 @@ async function testKwinFallsThrough() {
   } finally { rig.restore(); }
 }
 
+// --- [5] the managed computerUseEnabled key on the patched gate -------------
+// v5.1231.0 added the managed `computerUseEnabled` key (an admin switch) to
+// the enable gate on every platform:
+//   function EW(e={}){return!SW()||!_W()||bb()?!1:TW(e)&&ub("chicagoEnabled")}
+// Sub-patch 11's Linux branch forces the platform/rollout/chicagoEnabled parts
+// but must keep that key: `computerUseEnabled:false` turns CU off on Linux,
+// unset keeps our Linux behavior. Sub-patch 12 (the registerable gate) must
+// delegate to that gate. This section patches the real bundle and runs both
+// gate functions with the key and the HIPAA gate stubbed. Skipped when the
+// patch binary or the extract is missing.
+// Source of the function whose definition starts at `start` (balanced braces).
+function fnSourceAt(s, start) {
+  if (start < 0) return null;
+  let depth = 0, q = null;
+  // The body opens at the first `){` (a default `e={}` parameter has braces too).
+  for (let i = s.indexOf("){", start) + 1; i < s.length; i++) {
+    const c = s[i];
+    if (q) { if (c === "\\") { i++; continue; } if (c === q) q = null; continue; }
+    if (c === '"' || c === "'" || c === "`") { q = c; continue; }
+    if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) return s.slice(start, i + 1);
+  }
+  return null;
+}
+function testManagedComputerUseEnabled() {
+  console.log("\n[5] managed computerUseEnabled:false turns Computer Use off on Linux (sub-patches 11 + 12)");
+  const bin = process.env.CDB_CU_PATCH_BIN || join(ROOT, "patches", "linux", "fix_computer_use_linux");
+  const build = join(process.env.CDB_BUNDLE_DIR || join(ROOT, "tmp", "app.asar.contents"), ".vite", "build");
+  try { accessSync(bin, constants.X_OK); } catch { console.log("  SKIP " + bin + " is not compiled"); return; }
+  if (!existsSync(join(build, "index.js"))) { console.log("  SKIP no extract under tmp/app.asar.contents/"); return; }
+  let blob = readFileSync(join(build, "index.js"), "utf8");
+  for (const c of readdirSync(build).filter((d) => /^index.*\.chunk-.*\.js$/.test(d)).sort()) blob += "\n/*__CDB_SPLIT__" + c + "__*/\n" + readFileSync(join(build, c), "utf8");
+  const PRISTINE_RE = /function ([\w$]+)\(([\w$]+)=\{\}\)\{return![\w$]+\(\)\|\|!([\w$]+)\(\)\|\|([\w$]+)\(\)\?!1:[\w$]+\(\2\)&&[\w$]+\(["`]chicagoEnabled["`]\)\}/;
+  const pm = PRISTINE_RE.exec(blob);
+  if (!pm) {
+    // Older bundles (before v5.1231.0) have no managed key in the gate.
+    console.log("  SKIP this bundle's enable gate has no managed computerUseEnabled check (pre-v5.1231.0 shape)");
+    return;
+  }
+  const [, gate, , managed, hipaa] = pm;
+  ok(new RegExp("function " + managed.replace(/\$/g, "\\$") + "\\(\\)\\{return [^{}]{0,120}\\|\\|([\\w$]+)\\(\\)!==!1\\}").test(blob),
+    `pristine: ${managed}() ends in the managed-key reader (\`||R()!==!1\`)`);
+  const scratch = mkdtempSync(join(tmpdir(), "cdb-cu-managed-"));
+  try {
+    const staged = join(scratch, "staged.js");
+    writeFileSync(staged, blob);
+    const r = spawnSync(bin, [staged], { encoding: "utf8" });
+    ok(r.status === 0, "patch binary exits 0");
+    const patched = readFileSync(staged, "utf8");
+    // Minified names repeat across chunks: locate by the Linux branch itself.
+    const gateAt = patched.indexOf("function " + gate + "(e={}){if(process.platform===\"linux\")return globalThis.__cdbCuHipaa=");
+    const gateSrc = gateAt < 0 ? null : fnSourceAt(patched, gateAt);
+    ok(gateSrc && gateSrc.includes(`if(process.platform==="linux")return globalThis.__cdbCuHipaa=${hipaa},!${hipaa}()&&${managed}();`),
+      `sub-patch 11: the Linux branch of ${gate}() keeps ${managed}() and ${hipaa}()`);
+    const REG_RE = new RegExp("function ([\\w$]+)\\(([\\w$]+)=\\{\\}\\)\\{if\\(process\\.platform===\"linux\"\\)return " + gate.replace(/\$/g, "\\$") + "\\(\\2\\);");
+    const rm = REG_RE.exec(patched);
+    ok(!!rm, `sub-patch 12: the registerable gate delegates to ${gate}() on Linux`);
+    const regSrc = rm ? fnSourceAt(patched, rm.index) : null;
+    // Run the real patched functions; every other name is "on" so only the
+    // two stubs decide.
+    const run = (platform, managedVal, hipaaVal, which) => {
+      const on = () => true;
+      const scope = new Proxy({ process: { platform }, globalThis: {}, [managed]: () => managedVal, [hipaa]: () => hipaaVal }, {
+        has: (o, k) => typeof k === "string" && k !== gate && (rm ? k !== rm[1] : true),
+        get: (o, k) => (k in o ? o[k] : k === Symbol.unscopables ? undefined : on),
+      });
+      const fns = new Function("__scope", "with(__scope){" + gateSrc + "\n" + (regSrc || "") + "\nreturn{gate:" + gate + (rm ? ",reg:" + rm[1] : "") + "}}")(scope);
+      return fns[which]({});
+    };
+    if (gateSrc) {
+      ok(run("linux", false, false, "gate") === false, "linux, computerUseEnabled:false -> isComputerUseEnabled false");
+      ok(run("linux", true, false, "gate") === true, "linux, key unset (reader !== false) -> isComputerUseEnabled true (our Linux behavior)");
+      ok(run("linux", true, true, "gate") === false, "linux, HIPAA restricted -> false");
+      ok(run("darwin", false, false, "gate") === false, "darwin, computerUseEnabled:false -> false (upstream)");
+    }
+    if (regSrc) {
+      ok(run("linux", false, false, "reg") === false, "linux, computerUseEnabled:false -> isComputerUseRegisterable false");
+      ok(run("linux", true, false, "reg") === true, "linux, key unset -> isComputerUseRegisterable true");
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   try {
     await testRestrictedDenies();
     await testUnrestrictedPasses();
     await testGateUnsetPasses();
     await testKwinFallsThrough();
+    testManagedComputerUseEnabled();
   } catch (e) {
     console.error("\nHARNESS ERROR: " + (e && e.stack ? e.stack : e));
     process.exit(1);

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-// Audited 4.16336.0 eligibility helper and model activation method. These small
-// fixtures preserve upstream's control flow, including the awaits/race guard.
-// When tmp/app.asar.contents is available, repeat against the pristine release.
+// Audited 5.1231.0 eligibility helper and model activation method (with its fresh
+// gh login read: readGhLoginNow/forgetGhAccount/askGhLogin). These small fixtures
+// preserve upstream's control flow, including the awaits/race guard. When
+// tmp/app.asar.contents is available, repeat against the pristine release, whose
+// real methods are spliced in (only network/state leaves such as ghRest are stubbed).
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
@@ -15,7 +17,8 @@ const bin = join(ROOT, "patches/community/add_feature_autofix_author");
 const dir = mkdtempSync(join(tmpdir(), "cdb-autofix-author-"));
 const fixture = `function ld(e,t){let n=e.user?.login;return!!t&&!!n&&n.toLowerCase()===t.toLowerCase()}
 function dd(e,t,n,r,i,a){if(!e?.success)return"unreadable";if(t.login===null)return t.failed?"unreadable":"no_login";if(!ld({user:{login:e.author}},t.login))return"not_author";let o=Date.parse(e.createdAt??"");return a!==void 0&&!(o>=a&&o<=i+Fd)?"older_pr":n.length===0?"no_origin":n.some((t=>{let n=\`\${t.owner}/\${t.name}\`.toLowerCase();return t.hostname===Wu(r)&&(n===r.repo.toLowerCase()||n===e.headRepo?.toLowerCase())}))?"armed":"other_repo"}
-class Manager {async armOwnCreate(){} async enableAutoFixForModel(e,t,n,r){if(this.storedAutoFix(e,t,n,r)===!0)return;if(this.config.claudeCodeRunsHere?.(e)!==!0)return"runs_elsewhere";let i=this.autoFixRefusedToModel(e,t,n,r);if(i!==void 0)return i;let a=this.storedAutoFix(e,t,n,r),o=Wu({host:r}),s=Ku(e,{host:r,repo:t,prNumber:n}),c=this.autoFixWrites.get(s),l=await this.readGhLogin(o).catch((()=>({login:null,failed:!0})));if(l.login===null)return l.failed?"unreadable":"no_login";this.prStateCache.delete(Gu(o,t,n));let u=await this.getPrStateByNumber(t,n,r).catch((()=>void 0));if(!u?.success)return"unreadable";if(!ld({user:{login:u.author}},l.login))return"not_author";let d=this.autoFixRefusedToModel(e,t,n,r);if(d!==void 0)return d;let f=this.storedAutoFix(e,t,n,r);if(f!==a||this.autoFixWrites.get(s)!==c)return f?void 0:"changed";this.writeBoundPrAutoFix(e,t,n,!0,"model",r)}
+class Manager {async armOwnCreate(){} async enableAutoFixForModel(e,t,n,r){if(this.storedAutoFix(e,t,n,r)===!0)return;if(this.config.claudeCodeRunsHere?.(e)!==!0)return"runs_elsewhere";let i=this.autoFixRefusedToModel(e,t,n,r);if(i!==void 0)return i;let a=this.storedAutoFix(e,t,n,r),o=Wu({host:r}),s=Ku(e,{host:r,repo:t,prNumber:n}),c=this.autoFixWrites.get(s),l=await this.readGhLoginNow(o).catch((()=>({login:null,failed:!0})));if(l.login===null)return l.failed?"unreadable":"no_login";this.prStateCache.delete(Gu(o,t,n));let u=await this.getPrStateByNumber(t,n,r).catch((()=>void 0));if(!u?.success)return"unreadable";if(!ld({user:{login:u.author}},l.login))return"not_author";let d=await this.viewerMayPush(t,r);if(d!==!0)return d===!1?"no_push":"unreadable";let f=this.autoFixRefusedToModel(e,t,n,r);if(f!==void 0)return f;let p=this.storedAutoFix(e,t,n,r);if(p!==a||this.autoFixWrites.get(s)!==c)return p?void 0:"changed";this.writeBoundPrAutoFix(e,t,n,!0,r)}
+forgetGhAccount(e){this.ghRest.forgetAuth(e),this.ghLoginByHost.delete(V.d(e)),this.ghRest.markEtagCacheStale("/user"),this.viewerPushEpoch+=1,this.viewerPushCache.clear()}async readGhLoginNow(e){let t=V.d(e);this.forgetGhAccount(t);let{login:n,forget:r,answered:i}=await this.askGhLogin(t,"fresh");return n===null?(r&&this.lastGhLogin.delete(t),{login:null,failed:!r&&!i}):(this.lastGhLogin.set(t,{login:n,at:Date.now()}),{login:n,failed:!1})}async askGhLogin(e,n="cached"){let r=null,i=!1,a=!1;try{let o=await this.ghRest.rest("/user",e,n==="fresh"?{revalidate:!0}:{conditional:!0});o===null?i=this.ghRest.getAuthFailureKind(e)==="unauthenticated":o.ok?(r=o.data.login||null,a=!0):i=o.status===401||o.status===404||o.status===403&&Nf(o.status,o.message??"")!==t.nft.RateLimit}catch{r=null}return{login:r,forget:i,answered:a}}
 async getPrStateByNumberUncached(e,n,r,i={}){let o=(await this.ghRest.rest(e,r)).data;return{success:!0,ownCreate:await this.getGhLogin(r).then((e=>e===null?void 0:ld(o,e))),author:o.user?.login}}
 async getPrStateForBranchUncached(e,r,i,a=[]){let n=await this.resolveSlug(e),c=await this.ghRest.rest(r,n.hostname),l=c.data.length>0?await this.getGhLogin(n.hostname):null,u=new Set(a),d=await Promise.all(c.data.map((async e=>ld(e,l)||e.number!==void 0&&u.has(e.number)||fd(e,n.hostname)?!0:await this.authorMayPush(n,e)))),h=c.data.filter(((e,t)=>d[t]))[0];return await this.withMergeQueueState({success:!0,number:h.number,ownCreate:l===null?void 0:ld(h,l)})}
 async discoverPrByHeadSha(e,n){let t=await this.resolveSlug(e),s="org/repo",o=await this.ghRest.rest(n,t.hostname),c=o.data.length>0?await this.getGhLogin(t.hostname):null,l=c?.toLowerCase(),u=o.data,d=await Promise.all(u.map((async e=>{let n=ld(e,c);return e.head?.repo?.full_name?.toLowerCase()===s?n||fd(e,t.hostname)||await this.authorMayPush(t,e):n&&e.head?.repo?.owner?.login?.toLowerCase()===l}))),p=u.filter(((e,t)=>d[t]))[0];return{success:!0,number:p.number,ownCreate:c!==null&&!ld(p,c)?!1:void 0}}}`;
@@ -190,7 +193,8 @@ try {
     let enabled = false;
     // The fixture needs its stubs; the real release resolves its free names from the bundle.
     const ctx = vm.createContext(realChunk ? {} : { Fd: 300000, Md: 600000,
-      t: { jJ() {}, pa: () => false }, K: { n: p => p.state === "OPEN" && !p.dismissed },
+      t: { jJ() {}, pa: () => false, nft: { RateLimit: "rate_limit" } }, K: { n: p => p.state === "OPEN" && !p.dismissed },
+      V: { d: h => (h || "github.com").toLowerCase() }, Nf: () => "other",
       ad: (a, b) => a.repo === b.repo && a.prNumber === b.prNumber,
       Wu: r => r.host || "github.com", Ku: () => "key", Gu: () => "key" });
     vm.runInContext(patched + ";globalThis.Manager=Manager;globalThis.judge=" + judgeName + ";", ctx);
@@ -226,14 +230,34 @@ try {
     let writeSeen = false; m.autoFixWrites = Object.assign(new Map(), { get: () => (writeSeen ? 1 : undefined) }); m.prStateCache = new Map();
     m.storedAutoFix = () => state;
     m.autoFixRefusedToModel = () => refusal;
-    m.readGhLogin = async () => login;
+    // The model path reads the gh login through upstream's real readGhLoginNow ->
+    // forgetGhAccount + askGhLogin; only the REST client underneath is stubbed.
+    let ghUser, userReads;
+    m.ghRest = {
+      rest: async (path, host, opts) => {
+        assert.equal(path, "/user");
+        userReads.push({ host, fresh: opts?.revalidate === true });
+        if (ghUser instanceof Error) throw ghUser;
+        return ghUser;
+      },
+      forgetAuth() {}, markEtagCacheStale() {}, getAuthFailureKind: () => "unauthenticated"
+    };
+    m.ghLoginByHost = new Map(); m.lastGhLogin = new Map(); m.viewerPushCache = new Map(); m.viewerPushEpoch = 0;
+    const loggedIn = { ok: true, data: { login: login.login } };
+    ghUser = loggedIn;
+    // viewerMayPush (new in 5.x: the gh account's push permission on the base repo)
+    // is not an author comparison; stubbed so its three outcomes can be driven.
+    let push = true, pushReads = 0;
+    m.viewerMayPush = async () => { pushReads++; return push; };
     m.getPrStateByNumber = async () => { if (concurrent) concurrent(); return pr; };
     m.writeBoundPrAutoFix = (...args) => { writes.push(args); };
     async function run(expected) {
       writes = [];
-      assert.equal(await healAsync(ctx, () => m.enableAutoFixForModel("session", "org/repo", 42, "github.com")), expected);
+      // healAsync retries after defining a free name; count only the attempt that completed.
+      assert.equal(await healAsync(ctx, () => { userReads = []; return m.enableAutoFixForModel("session", "org/repo", 42, "github.com"); }), expected);
       assert.equal(writes.length, expected === undefined ? 1 : 0);
-      if (writes.length) assert.deepEqual(writes[0], ["session", "org/repo", 42, true, "model", "github.com"]);
+      if (writes.length) assert.deepEqual(writes[0], ["session", "org/repo", 42, true, "github.com"]);
+      if (expected !== "runs_elsewhere" && !refusal) assert.deepEqual(userReads, [{ host: "github.com", fresh: true }], "model path reads the gh login fresh, once, on the PR's host");
     }
     enabled = false; await run("not_author");
     enabled = true; await run(undefined);
@@ -246,9 +270,37 @@ try {
     refusal = undefined;
     m.config.claudeCodeRunsHere = () => false; await run("runs_elsewhere");
     m.config.claudeCodeRunsHere = () => true;
-    m.readGhLogin = async () => ({ login: null, failed: false }); await run("no_login");
-    m.readGhLogin = async () => { throw Error("unreadable"); }; await run("unreadable");
-    m.readGhLogin = async () => login;
+    ghUser = { ok: false, status: 401 }; await run("no_login");
+    ghUser = null; await run("no_login");
+    ghUser = Error("network"); await run("unreadable");
+    ghUser = { ok: false, status: 500 }; await run("unreadable");
+    // A fresh read that fails never falls back to a cached login, even one equal to a listed author.
+    m.lastGhLogin.set("github.com", { login: "project-app[bot]", at: Date.now() });
+    ghUser = { ok: false, status: 401 }; await run("no_login");
+    assert.equal(m.lastGhLogin.has("github.com"), false, "a signed-out fresh read forgets the cached login");
+    ghUser = loggedIn;
+    // The gh user is the listed author: upstream's own path, unaffected by the switch.
+    enabled = false; ghUser = { ok: true, data: { login: "Project-App[bot]" } }; await run(undefined);
+    ghUser = loggedIn; enabled = true;
+    // New in 5.x: push permission is checked after the author check, for trusted authors too.
+    pushReads = 0; push = false; await run("no_push");
+    push = undefined; await run("unreadable");
+    push = true; assert.equal(pushReads, 2);
+    pr.author = "unlisted-app[bot]"; pushReads = 0; await run("not_author");
+    assert.equal(pushReads, 0, "an unrecognized author is refused before the push read");
+    pr.author = "project-app[bot]";
+    // The real Extra settings helper: an empty list keeps upstream's refusal; a listed pair is recognized.
+    const real = loadSettings(mkdtempSync(join(dir, "exercise-")));
+    const stub = ctx.__cdbAutoFixAuthorAllowed;
+    ctx.__cdbAutoFixAuthorAllowed = real.ctx.__cdbAutoFixAuthorAllowed;
+    await run("not_author");
+    assert.equal((await real.handlers["cdb-autofix-author:set"](sender, ["github.com/project-app[bot]"])).ok, true);
+    await run(undefined);
+    assert.equal((await real.handlers["cdb-autofix-author:set"](sender, ["ghe.example/project-app[bot]"])).ok, true);
+    await run("not_author");
+    assert.equal((await real.handlers["cdb-autofix-author:set"](sender, [])).ok, true);
+    await run("not_author");
+    ctx.__cdbAutoFixAuthorAllowed = stub;
     concurrent = () => { refusal = "not_own"; }; await run("not_own"); refusal = undefined;
     concurrent = () => { writeSeen = true; }; await run("changed"); writeSeen = false;
     concurrent = () => { state = false; }; await run("changed"); state = undefined;
@@ -257,9 +309,12 @@ try {
       // Execute the release's actual automatic-activation method, not a rewrite.
       let held, session, count, duringRead;
       m.config = { getSession: () => session, listSessionIds: () => ["session"] };
+      // The cached readGhLogin (withGhCache + lastGhLogin) is stubbed here, as before 5.x.
       m.readGhLogin = async () => login;
       m.getPrStateByNumber = async () => { duringRead?.(); return pr; };
       m.changeKeyFor = () => "key";
+      let toldNoPush = 0;
+      m.tellNoPush = () => { toldNoPush++; };
       m.setBoundPrAutoFix = () => { count++; held.autoFix = true; };
       async function arm(expected, change = () => {}, whileReading) {
         held = { ...binding, prNumber: 42, branch: "feature", own: true, state: "OPEN" };
@@ -278,6 +333,10 @@ try {
       await arm(0, undefined, () => { held.autoFix = false; });
       await arm(0, undefined, () => { session.autoFixOwnPrs = false; });
       await arm(0, undefined, () => { enabled = false; });
+      enabled = true;
+      push = false; await arm(0); assert.equal(toldNoPush, 1, "listed author without push permission is refused as no_push");
+      push = undefined; await arm(0); assert.equal(toldNoPush, 1);
+      push = true; await arm(1);
     }
     console.log(`PASS ${label}: automatic eligibility, model activation, ownership/discovery, auth/scope/race rejection`);
   }
@@ -307,8 +366,11 @@ try {
     const byNumber = chunk.match(/async getPrStateByNumberUncached\([^]*?\}(?=mergeQueueAwareTtl\()/)?.[0];
     const discovery = chunk.match(/async getPrStateForBranchUncached\([^]*?\}(?=prCacheKey\()/)?.[0];
     assert.ok(byNumber && discovery?.includes("async discoverPrByHeadSha("), "real ownership methods retain their audited shapes");
+    // The fresh gh login read the model path calls (5.x): forgetGhAccount, readGhLoginNow, askGhLogin.
+    const login = chunk.match(/forgetGhAccount\([\w$]+\)\{[^]*?\}(?=async authorMayPush\()/)?.[0];
+    assert.ok(login?.includes("async readGhLoginNow(") && login.includes("async askGhLogin("), "real gh login read retains its audited shape");
     realChunk = chunk;
-    await exercise(`${match}\n${helper}\nclass Manager {${arm} ${method} ${byNumber} ${discovery}}`.replaceAll(matchFn + "(", "__cdbMatch(").replaceAll(judgeFn + "(", "__cdbJudge("), "real-release", arm, "__cdbJudge");
+    await exercise(`${match}\n${helper}\nclass Manager {${arm} ${method} ${login} ${byNumber} ${discovery}}`.replaceAll(matchFn + "(", "__cdbMatch(").replaceAll(judgeFn + "(", "__cdbJudge("), "real-release", arm, "__cdbJudge");
   } else console.log("SKIP pristine release check: tmp/app.asar.contents unavailable");
   console.log("PASS Auto-fix author opt-in");
 } finally { rmSync(dir, { recursive: true, force: true }); }

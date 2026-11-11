@@ -8,18 +8,18 @@
 # Upstream (Anthropic's own bundle) checks 3P model IDs by NAME: a denylist of
 # non-Anthropic families (deepseek, qwen, glm, kimi/moonshot, gpt-oss, ...) plus
 # an Anthropic-family allowlist. On a gateway, a route whose ID is neither is
-# dropped. There is no single choke point; the gateway path checks the name in
-# three places, and this patch guards exactly those three:
+# dropped. The gateway path checks the name in two places, and this patch
+# guards exactly those two:
 #
 #   B. `HCe`, the gateway/mantle branch of the per-provider validator `Zo`.
 #      Everything that goes through `Zo` for a gateway therefore accepts the
-#      route: the config-load model-list filter (`gNe`, "... is not an
-#      Anthropic model and was removed from the list"), the single-value
-#      validator (`vNe`), the picker filter (`jfn`) and the runtime
-#      `validateSessionModel` fallthrough.
-#   C. Gateway `/v1/models` discovery (`_0t`, used when `inferenceModels` is
-#      not set): a discovered row whose ID fails the check and carries no
-#      `anthropic_family_tier` is dropped before it reaches the picker.
+#      route: the config-load model-list filter ("... is not an Anthropic
+#      model and was removed from the list"), the single-value validator, the
+#      picker filter, the runtime `validateSessionModel` fallthrough and the
+#      gateway `/v1/models` discovery filter (rows are kept when `Zo` says ok
+#      or the row carries `anthropic_family_tier`). B asserts at build time
+#      that this discovery filter still calls `Zo` and that `Zo`'s
+#      gateway/mantle arm calls the guarded function.
 #   D. The `[custom-3p]` tier-pin sanitizer (`p9t`): on the gateway branch it
 #      ignores a pinned value that matches the non-Anthropic denylist ("value
 #      matches a known non-Anthropic model fragment") without going through
@@ -45,10 +45,7 @@
 # on its own and a half-patched bundle is detected exactly:
 #   B. return /*cdb-mb:validator*/GUARD||Xo(e)?{ok:!0}:{ok:!1,...}
 #      (`||` binds tighter than `?:`: a true guard accepts, else stock.)
-#   C. return!(/*cdb-mb:discovery*/GUARD||Xo(t.id))&&!n?[]:[{...}]
-#      (true guard -> `!(true)` = false -> the row is kept; false guard ->
-#      `!(Xo(t.id))`, which is the stock `!Xo(t.id)`.)
-#   D. if(!/*cdb-mb:tier-pin*/GUARD&&PCe(r)&&!FCe(r)){P.warn(...);return}
+#   D. if(!/*cdb-mb:tier-pin*/GUARD&&PCe(r)&&!FCe(r)){WARN(...);return}
 #      (true guard skips the ignore branch and the value is returned.)
 #   E. `--desktop-features=${JSON.stringify(/*cdb-mb:setup-window*/(GUARD?{...DH(),cdbAllowNonAnthropicModels:{status:"supported"}}:DH()))}`
 #
@@ -56,15 +53,14 @@
 #      bundle: the pref reader (jsonc > json), the memoized global
 #      `__cdbAllowNonAnthropicModels()`, and the `cdb-mb:pref-read`/`:pref-set`
 #      IPC handlers behind the same origin guard the other Extra rows use. The
-#      stub's `require("./index.chunk-...")` runs after it, and B-E only run
+#      stub's `require("./index.chunk-...")` runs after it, and B, D and E only run
 #      when their functions are called (config load and later), so the global
 #      exists first. Each guard also tests the global before calling it, so a
 #      missing module degrades to stock behavior instead of throwing.
 #
 # Break risk: LOW for A (head anchor: after "use strict"; when present, else
-# prepended). B-E are each pinned by an upstream string next to the
-# check (the gateway validator's reason, the "Gateway /v1/models returned an
-# unexpected body." message, the "known non-Anthropic model fragment" warning,
+# prepended). B, D and E are each pinned by an upstream string next to the
+# check (the gateway validator's reason, the "known non-Anthropic model fragment" warning,
 # the Setup window's "Configure Third-Party Inference" title)
 # with every identifier a wildcard, so a re-minify re-fits and a reorder fails
 # loud (match count != 1).
@@ -78,19 +74,16 @@ const MARKER = "__CDB_ALLOW_NONANTHROPIC__"
 const GUARD =
   "(globalThis.__cdbAllowNonAnthropicModels&&globalThis.__cdbAllowNonAnthropicModels())"
 const MARK_B = "/*cdb-mb:validator*/"
-const MARK_C = "/*cdb-mb:discovery*/"
 const MARK_D = "/*cdb-mb:tier-pin*/"
 const MARK_E = "/*cdb-mb:setup-window*/"
 const ION_FLAG = "cdbAllowNonAnthropicModels:{status:\"supported\"}"
-const EXPECTED_PATCHES = 5
-  # A module, B validator, C discovery, D tier pin, E setup-window signal
-const GUARD_SITES = 4 # B, C, D, E
+const EXPECTED_PATCHES = 4 # A module, B validator, D tier pin, E setup-window signal
+const GUARD_SITES = 3 # B, D, E
 
-proc endState(s: string): array[5, int] =
+proc endState(s: string): array[4, int] =
   [
     s.count(MARKER),
     s.count(MARK_B & GUARD),
-    s.count(MARK_C & GUARD),
     s.count(MARK_D & GUARD),
     s.count(MARK_E & "(" & GUARD & "?{..."),
   ]
@@ -98,22 +91,53 @@ proc endState(s: string): array[5, int] =
 proc apply*(input: string): string =
   result = input
 
-  # Idempotency: positive end-state assertion - our module and each of the four
+  # Idempotency: positive end-state assertion - our module and each of the three
   # guards (by its own site marker) must be present exactly once, and the guard
   # text must appear nowhere else (AGENTS.md Rule 6).
   let have = endState(result)
   let guardTotal = result.count(GUARD)
-  if have == [1, 1, 1, 1, 1] and guardTotal == GUARD_SITES and
-      result.count(ION_FLAG) == 1:
-    echo "  [OK] allow-non-anthropic-models: module and all 4 guards already present (idempotent)"
+  if have == [1, 1, 1, 1] and guardTotal == GUARD_SITES and result.count(ION_FLAG) == 1:
+    echo "  [OK] allow-non-anthropic-models: module and all 3 guards already present (idempotent)"
     return
-  if have != [0, 0, 0, 0, 0] or guardTotal != 0 or result.count(ION_FLAG) != 0:
-    echo &"  [FAIL] allow-non-anthropic-models: half-patched bundle (module x{have[0]}, validator x{have[1]}, discovery x{have[2]}, tier-pin x{have[3]}, setup-window x{have[4]}, guard text x{guardTotal}) - re-audit"
+  if have != [0, 0, 0, 0] or guardTotal != 0 or result.count(ION_FLAG) != 0:
+    echo &"  [FAIL] allow-non-anthropic-models: half-patched bundle (module x{have[0]}, validator x{have[1]}, tier-pin x{have[2]}, setup-window x{have[3]}, guard text x{guardTotal}) - re-audit"
     quit(1)
 
-  # Sub-patches B, C, D, E first, so the module text injected by A is never searched.
+  # Sub-patches B, D, E first, so the module text injected by A is never searched.
 
-  # B. gateway/mantle validator (`HCe`), pinned by its reason string.
+  # B precondition: gateway /v1/models discovery has no filter of its own. It
+  # keeps a row when the provider validator says ok (or the row carries
+  # anthropic_family_tier), so B covers it only while three facts hold, checked
+  # here: (1) the discovery filter exists exactly once and calls validator V;
+  # (2) V's gateway/mantle arm calls function G; (3) G is the function B guards
+  # (the one carrying the gateway reason string).
+  let discoveryRe =
+    re2"""\.filter\(\(+[\w$]+=>([\w$]+)\([\w$]+,[\w$]+\.id\)\.ok\|\|[\w$]+\.anthropicFamilyTier\)"""
+  var discoveryCallees: seq[string] = @[]
+  for m in result.findAll(discoveryRe):
+    discoveryCallees.add(result[m.group(0)])
+  if discoveryCallees.len != 1:
+    echo &"  [FAIL] allow-non-anthropic-models: gateway discovery no longer goes through the guarded validator (discovery filter matched {discoveryCallees.len}/1) - re-audit"
+    quit(1)
+  let validatorName = discoveryCallees[0].replace("$", "\\$")
+  let armRe = re2(
+    "function " & validatorName &
+      """\([\w$]+,[\w$]+\)[{].{0,100}?switch\([\w$]+\)[{].{0,100}?.{0,100}?.{0,100}?case["`]gateway["`]:case["`]mantle["`]:return ([\w$]+)\("""
+  )
+  var armCallees: seq[string] = @[]
+  for m in result.findAll(armRe):
+    armCallees.add(result[m.group(0)])
+  var guardedFns: seq[string] = @[]
+  for m in result.findAll(
+    re2"""function ([\w$]+)\([\w$]+\)[{]return [\w$]+\([\w$]+\)\?[{]ok:!0[}]:[{]ok:!1,reason:"expected a gateway model route"""
+  ):
+    guardedFns.add(result[m.group(0)])
+  if armCallees.len != 1 or guardedFns.len != 1 or armCallees[0] != guardedFns[0]:
+    echo &"  [FAIL] allow-non-anthropic-models: gateway discovery no longer goes through the guarded validator (validator arm calls {armCallees}, guarded function {guardedFns}) - re-audit"
+    quit(1)
+  echo "  [OK] B precondition: gateway discovery filter calls the validator whose gateway arm calls the guarded function"
+
+  # B. gateway/mantle validator, pinned by its reason string.
   var n = 0
   result = result.replace(
     re2"""(function [\w$]+\([\w$]+\)[{]return )([\w$]+\([\w$]+\))(\?[{]ok:!0[}]:[{]ok:!1,reason:"expected a gateway model route)""",
@@ -126,24 +150,10 @@ proc apply*(input: string): string =
     quit(1)
   echo "  [OK] B gateway model validator: guard added"
 
-  # C. gateway /v1/models discovery row filter, pinned to the gateway function
-  # by its "unexpected body" message a few dozen bytes before the flatMap.
-  n = 0
-  result = result.replace(
-    re2"""(Gateway /v1/models returned an unexpected body\..{0,100}?.{0,100}?.{0,100}?\.data\.flatMap\(\([\w$]+=>[{]let [\w$]+=[\w$]+\?[\w$]+\([\w$]+\.id\):void 0;if\(![\w$]+\|\|![\w$]+\)return\[\];let [\w$]+=[\w$]+\([\w$]+\.anthropic_family_tier\);return)!([\w$]+\([\w$]+\.id\))(&&![\w$]+\?\[\]:\[)""",
-    proc(m: RegexMatch2, s: string): string =
-      inc n
-      s[m.group(0)] & "!(" & MARK_C & GUARD & "||" & s[m.group(1)] & ")" & s[m.group(2)],
-  )
-  if n != 1:
-    echo &"  [FAIL] allow-non-anthropic-models: C gateway /v1/models discovery filter matched {n}/1 - re-audit"
-    quit(1)
-  echo "  [OK] C gateway /v1/models discovery: guard added"
-
   # D. [custom-3p] tier-pin sanitizer, gateway branch, pinned by its warning.
   n = 0
   result = result.replace(
-    re2"""(if\(![\w$]+\)[{]if\()([\w$]+\([\w$]+\)&&![\w$]+\([\w$]+\)\)[{][\w$]+\.warn\(["`]\[custom-3p\] \$[{][\w$]+[}]: value matches a known non-Anthropic model fragment; ignoring\.)""",
+    re2"""(if\(![\w$]+\)[{]if\()([\w$]+\([\w$]+\)&&![\w$]+\([\w$]+\)\)[{][\w$]+(?:\.warn)?\(["`]\[custom-3p\] \$[{][\w$]+[}]: value matches a known non-Anthropic model fragment; ignoring\.)""",
     proc(m: RegexMatch2, s: string): string =
       inc n
       s[m.group(0)] & "!" & MARK_D & GUARD & "&&" & s[m.group(1)],
@@ -216,7 +226,7 @@ when isMainModule:
     writeFile(filePath, output)
     echo &"  [PASS] allow non-Anthropic models applied ({EXPECTED_PATCHES}/{EXPECTED_PATCHES} parts)"
   else:
-    if endState(output) != [1, 1, 1, 1, 1]:
+    if endState(output) != [1, 1, 1, 1]:
       echo "  [FAIL] No changes made and the patched end-state is absent"
       quit(1)
     echo "  [OK] Already applied (no changes needed)"

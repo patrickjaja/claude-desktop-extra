@@ -29,11 +29,25 @@
       "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
     },
     {
+      "id": "777bf42ae97b",
+      "text": "${}= ${} (for new sessions on this computer: the model behind the alias \"opus\", the retry after a refused request, and Auto mode's check in a Fable or Mythos session when Sonnet ${} is not available)",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Model and effort diagnostics report line; platform-neutral."
+    },
+    {
       "id": "d84124c8741f",
       "text": "${}=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|${}|--xdg-portal-required-version=99",
       "status": "accepted",
       "sites": 2,
       "reason": "Command-line sanitising regex that mentions --xdg-portal-required-version; not a refusal."
+    },
+    {
+      "id": "1527223a1d6f",
+      "text": "'previews_page' is not available for this platform.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Device simulator/emulator support matrix; not a Linux desktop gate."
     },
     {
       "id": "b1bc046e4ab8",
@@ -118,6 +132,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "Plugin MCP user_config on the desktop host bridge: platform-neutral."
+    },
+    {
+      "id": "7f7858c0b243",
+      "text": "[PreviewContext] Refused an extension frame: model input or computer use is driving this tab %o",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Built-in browser safety log: an extension frame is refused while model input or Computer Use drives the tab (CU lock held); the lock is upstream's on every platform, our Linux executor included."
     },
     {
       "id": "85c73b3b327c",
@@ -372,6 +393,13 @@
       "reason": "Session kind / approval / server-side condition; platform-neutral."
     },
     {
+      "id": "9cb8babc1300",
+      "text": "Computer use exists only on installs signed in to claude.ai, which a self-hosted install never is",
+      "status": "unreachable",
+      "sites": 2,
+      "reason": "Managed-settings schema metadata (computerUseEnabled support.selfHosted.why, execution 'none'); the only reader of selfHosted.why prints it for execution 'server', so this text is never shown."
+    },
+    {
       "id": "5049254e1b77",
       "text": "Computer Use is available but not enabled, and this session is not wired with a permission handler to show the enable prompt. Computer control is not available here.",
       "status": "accepted",
@@ -507,6 +535,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "ce5caf2fcbf6",
+      "text": "Desktop's policy sets a limit that it can hold only on plugins copied from this computer",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Plugin policy diagnostics wording (plugins copied from this computer); platform-neutral."
     },
     {
       "id": "82f81f348c98",
@@ -789,6 +824,13 @@
       "reason": "3P Claude in Chrome (managed mcp.claudeInChromeEnabled): upstream's Linux build compiles the platform check away; only the CLAUDE_E2E_LOCAL_PAIRING_* test override passes and the hybrid checks after it are dead code. True for the Linux build; 1P Claude in Chrome is unaffected. Re-check when upstream ships the Linux branch."
     },
     {
+      "id": "59aaa810bee9",
+      "text": "not_main_window.not_claude_page.not_served.no_press_watch.computer_use_active.starting.hourly_limit.too_soon.no_recent_press.extension_not_added.start_failed.connected_here.timed_out.replaced.window_gone.flag_off.not_macos.signed_out.account_switched.device_not_registered.device_keyless.device_lookup_failed.key_not_hardware_backed.could_not_sign.reconnect_needed.session_id_malformed.cancelled.bad_input.out_of_time.debugging_on.debugging_turned_on.not_found.credential_not_allowed.request_origin_not_allowed.device_proof_invalid.nonce_invalid.session_not_linked.turn_not_owners.account_mismatch.organization_not_served.other_workspace.no_fill_call.provenance_unwired.managers_own_site.invalid_request.rate_limited.unavailable.unreadable_answer.no_answer.unknown",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Log-step reason list of the 1Password connect flow, not a message; its not_macos code comes from upstream's Linux build, where the 1Password login fill is macOS-only (the platform check is compiled to return 'not_macos')."
+    },
+    {
       "id": "fccacdc90b1a",
       "text": "Number of days to retain chat transcripts before automatic cleanup (default: 30). Minimum 1. Use a large value for long retention; use --no-session-persistence to disable transcript writes entirely. Cleanup deletes data only on this computer, not anything stored by Anthropic.",
       "status": "accepted",
@@ -801,13 +843,6 @@
       "status": "accepted",
       "sites": 1,
       "reason": "Office add-in integration is macOS/Windows only upstream; true on Linux."
-    },
-    {
-      "id": "eaf802abba6b",
-      "text": "On macOS, the add-in is opened using the Accessibility API (requires Accessibility permissions).",
-      "status": "accepted",
-      "sites": 1,
-      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
     },
     {
       "id": "41c0b9ce49bf",
@@ -863,8 +898,8 @@
       "reason": "Session kind / approval / server-side condition; platform-neutral."
     },
     {
-      "id": "9a6fd5ec6a70",
-      "text": "Remote sessions are not available with ${}: those credentials are read from a file on this computer and can't reach the remote host.",
+      "id": "584e0591387f",
+      "text": "Remote sessions are not available with ${}: those credentials stay on this computer and can't reach the remote host.",
       "status": "accepted",
       "sites": 1,
       "reason": "Session kind / approval / server-side condition; platform-neutral."
@@ -896,6 +931,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "857f82a8ab7a",
+      "text": "sshHostLauncher cannot be used with a macOS host",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Remote SSH host is macOS (sshHostLauncher); a property of the remote host, same from every client platform."
     },
     {
       "id": "f9b64c12891d",
@@ -954,6 +996,13 @@
       "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
     },
     {
+      "id": "b1e7895a094b",
+      "text": "The address was not loaded: extensions are off, computer use may be acting on the screen, the app is asking the person about a permission, or that tab cannot load this address.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Built-in browser chrome.tabs.update refusal for extensions; 'computer use may be acting' means the upstream CU lock is held, which our Linux executor also takes; platform-neutral safety rule."
+    },
+    {
       "id": "d032e87f177c",
       "text": "The browser pane is not available to this chat on this computer.",
       "status": "accepted",
@@ -1010,6 +1059,13 @@
       "reason": "macOS background (app-scoped) mode prompt; not advertised on Linux."
     },
     {
+      "id": "7fd907f9b247",
+      "text": "The tab was not brought to the front: extensions are off, computer use may be acting on the screen, the app is asking the person about a permission, or that tab cannot be shown.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Built-in browser chrome.tabs.update refusal for extensions; 'computer use may be acting' means the upstream CU lock is held, which our Linux executor also takes; platform-neutral safety rule."
+    },
+    {
       "id": "14339fc830fc",
       "text": "The user saw the enable prompt and chose not to turn on Computer Use. Do not retry in this turn. Let the user know you can't complete this without computer use and offer an alternative if one exists. If the user sends a new request that requires computer use, you may call request_access again.",
       "status": "accepted",
@@ -1050,6 +1106,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "05416a1b480e",
+      "text": "This launcher cannot be used with a macOS host",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Remote SSH host is macOS (sshHostLauncher); a property of the remote host, same from every client platform."
     },
     {
       "id": "d4719625deff",
@@ -1106,6 +1169,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "Native binary picker; linux-x64/linux-arm64 handled before the throw."
+    },
+    {
+      "id": "acdffdb13dc5",
+      "text": "Until then computer use, screen sharing and screen recording are off in every conversation, so close it as soon as you can, with tabs_close; if that is refused, ask the person to close it.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "1Password login-fill pause in the built-in browser: upstream's executor proxy wraps every executor, our __linuxExecutor included, and refuses screenshots and input while a fill is pending; true on Linux."
     },
     {
       "id": "49a35c4dc1ee",

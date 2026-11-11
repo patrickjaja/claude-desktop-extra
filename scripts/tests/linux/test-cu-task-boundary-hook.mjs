@@ -423,8 +423,9 @@ if (patchMissing || !existsSync(stub)) {
     const endedVar = endedM[0]?.[1] || "\u0000";
     const esc = (x) => x.replace(/\$/g, "\\$");
     check(
-      "success result {ok:!0,...,ended:<that expression>,coworkRemote:...}",
-      countRe(statusPart, new RegExp("\\{ok:!0,[^{}]*?,ended:" + esc(endedVar) + ",coworkRemote:")),
+      "success result {ok:!0,...,ended:<that expression>,...,coworkRemote:...}",
+      // v5.1231.0 added workerDone/unknownStatus between ended and coworkRemote.
+      countRe(statusPart, new RegExp("\\{ok:!0,[^{}]*?,ended:" + esc(endedVar) + ",(?:[\\w$]+:[\\w$]+,)*coworkRemote:")),
       1
     );
     check("transient result {ok:!1,transient:!0} present", count(statusPart, "{ok:!1,transient:!0}") >= 1, true);

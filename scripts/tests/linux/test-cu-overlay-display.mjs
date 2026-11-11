@@ -348,7 +348,9 @@ const DID = '/*__cdbCuDid*/((v)=>{try{let f=globalThis.__cdbCuElectronDisplayId;
 const reEsc = (x) => x.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 const D = reEsc(DID);
 const RESOLVER_RE = /function ([\w$]+)\(([\w$]+)\)\{return \2===null\?([\w$]+)\.screen\.getPrimaryDisplay\(\):\3\.screen\.getAllDisplays\(\)\.find\(\(?([\w$]+)\)?=>\4\.id===\2\)?\)\?\?\3\.screen\.getPrimaryDisplay\(\)\}/;
-const GLOW_SET_RE = /function ([\w$]+)\(([\w$]+)\)\{([\w$]+)=\2\?\?null,([\w$]+)&&!\4\.isDestroyed\(\)&&\4\.setBounds\(([\w$]+)\(\)\.bounds\)\}/;
+// v5.1231.0 wraps the setBounds with a drawn-cursor redraw:
+// `(j.setBounds(U().bounds),R())`; both shapes are the same setter.
+const GLOW_SET_RE = /function ([\w$]+)\(([\w$]+)\)\{([\w$]+)=\2\?\?null,([\w$]+)&&!\4\.isDestroyed\(\)&&(?:\4\.setBounds\(([\w$]+)\(\)\.bounds\)|\(\4\.setBounds\(([\w$]+)\(\)\.bounds\),[\w$]+\(\)\))\}/;
 const TEACH_SET_RE = /function ([\w$]+)\(([\w$]+)\)\{([\w$]+)=\2\?\?null;let ([\w$]+)=([\w$]+)\(\);\4&&\4\.setBounds\(([\w$]+)\(\)\.workArea\)\}/;
 const GLOW_RE = /function ([\w$]+)\(([\w$]+)\)\{if\(!([\w$]+)\)return Promise\.resolve\(\);([\w$]+)&&=\(clearTimeout\(\4\),null\);let [\w$]+=\+\+[\w$]+;([\w$]+)\(!0\);/;
 const GLOW_PATCHED_RE = /function ([\w$]+)\(([\w$]+)\)\{if\(!([\w$]+)\|\|process\.platform==="linux"&&globalThis\.__cdbCuGlowOff\?\.\(\)===!0\)return Promise\.resolve\(\);([\w$]+)&&=\(clearTimeout\(\4\),null\);let [\w$]+=\+\+[\w$]+;([\w$]+)\(!0\);/;
@@ -404,7 +406,8 @@ if (!haveBin || !existsSync(path.join(BUILD_DIR, "index.js"))) {
     for (const [name, pre] of SITES) check(`${name}: pristine site once`, countRe(blob, pre), 1);
     const resolverSrc = (RESOLVER_RE.exec(blob) || [])[0] || "";
     const [, resolver, , scr] = RESOLVER_RE.exec(blob) || [];
-    const [, glowSet, , , , glowGet] = GLOW_SET_RE.exec(blob) || [];
+    const [, glowSet, , , , glowGetBare, glowGetWrapped] = GLOW_SET_RE.exec(blob) || [];
+    const glowGet = glowGetBare || glowGetWrapped;
     const [, teachSet, , , , , teachGet] = TEACH_SET_RE.exec(blob) || [];
     const [, glowFn, , ct, , busyFn] = GLOW_RE.exec(blob) || [];
     const [, glowSwitch] = SITES[0][1].exec(blob) || [];
@@ -478,6 +481,44 @@ if (!haveBin || !existsSync(path.join(BUILD_DIR, "index.js"))) {
       writeFileSync(f, mut(blob));
       const r = run(f);
       check(`${label}: names the sub-patch and fails`, r.status !== 0 && want.test(r.out) && !/\[PASS\]/.test(r.out), true);
+    }
+
+    console.log("\n[3b] 10d: no drawn cursor in the glow on Linux (flag 1916550538)");
+    {
+      // The decision the glow show reads: `r=(e?.claudeHasThePointer??!0)&&T()`.
+      const CURSOR_RE = /function ([\w$]+)\(\)\{try\{let ([\w$]+)=([\w$]+)\(\);return \2==="default"\?([\w$]+)\(([\w$]+)\):\2==="on"\}catch\(([\w$]+)\)\{return [\w$]+\.warn\("\[cu-glow\] flag unreadable, staying off"/;
+      const CURSOR_PATCHED_RE = /function ([\w$]+)\(\)\{if\(process\.platform==="linux"\)return!1;try\{let ([\w$]+)=([\w$]+)\(\);return \2==="default"\?([\w$]+)\(([\w$]+)\):\2==="on"\}catch/;
+      check("drawn-cursor decision: pristine once", countRe(blob, CURSOR_RE), 1);
+      const cm = CURSOR_RE.exec(blob) || [];
+      const [, curFn, , overrideFn, flagFn, flagVar] = cm;
+      check(`${flagVar} is flag 1916550538`, countRe(blob, new RegExp("(?<![\\w$.])" + esc(flagVar || "\u0000") + '="1916550538"')), 1);
+      check(`${curFn}(): its definition plus one call, the glow show`, countRe(blob, new RegExp("(?<![\\w$.])" + esc(curFn || "\u0000") + "\\(\\)", "g")), 2);
+      check(`glow show reads ${curFn}() for claudeHasThePointer`, countRe(blob, new RegExp("\\(([\\w$]+)\\?\\.claudeHasThePointer\\?\\?!0\\)&&" + esc(curFn || "\u0000") + "\\(\\)")), 1);
+      check("drawn-cursor decision: patched once", countRe(patched, CURSOR_PATCHED_RE), 1);
+      check("drawn-cursor decision: pristine shape gone", countRe(patched, CURSOR_RE), 0);
+      check("10d reported [OK]", r1.out.includes(`[OK] 10d drawn cursor ${curFn} (flag 1916550538): off on Linux`), true);
+      // Run both versions with the flag ON and the debug override "default".
+      const evalFn = (src, platform) => {
+        const fn = new Function("__scope", "with(__scope){return (" + src + ")}")(
+          scopeFor(new Set([curFn]), { [overrideFn]: () => "default", [flagFn]: (id) => id === "1916550538", [flagVar]: "1916550538",
+            process: { platform } }));
+        return fn();
+      };
+      const pSrc = fnSource(patched, curFn), oSrc = fnSource(blob, curFn);
+      check("flag on, pristine upstream on Linux: drawn cursor shown (the frozen-cursor case)", oSrc && evalFn(oSrc, "linux"), true);
+      check("flag on, patched on Linux: drawn cursor off", pSrc && evalFn(pSrc, "linux"), false);
+      check("flag on, patched on darwin: upstream (drawn cursor shown)", pSrc && evalFn(pSrc, "darwin"), true);
+      // Rule 6: a bundle missing only 10d is refused as half-patched.
+      const half = path.join(scratch, "half10d.js");
+      const pcm = CURSOR_PATCHED_RE.exec(patched);
+      writeFileSync(half, pcm ? patched.replace(pcm[0], pcm[0].replace('if(process.platform==="linux")return!1;', "")) : patched);
+      const r = run(half);
+      check("bundle without 10d: refused as half-patched", r.status !== 0 && /half-patched input: .*missing: .*10d drawn cursor off/.test(r.out), true);
+      // A moved flag id fails loud.
+      const moved = path.join(scratch, "moved10d.js");
+      writeFileSync(moved, blob.replace('="1916550538"', '="1916550539"'));
+      const rm = run(moved);
+      check("moved drawn-cursor flag: names the sub-patch and fails", rm.status !== 0 && /\[FAIL\] 10d drawn cursor [\w$]+: [\w$]+ is not flag 1916550538/.test(rm.out) && !/\[PASS\]/.test(rm.out), true);
     }
 
     console.log("\n[4] the REAL upstream overlay code in vm");

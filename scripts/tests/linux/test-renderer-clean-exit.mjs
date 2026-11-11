@@ -7,33 +7,35 @@
 // WHY THIS EXISTS
 // ---------------
 // Upstream's main-webview render-process-gone handler runs every death
-// through a reason filter. Without a pending "we crashed it ourselves" token
-// it drops `clean-exit` unconditionally; on Linux the main view's renderer
-// can exit with reason clean-exit / exitCode 0 on its own, and the window then
-// stays blank (#287). With a token it drops EVERY reason. The unresponsive
-// watchdog adds a token per kill attempt and arms a 30 s re-check that reloads
-// the view when no page committed. On Linux its forcefullyCrashRenderer() asks
-// the renderer to crash itself on its IO thread: that works while only the
-// main thread is hung, and does nothing when the whole renderer process is
-// stalled; upstream's re-check reloads then go to the same stalled renderer
-// and end on its Restart-only error card (#299).
+// through a reason filter that returns a verdict. Without a pending "we
+// crashed it ourselves" token a `clean-exit` is "teardown" unconditionally; on
+// Linux the main view's renderer can exit with reason clean-exit / exitCode 0
+// on its own, and the window then stays blank (#287). With a token every
+// reason is "own kill", which the handler hands to the watchdog's post-kill
+// reload. The unresponsive watchdog adds a token per kill attempt, reloads 1 s
+// after its crash request when no death was reported, and arms a 30 s re-check
+// that reloads again when no page committed. On Linux its
+// forcefullyCrashRenderer() asks the renderer to crash itself on its IO
+// thread: that works while only the main thread is hung, and does nothing when
+// the whole renderer process is stalled; every reload then goes to the same
+// stalled renderer and upstream ends on its Restart-only error card (#299).
 //
 // patches/linux/fix_renderer_clean_exit_reload:
 //   A. the filter's clean-exit term asks __cdbCleanExitRecoverable
 //   B. the 300 ms `killed` grace also covers clean-exit
-//   D. __cdbHungKillEscalate(e) runs before e.forcefullyCrashRenderer(): it
-//      SIGKILLs the renderer pid 5 s later unless the view recovered (a
-//      liveness probe at the deadline that answers also counts as recovered).
-//      The `killed` that follows is dropped by upstream's token and upstream's
-//      own re-check reloads.
+//   D. __cdbHungKillEscalate(e) runs before e.forcefullyCrashRenderer() in the
+//      hang-kill helper: it SIGKILLs the renderer pid 5 s later unless the view
+//      recovered (a liveness probe at the deadline that answers also counts as
+//      recovered). The `killed` that follows carries upstream's token, so the
+//      handler calls it an own kill and upstream's post-kill reload runs.
 // (both helpers in js/renderer_clean_exit.js; sub-patch C, which handed a
 // tokened death straight to the reload path, is retired). Everything after
 // the filter is upstream's own path.
 //
-// This harness runs the compiled patch against the v4.29.0 shapes it targets
+// This harness runs the compiled patch against the v5.1231.0 shapes it targets
 // (filter and its expiring tokens, quitting predicate, reload helper, and the
-// whole function holding the unresponsive watchdog and the handler, verbatim) and then drives the PATCHED code with a stubbed
-// WebContents:
+// whole function holding the unresponsive watchdog and the handler, verbatim)
+// and then drives the PATCHED code with a stubbed WebContents:
 //
 //   [1]  apply on pristine, idempotent 2nd run (positive [OK] lines), node --check,
 //        retired C helper absent
@@ -42,13 +44,14 @@
 //   [4]  clean-exit, view destroyed in grace -> suppressed
 //   [5]  4th clean-exit within 10 min     -> suppressed (upstream behavior)
 //   [6]  no token: crashed / killed keep upstream's verdicts
-//   [7]  token pending + killed / crashed / clean-exit -> dropped (upstream)
-//   [8]  a death from elsewhere in the token window -> dropped, D stands down,
-//        upstream's re-check reloads
+//   [7]  token pending, no kill attempt in flight -> dropped (upstream)
+//   [8]  a death from elsewhere during a kill attempt -> upstream's post-kill
+//        reload, D stands down
 //   [9]  watchdog: SIGKILL only while unresponsive with an unchanged pid
 //   [9b] ...and only when a 2 s liveness probe at the deadline gets no answer
 //   [9c] upstream's own spare check runs first: a spared renderer never arms it
-//   [10] watchdog -> SIGKILL -> `killed` dropped -> upstream's re-check reloads
+//   [10] watchdog -> 1 s reload into the stalled renderer -> SIGKILL -> `killed`
+//        handed to upstream's post-kill reload
 //   [11] refusals: absorbed filter, missing anchors, foreign or stale end-state -> exit 1
 //   [12] fix_renderer_gone_suppressed_log composes, in both orders
 
@@ -77,43 +80,71 @@ function check(label, actual, expected) {
   }
 }
 
-// Upstream shapes, copied verbatim from the v4.29.0 bundle
-// (index.chunk-Sq9qOqtc.js). Nothing inside the pieces is invented: STUBS only
+// Upstream shapes, copied verbatim from the v5.1231.0 bundle
+// (index.chunk-4DJuDgNS.js). Nothing inside the pieces is invented: STUBS only
 // stubs the helpers they call (logger, Sentry, telemetry, overlay, print-call
-// guard, navigation bookkeeping) so they can run outside Electron. KRR is the
-// whole function that registers the main view's watchdog and handlers; Drr
-// (the responsive tracker) is stubbed to return __hang so a case can feed
-// upstream's hang-kill spare check.
+// guard, navigation bookkeeping, CPU sampling) so they can run outside
+// Electron. ZNR is the whole function that registers the main view's watchdog
+// and handlers; Fnr (the responsive tracker) is stubbed to return __hang so a
+// case can feed upstream's hang-kill spare check.
+const FN_FN =
+  "function fN(e){return e.isDestroyed()||e.isCrashed()||e.getOSProcessId()===0}";
+const RNR =
+  "function Rnr(e){setImmediate((()=>{e.isDestroyed()||e.reload()}))}";
+const XER =
+  "function xer(e,t){return!1}";
+const INR =
+  "function Inr(e){return typeof e==\"number\"&&e>0?Math.min(Math.floor(e),Otr):0}";
+const MNR =
+  "var jnr=120;function Mnr(e){return e.screen_locked===!0?\"the screen is locked\":(e.seconds_since_resume??1/0)<jnr?\"the computer woke under 2 minutes ago\":void 0}";
+const CNR =
+  "async function Cnr(e){let t;await Promise.race([e.catch((()=>void 0)),new Promise((e=>{t=setTimeout(e,vtr)}))]),clearTimeout(t)}";
+const LNR =
+  "function Lnr(e,t){return new Promise((n=>{let r=t=>{clearTimeout(s),e.removeListener(\"responsive\",i),e.removeListener(\"did-start-navigation\",a),e.removeListener(\"render-process-gone\",o),e.removeListener(\"destroyed\",o),n(t)},i=()=>r(\"responsive\"),a=e=>{e.isMainFrame&&!e.isSameDocument&&setImmediate((()=>r(\"navigation\")))},o=()=>void setImmediate((()=>r(\"renderer_gone\"))),s=setTimeout((()=>r(\"timed_out\")),t);e.on(\"responsive\",i),e.on(\"did-start-navigation\",a),e.on(\"render-process-gone\",o),e.on(\"destroyed\",o)}))}";
 const FILTER_BLOCK =
-  "var rV=[],wnr=[],Tnr=1e4,Enr=1e4,Dnr=2e3,Onr=300,knr=3,Anr=3e5,jnr=[1e3,5e3,2e4],Mnr=3e4,Nnr=1e3,Pnr=500,Fnr=3e5;function Inr(){Bnr().push(1/0)}function Lnr(){let e=rV.indexOf(1/0);e!==-1&&rV.splice(e,1)}function Rnr(){let e=Date.now()+Enr;rV=rV.map((t=>Math.min(t,e)))}function znr(){return Bnr().shift()!==void 0}function Bnr(){let e=aV===void 0?0:Anr,t=Date.now();return rV=rV.filter((n=>n+e>t)),rV}function Vnr(){let e=Date.now();return wnr=wnr.filter((t=>t>e)),wnr}function Hnr(){Vnr().push(Date.now()+Tnr)}function Unr(){return Vnr().shift()!==void 0}function Wnr(e){return znr()?((e.reason===\"killed\"||e.reason===\"crashed\")&&Hnr(),!1):!(e.reason===\"clean-exit\"||e.reason===\"killed\"&&XN())}var iV=!1;function Gnr(){return iV}var aV,oV,Knr=18e4,qnr=[0,15e3,3e4],Jnr=.2,Ynr=1e3,Xnr=1e4,Znr=6e4,Qnr=3,sV,cV=0,lV=0,$nr=0,uV=0,err=\"load_failed\",trr=0,dV=!1,fV,pV,mV=!1;";
-const QUIT_DECL = "var WN=!1,GN=!1,KN=!1;var XN=()=>WN||GN||KN";
-const YB_FN = "function YB(e){return e.isDestroyed()||e.isCrashed()||e.getOSProcessId()===0}";
-const ORR =
-  "function Orr(e){setImmediate((()=>{e.isDestroyed()||e.reload()}))}";
-const KRR =
-  "function krr(e,t={}){iV=!1,aV=void 0,oV=void 0,sV=e,drr=t.offersOfflineGame??(()=>!1),frr=t.offersOrganizationSignIn??(()=>!1),prr=t.offersClaudeApiSignIn??(()=>!1);let n=t.printCallGuardEnabled??(()=>!1),r=t.hangKillSpareEnabled??(()=>!1);nnr(e),irr();let i=0,a=0,o=0,s=0,c,l=()=>{let e=c!==void 0;return clearTimeout(c),c=void 0,e},u,d=()=>{clearTimeout(u),u=void 0},f,p=t=>{d(),aV===e&&(aV=void 0),oV?.view===e&&(oV=void 0);let n=f;if(f=void 0,!n)return;let r=Date.now()-n.startedAt;P.info(\"Main webview's recovery from the hang kill ended: %s after %d load(s) in %d ms\",t,n.loads,r),Q(\"desktop_main_view_hang_recovery\",{recovery_outcome:t,surface:n.surface,loads:n.loads,loads_hidden:n.loadsHidden,elapsed_ms:r,window_visible:wV().window_visible,window_visible_at_kill:n.visibleAtKill,network_service_gone:p0e()}).then(dN)},m=()=>{let e=Date.now();e-s>Anr&&(a=0,o=0),s=e},h=0,g=()=>{f&&(f.loads++,wV().window_visible===!1&&f.loadsHidden++),aV=e,oV?.view===e&&(oV=void 0),h=performance.now(),_(Mnr)},_=t=>{clearTimeout(u),u=setTimeout((()=>{if(u=void 0,e.isDestroyed()||XN()){p(\"abandoned\");return}if(jo){p(\"error_card\");return}let t=e.isLoading(),n=t&&e.isWaitingForResponse();if(P.info(\"Main webview committed no page within %d s of its recovery reload (%s)\",Math.round((performance.now()-h)/1e3),n?\"no response yet\":t?\"loading\":\"not loading\"),t&&e.stop(),n){bV(\"load_failed\",{errorCode:-7,errorDescription:\"ERR_TIMED_OUT\"}),p(\"error_card\");return}m(),v(void 0,!1)}),t)},v=(t,n)=>{if(!n&&a>=knr){P.info(\"Recovery reload cap reached; not reloading again\"),p(\"gave_up\");let n=t&&o>1?Ctr(t):wtr(),r=wV().window_visible===!1;Mo(r?void 0:n),r&&(oV={view:e,card:n});return}n||a++;let r=a-1;if(t?.reason!==\"launch-failed\"){g(),Orr(e);return}let i=jnr[Math.min(r,jnr.length-1)];P.info(\"Renderer failed to launch; reloading in %ds\",i/1e3),c=setTimeout((()=>{if(c=void 0,e.isDestroyed()){p(\"abandoned\");return}g(),e.reload()}),i)};Ke(iqn(\"crash-dump-filter\",\"keep\",(e=>Ltr(e,Unr))));let y=Drr(e);e.on(\"did-start-navigation\",(t=>{if(t.isMainFrame&&!t.isSameDocument){if(l())g();else if(u!==void 0){let e=h+2*Mnr-performance.now();_(Math.max(0,Math.min(Mnr,e)))}rnr(e)}})),e.on(\"did-fail-load\",((e,t,n,r,i)=>{i&&t!==-3&&(P.info(`Failed to load URL: ${r} %o`,{errorCode:t,errorDescription:n}),bV(\"load_failed\",{errorCode:t,errorDescription:n}),Q(\"desktop_main_view_load_failed\",{error_code:t,error_description:n,is_claude_host:pP(fP(r)?.host??\"\")}))})),e.on(\"did-navigate\",((t,n,r,a)=>{if(l()&&g(),$B(e),r>=400&&r<600){P.info(`Navigation to ${n} failed with status code ${r}: ${a}`),bV(\"http_error\",{errorCode:r,errorDescription:a}),p(\"error_card\");let t=pP(new URL(n).host);Q(\"desktop_main_view_http_error\",{http_status:r,http_status_text:a,is_claude_host:t}),!t&&i<3&&(i++,P.info(`Navigating back to ${NA()}`),e.loadURL(NA()))}else r<400&&n!==\"about:blank\"?(iV||e.navigationHistory.getEntryAtIndex(0)?.url===\"about:blank\"&&e.navigationHistory.removeEntryAtIndex(0),iV=!0,p(\"loaded\"),i=0,cV>0&&(P.info(\"Main view load recovered after %d failed attempt(s)\",cV),Q(\"desktop_main_view_load_recovered\",arr())),irr(),Mo(void 0)):n!==\"about:blank\"&&p(\"loaded\")})),e.on(\"did-frame-navigate\",(async(t,n,r,i,a)=>{if(!(a||!jo)&&await Cnr(e)){P.info(\"Turnstile iframe detected. Removing error overlay.\"),Mo(void 0);return}}));let b=-1/0,x=async(t,n)=>{let i=null,a=e=>({outcome:e,pageAnswerMs:i});try{if(t!==\"none\")return a(\"print_call\");if(!n?.responsive)return a(\"no_responsive_event\");if(aV===e)return a(\"reload_pending\");if(performance.now()-b<Fnr)return a(\"spared_recently\");if(!r())return a(\"spare_switch_off\");await $h(Nnr);let o=performance.now(),s=await hg(e.executeJavaScript(\"true\"),Pnr,!1);return i=Math.round(performance.now()-o),s===!0?YB(e)?a(\"renderer_gone\"):y()===n?a(\"spared\"):a(\"hung_again\"):a(\"no_answer\")}catch{return a(\"error\")}},S=!1,C=async e=>{S=!0;try{await w(e)}finally{S=!1,Rnr()}},w=async t=>{$B(e),Inr(),d();let n=aP(e.getURL()),r=nV(e),i=wV(),a=wrr(),o=yrr(),s=performance.now(),c=y();await SV(Q(\"desktop_main_view_unresponsive\",{surface:n,web_commit_hash:r,main_rss_bytes:process.memoryUsage().rss,...i,...a,...o,print_call:t}).then(dN));let l=Math.round(performance.now()-s),{outcome:u,pageAnswerMs:m}=await x(t,c);if(e.isDestroyed()){p(\"abandoned\");return}let h={surface:n,web_commit_hash:r,print_call:t,window_visible:i.window_visible,window_minimized:i.window_minimized,wait_ms:l,...c?.responsive??Err,electron_version:process.versions.electron,page_answer_ms:m,kill_outcome:u};if(u===\"spared\"){b=performance.now(),Lnr(),P.info(\"Main webview is responsive again (answered a script in %d ms), hang kill called off\",m),Q(\"desktop_main_view_hang_kill_wait\",h);return}e.forcefullyCrashRenderer(),f??={startedAt:Date.now(),surface:n,visibleAtKill:i.window_visible,loads:0,loadsHidden:0},g(),Orr(e),Q(\"desktop_main_view_hang_kill_wait\",h)},T=async()=>{e.isDestroyed()||(P.info(\"Main webview's print() call is still in progress %d minutes after it began and a kill was skipped for it, will kill and reload\",enr/6e4),await C(\"deadline\"))};e.on(\"unresponsive\",(async()=>{if(S)return;let t=snr(e,n,(()=>void T()));if(t.skipKill){P.info(\"Main webview is unresponsive during a print() call (started %d ms ago), not killing%s\",t.printCallAgeMs,t.firstSkip?\"; logging desktop_main_view_unresponsive_kill_skipped\":\"\"),t.firstSkip&&Q(\"desktop_main_view_unresponsive_kill_skipped\",{surface:aP(e.getURL()),web_commit_hash:nV(e),print_call_age_ms:t.printCallAgeMs});return}P.info(\"Main webview is unresponsive, will kill and reload\"),await C(t.printCall)})),e.on(\"render-process-gone\",(async(t,n)=>{if($B(e),!Wnr(n))return;d();let r=l(),i=nV(e),s=wV(),c=kVn();if(n.reason===\"killed\"&&(await new Promise((e=>setTimeout(e,Onr))),e.isDestroyed()||XN())){p(\"abandoned\");return}if(e.isDestroyed()){p(\"abandoned\");return}P.info(\"Main webview render process gone: %o\",n),m(),o++,Je(\"Main webview render process gone\",{level:\"error\",tags:{event:\"webview-render-process-gone\",reason:n.reason,accessibility_support:rP(s.accessibility_support_enabled)},extra:{exitCode:n.exitCode}}),await SV(Promise.all([Q(\"desktop_main_view_render_process_gone\",{surface:aP(e.getURL()),web_commit_hash:i,reason:n.reason,exit_code:n.exitCode,reload_attempt:a,main_rss_bytes:process.memoryUsage().rss,...s},{mainViewHeap:c}).then(dN),Ye(Dnr)])),l()&&(r=!0),v(n,r)}))}";
+  "var FN=[],htr=[],gtr=1e4,_tr=1e4,vtr=2e3,ytr=300,btr=3,xtr=3e5,Str=[1e3,5e3,2e4],Ctr=3e4,wtr=1e3,Ttr=1e3,Etr=500,Dtr=3e5,Otr=6e4;function ktr(){Ntr().push(1/0)}function Atr(){let e=FN.indexOf(1/0);e!==-1&&FN.splice(e,1)}function jtr(){let e=Date.now()+_tr;FN=FN.map((t=>Math.min(t,e)))}function Mtr(){return Ntr().shift()!==void 0}function Ntr(){let e=LN===void 0?0:xtr,t=Date.now();return FN=FN.filter((n=>n+e>t)),FN}function Ptr(){let e=Date.now();return htr=htr.filter((t=>t>e)),htr}function Ftr(){Ptr().push(Date.now()+gtr)}function Itr(){return Ptr().shift()!==void 0}function Ltr(e){return Mtr()?((e.reason===\"crashed\"||e.reason===\"killed\")&&Ftr(),\"own kill\"):e.reason===\"clean-exit\"||e.reason===\"killed\"&&eI()?\"teardown\":\"needs recovery\"}var IN=!1;function Rtr(){return IN}var LN,RN,ztr=18e4,Btr=[0,15e3,3e4],Vtr=.2,Htr=1e3,Utr=1e4,Wtr=6e4,Gtr=3,zN,BN=0,Ktr=0,qtr=0,Jtr=0,Ytr=\"load_failed\",Xtr=0,VN=!1,HN,Ztr,Qtr=!1;";
+const ZNR =
+  "function znr(e,t={}){IN=!1,AN(),LN=void 0,RN=void 0,zN=e,dnr=t.offersOfflineGame??(()=>!1),fnr=t.offersOrganizationSignIn??(()=>!1),pnr=t.offersClaudeApiSignIn??(()=>!1);let n=t.printCallGuardEnabled??(()=>!1),r=t.hangKillSpareEnabled??(()=>!1),i=t.hangKillGraceMs??(()=>0),a=t.msixUpdateCheck??(()=>\"none\"),o=t.hangKillSkipDumpEnabled??(()=>!1),s=t.hangKillCapEnabled??(()=>!0);Ger(e),nnr();let c=0,l=0,u=0,d=0,f,p=()=>{let e=f!==void 0;return clearTimeout(f),f=void 0,e},m,h=()=>{clearTimeout(m),m=void 0},g=!1,_=-1/0,v=!1,y=!1,b,x,S=()=>{clearTimeout(x?.fallback),x=void 0},C=()=>{x&&(clearTimeout(x.fallback),x.isHeld=!0)},w=t=>{let n=x;if(!n||(clearTimeout(n.fallback),t===\"death notice\"&&(x=void 0),n.isHeld)||n.pageHasCommitted&&!fN(e))return;AN();let r=Math.round(performance.now()-n.killedAt);t!==\"no death notice\"&&n.isRunsFirstKill&&b&&(b.deathNoticeMs??=r),!(n.hasReloaded&&Eo||eI()||e.isDestroyed())&&(P.info(\"Reloading after the hang kill: %s, %d ms after it\",t,r),n.hasReloaded=!0,ne(),v=n.isCounted||l>=btr,Rnr(e))},T=t=>{t===\"loaded\"&&(y=!0),t===\"loaded\"&&x?x.pageHasCommitted=!0:S(),h(),LN===e&&(LN=void 0),RN?.view===e&&(RN=void 0);let n=b;if(b=void 0,!n)return;let r=Date.now()-n.startedAt;P.info(\"Main webview's recovery from the hang kill ended: %s after %d load(s) in %d ms\",t,n.loads,r),Q(\"desktop_main_view_hang_recovery\",{recovery_outcome:t,surface:n.surface,loads:n.loads,loads_hidden:n.loadsHidden,elapsed_ms:r,window_visible:qN().window_visible,window_visible_at_kill:n.visibleAtKill,death_notice_ms:n.deathNoticeMs,network_service_gone:vp()}).then(CF)},ee=()=>{let e=Date.now();e-d>xtr&&(l=0,u=0),d=e},te=0,ne=(t=!0)=>{t&&b&&(b.loads++,qN().window_visible===!1&&b.loadsHidden++),LN=e,y=!1,v=!1,RN?.view===e&&(RN=void 0),te=performance.now(),re(Ctr)},re=t=>{clearTimeout(m),m=setTimeout((()=>{if(m=void 0,e.isDestroyed()||eI()){T(\"abandoned\");return}if(Eo){T(\"error_card\");return}let t=e.isLoading(),n=t&&e.isWaitingForResponse();if(P.info(\"Main webview committed no page within %d s of its recovery reload (%s)\",Math.round((performance.now()-te)/1e3),n?\"no response yet\":t?\"loading\":\"not loading\"),t&&e.stop(),n){GN(\"load_failed\",{errorCode:-7,errorDescription:\"ERR_TIMED_OUT\"}),T(\"error_card\");return}ee(),ae(void 0,v)}),t)},ie=(t,n)=>{if(n)return!0;if(l<btr)return l++,!0;P.info(\"Recovery reload cap reached; not reloading again\"),T(\"gave_up\");let r=t&&u>1?H7n(t):U7n(y),i=qN().window_visible===!1;return Do(i?void 0:r),i&&(RN={view:e,card:r}),!1},ae=(t,n)=>{if(!ie(t,n))return;let r=l-1;if(t?.reason!==\"launch-failed\"){ne(),Rnr(e);return}let i=Str[Math.min(r,Str.length-1)];P.info(\"Renderer failed to launch; reloading in %ds\",i/1e3),f=setTimeout((()=>{if(f=void 0,e.isDestroyed()){T(\"abandoned\");return}ne(),e.reload()}),i)};Ge(T9n(\"crash-dump-filter\",\"keep\",(e=>n9n(e,Itr))));let oe=!1,se=Fnr(e,(()=>oe));e.on(\"did-start-navigation\",(t=>{if(t.isMainFrame&&!t.isSameDocument){if(g=!0,kN(\"navigation_start\"),p())ne();else if(m!==void 0){let e=te+2*Ctr-performance.now();re(Math.max(0,Math.min(Ctr,e)))}qer(e)}})),e.on(\"did-stop-loading\",(()=>{g=!1,kN(\"navigation_stop\")})),e.on(\"did-fail-load\",((e,t,n,r,i)=>{i&&t!==-3&&(AN(),P.info(`Failed to load URL: ${zpe(r)} %o`,{errorCode:t,errorDescription:n}),GN(\"load_failed\",{errorCode:t,errorDescription:n}),Q(\"desktop_main_view_load_failed\",{error_code:t,error_description:n,is_claude_host:vN(_N(r)?.host??\"\")}))})),e.on(\"did-navigate\",((t,n,r,i)=>{if(g=!1,_=performance.now(),jer(),p()&&ne(),Ker(e),r>=400&&r<600){AN(),P.info(`Navigation to ${zpe(n)} failed with status code ${r}: ${i}`),GN(\"http_error\",{errorCode:r,errorDescription:i}),T(\"error_card\");let t=vN(new URL(n).host);Q(\"desktop_main_view_http_error\",{http_status:r,http_status_text:i,is_claude_host:t}),!t&&c<3&&(c++,P.info(`Navigating back to ${dj()}`),e.loadURL(dj()))}else r<400&&n!==\"about:blank\"?(IN||e.navigationHistory.getEntryAtIndex(0)?.url===\"about:blank\"&&e.navigationHistory.removeEntryAtIndex(0),IN=!0,T(\"loaded\"),c=0,BN>0&&(P.info(\"Main view load recovered after %d failed attempt(s)\",BN),Q(\"desktop_main_view_load_recovered\",rnr())),nnr(),Do(void 0)):n===\"about:blank\"?AN():T(\"loaded\")})),e.on(\"did-frame-navigate\",(async(t,n,r,i,a)=>{if(!(a||!Eo)&&await mtr(e)){P.info(\"Turnstile iframe detected. Removing error overlay.\"),Do(void 0);return}}));let ce=-1/0,le=async(t,n,i)=>{let a=null,o=e=>({outcome:e,pageAnswerMs:a});try{if(t!==\"none\")return o(\"print_call\");if(!i)return o(\"no_responsive_event\");if(LN===e)return o(\"reload_pending\");if(performance.now()-ce<Dtr)return o(\"spared_recently\");if(!r())return o(\"spare_switch_off\");await ea(Ttr);let s=performance.now(),c=await Ia(e.executeJavaScript(\"true\"),Etr,!1);return a=Math.round(performance.now()-s),c===!0?fN(e)?o(\"renderer_gone\"):se()===n?o(\"spared\"):o(\"hung_again\"):o(\"no_answer\")}catch{return o(\"error\")}},ue=(t,n,i)=>i===0||t!==\"none\"||!n||n.responsive?\"none\":LN===e?\"reload_pending\":performance.now()-ce<Dtr?\"spared_recently\":r()?fN(e)?\"renderer_gone\":g||_>n.at?\"navigation\":void 0:\"spare_switch_off\",de=async(t,n,r,i)=>{try{let a=ue(t,n,r);if(a)return{end:a,waitedMs:0};let o=performance.now(),s=await Lnr(e,i===\"none\"?r:Otr),c=Math.round(performance.now()-o);return P.info(\"Main webview's hang kill waited %d ms for the page to respond, result: %s\",c,s),{end:s,waitedMs:c}}catch{return{end:\"error\",waitedMs:0}}finally{oe=!1}},fe=()=>{let t=performance.now(),n=xer(e,o);e.forcefullyCrashRenderer();let r=Math.round(performance.now()-t);return P.info(\"The hang kill blocked the main process for %d ms (crash dump skipped: %s)\",r,n),{kill_ms:r,kill_dump_skipped:n}},pe=!1,me=async e=>{pe=!0;try{await he(e)}finally{pe=!1,jtr()}},he=async t=>{Ker(e),ktr(),h();let n=x?.isCounted===!0&&!x.hasReloaded&&!x.pageHasCommitted&&!x.reusedSlot;C();let r=cN(e.getURL()),o=PN(e),c=qN(),u=Anr(),d=wnr(),f=performance.now(),p=se(),m=0,g=\"none\";try{g=a(),m=Inr(i())}catch{}oe=m>0;let _=null;await Cnr(Q(\"desktop_main_view_unresponsive\",{surface:r,web_commit_hash:o,main_rss_bytes:process.memoryUsage().rss,...c,...u,...d,main_view_document_age_seconds:Mer(),print_call:t,hang_kill_grace_flag_ms:m}).then((()=>(_=xnr(e),CF()))));let v=Math.round(performance.now()-f),y=Snr(_,xnr(e)),S=await de(t,p,m,g),te=p?.responsive,re=s9n;bnr()&&t===\"none\"&&(re=te===void 0?await u9n(e):c9n);let{outcome:ae,pageAnswerMs:ue}=await le(t,p,te!==void 0);if(e.isDestroyed()){T(\"abandoned\");return}let pe={surface:r,web_commit_hash:o,print_call:t,window_visible:c.window_visible,window_minimized:c.window_minimized,wait_ms:v,...te??Pnr,electron_version:process.versions.electron,page_answer_ms:ue,...y,...re,kill_outcome:ae,hang_kill_grace_flag_ms:m,msix_update_check:g,hang_kill_grace_end:S.end,hang_kill_grace_waited_ms:S.waitedMs};if(ae===\"spared\"){ce=performance.now(),Atr(),x&&(x.isHeld=!1),P.info(\"Main webview is responsive again (answered a script in %d ms), hang kill called off\",ue),Q(\"desktop_main_view_hang_kill_wait\",{...pe,reload_attempt:null});return}AN();let me=b===void 0;b??={startedAt:Date.now(),surface:r,visibleAtKill:c.window_visible,loads:0,loadsHidden:0,deathNoticeMs:null};let he=!0;try{he=s()}catch{}let ge=he?Mnr(u):\"the cap on hang kills is switched off remotely\";ge?P.info(\"Not counting this hang toward the reload cap: %s\",ge):ee();let _e={...pe,reload_attempt:ge?null:Math.max(0,l-+!!n)};if(!ge&&!n&&l>=btr){let e=fe();Q(\"desktop_main_view_hang_kill_wait\",{..._e,...e}),ie(void 0,!1);return}ge||ie(void 0,n),ne(!1),x={killedAt:performance.now(),isRunsFirstKill:me,isCounted:!ge||n,reusedSlot:n,fallback:setTimeout((()=>w(\"no death notice\")),wtr),hasReloaded:!1,pageHasCommitted:!1,isHeld:!1};let ve=fN(e),ye=fe();ve&&w(\"renderer already dead\"),Q(\"desktop_main_view_hang_kill_wait\",{..._e,...ye})},ge=async()=>{e.isDestroyed()||(P.info(\"Main webview's print() call is still in progress %d minutes after it began and a kill was skipped for it, will kill it\",Her/6e4),await me(\"deadline\"))};e.on(\"unresponsive\",(async()=>{if(pe)return;let t=Zer(e,n,(()=>void ge()));if(t.skipKill){P.info(\"Main webview is unresponsive during a print() call (started %d ms ago), not killing%s\",t.printCallAgeMs,t.firstSkip?\"; logging desktop_main_view_unresponsive_kill_skipped\":\"\"),t.firstSkip&&Q(\"desktop_main_view_unresponsive_kill_skipped\",{surface:cN(e.getURL()),web_commit_hash:PN(e),print_call_age_ms:t.printCallAgeMs});return}P.info(\"Main webview is unresponsive, will kill it\"),await me(t.printCall)})),e.on(\"render-process-gone\",(async(t,n)=>{Ker(e);let r=Date.now(),i=Ner(r),a=Ltr(n);if(a!==\"needs recovery\"){a===\"own kill\"&&w(\"death notice\");return}AN(),h(),S();let o=p(),s=PN(e),c=qN(),d=C9n(),f={...Anr(r),...Fer(r),renderer_age_ms:i};if(n.reason===\"killed\"&&(await new Promise((e=>setTimeout(e,ytr))),e.isDestroyed()||eI())){T(\"abandoned\");return}if(e.isDestroyed()){T(\"abandoned\");return}P.info(\"Main webview render process gone: %o\",n),ee(),u++,kN(\"prior_death\",r);let m=Ier(r);qe(\"Main webview render process gone\",{level:\"error\",tags:{event:\"webview-render-process-gone\",reason:n.reason,accessibility_support:oN(c.accessibility_support_enabled)},extra:{exitCode:n.exitCode,...f,...m}}),await Cnr(Promise.all([Q(\"desktop_main_view_render_process_gone\",{surface:cN(e.getURL()),web_commit_hash:s,reason:n.reason,exit_code:n.exitCode,reload_attempt:l,main_rss_bytes:process.memoryUsage().rss,...c,...f,...m},{mainViewHeap:d}).then(CF),Je(vtr)])),p()&&(o=!0),ae(n,o)}))}";
 
+const QUIT_DECL = "var qF=!1,JF=!1,YF=!1;var eI=()=>qF||JF||YF";
 const STUBS =
-  "var __log=[],__overlay=[],__hang=void 0,P={info:(...a)=>__log.push(a[0]),debug(){},warn(){}},Je=()=>{},SV=p=>p,Q=async()=>{},dN=()=>{},Ye=()=>{},Mo=x=>__overlay.push(x),Ctr=n=>({reason:n.reason}),wtr=()=>({}),aP=()=>\"\",rP=()=>\"\",$B=()=>{},nV=()=>null,wV=()=>({}),wrr=()=>({}),yrr=()=>({}),Err={},kVn=()=>null,enr=6e5,snr=()=>({skipKill:!1,printCall:\"none\"}),Drr=()=>()=>__hang,$h=async()=>{},hg=(p,ms,d)=>Promise.race([p,new Promise(r=>setTimeout(()=>r(d),ms))]),p0e=()=>!1,nnr=()=>{},irr=()=>{},Ke=()=>{},iqn=()=>{},Ltr=()=>{},rnr=()=>{},bV=()=>{},pP=()=>!1,fP=()=>null,NA=()=>\"\",arr=()=>({}),Cnr=async()=>!1,jo,drr,frr,prr;";
-const INSTALL = KRR + "function install(e,t){krr(e,t)}";
-const FIXTURE = ['"use strict";', STUBS, QUIT_DECL, FILTER_BLOCK, YB_FN, ORR, INSTALL, ""].join("\n");
+  "var __log=[],__overlay=[],__hang=void 0,P={info:(...a)=>__log.push(a[0]),debug(){},warn(){}},qe=()=>{},Q=async()=>{},CF=()=>{},Je=()=>{},Do=x=>__overlay.push(x),H7n=n=>({reason:n.reason}),U7n=()=>({}),cN=()=>\"\",oN=()=>\"\",Ker=()=>{},Ger=()=>{},qer=()=>{},jer=()=>{},PN=()=>null,qN=()=>({}),Anr=()=>({}),wnr=()=>({}),Ner=()=>0,Fer=()=>({}),Ier=()=>({}),C9n=()=>null,Mer=()=>0,Pnr={},Her=6e5,Zer=()=>({skipKill:!1,printCall:\"none\"}),Fnr=()=>()=>__hang,ea=async()=>{},Ia=(p,ms,d)=>Promise.race([p,new Promise(r=>setTimeout(()=>r(d),ms))]),vp=()=>!1,nnr=()=>{},Ge=()=>{},T9n=()=>{},n9n=()=>{},kN=()=>{},AN=()=>{},rnr=()=>({}),GN=()=>{},vN=()=>!1,_N=()=>null,dj=()=>\"\",zpe=x=>x,mtr=async()=>!1,bnr=()=>!1,xnr=()=>null,Snr=()=>({}),s9n={},c9n={},u9n=async()=>({}),Eo,dnr,fnr,pnr;";
+const INSTALL = ZNR + "function install(e,t){znr(e,t)}";
+const FIXTURE = [
+  '"use strict";',
+  STUBS,
+  QUIT_DECL,
+  FILTER_BLOCK,
+  FN_FN,
+  XER,
+  INR,
+  MNR,
+  CNR,
+  LNR,
+  RNR,
+  INSTALL,
+  "",
+].join("\n");
 
 const UPSTREAM_FILTER =
-  "function Wnr(e){return znr()?((e.reason===\"killed\"||e.reason===\"crashed\")&&Hnr(),!1):!(e.reason===\"clean-exit\"||e.reason===\"killed\"&&XN())}";
+  'function Ltr(e){return Mtr()?((e.reason==="crashed"||e.reason==="killed")&&Ftr(),"own kill"):e.reason==="clean-exit"||e.reason==="killed"&&eI()?"teardown":"needs recovery"}';
 const PATCHED_FILTER =
-  "function Wnr(e){return znr()?((e.reason===\"killed\"||e.reason===\"crashed\")&&Hnr(),!1):!(e.reason===\"clean-exit\"&&!globalThis.__cdbCleanExitRecoverable(e,XN)||e.reason===\"killed\"&&XN())}";
-// The v2 end-state with retired sub-patch C, which the patch must refuse.
+  'function Ltr(e){return Mtr()?((e.reason==="crashed"||e.reason==="killed")&&Ftr(),"own kill"):e.reason==="clean-exit"&&!globalThis.__cdbCleanExitRecoverable(e,eI)||e.reason==="killed"&&eI()?"teardown":"needs recovery"}';
+// A v2-style end-state with retired sub-patch C, which the patch must refuse.
 const RETIRED = "__cdbWatchdogKillRecoverable";
 const PATCHED_FILTER_V2 =
-  "function Wnr(e){return znr()?((e.reason===\"killed\"||e.reason===\"crashed\")&&Hnr(),globalThis.__cdbWatchdogKillRecoverable(e,XN)):!(e.reason===\"clean-exit\"&&!globalThis.__cdbCleanExitRecoverable(e,XN)||e.reason===\"killed\"&&XN())}";
+  'function Ltr(e){return Mtr()?((e.reason==="crashed"||e.reason==="killed")&&Ftr(),globalThis.__cdbWatchdogKillRecoverable(e,eI)):e.reason==="clean-exit"&&!globalThis.__cdbCleanExitRecoverable(e,eI)||e.reason==="killed"&&eI()?"teardown":"needs recovery"}';
 const UPSTREAM_GRACE =
-  "if(n.reason===\"killed\"&&(await new Promise((e=>setTimeout(e,Onr))),e.isDestroyed()||XN())){p(\"abandoned\");return}";
+  'if(n.reason==="killed"&&(await new Promise((e=>setTimeout(e,ytr))),e.isDestroyed()||eI())){T("abandoned");return}';
 const PATCHED_GRACE =
-  "if((n.reason===\"killed\"||n.reason===\"clean-exit\")&&(await new Promise((e=>setTimeout(e,Onr))),e.isDestroyed()||XN())){p(\"abandoned\");return}";
-const UPSTREAM_KILL = "e.forcefullyCrashRenderer(),f??=";
-const PATCHED_KILL = "globalThis.__cdbHungKillEscalate(e),e.forcefullyCrashRenderer(),f??=";
-// The reload that follows the crash request in the same expression.
-const KILL_RELOAD = "g(),Orr(e),Q(\"desktop_main_view_hang_kill_wait\",h)}";
+  'if((n.reason==="killed"||n.reason==="clean-exit")&&(await new Promise((e=>setTimeout(e,ytr))),e.isDestroyed()||eI())){T("abandoned");return}';
+const HANDLER_HEAD =
+  '(async(t,n)=>{Ker(e);let r=Date.now(),i=Ner(r),a=Ltr(n);if(a!=="needs recovery"){a==="own kill"&&w("death notice");return}';
+const UPSTREAM_KILL = "e.forcefullyCrashRenderer();let r=";
+const PATCHED_KILL = "globalThis.__cdbHungKillEscalate(e),e.forcefullyCrashRenderer();let r=";
+// The hang-kill helper's timing log that follows the crash request.
+const KILL_TIMING = ';let r=Math.round(performance.now()-t);return P.info("The hang kill blocked the main process for %d ms';
+const OWN_KILL = 'a==="own kill"&&w("death notice");';
 const MARKER = "__cdb_clean_exit_reload_v3__";
 
 function runPatch(bin, file) {
@@ -131,11 +162,14 @@ const PROBE_MS = 2000;
 const PROBE_TEST_MS = 40;
 // Long enough for arm -> deadline -> probe timeout -> kill.
 const SETTLE = ESCALATE_TEST_MS + PROBE_TEST_MS + 60;
-// Upstream's own recovery timer (Mnr): 30 s after each recovery reload it
-// checks that a page committed and reloads again if not. No case here lasts
-// that long; it is recorded and unref'd so it never holds the process open,
-// and fireRecovery() runs the armed one on demand.
+// Upstream's own recovery timers. RECOVERY_COMMIT_MS (Ctr): 30 s after each
+// recovery reload it checks that a page committed and reloads again if not.
+// NO_DEATH_MS (wtr): 1 s after a kill attempt with no death reported, it
+// reloads the view. No case here waits that long for either; they are
+// recorded and unref'd so they never hold the process open, and
+// fireRecovery() / fireNoDeath() run the armed one on demand.
 const RECOVERY_COMMIT_MS = 30000;
+const NO_DEATH_MS = 1000;
 
 // Load the (patched) fixture into a fresh context and return knobs to drive it.
 function load(src, { platform = "linux", killThrows = false } = {}) {
@@ -144,6 +178,26 @@ function load(src, { platform = "linux", killThrows = false } = {}) {
   const escalateDelays = [];
   const probeDelays = [];
   const recoveryTimers = [];
+  const noDeathTimers = [];
+  const record = (list, fn, ms, a) => {
+    const r = { fn, args: a, t: null, done: false };
+    r.t = setTimeout(() => {
+      r.done = true;
+      fn(...a);
+    }, ms);
+    r.t.unref();
+    list.push(r);
+    return r.t;
+  };
+  const fireLatest = async (list) => {
+    const r = [...list].reverse().find((x) => !x.done);
+    if (!r) return false;
+    r.done = true;
+    clearTimeout(r.t);
+    r.fn(...r.args);
+    await new Promise((res) => setImmediate(res));
+    return true;
+  };
   const sandbox = {
     setImmediate,
     setTimeout: (fn, ms, ...a) => {
@@ -155,20 +209,13 @@ function load(src, { platform = "linux", killThrows = false } = {}) {
         probeDelays.push(ms);
         return setTimeout(fn, PROBE_TEST_MS, ...a);
       }
-      if (ms === RECOVERY_COMMIT_MS) {
-        const r = { fn, args: a, t: null, done: false };
-        r.t = setTimeout(() => {
-          r.done = true;
-          fn(...a);
-        }, ms);
-        r.t.unref();
-        recoveryTimers.push(r);
-        return r.t;
-      }
+      if (ms === RECOVERY_COMMIT_MS) return record(recoveryTimers, fn, ms, a);
+      if (ms === NO_DEATH_MS) return record(noDeathTimers, fn, ms, a);
       return setTimeout(fn, ms, ...a);
     },
     clearTimeout: (t) => {
       for (const r of recoveryTimers) if (r.t === t) r.done = true;
+      for (const r of noDeathTimers) if (r.t === t) r.done = true;
       clearTimeout(t);
     },
     Date,
@@ -176,11 +223,12 @@ function load(src, { platform = "linux", killThrows = false } = {}) {
     Math,
     WeakSet,
     WeakMap,
+    URL,
     console,
     performance,
     process: {
       platform,
-      versions: { electron: "44.9.3" },
+      versions: { electron: "45.2.1" },
       memoryUsage: () => ({ rss: 0 }),
       kill: (pid, sig) => {
         if (killThrows) throw Object.assign(new Error("kill ESRCH"), { code: "ESRCH" });
@@ -200,25 +248,20 @@ function load(src, { platform = "linux", killThrows = false } = {}) {
     probeDelays,
     recoveryTimers,
     install: (wc, opts) => vm.runInContext("install", sandbox)(wc, opts),
-    setQuitting: (v) => vm.runInContext(`GN=${v ? "!0" : "!1"}`, sandbox),
-    // A token as the watchdog leaves it once its kill attempt is over (Inr, then Rnr).
-    addToken: () => vm.runInContext("rV.push(Date.now()+Enr)", sandbox),
-    tokens: () => vm.runInContext("rV.length", sandbox),
-    expectedDumps: () => vm.runInContext("wnr.length", sandbox),
+    setQuitting: (v) => vm.runInContext(`JF=${v ? "!0" : "!1"}`, sandbox),
+    // A token as the watchdog leaves it once its kill attempt is over (ktr, then jtr).
+    addToken: () => vm.runInContext("FN.push(Date.now()+_tr)", sandbox),
+    tokens: () => vm.runInContext("FN.length", sandbox),
+    expectedDumps: () => vm.runInContext("htr.length", sandbox),
     setHang: (v) => vm.runInContext(`__hang=${JSON.stringify(v)}`, sandbox),
     log: () => vm.runInContext("__log", sandbox),
     // Upstream's 30 s "committed no page" re-checks still armed.
     pendingRecovery: () => recoveryTimers.filter((r) => !r.done).length,
-    // Run the latest armed re-check now (as if its 30 s had passed).
-    fireRecovery: async () => {
-      const r = [...recoveryTimers].reverse().find((x) => !x.done);
-      if (!r) return false;
-      r.done = true;
-      clearTimeout(r.t);
-      r.fn(...r.args);
-      await new Promise((res) => setImmediate(res));
-      return true;
-    },
+    // Upstream's 1 s "no death notice" reloads still armed.
+    pendingNoDeath: () => noDeathTimers.filter((r) => !r.done).length,
+    // Run the latest armed timer now (as if its time had passed).
+    fireRecovery: () => fireLatest(recoveryTimers),
+    fireNoDeath: () => fireLatest(noDeathTimers),
     overlays: () => vm.runInContext("__overlay.length", sandbox),
   };
 }
@@ -229,10 +272,15 @@ function makeWc({ pid = 4242 } = {}) {
     destroyed: false,
     crashed: false,
     pid,
+    pidCalls: 0,
     reloads: 0,
     crashRequests: 0,
     on(name, fn) {
       (handlers[name] ||= []).push(fn);
+      return wc;
+    },
+    removeListener(name, fn) {
+      handlers[name] = (handlers[name] || []).filter((f) => f !== fn);
       return wc;
     },
     listeners: (name) => (handlers[name] || []).length,
@@ -243,7 +291,9 @@ function makeWc({ pid = 4242 } = {}) {
       return wc.crashed;
     },
     getOSProcessId() {
-      if (wc.pidThrows) throw new Error("no process");
+      // pidThrows: upstream's own pre-kill liveness check (one call) still
+      // gets the pid; every later call throws.
+      if (wc.pidThrows && wc.pidCalls++ >= 1) throw new Error("no process");
       return wc.pid;
     },
     forcefullyCrashRenderer() {
@@ -284,7 +334,7 @@ function makeWc({ pid = 4242 } = {}) {
   };
   wc.emit = async (details) => {
     await fire("render-process-gone", {}, details);
-    // Orr reloads on setImmediate; give it one macrotask.
+    // Rnr reloads on setImmediate; give it one macrotask.
     await new Promise((r) => setImmediate(r));
   };
   wc.unresponsive = async () => {
@@ -298,6 +348,7 @@ function makeWc({ pid = 4242 } = {}) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const scratch = join(tmpdir(), `cdb-renderer-clean-exit-${process.pid}`);
 const rendererLines = (ctx) => ctx.diag.filter((l) => l.startsWith("[cdb-renderer] "));
+const POST_KILL_RELOAD = "Reloading after the hang kill: %s, %d ms after it";
 
 try {
   mkdirSync(scratch, { recursive: true });
@@ -316,7 +367,7 @@ try {
     process.exit(SKIP_EXIT);
   }
 
-  console.log("\n[1] the compiled patch applies to the v4.29.0 shapes, idempotently");
+  console.log("\n[1] the compiled patch applies to the v5.1231.0 shapes, idempotently");
   const pristineFile = join(scratch, "index-pristine.js");
   writeFileSync(pristineFile, FIXTURE);
   let pristineOk = true;
@@ -326,29 +377,31 @@ try {
     pristineOk = false;
   }
   check("verbatim upstream fixture passes node --check", pristineOk, true);
+  check("fixture carries the verbatim upstream filter", FIXTURE.includes(UPSTREAM_FILTER), true);
+  check("fixture carries the verbatim handler head", FIXTURE.includes(HANDLER_HEAD), true);
   const file = join(scratch, "index.js");
   writeFileSync(file, FIXTURE);
   const r1 = runPatch(PATCH_BIN, file);
   check("first run exits 0", r1.status, 0);
   check("no [FAIL] line", /\[FAIL\]/.test(r1.out), false);
   check("no 'already' line on pristine input", /already/i.test(r1.out), false);
-  check("A applied", r1.out.includes("[OK] A: clean-exit term of Wnr now consults __cdbCleanExitRecoverable (quitting=XN)"), true);
-  check("B applied", r1.out.includes("[OK] B: 300 ms grace now covers clean-exit (details=n quitting=XN)"), true);
+  check("A applied", r1.out.includes("[OK] A: clean-exit term of Ltr now consults __cdbCleanExitRecoverable (quitting=eI)"), true);
+  check("B applied", r1.out.includes("[OK] B: 300 ms grace now covers clean-exit (details=n quitting=eI)"), true);
   check("no C line (sub-patch C retired)", /\bC:/.test(r1.out), false);
-  check("D applied", r1.out.includes("[OK] D: SIGKILL fallback armed before e.forcefullyCrashRenderer() (reload=Orr)"), true);
+  check("D applied", r1.out.includes("[OK] D: SIGKILL fallback armed before e.forcefullyCrashRenderer() (hang-kill helper)"), true);
   check("3/3 reported", r1.out.includes("3/3 patches applied"), true);
   const patched = readFileSync(file, "utf8");
-  check("filter rewritten (A only, token branch still upstream's !1)", patched.includes(PATCHED_FILTER), true);
+  check("filter rewritten (A only, token branch still upstream's \"own kill\")", patched.includes(PATCHED_FILTER), true);
   check(`retired ${RETIRED} absent from the patched output`, patched.includes(RETIRED), false);
   check("upstream filter gone", patched.includes(UPSTREAM_FILTER), false);
   check("grace widened", patched.includes(PATCHED_GRACE), true);
   check("upstream grace gone", patched.includes(UPSTREAM_GRACE), false);
-  check("watchdog escalates before forcefullyCrashRenderer", patched.includes(PATCHED_KILL), true);
+  check("hang-kill helper escalates before forcefullyCrashRenderer", patched.includes(PATCHED_KILL), true);
   check("forcefullyCrashRenderer still called once", patched.split(".forcefullyCrashRenderer(").length - 1, 1);
   check("helper inlined right in front of the filter", patched.includes("})();" + PATCHED_FILTER), true);
   check("marker injected once", patched.split(MARKER).length - 1, 1);
   check("v1/v2 markers absent", /__cdb_clean_exit_reload_v[12]__/.test(patched), false);
-  check("handler head untouched", patched.includes("(async(t,n)=>{if($B(e),!Wnr(n))return;"), true);
+  check("handler head untouched", patched.includes(HANDLER_HEAD), true);
   let syntaxOk = true;
   try {
     execFileSync("node", ["--check", file], { stdio: "pipe" });
@@ -374,6 +427,13 @@ try {
     check("upstream's own log line follows", ctx.log().includes("Main webview render process gone: %o"), true);
     check("one [cdb-renderer] decision line", rendererLines(ctx).length, 1);
     check("...saying it was handed on", ctx.diag[0].includes("handing it to the reload path (1/3"), true);
+  }
+  {
+    const ctx = load(FIXTURE);
+    const wc = makeWc();
+    ctx.install(wc);
+    await wc.emit({ reason: "clean-exit", exitCode: 0 });
+    check("unpatched upstream: the same clean-exit is dropped (the bug)", wc.reloads, 0);
   }
 
   console.log("\n[3] clean-exit while the app quits -> suppressed, as before");
@@ -471,7 +531,7 @@ try {
     check("no [cdb-renderer] line for an untokened kill", ctx.diag.length, 0);
   }
 
-  console.log("\n[7] a watchdog token pending: the death is dropped, as upstream does (C retired)");
+  console.log("\n[7] a token pending but no kill attempt in flight: the death is dropped, as upstream does (C retired)");
   for (const reason of ["killed", "crashed", "clean-exit"]) {
     const ctx = load(patched);
     const wc = makeWc();
@@ -480,36 +540,30 @@ try {
     await wc.emit({ reason, exitCode: reason === "killed" ? 9 : reason === "crashed" ? 11 : 0 });
     check(`token + ${reason} -> dropped, no reload`, wc.reloads, 0);
     check(`token + ${reason}: token consumed`, ctx.tokens(), 0);
-    check(`token + ${reason}: Hnr notes an expected crash dump only for killed/crashed`, ctx.expectedDumps(), reason === "clean-exit" ? 0 : 1);
+    check(`token + ${reason}: Ftr notes an expected crash dump only for killed/crashed`, ctx.expectedDumps(), reason === "clean-exit" ? 0 : 1);
     check(`token + ${reason}: no upstream death line`, ctx.log().includes("Main webview render process gone: %o"), false);
     check(`token + ${reason}: no [cdb-renderer] line`, ctx.diag.length, 0);
   }
 
-  console.log("\n[8] a death from elsewhere in the token window: dropped, D stands down, upstream's re-check reloads");
+  console.log("\n[8] a death from elsewhere during a kill attempt: upstream's post-kill reload, D stands down");
   {
     const ctx = load(patched);
     const wc = makeWc({ pid: 800 });
     ctx.install(wc);
     await wc.unresponsive();
-    const base = wc.reloads; // upstream's Orr right after its crash request
-    check("upstream armed its 30 s re-check", ctx.pendingRecovery(), 1);
+    check("no reload right after the crash request", wc.reloads, 0);
+    check("upstream armed its 1 s no-death-notice reload", ctx.pendingNoDeath(), 1);
     // The OOM killer (or the user) kills the stalled renderer before our deadline.
     wc.crashed = true;
     await wc.emit({ reason: "killed", exitCode: 9 });
-    check("the `killed` is dropped by the token: no reload", wc.reloads - base, 0);
+    check("the `killed` is an own kill: upstream reloads once", wc.reloads, 1);
+    check("...with upstream's post-kill log line", ctx.log().includes(POST_KILL_RELOAD), true);
     check("...token consumed", ctx.tokens(), 0);
     check("...no upstream death line", ctx.log().includes("Main webview render process gone: %o"), false);
-    check("...the re-check stays armed", ctx.pendingRecovery(), 1);
+    check("...the 1 s fallback is cancelled", ctx.pendingNoDeath(), 0);
     await sleep(SETTLE);
     check("D stands down: no SIGKILL", ctx.kills.length, 0);
     check("...logged", ctx.diag.some((l) => l.includes("renderer 800 already gone, SIGKILL fallback not needed")), true);
-    check("the re-check fires", await ctx.fireRecovery(), true);
-    check("...and reloads", wc.reloads - base, 1);
-    check(
-      "...with upstream's own log line",
-      ctx.log().includes("Main webview committed no page within %d s of its recovery reload (%s)"),
-      true
-    );
     check("...no error card", ctx.overlays(), 0);
   }
 
@@ -533,7 +587,8 @@ try {
     check("killed once after the deadline", ctx.kills.length, 1);
     check("...with SIGKILL to the recorded pid", JSON.stringify(ctx.kills[0]), JSON.stringify([5151, "SIGKILL"]));
     check("one liveness probe, main frame, evaluating 1, no user gesture", JSON.stringify(wc.probes), JSON.stringify([["1", false, "mainFrame"]]));
-    check("probe raced against a 2 s timeout", ctx.probeDelays.join(","), "2000");
+    // 2 s timers: upstream's telemetry race (Cnr, vtr) once per attempt, plus our one probe timeout.
+    check("probe raced against a 2 s timeout (next to upstream's 3 telemetry races)", ctx.probeDelays.length, 4);
     check(
       "escalation logged",
       ctx.diag.some((l) =>
@@ -633,7 +688,7 @@ try {
     } catch {
       threw = true;
     }
-    check("getOSProcessId throwing never breaks the watchdog", threw, false);
+    check("getOSProcessId throwing in our helper never breaks the watchdog", threw, false);
     check("...forcefullyCrashRenderer still requested", wc.crashRequests, 1);
     check("...logged as not armed", ctx.diag.some((l) => l.includes("SIGKILL fallback not armed")), true);
   }
@@ -767,31 +822,36 @@ try {
     check("...and fires", JSON.stringify(ctx.kills), JSON.stringify([[720, "SIGKILL"]]));
   }
 
-  console.log("\n[10] end to end: stalled renderer -> watchdog -> SIGKILL -> `killed` dropped -> upstream's re-check reloads");
+  console.log("\n[10] end to end: stalled renderer -> watchdog -> 1 s reload into the same renderer -> SIGKILL -> upstream's post-kill reload");
   {
     const ctx = load(patched);
     const wc = makeWc({ pid: 7000 });
     ctx.install(wc);
     for (let k = 0; k < 4; k++) await wc.unresponsive(); // the 4 attempts seen in the repro
-    const afterWatchdog = wc.reloads; // Orr after each crash request the stalled renderer never served
+    check("no reload yet: the stalled renderer never reported a death", wc.reloads, 0);
+    check("upstream's 1 s no-death-notice reload is armed", await ctx.fireNoDeath(), true);
+    check("...and reloads the view (same, stalled renderer)", wc.reloads, 1);
+    check("...with upstream's post-kill log line", ctx.log().includes(POST_KILL_RELOAD), true);
     await sleep(SETTLE);
-    check("one SIGKILL", ctx.kills.length, 1);
+    check("one SIGKILL to the stalled renderer", JSON.stringify(ctx.kills), JSON.stringify([[7000, "SIGKILL"]]));
     // Electron reports the SIGKILLed renderer:
     wc.crashed = true;
     await wc.emit({ reason: "killed", exitCode: 9 });
-    check("the `killed` is dropped by upstream's token: no reload from the handler", wc.reloads - afterWatchdog, 0);
+    check("the `killed` is an own kill: upstream reloads into a new renderer", wc.reloads, 2);
     check("...one of the four tokens consumed", ctx.tokens(), 3);
     check("...upstream did not log a death", ctx.log().includes("Main webview render process gone: %o"), false);
     check("...no hand-on decision of ours", ctx.diag.some((l) => l.includes("handing it to")), false);
-    check("upstream's re-check is still armed", ctx.pendingRecovery(), 1);
-    check("the re-check fires", await ctx.fireRecovery(), true);
-    check("...and reloads into a new renderer", wc.reloads - afterWatchdog, 1);
-    check(
-      "...with upstream's own log line",
-      ctx.log().includes("Main webview committed no page within %d s of its recovery reload (%s)"),
-      true
-    );
     check("...no error card", ctx.overlays(), 0);
+  }
+  {
+    const ctx = load(FIXTURE);
+    const wc = makeWc({ pid: 7100 });
+    ctx.install(wc);
+    await wc.unresponsive();
+    await ctx.fireNoDeath();
+    await sleep(SETTLE);
+    check("unpatched upstream: the stalled renderer is never killed (the bug)", ctx.kills.length, 0);
+    check("...its only reload went to the stalled renderer", wc.reloads, 1);
   }
 
   console.log("\n[11] refusals: exit 1, file untouched");
@@ -811,29 +871,34 @@ try {
   );
   refusal(
     "upstream already reloads after clean-exit (absorbed)",
-    FIXTURE.replace('!(e.reason==="clean-exit"||e.reason==="killed"&&XN())}', '!(e.reason==="killed"&&XN())}'),
+    FIXTURE.replace('e.reason==="clean-exit"||e.reason==="killed"&&eI()?"teardown"', 'e.reason==="killed"&&eI()?"teardown"'),
     "re-audit whether sub-patch A is absorbed and drop it (Rule 4)"
   );
   refusal(
-    "token branch no longer returns !1",
-    FIXTURE.replace("&&Hnr(),!1):", "&&Hnr(),!0):"),
+    "token branch no longer an own kill",
+    FIXTURE.replace('&&Ftr(),"own kill"):', '&&Ftr(),"teardown"):'),
     "[FAIL] A: reason filter"
   );
-  const NO_RELOAD = 'g(),Q("desktop_main_view_hang_kill_wait",h)}';
   refusal(
-    "watchdog pair missing (no reload after the crash request)",
-    FIXTURE.replace(KILL_RELOAD, NO_RELOAD),
-    "[FAIL] D: the watchdog's"
+    "handler no longer returns early on the verdict",
+    FIXTURE.replace('if(a!=="needs recovery"){', 'if(a==="teardown"){'),
+    'guard(s) found, expected 1'
+  );
+  const NO_TIMING = ';let r=0;return P.info("killed in %d ms';
+  refusal(
+    "hang-kill helper reshaped (no timing log after the crash request)",
+    FIXTURE.replace(KILL_TIMING, NO_TIMING),
+    "[FAIL] D: the hang-kill helper's"
   );
   refusal(
     "watchdog crash request duplicated",
-    FIXTURE.replace(UPSTREAM_KILL, "e.forcefullyCrashRenderer()," + UPSTREAM_KILL),
-    "[FAIL] D: the watchdog's"
+    FIXTURE.replace(UPSTREAM_KILL, "e.forcefullyCrashRenderer();" + UPSTREAM_KILL),
+    "[FAIL] D: the hang-kill helper's"
   );
   refusal(
-    "reload helper no longer a plain setImmediate reload",
-    FIXTURE.replace(ORR, ORR.replace("e.reload()", 'e.loadURL("about:blank")')),
-    "[FAIL] D: the watchdog's"
+    "own kill no longer handed to the post-kill reload",
+    FIXTURE.replace(OWN_KILL, 'a==="own kill";'),
+    "[FAIL] D: the hang-kill helper's"
   );
   refusal("grace missing", FIXTURE.replace(UPSTREAM_GRACE, "if(e.isDestroyed())return;"), "[FAIL] B:");
   refusal(
@@ -842,7 +907,7 @@ try {
     "[FAIL] A: reason filter"
   );
   refusal(
-    "stale v2 output with retired sub-patch C (no false [OK])",
+    "stale v2-style output with retired sub-patch C (no false [OK])",
     patched.replace(PATCHED_FILTER, PATCHED_FILTER_V2).replace(MARKER, "__cdb_clean_exit_reload_v2__"),
     "[FAIL] A: reason filter"
   );
@@ -854,11 +919,11 @@ try {
   refusal(
     "applied, plus a stray __cdbHungKillEscalate call elsewhere (no false [OK])",
     patched.replace(PATCHED_FILTER, "globalThis.__cdbHungKillEscalate(x);" + PATCHED_FILTER),
-    "[FAIL] D: 1 __cdbHungKillEscalate call(s) in front of the watchdog pair, 2 in total"
+    "[FAIL] D: 1 __cdbHungKillEscalate call(s) in front of the hang-kill helper's crash request, 2 in total"
   );
   refusal(
-    "filter patched but the watchdog call missing (no false [OK])",
-    patched.replace(PATCHED_KILL, UPSTREAM_KILL).replace(KILL_RELOAD, NO_RELOAD),
+    "filter patched but the watchdog call missing and the helper reshaped (no false [OK])",
+    patched.replace(PATCHED_KILL, UPSTREAM_KILL).replace(KILL_TIMING, NO_TIMING),
     "[FAIL] D:"
   );
 
@@ -882,6 +947,9 @@ try {
     const r3 = runPatch(PATCH_BIN, file);
     check("ours is still idempotent on the combined output", r3.status, 0);
     check("combined output byte-identical after our re-run", readFileSync(file, "utf8") === both, true);
+    const r4 = runPatch(LOG_PATCH_BIN, file);
+    check("the log patch is idempotent on the combined output", r4.status === 0 && r4.out.includes("already applied (3 early returns logged)"), true);
+    check("...byte-identical", readFileSync(file, "utf8") === both, true);
     // Reverse order: the log patch first, then ours.
     const rev = join(scratch, "index-reverse.js");
     writeFileSync(rev, FIXTURE);
@@ -933,20 +1001,18 @@ try {
       const wc = makeWc({ pid: 9000 });
       ctx.install(wc);
       await wc.unresponsive();
-      const base = wc.reloads;
       await sleep(SETTLE);
       check("combined: watchdog escalates to SIGKILL", ctx.kills.length, 1);
       wc.crashed = true;
       const suppressed = () => ctx.log().filter((l) => l === "Main webview render process gone (suppressed): %o").length;
       await wc.emit({ reason: "killed", exitCode: 9 });
-      check("combined: the `killed` with a token pending is logged as suppressed", suppressed(), 1);
-      check("combined: ...and not reloaded by the handler", wc.reloads - base, 0);
-      check("combined: upstream's re-check fires", await ctx.fireRecovery(), true);
-      check("combined: ...and reloads", wc.reloads - base, 1);
+      check("combined: the own-kill `killed` is logged as suppressed by the handler", suppressed(), 1);
+      check("combined: ...and reloaded by upstream's post-kill reload", wc.reloads, 1);
       ctx.addToken();
       ctx.setQuitting(true);
       await wc.emit({ reason: "killed", exitCode: 9 });
       check("combined: token + killed while quitting is logged as suppressed", suppressed(), 2);
+      check("combined: ...and not reloaded", wc.reloads, 1);
     }
   }
 

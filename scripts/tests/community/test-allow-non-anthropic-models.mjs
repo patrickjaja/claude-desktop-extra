@@ -158,8 +158,8 @@ const jsoncPath = (dir) => join(dir, "claude-desktop-extra.jsonc");
 const BIN = join(ROOT, "patches/community/add_feature_allow_non_anthropic_models");
 const GUARD = "(globalThis.__cdbAllowNonAnthropicModels&&globalThis.__cdbAllowNonAnthropicModels())";
 const MARKER = "__CDB_ALLOW_NONANTHROPIC__";
-const MARKS = ["/*cdb-mb:validator*/", "/*cdb-mb:discovery*/", "/*cdb-mb:tier-pin*/", "/*cdb-mb:setup-window*/"];
-const MARK_E = MARKS[3];
+const MARKS = ["/*cdb-mb:validator*/", "/*cdb-mb:tier-pin*/", "/*cdb-mb:setup-window*/"];
+const MARK_E = MARKS[2];
 const ION_FLAG = 'cdbAllowNonAnthropicModels:{status:"supported"}';
 const count = (hay, needle) => hay.split(needle).length - 1;
 let binRunnable = false;
@@ -171,16 +171,19 @@ const FIXTURE = [
   'function PCe(e){return NCe.test(e.toLowerCase())}function FCe(e){let t=e.toLowerCase();return MCe.some((e=>t.includes(e)))}function Xo(e){let t=e.toLowerCase();return NCe.test(t)?!1:Yo.test(t)||MCe.some((e=>t.includes(e)))}',
   // B: the gateway/mantle validator
   'function HCe(e){return Xo(e)?{ok:!0}:{ok:!1,reason:"expected a gateway model route referencing an Anthropic model (e.g. claude-sonnet-4-5, anthropic/claude-*). Name routes to match the underlying model."}}',
-  // C: gateway /v1/models discovery (the row filter, trimmed around it)
-  'function a0t(e){return typeof e=="string"?{id:e,label:e}:void 0}function s0t(e){if(typeof e!="string")return;let t=e.toLowerCase();return["opus","sonnet","haiku"].includes(t)?t:void 0}',
-  'function _0t(a){if(!Array.isArray(a?.data))return{ok:!1,kind:"error",message:"Gateway /v1/models returned an unexpected body.",httpStatus:200,requestUrl:"x"};let o=(e,t)=>typeof e=="boolean"?e:typeof t=="number"&&t>=1e6,s=a.data.flatMap((e=>{let t=e?a0t(e.id):void 0;if(!e||!t)return[];let n=s0t(e.anthropic_family_tier);return!Xo(t.id)&&!n?[]:[{id:t.id,name:t.label,supports1m:o(e.supports_1m,e.max_input_tokens),...n&&e.is_family_default===!0&&{isFamilyDefault:!0}}]}));return{ok:!0,models:s}}',
+  // Discovery: no guard of its own. v5 filters the discovered rows with the
+  // provider validator `Mo` (whose gateway/mantle arm calls the guarded HCe),
+  // so B covers it; the patch asserts this chain at build time.
+  'var QEe=/^(sonnet|opus|haiku|fable)(-[\\d.]+)?$/;function oDe(e){return{ok:!0}}function sDe(e){return{ok:!0}}function cDe(e){return{ok:!0}}',
+  'function Mo(e,t){if(e===void 0||QEe.test(t.toLowerCase()))return{ok:!0};switch(e){case"anthropic":return{ok:!0};case"bedrock":return oDe(t);case"vertex":return sDe(t);case"foundry":return cDe(t);case"gateway":case"mantle":return HCe(t)}}',
+  'function ZEn(l,a,d){let p=d===void 0?a:"gateway";return l=l.filter((e=>Mo(p,e.id).ok||e.anthropicFamilyTier)),{ok:!0,models:l}}',
   // D: the [custom-3p] tier-pin sanitizer, gateway branch (`n` false)
   'var warned=[];var P={warn:e=>warned.push(e)};',
-  'function san(n,t,r){if(!n){if(PCe(r)&&!FCe(r)){P.warn(`[custom-3p] ${t}: value matches a known non-Anthropic model fragment; ignoring.`);return}return r}return"1p:"+r}',
+  'function san(n,t,r,l=e=>P.warn(e)){if(!n){if(PCe(r)&&!FCe(r)){l(`[custom-3p] ${t}: value matches a known non-Anthropic model fragment; ignoring.`);return}return r}return"1p:"+r}',
   // E: the Setup window's BrowserWindow options (trimmed), additionalArguments
   'function DH(){return{launch:{status:"supported"}}}var X=()=>({formatMessage:e=>e.defaultMessage});var n={default:{join:(...e)=>e.join("/")}};var a={app:{getAppPath:()=>"/app"}};',
   'function setupOpts(){return{title:X().formatMessage({defaultMessage:"Configure Third-Party Inference\\u2026",id:"9GRz7bC+rr"}),webPreferences:{preload:n.default.join(a.app.getAppPath(),".vite/build/mainView.js"),additionalArguments:[`--desktop-features=${JSON.stringify(DH())}`]}}}',
-  'globalThis.__fx={HCe:HCe,disc:_0t,san:san,warned:warned,setupOpts:setupOpts};'
+  'globalThis.__fx={HCe:HCe,disc:ZEn,san:san,warned:warned,setupOpts:setupOpts};'
 ].join("\n");
 
 const IDS = ["melious/deepseek-v4.1-flash", "inceptron/zai-org/GLM-5.3", "evroc/gpt-oss-120b",
@@ -193,10 +196,10 @@ function runFixture(src, flag) {
   sb.globalThis = sb;
   vm.runInNewContext(src, vm.createContext(sb));
   const fx = sb.__fx;
-  const body = { data: IDS.map((id) => ({ id })).concat([{ id: "acme/qwen-x", anthropic_family_tier: "opus" }]) };
+  const rows = IDS.map((id) => ({ id })).concat([{ id: "acme/qwen-x", anthropicFamilyTier: "opus" }]);
   return {
     hce: IDS.map((id) => fx.HCe(id).ok),
-    disc: fx.disc(body).models.map((m) => m.id),
+    disc: fx.disc(rows, "gateway").models.map((m) => m.id),
     san: IDS.map((id) => { const v = fx.san(false, "opusModel", id); return v === undefined ? null : v; }),
     san1p: fx.san(true, "opusModel", "melious/deepseek-v4.1-flash"),
     warned: fx.warned.length,
@@ -211,10 +214,10 @@ if (!binRunnable) {
   const f = join(dir, "staged_index.js");
   writeFileSync(f, FIXTURE);
   const out = execFileSync(BIN, [f], { encoding: "utf8" });
-  ok(/\[PASS\]/.test(out) && !/\[FAIL\]/.test(out), "fixture: the binary applies all 5 parts");
+  ok(/\[PASS\]/.test(out) && !/\[FAIL\]/.test(out), "fixture: the binary applies all 4 parts");
   const patched = readFileSync(f, "utf8");
   ok(patched.startsWith('"use strict";') && count(patched, MARKER) === 1, "fixture: module injected after \"use strict\"");
-  ok(count(patched, GUARD) === 4 && MARKS.every((m) => count(patched, m + (m === MARK_E ? "(" : "") + GUARD) === 1), "fixture: one guard per site");
+  ok(count(patched, GUARD) === 3 && MARKS.every((m) => count(patched, m + (m === MARK_E ? "(" : "") + GUARD) === 1), "fixture: one guard per site");
 
   const stock = runFixture(FIXTURE, false);
   const off = runFixture(patched, false);
@@ -223,8 +226,8 @@ if (!binRunnable) {
   ok(JSON.stringify(stock.hce) === JSON.stringify([false, false, false, true, true, false]), "stock validator rejects the denylisted and non-Anthropic-shaped routes");
   ok(on.hce.every((v) => v === true), "B ON: the gateway validator accepts every route");
   ok(!stock.disc.includes("melious/deepseek-v4.1-flash") && stock.disc.includes("acme/qwen-x"),
-     "stock discovery drops untiered non-Anthropic rows, keeps tiered ones");
-  ok(IDS.every((id) => on.disc.includes(id)) && on.disc.includes("acme/qwen-x"), "C ON: discovery keeps every row: " + JSON.stringify(on.disc));
+     "stock discovery drops untiered non-Anthropic rows, keeps tiered and Anthropic ones");
+  ok(IDS.every((id) => on.disc.includes(id)) && on.disc.includes("acme/qwen-x"), "discovery ON (through B): keeps every row: " + JSON.stringify(on.disc));
   ok(stock.san[0] === null && stock.warned === 3, "stock tier-pin sanitizer ignores denylisted values and warns");
   ok(on.san.every((v, i) => v === IDS[i]) && on.warned === 0, "D ON: the tier-pin sanitizer returns every value, no warning");
   ok(on.san1p === "1p:melious/deepseek-v4.1-flash" && off.san1p === on.san1p, "D: the non-gateway branch is untouched");
@@ -240,7 +243,7 @@ if (!binRunnable) {
 
   // Half-patched: drop one site's guard and the binary must refuse.
   const half = join(dir, "half.js");
-  writeFileSync(half, again.replace(MARKS[1] + GUARD + "||", ""));
+  writeFileSync(half, again.replace(MARKS[1] + GUARD + "&&", ""));
   let refused = false;
   try { execFileSync(BIN, [half], { encoding: "utf8" }); } catch (e) { refused = /half-patched/.test(String(e.stdout)); }
   ok(refused, "a half-patched bundle (one site missing) fails loud");
@@ -283,7 +286,7 @@ if (!binRunnable) {
 
     const patched = readFileSync(copy, "utf8");
     ok(count(patched, MARKER) === 1, "the injected module marker lands exactly once");
-    ok(count(patched, GUARD) === 4, "the guard text lands exactly four times");
+    ok(count(patched, GUARD) === 3, "the guard text lands exactly three times");
     for (const m of MARKS) ok(count(patched, m + (m === MARK_E ? "(" : "") + GUARD) === 1, "site " + m + " guarded exactly once");
 
     const evalWith = (src, flag, stubs) => {
@@ -303,24 +306,34 @@ if (!binRunnable) {
       ok(fn(false)("anthropic/claude-sonnet-4-5").ok === true, "B real: OFF still accepts an Anthropic route");
     }
 
-    // C: the spliced row-filter expression, `return!(G||X(t.id))&&!n?[]:[`.
-    const c = /return(!\(\/\*cdb-mb:discovery\*\/\(globalThis[^)]*\(\)\)\|\|([\w$]+)\(([\w$]+)\.id\)\)&&!([\w$]+)\?\[\]:\[)/.exec(patched);
-    ok(!!c, "C: the real patched discovery filter is extractable: " + (c ? c[0] : "no match"));
-    if (c) {
-      const src = "(function(" + c[3] + "," + c[4] + "){return" + c[1] + "1]})";
-      const keep = (flag, id, tier) => evalWith(src, flag, { [c[2]]: isAnthropic })({ id }, tier).length === 1;
-      ok(keep(true, "melious/deepseek-v4.1-flash", undefined), "C real: ON keeps an untiered non-Anthropic row");
-      ok(!keep(false, "melious/deepseek-v4.1-flash", undefined), "C real: OFF drops it as stock");
-      ok(keep(false, "acme/qwen-x", "opus"), "C real: OFF still keeps a tiered row");
-      ok(keep(false, "anthropic/claude-opus-4", undefined), "C real: OFF still keeps an Anthropic row");
+    // Discovery: the real v5 filter `l.filter((e=>Mo(p,e.id).ok||e.anthropicFamilyTier))`
+    // with the real provider validator (its gateway/mantle arm calls the real
+    // patched function B guards). Run rows through it with the switch off and on.
+    const f = /\.filter\(\(+([\w$]+)=>([\w$]+)\(([\w$]+),\1\.id\)\.ok\|\|\1\.anthropicFamilyTier\)\)/.exec(patched);
+    ok(!!f, "discovery: the real filter is extractable: " + (f ? f[0] : "no match"));
+    const vd = f && new RegExp("function " + f[2].replace(/\$/g, "\\$") + "\\(([\\w$]+),([\\w$]+)\\)\\{.{0,100}?switch\\(\\1\\)\\{.{0,300}?case\"gateway\":case\"mantle\":return ([\\w$]+)\\(\\2\\)\\}\\}").exec(patched);
+    ok(!!vd, "discovery: the real provider validator is extractable: " + (vd ? vd[0].slice(0, 120) : "no match"));
+    ok(!!b && !!vd && vd[3] === b[1], "discovery: the validator's gateway arm calls the function B guards (" + (vd ? vd[3] : "?") + " vs " + (b ? b[1] : "?") + ")");
+    if (f && vd && b) {
+      const pre = /([\w$]+)\.test\(\w+\.toLowerCase\(\)\)\)return\{ok:!0\}/.exec(vd[0]);
+      const run = (flag, rows) => {
+        const sb = { __cdbAllowNonAnthropicModels: () => flag, [b[3]]: isAnthropic };
+        if (pre) sb[pre[1]] = /^(sonnet|opus|haiku|fable)(-[\d.]+)?$/;
+        sb.globalThis = sb;
+        vm.runInNewContext(b[0] + ";" + vd[0], vm.createContext(sb));
+        return vm.runInNewContext("(function(l," + f[3] + "){return l" + f[0] + "})", vm.createContext(sb))(rows, "gateway").map((r) => r.id);
+      };
+      const rows = [{ id: "melious/deepseek-v4.1-flash" }, { id: "acme/qwen-x", anthropicFamilyTier: "opus" }, { id: "anthropic/claude-opus-4" }];
+      ok(JSON.stringify(run(false, rows)) === JSON.stringify(["acme/qwen-x", "anthropic/claude-opus-4"]), "discovery real: OFF drops the untiered non-Anthropic row (stock), keeps the tiered and the Anthropic one: " + JSON.stringify(run(false, rows)));
+      ok(run(true, rows).length === 3, "discovery real: ON keeps every row (through B)");
     }
 
     // D: the spliced gateway branch of the sanitizer, `if(!n){if(!G&&PCe(r)&&!FCe(r)){...;return}return r}`.
-    const d = /if\(!([\w$]+)\)\{if\(!\/\*cdb-mb:tier-pin\*\/\(globalThis[^)]*\(\)\)&&([\w$]+)\(([\w$]+)\)&&!([\w$]+)\(\3\)\)\{([\w$]+)\.warn\(`\[custom-3p\] \$\{([\w$]+)\}[^`]*`\);return\}return \3\}/.exec(patched);
+    const d = /if\(!([\w$]+)\)\{if\(!\/\*cdb-mb:tier-pin\*\/\(globalThis[^)]*\(\)\)&&([\w$]+)\(([\w$]+)\)&&!([\w$]+)\(\3\)\)\{([\w$]+)(?:\.warn)?\(`\[custom-3p\] \$\{([\w$]+)\}[^`]*`\);return\}return \3\}/.exec(patched);
     ok(!!d, "D: the real patched tier-pin branch is extractable: " + (d ? d[0].slice(0, 160) : "no match"));
     if (d) {
       const src = "(function(" + d[1] + "," + d[6] + "," + d[3] + "){" + d[0] + "return 'non-gateway'})";
-      const stubs = { [d[2]]: (r) => /deepseek|glm|qwen|gpt/.test(r.toLowerCase()), [d[4]]: (r) => /claude/.test(r.toLowerCase()), [d[5]]: { warn() {} } };
+      const stubs = { [d[2]]: (r) => /deepseek|glm|qwen|gpt/.test(r.toLowerCase()), [d[4]]: (r) => /claude/.test(r.toLowerCase()), [d[5]]: Object.assign(() => {}, { warn() {} }) };
       const san = (flag, id) => evalWith(src, flag, stubs)(false, "opusModel", id);
       ok(san(true, "melious/deepseek-v4.1-flash") === "melious/deepseek-v4.1-flash", "D real: ON returns a non-Anthropic pin");
       ok(san(false, "melious/deepseek-v4.1-flash") === undefined, "D real: OFF ignores it as stock");

@@ -71,7 +71,7 @@
         "namespaceKey": "isComputerUseEnabled"
       },
       "definitionShape": [
-        "^\\{if\\(process\\.platform===[\"`]linux[\"`]\\)return globalThis\\.__cdbCuHipaa=[\\w$]+,![\\w$]+\\(\\);"
+        "^\\{if\\(process\\.platform===[\"`]linux[\"`]\\)return globalThis\\.__cdbCuHipaa=[\\w$]+,![\\w$]+\\(\\)&&[\\w$]+\\(\\);"
       ]
     }
   ],
@@ -110,6 +110,14 @@
       "consumers": 1,
       "verdict": "upstream-ok",
       "reason": "Clipboard restore after CU: on Wayland upstream restores through its portal clipboard, which falls back to Electron's clipboard when no portal session exists (our executor's case)."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchorRegex": "^mayCaptureOnTimer:\\(\\)=>process\\.platform!==[\"`]win32[\"`]&&![\\w$]+\\(\\)\\|\\|![\\w$]+\\(\\)$",
+      "scope": "statement",
+      "consumers": 1,
+      "verdict": "upstream-ok",
+      "reason": "Computer Use live preview ([cu-live-preview]), mayCaptureOnTimer is new in v5.1231.0: with flag 284836866 on, upstream stops the timer-driven preview captures on a Wayland session (as on win32); flag off (the default) keeps the v4 timer captures. The preview still updates from every screenshot Claude takes (onScreenshotFrame in the CU tool wrapper, executor-agnostic), so on Wayland the flag only means fewer screenshot() calls into our bridges; nothing is refused, and X11 keeps the timer captures."
     },
     {
       "predicate": "isWaylandSession",

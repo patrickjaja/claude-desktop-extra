@@ -530,11 +530,15 @@ proc endStateMarkers(): seq[EndStateMarker] =
     lit("10c glow-off helper (executor)", "globalThis.__cdbCuGlowOff=function(){"),
     rx(
       "11 isEnabled gate",
-      """function [\w$]+\((?:[\w$]+=\{\})?\)\{if\(process\.platform==="linux"\)return(?: ?!0| globalThis\.__cdbCuHipaa=[\w$]+,![\w$]+\(\));return ?!?(?:[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)|[\w$]+\(\))(?:\|\|[\w$]+\(\))?\?(?:!1:)?[\w$]+\([\w$]*\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)(?::!1)?\}""",
+      """function [\w$]+\((?:[\w$]+=\{\})?\)\{if\(process\.platform==="linux"\)return(?: ?!0| globalThis\.__cdbCuHipaa=[\w$]+,![\w$]+\(\)(?:&&[\w$]+\(\))?);return ?!?(?:[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)|[\w$]+\(\))(?:\|\|![\w$]+\(\))?(?:\|\|[\w$]+\(\))?\?(?:!1:)?[\w$]+\([\w$]*\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)(?::!1)?\}""",
     ),
     rx(
       "12 isRegisterable gate",
-      """function [\w$]+\((?:[\w$]+=\{\})?\)\{if\(process\.platform==="linux"\)return (?:[\w$]+\([\w$]*\)|!0);return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?(?:![\w$]+\(\)&&)?(?:[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)|[\w$]+\(\)&&[\w$]+\([\w$]+\))""",
+      """function [\w$]+\((?:[\w$]+=\{\})?\)\{if\(process\.platform==="linux"\)return (?:[\w$]+\([\w$]*\)|!0);return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?(?:![\w$]+\(\)&&)?(?:[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)|[\w$]+\(\)&&[\w$]+\([\w$]+\)|[\w$]+\(\)\|\|![\w$]+\(\)\?!1:[\w$]+\(\)&&[\w$]+\([\w$]+\))""",
+    ),
+    rx(
+      "10d drawn cursor off",
+      """function [\w$]+\(\)\{if\(process\.platform==="linux"\)return!1;try\{let ([\w$]+)=[\w$]+\(\);return \1==="default"\?[\w$]+\([\w$]+\):\1==="on"\}catch""",
     ),
     rx(
       "13a allowlist gate",
@@ -701,7 +705,7 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 62
+  const EXPECTED_PATCHES = 63
 
   let gateSet = cuPlatformSetName(content)
   if gateSet == "":
@@ -1767,9 +1771,13 @@ proc apply*(input: string): string =
   #   10b4 teach setter from cuSelectedDisplayChanged
   #   10b5 the screenshot target label: Nui's `xui(e.displayId??null)`
   # The glow setter (Wvo) and teach setter (Oyo) have no other callers.
+  # v5.1231.0 added a drawn-cursor redraw after the glow setter's setBounds:
+  #   function UUo(e){VUo=e??null,M7&&!M7.isDestroyed()&&(M7.setBounds(HUo().bounds),FQa())}
+  # (FQa repaints the cursor upstream draws in the glow, see 10d). Either
+  # shape is accepted; the selected id still enters through the same callers.
   block:
     let glowSetterRe =
-      re"""function ([\w$]+)\(([\w$]+)\)\{[\w$]+=\2\?\?null,([\w$]+)&&!\3\.isDestroyed\(\)&&\3\.setBounds\([\w$]+\(\)\.bounds\)\}"""
+      re"""function ([\w$]+)\(([\w$]+)\)\{[\w$]+=\2\?\?null,([\w$]+)&&!\3\.isDestroyed\(\)&&(?:\3\.setBounds\([\w$]+\(\)\.bounds\)|\(\3\.setBounds\([\w$]+\(\)\.bounds\),[\w$]+\(\)\))\}"""
     let teachSetterRe =
       re"""function ([\w$]+)\(([\w$]+)\)\{[\w$]+=\2\?\?null;let ([\w$]+)=[\w$]+\(\);\3&&\3\.setBounds\([\w$]+\(\)\.workArea\)\}"""
     let resolverRe =
@@ -1785,7 +1793,7 @@ proc apply*(input: string): string =
 
     let glowSetter = onlyName(
       content, glowSetterRe,
-      "glow setter `function W(e){H=e??null,j&&!j.isDestroyed()&&j.setBounds(U().bounds)}`",
+      "glow setter `function W(e){H=e??null,j&&!j.isDestroyed()&&(j.setBounds(U().bounds),R())}`",
     )
     let teachSetter = onlyName(
       content, teachSetterRe,
@@ -1913,6 +1921,58 @@ proc apply*(input: string): string =
         else:
           echo "  [FAIL] 10c glow show: replacement did not apply"
 
+  # ── Patch 10d: no drawn cursor in the glow on Linux ───────────────────
+  # v5.1231.0 can draw its own cursor in the glow window (GrowthBook flag
+  # 1916550538, getChicagoTakeoverCursorEnabled):
+  #   function toi(){try{let e=voi();return e==="default"?X(eoi):e==="on"}catch(e){...[cu-glow] flag unreadable, staying off...}}
+  # and its one caller, the glow show,
+  #   r=(e?.claudeHasThePointer??!0)&&toi(); ... r?NQa(e,NUo):PQa()
+  # places it at screen.getCursorScreenPoint() and swaps the pulsing glow for
+  # a 2px rim. Only the macOS executor moves it afterwards (createDarwinExecutor
+  # hands drawnPointer:IQa(...) its glideTo/press). The Linux executors move the
+  # real pointer and never feed it, so with the flag on Linux would show a
+  # second, frozen cursor where the pointer was at lock time (on Wayland
+  # getCursorScreenPoint() is only known over Electron's own windows). The
+  # decision is off on Linux; the glow keeps upstream's classic look.
+  block:
+    let pat =
+      re"""(function ([\w$]+)\(\)\{)(try\{let ([\w$]+)=[\w$]+\(\);return \4==="default"\?[\w$]+\(([\w$]+)\):\4==="on"\}catch\(([\w$]+)\)\{return [\w$]+\.warn\(["'`]\[cu-glow\] flag unreadable, staying off)"""
+    var hits: seq[RegexMatch] = @[]
+    for m in content.findIter(pat):
+      hits.add m
+    if hits.len != 1:
+      echo &"  [FAIL] 10d drawn cursor decision (`function T(){{try{{let e=O();return e===\"default\"?X(F):e===\"on\"}}catch(e){{...[cu-glow] flag unreadable, staying off`): {hits.len} matches, expected 1 - re-audit"
+    else:
+      let fnName = hits[0].captures[1]
+      let flagVar = hits[0].captures[4]
+      let flagHits = countMatches(
+        content, re("(?<![\\w$.])" & escapeRe(flagVar) & """=["'`]1916550538["'`]""")
+      )
+      let callHits = countMatches(
+        content,
+        re(
+          """\(([\w$]+)\?\.claudeHasThePointer\?\?!0\)&&""" & escapeRe(fnName) &
+            """\(\)"""
+        ),
+      )
+      if flagHits != 1:
+        echo &"  [FAIL] 10d drawn cursor {fnName}: {flagVar} is not flag 1916550538 ({flagHits} definitions) - re-audit"
+      elif callHits != 1:
+        echo &"  [FAIL] 10d drawn cursor {fnName}: not the glow show's claudeHasThePointer decision ({callHits} call sites, expected 1) - re-audit"
+      else:
+        let n = replaceFirst(
+          content,
+          pat,
+          proc(m: RegexMatch): string =
+            m.captures[0] & "if(process.platform===\"linux\")return!1;" & m.captures[2],
+        )
+        if n == 1:
+          echo &"  [OK] 10d drawn cursor {fnName} (flag 1916550538): off on Linux, no executor moves it (1 match)"
+          inc changes
+          inc patchesApplied
+        else:
+          echo "  [FAIL] 10d drawn cursor: replacement did not apply"
+
   # ── Patch 11: force the primary CU enable gate → true on Linux ──────────
   block:
     # v1.18286.0 merged the old isEnabled + rj pair into a gate family:
@@ -1966,6 +2026,17 @@ proc apply*(input: string): string =
     #   function aV(e={}){return!$B()||cb()?!1:iV(e)&&nb("chicagoEnabled")}
     # iV() now also requires the Linux rollout flag 3676943315; the Linux
     # branch bypasses it like it bypasses the rest of the rollout gate.
+    # v5.1231.0 adds the managed `computerUseEnabled` key (admin switch) to
+    # the gate, ahead of the HIPAA gate:
+    #   function EW(e={}){return!SW()||!_W()||bb()?!1:TW(e)&&ub("chicagoEnabled")}
+    #   function _W(){return Yl()&&K().type==="3p"&&W1e()||V1e()!==!1}
+    #   function V1e(){let{value:e,errors:t}=H1e();return S1e(t,"computerUseEnabled")?!1:...}
+    # Upstream applies it on every platform (TW, the rollout gate, also opens
+    # with `if(!_W())return!1;`), so the Linux branch keeps it: an admin's
+    # `computerUseEnabled:false` turns Computer Use off on Linux as it does on
+    # macOS/Windows. Only the platform/rollout/chicagoEnabled parts stay forced.
+    let patV5 =
+      re"""(function [\w$]+\(([\w$]+)=\{\}\)\{)return![\w$]+(?:\.[\w$]+)*\(\)\|\|!([\w$]+)\(\)\|\|([\w$]+)\(\)\?!1:[\w$]+\(\2\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)\}"""
     let patV19675 =
       re"""(function [\w$]+\(([\w$]+)=\{\}\)\{)return![\w$]+(?:\.[\w$]+)*\(\)\|\|([\w$]+)\(\)\?!1:[\w$]+\(\2\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)\}"""
     let patV46388 =
@@ -1979,18 +2050,66 @@ proc apply*(input: string): string =
       re"""(function [\w$]+\(\)\{)return [\w$]+\.has\(process\.platform\)&&[\w$]+\(\)\}"""
     let patOld =
       re"""(function [\w$]+\(\)\{)return [\w$]+\([\w$]+\)\?[\w$]+\.has\(process\.platform\)&&[\w$]+\(\):[\w$]+\(\)\}"""
-    var n = replaceFirst(
-      content,
-      patV19675,
-      proc(m: RegexMatch): string =
-        let bounds = m.matchBounds
-        let whole = content[bounds.a .. bounds.b]
-        let headerLen = m.captures[0].len
-        let hipaaName = m.captures[2]
-        m.captures[0] & "if(process.platform===\"linux\")return globalThis.__cdbCuHipaa=" &
-          hipaaName & ",!" & hipaaName & "();" & whole[headerLen ..^ 1],
-    )
-    if n == 0:
+    var n = 0
+    var v5Hits: seq[RegexMatch] = @[]
+    for m in content.findIter(patV5):
+      v5Hits.add m
+    if v5Hits.len > 1:
+      echo &"  [FAIL] 11 isEnabled gate: {v5Hits.len} v5 shapes, expected 1 - re-audit"
+    elif v5Hits.len == 1:
+      # The middle gate must be the managed computerUseEnabled check:
+      # `function M(){return ...||R()!==!1}` with R reading the key.
+      let managed = v5Hits[0].captures[2]
+      var readers: seq[string] = @[]
+      for d in content.findIter(
+        re(
+          "function " & escapeRe(managed) &
+            """\(\)\{return [^{}]{0,120}\|\|([\w$]+)\(\)!==!1\}"""
+        )
+      ):
+        readers.add d.captures[0]
+      let readerOk =
+        readers.len == 1 and
+        countMatches(
+          content,
+          re(
+            "function " & escapeRe(readers[0]) &
+              """\(\)\{let\{value:[\w$]+,errors:[\w$]+\}=[\w$]+\(\);return [\w$]+\([\w$]+,"computerUseEnabled"\)"""
+          ),
+        ) == 1
+      if not readerOk:
+        echo &"  [FAIL] 11 isEnabled gate: {managed}() is not the managed computerUseEnabled check ({readers.len} definitions) - re-audit"
+      else:
+        n = replaceFirst(
+          content,
+          patV5,
+          proc(m: RegexMatch): string =
+            let bounds = m.matchBounds
+            let whole = content[bounds.a .. bounds.b]
+            let headerLen = m.captures[0].len
+            let managedName = m.captures[2]
+            let hipaaName = m.captures[3]
+            m.captures[0] &
+              "if(process.platform===\"linux\")return globalThis.__cdbCuHipaa=" &
+              hipaaName & ",!" & hipaaName & "()&&" & managedName & "();" &
+              whole[headerLen ..^ 1],
+        )
+        if n == 1:
+          echo &"  [OK] 11 isEnabled: Linux keeps the managed computerUseEnabled check {managed}() and the HIPAA gate"
+    if n == 0 and v5Hits.len == 0:
+      n = replaceFirst(
+        content,
+        patV19675,
+        proc(m: RegexMatch): string =
+          let bounds = m.matchBounds
+          let whole = content[bounds.a .. bounds.b]
+          let headerLen = m.captures[0].len
+          let hipaaName = m.captures[2]
+          m.captures[0] &
+            "if(process.platform===\"linux\")return globalThis.__cdbCuHipaa=" & hipaaName &
+            ",!" & hipaaName & "();" & whole[headerLen ..^ 1],
+      )
+    if n == 0 and v5Hits.len == 0:
       n = replaceFirst(
         content,
         patV46388,
@@ -2003,7 +2122,7 @@ proc apply*(input: string): string =
             "if(process.platform===\"linux\")return globalThis.__cdbCuHipaa=" & hipaaName &
             ",!" & hipaaName & "();" & whole[headerLen ..^ 1],
       )
-    if n == 0:
+    if n == 0 and v5Hits.len == 0:
       n = replaceFirst(
         content,
         patV26832,
@@ -2014,7 +2133,7 @@ proc apply*(input: string): string =
           m.captures[0] & "if(process.platform===\"linux\")return!0;" &
             whole[headerLen ..^ 1],
       )
-    if n == 0:
+    if n == 0 and v5Hits.len == 0:
       n = replaceFirst(
         content,
         patV18286,
@@ -2025,7 +2144,7 @@ proc apply*(input: string): string =
           m.captures[0] & "if(process.platform===\"linux\")return!0;" &
             whole[headerLen ..^ 1],
       )
-    if n == 0:
+    if n == 0 and v5Hits.len == 0:
       n = replaceFirst(
         content,
         patNew,
@@ -2036,7 +2155,7 @@ proc apply*(input: string): string =
           m.captures[0] & "if(process.platform===\"linux\")return!0;" &
             whole[headerLen ..^ 1],
       )
-    if n == 0:
+    if n == 0 and v5Hits.len == 0:
       n = replaceFirst(
         content,
         patOld,
@@ -2048,7 +2167,7 @@ proc apply*(input: string): string =
             whole[headerLen ..^ 1],
       )
     if n >= 1:
-      echo &"  [OK] isEnabled: force true on Linux ({n} match)"
+      echo &"  [OK] isEnabled: Linux branch injected ({n} match)"
       inc changes, n
       inc patchesApplied
     else:
@@ -2083,8 +2202,12 @@ proc apply*(input: string): string =
     # hasComputerUseExecutor() instead of testing the Set:
     #   function f4n(e={}){return jb(J2n)?!cb()&&$B()&&iV(e):aV(e)}
     # Delegate to the Patch-11 gate with the same arg.
+    # v5.1231.0 adds the managed computerUseEnabled check to the flag-on arm:
+    #   function Vai(e={}){return X(hai)?bb()||!_W()?!1:SW()&&TW(e):EW(e)}
+    # The Linux branch still delegates to the Patch-11 gate (EW), which keeps
+    # both the HIPAA gate and the managed key on Linux.
     let patV19675 =
-      re"""(function [\w$]+\(([\w$]+)=\{\}\)\{)return [\w$]+(?:\.[\w$]+)*\([\w$]+\)\?(?:![\w$]+\(\)&&)?[\w$]+\(\)&&[\w$]+\(\2\):([\w$]+)\(\2\)\}"""
+      re"""(function [\w$]+\(([\w$]+)=\{\}\)\{)return [\w$]+(?:\.[\w$]+)*\([\w$]+\)\?(?:(?:![\w$]+\(\)&&)?[\w$]+\(\)&&[\w$]+\(\2\)|[\w$]+\(\)\|\|![\w$]+\(\)\?!1:[\w$]+\(\)&&[\w$]+\(\2\)):([\w$]+)\(\2\)\}"""
     let patV26832 =
       re"""(function [\w$]+\(\)\{)return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?(?:![\w$]+\(\)&&)?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)&&[\w$]+\(\):([\w$]+)\(\)\}"""
     let patBue =
@@ -2104,6 +2227,23 @@ proc apply*(input: string): string =
         m.captures[0] & "if(process.platform===\"linux\")return " & wsName & "(" & arg &
           ");" & whole[headerLen ..^ 1],
     )
+    if n == 1:
+      # The delegate must be the Patch-11 gate (now carrying the Linux branch).
+      var delegates = 0
+      for m in content.findIter(
+        re"""function ([\w$]+)\([\w$]+=\{\}\)\{if\(process\.platform==="linux"\)return ([\w$]+)\([\w$]+\);"""
+      ):
+        if countMatches(
+          content,
+          re(
+            "function " & escapeRe(m.captures[1]) &
+              """\([\w$]+=\{\}\)\{if\(process\.platform==="linux"\)return globalThis\.__cdbCuHipaa="""
+          ),
+        ) == 1:
+          inc delegates
+      if delegates != 1:
+        echo &"  [FAIL] 12 isRegisterable gate: does not delegate to the Patch-11 gate ({delegates} delegates) - re-audit"
+        n = -1
     if n == 0:
       n = replaceFirst(
         content,

@@ -38,6 +38,7 @@ const PATCH_BIN = process.env.QE_PATCH_BIN || join(ROOT, "patches", "linux", "fi
 const SKIP_EXIT = 3;
 const QE = "claude-quick-entry.desktop";
 
+let CLI_BIN_MISSING = false;
 let pass = 0;
 const failures = [];
 function check(label, actual, expected) {
@@ -212,6 +213,55 @@ try {
     check("Quick Entry constructed with claude-quick-entry", t.log.constructedWith, [QE]);
     check("CHROME_DESKTOP unset again", Object.prototype.hasOwnProperty.call(t.env, "CHROME_DESKTOP"), false);
     check("setDesktopName not called with a missing value", t.log.setDesktopName, [QE]);
+  }
+
+  // fix_quick_entry_cli_toggle (core): upstream v5 passes a third argument to
+  // the shortcut registrar (reg(id, handler, onLocked)). The patch must keep
+  // the handler as argument 2 and the third argument as argument 3.
+  section("cli_toggle: registrar call shape (2 and 3 arguments)");
+  {
+    const CLI_BIN = join(ROOT, "patches", "core", "fix_quick_entry_cli_toggle");
+    try { accessSync(CLI_BIN, constants.X_OK); } catch {
+      console.log(`  SKIP cli_toggle checks: ${CLI_BIN} not compiled`);
+      CLI_BIN_MISSING = true;
+    }
+    if (!CLI_BIN_MISSING) {
+      const body = "V&&!V.isDestroyed()&&V.isFullScreen()?(V.focus(),UEa(V)):m8o()";
+      const second = 'app.on("second-instance",((e,t,n)=>{go(t)}));';
+      const shapes = {
+        "3-arg (v5)": `$Ro(g7.QUICK_ENTRY,(()=>{${body}}),xyi);${second}`,
+        "2-arg (v4)": `Emo(h7.QUICK_ENTRY,(()=>{${body}}));${second}`,
+        "2-arg unwrapped": `Emo(h7.QUICK_ENTRY,()=>{${body}});${second}`,
+      };
+      for (const [name, src] of Object.entries(shapes)) {
+        const f = join(work, "cli-toggle.js");
+        writeFileSync(f, src);
+        const r1 = spawnSync(CLI_BIN, [f], { encoding: "utf8" });
+        check(`${name}: exit 0`, r1.status, 0);
+        const out = readFileSync(f, "utf8");
+        const nodeCheck = spawnSync(process.execPath, ["--check", f], { encoding: "utf8" });
+        check(`${name}: parses`, nodeCheck.status, 0);
+        const extra = name.startsWith("3-arg") ? ",xyi" : "";
+        const m = out.match(/^([\w$]+)\(([\w$]+)\.QUICK_ENTRY,\(globalThis\.__ceQuickEntryShow=\(\)=>\{(.*?)\}\)(,xyi)?\),setTimeout\(/);
+        check(`${name}: handler is arg 2, trailing arg kept`, m ? (m[4] || "") : null, extra);
+        // execute the call: registrar sees (id, handler, [third])
+        const calls = [];
+        const ctx = vm.createContext({
+          globalThis: undefined, process: { argv: [], env: {}, platform: "win32", getuid: () => 1 },
+          setTimeout: () => 0, require: () => ({}), console, V: null, UEa() {}, m8o() {}, xyi() {},
+          app: { on() {} }, go() {},
+          h7: { QUICK_ENTRY: "QE" }, g7: { QUICK_ENTRY: "QE" },
+          $Ro: (...a) => calls.push(a), Emo: (...a) => calls.push(a),
+        });
+        ctx.globalThis = ctx;
+        vm.runInContext(out, ctx);
+        check(`${name}: registrar args`, calls.map((a) => [a[0], typeof a[1], a.length, a[2] === ctx.xyi || a.length === 2]), [["QE", "function", extra ? 3 : 2, true]]);
+        check(`${name}: handler is the exported global`, calls[0][1] === ctx.__ceQuickEntryShow, true);
+        const r2 = spawnSync(CLI_BIN, [f], { encoding: "utf8" });
+        check(`${name}: second run exit 0`, r2.status, 0);
+        check(`${name}: second run idempotent`, readFileSync(f, "utf8") === out, true);
+      }
+    }
   }
 } finally {
   rmSync(work, { recursive: true, force: true });

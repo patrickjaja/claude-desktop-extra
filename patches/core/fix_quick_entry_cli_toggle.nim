@@ -67,6 +67,10 @@ proc apply*(input: string): string =
   # handler global AND the socket server's reload-theme command dispatch. A
   # bundle carrying the handler but the pre-#242 connect-only server is not
   # "already patched" - fail loud instead of skipping.
+  # End-state shape of A+C: the complete registration call followed by our
+  # first injected expression (also the post-condition after applying).
+  let patAEnd =
+    re2"[\w$]+(?:\.[\w$]+)*\([\w$]+(?:\.[\w$]+)*\.QUICK_ENTRY,\(globalThis\.__ceQuickEntryShow=\(\)=>\{var __t=Date\.now\(\);[^\n]*?\}\)(?:,[\w$]+(?:\.[\w$]+)*)*\),setTimeout\(\(\)=>\{try\{if\(Array\.isArray\(process\.argv\)"
   if HANDLER_GLOBAL in result:
     if SOCKET_RELOAD_MARKER notin result:
       raise newException(
@@ -74,6 +78,12 @@ proc apply*(input: string): string =
         "fix_quick_entry_cli_toggle: " & HANDLER_GLOBAL &
           " present but the socket server lacks the reload-theme dispatch (" &
           SOCKET_RELOAD_MARKER & ") - stale patch shape, re-audit",
+      )
+    if not result.contains(patAEnd):
+      raise newException(
+        ValueError,
+        "fix_quick_entry_cli_toggle: " & HANDLER_GLOBAL &
+          " present but the QUICK_ENTRY registration call is not in the patched shape - re-audit",
       )
     echo &"  [INFO] {HANDLER_GLOBAL} + socket reload-theme dispatch already present -- sub-patch A/C/D skipped"
     applied += 2
@@ -89,9 +99,13 @@ proc apply*(input: string): string =
     # as well.
     # v1.32352.1: the minifier wraps callback arrows in an extra paren pair
     # (Xrn($V.QUICK_ENTRY,(()=>{...}))), so the arrow allows an optional
-    # surrounding ( ... ). The replacement re-emits the call without the wrap.
+    # surrounding ( ... ). The replacement re-emits the handler parenthesized.
+    # v5.1231.0: the registrar gained a third argument (an on-screen-locked
+    # callback: reg(id, handler, onLocked)), so group 3 captures any trailing
+    # `,arg` list up to the call's closing paren and the replacement re-emits it
+    # as argument 3+ (handler stays argument 2).
     let patA =
-      re2"([\w$]+(?:\.[\w$]+)*)\(([\w$]+(?:\.[\w$]+)*)\.QUICK_ENTRY,\(?(\(\)=>\{[\w$]+(?:\.[\w$]+)*&&![\w$]+(?:\.[\w$]+)*\.isDestroyed\(\)&&[\w$]+(?:\.[\w$]+)*\.isFullScreen\(\)\?\([\w$]+(?:\.[\w$]+)*\.focus\(\),[\w$]+(?:\.[\w$]+)*\((?:[\w$]+(?:\.[\w$]+)*)?\)\):[\w$]+(?:\.[\w$]+)*\((?:[\w$]+(?:\.[\w$]+)*)?\)\})\)?\)"
+      re2"([\w$]+(?:\.[\w$]+)*)\(([\w$]+(?:\.[\w$]+)*)\.QUICK_ENTRY,\(?(\(\)=>\{[\w$]+(?:\.[\w$]+)*&&![\w$]+(?:\.[\w$]+)*\.isDestroyed\(\)&&[\w$]+(?:\.[\w$]+)*\.isFullScreen\(\)\?\([\w$]+(?:\.[\w$]+)*\.focus\(\),[\w$]+(?:\.[\w$]+)*\((?:[\w$]+(?:\.[\w$]+)*)?\)\):[\w$]+(?:\.[\w$]+)*\((?:[\w$]+(?:\.[\w$]+)*)?\)\})\)?((?:,[\w$]+(?:\.[\w$]+)*)*)\)"
 
     var countA = 0
     var resultStr = ""
@@ -104,6 +118,7 @@ proc apply*(input: string): string =
         let regFn = result[m.group(0)]
         let enumVar = result[m.group(1)]
         let arrow = result[m.group(2)]
+        let trailingArgs = result[m.group(3)]
 
         # Verify arrow shape
         assert arrow.startsWith("()=>{") and arrow.endsWith("}"),
@@ -194,14 +209,23 @@ proc apply*(input: string): string =
           "}catch(e){}},400)" & "}catch(e){}})}catch(e){}})" & "}catch(e){}" & "})()"
 
         resultStr &=
-          regFn & "(" & enumVar & ".QUICK_ENTRY," & assign & ")" & firstInstance &
-          socketTrigger & windowProbe
+          regFn & "(" & enumVar & ".QUICK_ENTRY,(" & assign & ")" & trailingArgs & ")" &
+          firstInstance & socketTrigger & windowProbe
         lastEnd = bounds.b + 1
         inc countA
         break
 
     if countA == 1:
       resultStr &= result[lastEnd .. ^1]
+      # Post-condition (Rule 6): the patched call must be a complete call
+      # <registrar>(<enum>.QUICK_ENTRY,(globalThis.__ceQuickEntryShow=()=>{...})<,args>)
+      # directly followed by our first injected expression. A regex that ends
+      # the call at the wrong paren leaves upstream's trailing args dangling.
+      if not resultStr.contains(patAEnd):
+        raise newException(
+          ValueError,
+          "fix_quick_entry_cli_toggle: sub-patch A output is not a well-formed registration call - re-audit",
+        )
       result = resultStr
       echo "  [OK] sub-patch A (handler capture) + C (first-instance schedule) applied"
       applied += 2

@@ -8,8 +8,10 @@
 # filters, so a listed author's PR is bound as the session's own and Auto-fix
 # can arm. Never spoof readGhLogin or remove auth, ownership, origin/age,
 # confirmation, consent or concurrent-write conditions; a missing gh login
-# still yields "unknown". Audited against pristine 4.16336.0. Bind each call to
-# its actual PR's host.
+# still yields "unknown". Audited against pristine 5.1231.0 (the model path now
+# reads the login fresh via readGhLoginNow and checks push permission after the
+# author check; neither is an author comparison). Bind each call to its actual
+# PR's host.
 
 import std/[os, strutils]
 import regex
@@ -28,7 +30,7 @@ let guardRe =
   re2"""if\(![\w$]+\(\{user:\{login:[\w$]+\.author\}\},[\w$]+\.login\)\)return["`]not_author["`];"""
 let endRe =
   re2"""if\(!\(globalThis\.__cdbAutoFixAuthorAllowed\?\.\([\w$]+\.author,[\w$]+(?:\.host)?\?\?["`]github\.com["`]\)===true\)&&![\w$]+\(\{user:\{login:[\w$]+\.author\}\},[\w$]+\.login\)\)return["`]not_author["`];"""
-# The login matcher every ownership site calls (ld on 4.16336.0).
+# The login matcher every ownership site calls (Dd on 5.1231.0).
 let matcherRe =
   re2"""function ([\w$]+)\([\w$]+,[\w$]+\)\{let [\w$]+=[\w$]+\.user\?\.login;return!![\w$]+&&!![\w$]+&&[\w$]+\.toLowerCase\(\)===[\w$]+\.toLowerCase\(\)\}"""
 # Site 1, getPrStateByNumberUncached: host argument, login param, matcher, PR.

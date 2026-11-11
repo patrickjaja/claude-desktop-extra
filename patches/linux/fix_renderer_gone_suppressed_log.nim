@@ -93,6 +93,11 @@ proc apply*(input: string): string =
   #   and the second `let` carries an object-literal declarator, so both lets are
   #   matched as `let <no-semicolon run>;`:
   #     {H4n(e);let r=Date.now(),i=O4n(r);if(!F3n(n))return;d();let s=l(),...,h={...b6n(r),renderer_age_ms:i};if(...){p("abandoned");return}...
+  #   v5.1231.0: the filter returns a verdict instead of a boolean; it is stored
+  #   as the last declarator of the leading `let`, and the first guard is a
+  #   block that hands an own hang kill on before returning; the bare calls
+  #   after it are one comma expression:
+  #     {Ker(e);let r=Date.now(),i=Ner(r),a=Ltr(n);if(a!=="needs recovery"){a==="own kill"&&w("death notice");return}AN(),h(),S();let o=p(),...;if(...){T("abandoned");return}...
   #
   # Every early return is a suppressed death that stays silent -- the gap #128
   # is about. Each gains a log line right before its `return`; the guard
@@ -114,7 +119,7 @@ proc apply*(input: string): string =
   # handler and the site needs a re-audit; 0 means upstream changed the code.
   # Both fail loudly.
   let pattern =
-    re2"""(\.on\(["`]render-process-gone["`],\(?async\(([\w$]+),([\w$]+)\)=>\{)((?:[\w$]+(?:\.[\w$]+)*\([^()]*\);)*(?:let [^;]*;)?)(if\(((?:[\w$]+(?:\.[\w$]+)*\([^()]*\),)*)!([\w$]+)\(([\w$]+)\)\)return;)((?:[\w$]+(?:\.[\w$]+)*\([^()]*\);)*)(let [^;]*;)((?:if\([^{}]{1,100}[^{}]{0,100}[^{}]{0,100}\)(?:return;|\{[^{}]{0,100}return\}))+)(([\w$]+(?:\.[\w$]+)*)\.info\(["`]Main webview render process gone: %o)"""
+    re2"""(\.on\(["`]render-process-gone["`],\(?async\(([\w$]+),([\w$]+)\)=>\{)((?:[\w$]+(?:\.[\w$]+)*\([^()]*\);)*let (?:[^;]*,)?([\w$]+)=([\w$]+)\(([\w$]+)\);)(if\(([\w$]+)!==["`]needs recovery["`]\)\{[^{}]{0,100}return\})((?:[\w$]+(?:\.[\w$]+)*\([^()]*\)[,;])*)(let [^;]*;)((?:if\([^{}]{1,100}[^{}]{0,100}[^{}]{0,100}\)(?:return;|\{[^{}]{0,100}return\}))+)(([\w$]+(?:\.[\w$]+)*)\.info\(["`]Main webview render process gone: %o)"""
   var count = 0
   var guardCount = 0
   result = input.replace(
@@ -122,22 +127,26 @@ proc apply*(input: string): string =
     proc(m: RegexMatch2, s: string): string =
       # group(0) head incl. arrow params; group(1) is the (unused) event arg.
       let head = s[m.group(0)]
-      let preamble = s[m.group(3)] # bare calls / `let` before the first guard, verbatim
+      let preamble = s[m.group(3)]
+        # bare calls + `let ...,<v>=<pred>(<details>);`, verbatim
       let details = s[m.group(2)] # RenderProcessGoneDetails
-      let firstGuard = s[m.group(4)] # `if(<calls>,!<pred>(<details>))return;`
-      let predArg = s[m.group(7)] # what the first guard passes to the predicate
-      let bareCalls = s[m.group(8)] # `d();` -- kept verbatim
-      let letStmt = s[m.group(9)] # interposed `let x=f(),...;` -- kept verbatim
-      let guards = s[m.group(10)] # the killed-grace / destroyed guards
-      let tail = s[m.group(11)] # the handled path's own `<logger>.info(...` call
-      let logger = s[m.group(12)] # module-level logger
+      let verdictVar = s[m.group(4)] # the filter's verdict
+      let predArg = s[m.group(6)] # what the `let` passes to the predicate
+      let firstGuard = s[m.group(7)] # `if(<v>!=="needs recovery"){...;return}`
+      let guardVar = s[m.group(8)] # what the first guard tests
+      let bareCalls = s[m.group(9)] # `AN(),h(),S();` -- kept verbatim
+      let letStmt = s[m.group(10)] # interposed `let x=f(),...;` -- kept verbatim
+      let guards = s[m.group(11)] # the killed-grace / destroyed guards
+      let tail = s[m.group(12)] # the handled path's own `<logger>.info(...` call
+      let logger = s[m.group(13)] # module-level logger
       let whole = s[m.boundaries]
       let ifs = firstGuard.count("if(") + guards.count("if(")
       let rets = firstGuard.count("return") + guards.count("return")
-      if predArg != details or ifs != rets:
-        # The guard checks something other than the event details, or a guard
-        # has other than one return -- shape drifted; re-emit untouched so
-        # count stays 0 and we fail loudly.
+      if predArg != details or guardVar != verdictVar or ifs != rets:
+        # The filter is fed something other than the event details, the first
+        # guard tests something other than its verdict, or a guard has other
+        # than one return -- shape drifted; re-emit untouched so count stays 0
+        # and we fail loudly.
         return whole
       inc count
       guardCount = ifs

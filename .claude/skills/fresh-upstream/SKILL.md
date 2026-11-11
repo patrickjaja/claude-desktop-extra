@@ -64,5 +64,5 @@ Goal: a pristine unpatched bundle in `./tmp/` so patch work compares against the
 ## Notes
 - This does NOT patch, build, or bump anything - it only stages a clean bundle.
 - Distinguish "clean unpatched" (this skill, manual .deb crack + asar) from "patched build" (`./scripts/build-local.sh`).
-- The official `.deb` bundles Electron 42.5.1 and prebuilt node-pty for both arches - we do not self-manage either.
+- The official `.deb` bundles its own Electron (see `usr/lib/claude-desktop/version` in the deb tree) and prebuilt node-pty for both arches - we do not self-manage either.
 - Stale extracts have different minified names → always re-extract before patch debugging if `./tmp` is older than today.
