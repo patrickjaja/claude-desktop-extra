@@ -195,14 +195,22 @@
     return memoized(mode.key);
   }
 
-  // Whether the RUNNING main window was built without the controls overlay,
-  // i.e. in native or bare mode. Same pure observation as activeFor. The
-  // window patch only asks for bare when native is off (`!NATIVE&&BARE`
-  // short-circuits), so a null bare memo next to native=true is expected and
-  // the OR still answers right. Nothing asked yet -> false: no window exists
-  // whose layout could need fixing.
+  // Whether the RUNNING main window was built without the controls overlay:
+  // native mode, bare mode, or a transparent window (Electron gives a
+  // transparent frameless window no overlay). Same pure observation as
+  // activeFor. The window patch only asks for bare when native is off
+  // (`!NATIVE&&BARE` short-circuits), so a null bare memo next to native=true
+  // is expected and the OR still answers right. The transparency module comes
+  // from another patch, so it is looked up at call time and a missing or
+  // throwing observer means false. Nothing asked yet -> false: no window
+  // exists whose layout could need fixing.
+  function transparentRunning() {
+    try {
+      return typeof globalThis.__cdbWinTransActive === "function" && globalThis.__cdbWinTransActive() === true;
+    } catch (e) { return false; }
+  }
   function withoutOverlay() {
-    return activeFor(MODES.nativeTitlebar) === true || activeFor(MODES.noWindowControls) === true;
+    return activeFor(MODES.nativeTitlebar) === true || activeFor(MODES.noWindowControls) === true || transparentRunning();
   }
 
   // Shared surface for window_controls_main.js (the IPC half), which must read

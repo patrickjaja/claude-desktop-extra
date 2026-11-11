@@ -40,7 +40,9 @@ const sender = { sender: { getURL: () => "https://claude.ai/x", isDestroyed: () 
 {
   const dir = mkdtempSync(join(tmpdir(), "cdb-wt-"));
   let t = load(dir);
+  ok(t.sandbox.__cdbWinTransActive() === false, "active observer: false before any window asked");
   ok(JSON.stringify(t.sandbox.__cdbWinTransExtra()) === "{}", "off by default: no extra options");
+  ok(t.sandbox.__cdbWinTransActive() === false, "active observer: false with the switch off");
   const r0 = await t.handlers["cdb-wt:pref-read"](sender);
   ok(r0.ok && r0.enabled === false, "pref-read defaults to off");
   ok(r0.nativeTitlebar === false, "pref-read reports nativeTitlebar false");
@@ -49,6 +51,7 @@ const sender = { sender: { getURL: () => "https://claude.ai/x", isDestroyed: () 
   t = load(dir);
   const x = t.sandbox.__cdbWinTransExtra();
   ok(x.transparent === true && x.backgroundColor === "#00000000", "on: transparent + clear background");
+  ok(t.sandbox.__cdbWinTransActive() === true, "active observer: true once the window was built transparent");
   rmSync(dir, { recursive: true });
 }
 {
@@ -56,6 +59,7 @@ const sender = { sender: { getURL: () => "https://claude.ai/x", isDestroyed: () 
   writeFileSync(join(dir, "claude-desktop-extra.json"), '{"windowTransparency": true}');
   const n = load(dir, {}, true);
   ok(JSON.stringify(n.sandbox.__cdbWinTransExtra()) === "{}", "native titlebar: transparency skipped");
+  ok(n.sandbox.__cdbWinTransActive() === false, "active observer: false when the native titlebar skipped transparency");
   const rn = await n.handlers["cdb-wt:pref-read"](sender);
   ok(rn.ok && rn.enabled === true && rn.nativeTitlebar === true, "pref-read reports nativeTitlebar true");
   const e = load(dir, { CLAUDE_WINDOW_TRANSPARENCY: "0" });

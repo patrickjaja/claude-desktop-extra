@@ -5,7 +5,8 @@
  * Injected into the claude.ai main world by js/window_controls_main.js (as a
  * string, via webContents.executeJavaScript on dom-ready), and only when the
  * RUNNING main window was built without the controls overlay - bare mode
- * (Hide window controls) or native mode (Native titlebar).
+ * (Hide window controls), native mode (Native titlebar) or a transparent
+ * window (Transparent window; Electron gives it no overlay).
  *
  * WHY: claude.ai assumes every Windows/Linux desktop window has a Window
  * Controls Overlay and reserves room for its buttons in inline styles such as
@@ -14,7 +15,7 @@
  *                 - env(titlebar-area-width, calc(100% - 120px))))
  *
  * With the overlay on, Chromium defines env(titlebar-area-*) and the fallback
- * is ignored. With it off (both modes above: titleBarOverlay:false), the env
+ * is ignored. With it off (the three cases above), the env
  * vars are undefined and the FALLBACK wins - 120px on Linux (140px on Windows,
  * divided by the zoom factor in some callers), i.e. the gap.
  *

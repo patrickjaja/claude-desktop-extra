@@ -181,6 +181,12 @@
     var on = forced === null ? savedOn() : forced;
     return on === true;
   }
+  // Read-only view of the RUNNING state for js/window_controls_pref.js
+  // (withoutOverlay): a transparent frameless window has no Window Controls
+  // Overlay, so the header inset fix must run there too. Never calls wanted():
+  // null (nothing asked yet) and false (native titlebar won, or switch off)
+  // both answer false.
+  globalThis.__cdbWinTransActive = function () { return active === true; };
 
   // Mirrors the native-titlebar decision of patches/linux/fix_native_frame.nim
   // (same defensive form: the config reader if present, else the env var).

@@ -1332,6 +1332,23 @@ try {
       check("gate: memo left untouched", Object.keys(sandbox.__cdbWinCtlMemo).length, 0);
     }
 
+    // Transparent window: its own observer, looked up at call time.
+    const trans = (obs) => {
+      const { sandbox } = loadPref({ config: {} });
+      if (obs !== undefined) sandbox.__cdbWinTransActive = obs;
+      return sandbox.__cdbWinCtlPref.withoutOverlay();
+    };
+    check("gate: transparency observer absent -> no injection", trans(undefined), false);
+    check("gate: transparent window running -> inject", trans(() => true), true);
+    check("gate: transparency not running -> no injection", trans(() => false), false);
+    check("gate: throwing transparency observer -> no injection", trans(() => { throw new Error("x"); }), false);
+    {
+      const { sandbox } = loadPref({ config: {} });
+      sandbox.__cdbWinTransActive = () => true;
+      sandbox.__cdbWinCtlPref.withoutOverlay();
+      check("gate: transparent check leaves the memo untouched", Object.keys(sandbox.__cdbWinCtlMemo).length, 0);
+    }
+
     // The rewrite itself, on upstream's shapes.
     const { sandbox: pg } = loadPage(PAGE_SRC_FILE, new FakeEl());
     const rw = pg.__cdbWcoInset.rewrite;

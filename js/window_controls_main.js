@@ -23,7 +23,7 @@
  * belongs to patches/linux/fix_native_frame.nim, which reads the two globals.
  * The one page-side job (js/window_controls_page.js, embedded below as
  * PAGE_SRC) only fixes claude.ai's header inset for a window that was already
- * built without the controls overlay.
+ * built without the controls overlay (native, bare or transparent window).
  *
  * SECURITY: the caller is remote claude.ai code. Every handler validates the
  * sender's ORIGIN (not a substring test of the URL - see okSender below) and
@@ -182,7 +182,7 @@
   // env(titlebar-area-*) fallbacks; without the overlay those fallbacks leave
   // an empty strip at the right of the header. js/window_controls_page.js
   // rewrites them (see its header). Injected only while the RUNNING window was
-  // built without the overlay, so a toggle that still waits for a restart
+  // built without the overlay - native, bare or transparent - so a toggle that still waits for a restart
   // never changes the open window's layout.
   var PAGE_SRC = "__CDB_WINCTL_PAGE_SRC__";
   var pageLogged = false;

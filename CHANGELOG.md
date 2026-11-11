@@ -4,6 +4,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-11
 
+### Transparent window: no empty strip in the header
+
+- **Transparent window:** a transparent window has no window buttons, and the header no longer keeps the empty strip reserved for them.
+
 ### Computer Use: no screen-share dialog after a failed capture, Stop sharing on Ubuntu, the dock of a maximized window, X11 title bars
 
 - **sway, Hyprland, niri, river and GNOME Wayland:** a screenshot whose bridge capture fails tells Claude it failed and that taking it again once is reasonable; a second failure in a row in the same turn tells it to stop and tell you (naming `claude-patches.log` and `COWORK_SCREENSHOT_CMD`), and a GNOME portal session that could not start is reported with its own advice. It no longer falls back to Electron's own capture, which on Wayland raised the desktop's screen-share picker (GNOME's "share your screen" dialog) and blocked the tool call until someone answered it. On GNOME a screen-cast frame that does not arrive in time is waited for once more first. X11 keeps that silent fallback, and `COWORK_SCREENSHOT_CMD` still overrides. A capture still running when the turn ends is stopped with it, on X11 too (no image after the turn).
