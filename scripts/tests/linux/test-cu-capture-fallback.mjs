@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // desktopCapturer fallback crop in js/cu_linux_executor.js (issue #298).
 //
-// The Electron desktopCapturer tier is the last resort on every session type
-// (wlroots / GNOME / X11 when their bridge fails, exotic Wayland always). It
+// The Electron desktopCapturer tier is the last resort on X11 when x11-bridge
+// fails and on uncovered Wayland (exotic, KDE without kwin mode) always; on a
+// covered Wayland session (wlroots / GNOME) a failed bridge capture never
+// reaches it, since its portal picker is a desktop dialog. It
 // used to request thumbnailSize {w+x, h+y} and crop {x, y, w, h} out of it.
 // Chromium fits each screen's frame INSIDE thumbnailSize keeping the aspect
 // ratio (ScaleDesktopFrame / ComputeLetterboxRegion), so the crop ran in a
@@ -165,25 +167,37 @@ console.log("\n[1] wlroots 2400x1350 @1.6, bridge working: unchanged bridge path
   ok(rig.requests.length === 0, "desktopCapturer is not touched while the bridge works");
 }
 
-console.log("\n[2] wlroots, bridge zoom failing: the fallback crops display-relative physical pixels");
+console.log("\n[2] wlroots, bridge zoom failing: no desktopCapturer (its portal chooser is a desktop dialog), an error that says to retry");
 {
   let failing = false;
   const rig = makeRig({ kind: "wlroots", displays: HDMI(), screens: HDMI_SCREENS, sources: [source("HDMI-A-1", 3840, 2160)], sfOf: sf16, bridgeFails: (s) => failing && s === "zoom" });
   await shoot(rig.ex, 0);
   failing = true;
+  let threw = null;
+  try { await zoomImgRegion(rig.ex, [596, 240, 836, 580]); } catch (e) { threw = e; }
+  ok(rig.requests.length === 0, "desktopCapturer.getSources is never called on a covered wlroots session", rig.requests.length);
+  ok(threw && /^Screenshot failed: wlroots-bridge could not capture the screen \(screencopy did not complete/.test(threw.message) && /taking the screenshot again once is reasonable/.test(threw.message),
+     "the model reads that the capture failed and that retrying is reasonable", threw && threw.message);
+  ok(rig.diag.some((l) => l.includes("no desktopCapturer")), "the cascade says why in the log");
+}
+
+console.log("\n[2x] exotic Wayland (no bridge) at 2400x1350 @1.6: the fallback crops display-relative physical pixels");
+{
+  const rig = makeRig({ kind: "cosmic", displays: HDMI(), sources: [source("HDMI-A-1", 3840, 2160)] });
+  await shoot(rig.ex, 0);
+  const n0 = rig.ops.length;
   const { cap } = await zoomImgRegion(rig.ex, [596, 240, 836, 580]);
   ok(J(rig.requests.at(-1)) === J({ width: 3840, height: 2160 }), "thumbnail requested at the monitor's physical size (was 1403x974)", J(rig.requests.at(-1)));
   const c = lastOp(rig.ops, "crop");
   ok(c && J(c.frame) === "[3840,2160]" && J(c.rect) === "[1600,645,645,914]", "crop is 1600,645 645x914 in the 3840x2160 frame", c && J(c));
   ok(cap.imgW === 645 && cap.imgH === 914 && cap.mimeType === "image/png", "zoom reports the real cropped size", cap.imgW + "x" + cap.imgH + " " + cap.mimeType);
-  ok(!rig.ops.some((o) => o.op === "resize"), "a zoom below the size cap is not resized");
-  ok(rig.diag.some((l) => l.includes("wlroots-bridge zoom failed")) && rig.diag.some((l) => l.includes("captured via desktopCapturer")),
-     "the bridge failure and the fallback are both logged", rig.diag.filter((l) => /zoom failed|desktopCapturer/.test(l)).join(" | "));
+  ok(!rig.ops.slice(n0).some((o) => o.op === "resize"), "a zoom below the size cap is not resized");
+  ok(rig.diag.some((l) => l.includes("captured via desktopCapturer")), "the fallback is logged", rig.diag.filter((l) => /desktopCapturer/.test(l)).join(" | "));
 }
 
-console.log("\n[3] wlroots, bridge failing: a fallback screenshot has the bridge's frame and clicks map the same way");
+console.log("\n[3] exotic Wayland: a fallback screenshot has the bridge's frame and clicks map the same way");
 {
-  const rig = makeRig({ kind: "wlroots", displays: HDMI(), screens: HDMI_SCREENS, sources: [source("HDMI-A-1", 3840, 2160)], sfOf: sf16, bridgeFails: (s) => s === "zoom" });
+  const rig = makeRig({ kind: "cosmic", displays: HDMI(), sources: [source("HDMI-A-1", 3840, 2160)] });
   const ss = await shoot(rig.ex, 0);
   const r = lastOp(rig.ops, "resize");
   ok(ss.imgW <= 1568 && ss.imgW === 1430 && ss.imgH === 804, "fallback screenshot is 1430x804, the bridge frame (was 3840x2160)", ss.imgW + "x" + ss.imgH);
@@ -195,7 +209,7 @@ console.log("\n[3] wlroots, bridge failing: a fallback screenshot has the bridge
 
 console.log("\n[4] the frame Chromium returns is smaller than requested: the crop scales with it");
 {
-  const rig = makeRig({ kind: "wlroots", displays: HDMI(), screens: HDMI_SCREENS, sources: [source("HDMI-A-1", 3840, 2160, "", 0.5)], sfOf: sf16, bridgeFails: (s) => s === "zoom" });
+  const rig = makeRig({ kind: "cosmic", displays: HDMI(), sources: [source("HDMI-A-1", 3840, 2160, "", 0.5)] });
   const cap = await rig.ex.zoom({ x: 1000, y: 403, w: 403, h: 571 }, 1, null);
   const c = lastOp(rig.ops, "crop");
   // 1920x1080 frame = half the physical size: logical 1000,403 403x571 -> 800,323 .. 1123,780.
@@ -260,8 +274,21 @@ console.log("\n[7] GNOME Wayland, gnome-portal-bridge zoom failing, secondary mo
     { id: "eDP-1", name: "eDP-1", geometry: R(1920, 0, 1280, 800), scale: 2, is_primary: false, is_active: false }
   ];
   const rig = makeRig({ kind: "gnome", displays: ds, screens, sources: [source("eDP-1", 2560, 1600, "2"), source("DP-1", 1920, 1080, "1")], bridgeFails: (s) => s === "zoom" });
-  const cap = await rig.ex.zoom({ x: 2000, y: 100, w: 400, h: 300 }, 1, null);
+  let threw = null;
+  try { await rig.ex.zoom({ x: 2000, y: 100, w: 400, h: 300 }, 1, null); } catch (e) { threw = e; }
   ok(rig.diag.some((l) => l.includes("gnome-portal-bridge zoom failed")), "the bridge zoom was tried and failed", rig.diag.filter((l) => l.includes("zoom failed")).pop());
+  ok(rig.requests.length === 0, "desktopCapturer.getSources is never called (GNOME would raise its Share Screen dialog)", rig.requests.length);
+  ok(threw && /^Screenshot failed: gnome-portal-bridge could not capture the screen/.test(threw.message) && /again once is reasonable/.test(threw.message), "the error says the capture failed and a retry is reasonable", threw && threw.message);
+  let threw2 = null;
+  try { await shoot(rig.ex, 1); } catch (e) { threw2 = e; }
+  ok(threw2 && rig.requests.length === 0, "a full screenshot fails the same way, still no getSources", threw2 && threw2.message);
+}
+
+console.log("\n[7x] exotic Wayland, secondary monitor at scale 2: the fallback crops in that monitor's pixels");
+{
+  const ds = [d(1, "DP-1", R(0, 0, 1920, 1080), 1), d(2, "eDP-1", R(1920, 0, 1280, 800), 2)];
+  const rig = makeRig({ kind: "cosmic", displays: ds, sources: [source("eDP-1", 2560, 1600, "2"), source("DP-1", 1920, 1080, "1")] });
+  const cap = await rig.ex.zoom({ x: 2000, y: 100, w: 400, h: 300 }, 1, null);
   const c = lastOp(rig.ops, "crop");
   ok(c && c.tag === "eDP-1" && J(c.frame) === "[2560,1600]" && J(c.rect) === "[160,200,800,600]", "crop is eDP-1-relative physical 160,200 800x600", c && J(c));
   ok(cap.imgW === 800 && cap.imgH === 600, "real crop size", cap.imgW + "x" + cap.imgH);

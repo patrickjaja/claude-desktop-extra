@@ -22,9 +22,9 @@
 //      a fresh CU lock clears the latch and retries for real.
 //   3. NO x11-bridge FALLBACK ON A COVERED SESSION. Under a rootless XWayland
 //      server the X root holds nothing, so `zoom` there answers BadMatch - it
-//      buys nothing and costs another timeout. The cascade must go straight to
-//      the desktopCapturer last resort, which is what the diagnostics line has
-//      always advertised.
+//      buys nothing and costs another timeout. Nor desktopCapturer: on Wayland
+//      its portal picker is a desktop dialog ([5]); a failed bridge capture is
+//      retried once and then reported to the model.
 //
 // Exit codes follow the repo convention: 0 = PASS, 3 = SKIP, other = FAIL.
 
@@ -34,6 +34,7 @@ import { dirname, join } from "node:path";
 import path from "node:path";
 import os from "node:os";
 
+process.setMaxListeners(50);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..", "..");
 const EXECUTOR = join(ROOT, "js", "cu_linux_executor.js");
@@ -50,8 +51,8 @@ function ok(cond, msg) {
 // answers, so the call can only end in the timeout. Sync calls are recorded so a
 // test can assert the main thread was never blocked; async calls resolve with a
 // rejection after a tick, standing in for execFile's ETIMEDOUT callback.
-function makeRig({ desktop = "ubuntu:GNOME", sessionType = "wayland" } = {}) {
-  const calls = { sync: [], async: [] };
+function makeRig({ desktop = "ubuntu:GNOME", sessionType = "wayland", reply = null } = {}) {
+  const calls = { sync: [], async: [], capturer: 0, killed: [] };
   const timeoutErr = (bin, args) => {
     const e = new Error("spawnSync " + bin + " ETIMEDOUT");
     e.code = "ETIMEDOUT";
@@ -80,7 +81,14 @@ function makeRig({ desktop = "ubuntu:GNOME", sessionType = "wayland" } = {}) {
     execFile(bin, args, opts, cb) {
       const base = path.basename(String(bin));
       calls.async.push({ bin: base, args: args ? args.slice() : [], opts });
-      setTimeout(() => cb(timeoutErr(base, args || []), "", ""), 0);
+      // reply(base, args) -> { out } | { err } | { hang: true } (answers only
+      // when killed, as a real child does: code null, signal SIGTERM).
+      const r = reply ? reply(base, args || []) : null;
+      const kid = { killed: false, kill(sig) { if (kid.killed) return true; kid.killed = true; calls.killed.push(base + " " + (args || [])[0]); setTimeout(() => cb(Object.assign(new Error("Command failed: " + base), { killed: true, signal: sig || "SIGTERM", code: null }), "", ""), 0); return true; } };
+      if (!r) setTimeout(() => cb(timeoutErr(base, args || []), "", ""), 0);
+      else if (r.hang) {}
+      else setTimeout(() => { if (kid.killed) return; if (r.err) cb(r.err, "", r.err.stderr || ""); else cb(null, r.out, ""); }, r.delay || 0);
+      return kid;
     },
     spawn() { return { on() {}, unref() {} }; }
   };
@@ -101,7 +109,7 @@ function makeRig({ desktop = "ubuntu:GNOME", sessionType = "wayland" } = {}) {
     // The last-resort tier. Empty thumbnail => _captureRegion falls through to
     // its final throw, which is the state under test (the cascade ran out), not
     // a harness failure.
-    desktopCapturer: { getSources: async () => [] },
+    desktopCapturer: { getSources: async () => { calls.capturer++; return []; } },
     clipboard: { readText: () => "", writeText: () => {} },
     nativeImage: {}
   };
@@ -284,12 +292,150 @@ async function testSyncBackstopBudget() {
   } finally { rig.restore(); }
 }
 
+// --- 5. a failed bridge capture: one retry, never a desktop dialog -----------
+// GNOME VM run (Ubuntu 25.04, GNOME 48): one zoom ended in "timed out waiting
+// for PipeWire frame", the cascade went on to Electron's desktopCapturer, whose
+// ScreenCast portal picker raised GNOME's "share your screen" dialog: the tool
+// call blocked 275 s, the dialog outlived the lock.
+const frameTimeout = () => Object.assign(new Error("Command failed: gnome-portal-bridge zoom --x 0 --y 0 --w 1366 --h 768 --display eDP-1\ntimed out waiting for PipeWire frame on stream 64 (state events: stream 64 -> Connecting, stream 64 -> Paused, stream 64 -> Streaming)\n"),
+  { code: 1, stderr: "timed out waiting for PipeWire frame on stream 64 (state events: stream 64 -> Connecting, stream 64 -> Paused, stream 64 -> Streaming)\n" });
+const SCREENS = JSON.stringify([{ id: "eDP-1", name: "eDP-1", geometry: { x: 0, y: 0, width: 1366, height: 768 }, scale: 1, is_primary: true, is_shared: true }]);
+function gnomeReply(zoom) {
+  return (base, args) => {
+    if (base !== "gnome-portal-bridge") return null;
+    if (args[0] === "session-start" || args[0] === "session-end") return { out: "{}" };
+    if (args[0] === "screens") return { out: SCREENS };
+    if (args[0] === "zoom") return zoom();
+    return { out: "{}" };
+  };
+}
+async function testCaptureRetryNoDialog() {
+  console.log("\n[5] GNOME: a PipeWire frame timeout is retried once, never handed to desktopCapturer");
+  {
+    let n = 0;
+    const rig = makeRig({ reply: gnomeReply(() => (++n === 1 ? { err: frameTimeout() } : { out: JSON.stringify({ base64: "AA", width: 1366, height: 768 }) })) });
+    try {
+      await rig.ex.__setLockHeld(true, "local_x");
+      let ss = null;
+      try { ss = await rig.ex.screenshot({}); } catch (e) { /* asserted below */ }
+      const zooms = rig.calls.async.filter((c) => c.args[0] === "zoom");
+      ok(ss && ss.base64 === "AA" && zooms.length === 2, "the second attempt captures (zoom calls: " + zooms.length + ")");
+      ok(rig.calls.capturer === 0, "desktopCapturer was not called: " + rig.calls.capturer);
+      ok(bridgeSyncCalls(rig.calls).length === 0, "and nothing blocked the main process");
+    } finally { rig.restore(); }
+  }
+  {
+    const rig = makeRig({ reply: gnomeReply(() => ({ err: frameTimeout() })) });
+    try {
+      await rig.ex.__setLockHeld(true, "local_x");
+      let threw = null;
+      try { await rig.ex.screenshot({}); } catch (e) { threw = e; }
+      const zooms = rig.calls.async.filter((c) => c.args[0] === "zoom");
+      ok(zooms.length === 2, "a frame timeout that repeats: exactly two zoom attempts, was " + zooms.length);
+      ok(rig.calls.capturer === 0, "no desktopCapturer (GNOME's Share Screen dialog) after a failed bridge capture: " + rig.calls.capturer);
+      ok(threw && /^Screenshot failed: gnome-portal-bridge could not capture the screen \(timed out waiting for PipeWire frame/.test(threw.message) && /taking the screenshot again once is reasonable/.test(threw.message),
+        "the model reads that the capture failed and that a retry is reasonable: " + (threw ? threw.message.slice(0, 160) : ""));
+    } finally { rig.restore(); }
+  }
+  {
+    const rig = makeRig({ reply: gnomeReply(() => null) });
+    try {
+      await rig.ex.__setLockHeld(true, "local_x");
+      try { await rig.ex.screenshot({}); } catch (e) { /* expected */ }
+      const zooms = rig.calls.async.filter((c) => c.args[0] === "zoom");
+      ok(zooms.length === 1 && rig.calls.capturer === 0, "a zoom that hit its process timeout is not retried (budget spent), no desktopCapturer: " + zooms.length + " zoom(s), " + rig.calls.capturer + " getSources");
+    } finally { rig.restore(); }
+  }
+  console.log("\n[5b] the lock is released while a capture is pending: no retry, no bridge process left, no dialog");
+  {
+    const rig = makeRig({ reply: gnomeReply(() => ({ hang: true })) });
+    try {
+      await rig.ex.__setLockHeld(true, "local_x");
+      let threw = null;
+      const p = rig.ex.screenshot({}).catch((e) => { threw = e; });
+      for (let i = 0; i < 20 && !rig.calls.async.some((c) => c.args[0] === "zoom"); i++) await new Promise((r) => setTimeout(r, 5));
+      await rig.ex.__setLockHeld(false);
+      await Promise.race([p, new Promise((r) => setTimeout(r, 500))]);
+      const zooms = rig.calls.async.filter((c) => c.args[0] === "zoom");
+      ok(rig.calls.killed.includes("gnome-portal-bridge zoom"), "the pending zoom process is ended at the release: " + JSON.stringify(rig.calls.killed));
+      ok(zooms.length === 1 && rig.calls.capturer === 0, "not retried into the next hold, no desktopCapturer: " + zooms.length + " zoom(s), " + rig.calls.capturer + " getSources");
+      ok(threw && /turn ended/.test(threw.message), "the call ends with a short cancellation: " + (threw ? threw.message : "resolved?!"));
+    } finally { rig.restore(); }
+  }
+}
+
+// --- 6. no retry loop, permanent failures verbatim, every tier cancelled ----
+async function testCaptureNoLoop() {
+  console.log("\n[6] a capture that keeps failing: the second failure in a lock says stop and tell the user");
+  {
+    const rig = makeRig({ reply: gnomeReply(() => ({ err: frameTimeout() })) });
+    try {
+      await rig.ex.__setLockHeld(true, "local_x");
+      const msgs = [];
+      for (let i = 0; i < 2; i++) { try { await rig.ex.screenshot({}); } catch (e) { msgs.push(e.message); } }
+      ok(/taking the screenshot again once is reasonable/.test(msgs[0] || ""), "first failure: a retry is reasonable: " + (msgs[0] || "").slice(0, 90));
+      ok(/^Screenshot failed again: .*Stop retrying: tell the user .*claude-patches\.log.*COWORK_SCREENSHOT_CMD/.test(msgs[1] || ""), "second failure in the same lock: stop, tell the user, name the log and COWORK_SCREENSHOT_CMD: " + (msgs[1] || "").slice(0, 120));
+      await rig.ex.__setLockHeld(false);
+      await rig.ex.__setLockHeld(true, "local_y");
+      let m3 = "";
+      try { await rig.ex.screenshot({}); } catch (e) { m3 = e.message; }
+      ok(/again once is reasonable/.test(m3), "a new lock starts the count again: " + m3.slice(0, 60));
+    } finally { rig.restore(); }
+  }
+  {
+    const n = { z: 0 };
+    const rig = makeRig({ reply: gnomeReply(() => (++n.z === 1 || n.z === 2 ? { err: frameTimeout() } : n.z === 3 ? { out: JSON.stringify({ base64: "AA", width: 1366, height: 768 }) } : { err: frameTimeout() })) });
+    try {
+      await rig.ex.__setLockHeld(true, "local_x");
+      try { await rig.ex.screenshot({}); } catch (e) { /* first failure */ }
+      const ok3 = await rig.ex.screenshot({}).catch(() => null);
+      let m = "";
+      try { await rig.ex.screenshot({}); } catch (e) { m = e.message; }
+      ok(ok3 && ok3.base64 === "AA" && /again once is reasonable/.test(m), "a capture in between resets the count: " + m.slice(0, 60));
+    } finally { rig.restore(); }
+  }
+  console.log("\n[6b] the portal latched down: its own text reaches the model whole");
+  {
+    const rig = makeRig();
+    try {
+      await rig.ex.__setLockHeld(true);
+      let m = "";
+      try { await rig.ex.screenshot({}); } catch (e) { m = e.message; }
+      ok(/portal session unavailable/.test(m) && /session-start` in a terminal to see why, and check ~\/\.config\/Claude\/logs\/claude-patches\.log\.$/.test(m) && !/reasonable/.test(m), "verbatim, with the session-start advice, not called temporary: " + m.slice(-90));
+      ok(rig.calls.capturer === 0, "and no desktopCapturer: " + rig.calls.capturer);
+    } finally { rig.restore(); }
+  }
+  console.log("\n[6c] X11: a zoom still running at the release ends there - no desktopCapturer image after the turn");
+  {
+    const rig = makeRig({ desktop: "XFCE", sessionType: "x11", reply: (base, args) => {
+      if (base !== "x11-bridge") return null;
+      if (args[0] === "screens") return { out: JSON.stringify([{ id: "eDP-1", name: "eDP-1", geometry: { x: 0, y: 0, width: 1366, height: 768 }, scale: 1, is_primary: true }]) };
+      if (args[0] === "zoom") return { hang: true };
+      return { out: "{}" };
+    } });
+    delete process.env.WAYLAND_DISPLAY;
+    try {
+      await rig.ex.__setLockHeld(true, "local_x");
+      let threw = null;
+      const p = rig.ex.screenshot({}).catch((e) => { threw = e; });
+      for (let i = 0; i < 40 && !rig.calls.async.some((c) => c.args[0] === "zoom"); i++) await new Promise((r) => setTimeout(r, 5));
+      await rig.ex.__setLockHeld(false);
+      await Promise.race([p, new Promise((r) => setTimeout(r, 500))]);
+      ok(rig.calls.killed.includes("x11-bridge zoom"), "the x11-bridge zoom is ended at the release: " + JSON.stringify(rig.calls.killed));
+      ok(rig.calls.capturer === 0, "desktopCapturer does not run after the turn ended: " + rig.calls.capturer);
+      ok(threw && /turn ended/.test(threw.message), "the call ends with the cancellation: " + (threw ? threw.message : "resolved?!"));
+    } finally { rig.restore(); }
+  }
+}
+
 async function main() {
   try {
     await testScreenshotIsAsync();
     await testNoX11FallbackWhenCovered();
     await testPortalLatch();
     await testSyncBackstopBudget();
+    await testCaptureRetryNoDialog();
+    await testCaptureNoLoop();
   } catch (e) {
     console.error("\nHARNESS ERROR: " + (e && e.stack ? e.stack : e));
     process.exit(1);

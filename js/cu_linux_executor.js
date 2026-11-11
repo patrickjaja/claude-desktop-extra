@@ -1051,13 +1051,51 @@ function _bridge(bin,args,timeoutMs){
 // error; label names the bridge in the parse error.
 function _execFileAsync(label,bin,args,timeoutMs){
   return new Promise(function(resolve,reject){
-    _cp.execFile(bin,args,_spo({encoding:"utf-8",timeout:timeoutMs||15000,maxBuffer:16*1024*1024},bin),function(err,stdout){
+    var kid=null,cap=_capKidSubs[args&&args[0]]===1;
+    kid=_cp.execFile(bin,args,_spo({encoding:"utf-8",timeout:timeoutMs||15000,maxBuffer:16*1024*1024},bin),function(err,stdout){
+      if(kid&&cap)_capKids.delete(kid);
       if(err){reject(_cuNotSharedError(err));return}
       var out=(stdout||"").trim();
       try{resolve(out?_parseBridgeJson(label,out):null)}catch(pe){reject(pe)}
     });
+    if(kid&&cap&&typeof kid.kill==="function")_capKids.add(kid);
   });
 }
+// ── Captures in flight across a lock release ──
+// _capLockGen counts lock transitions (__setLockHeld). A capture remembers it
+// at its start: a retry only runs while it is unchanged, and the async bridge
+// processes of a capture (zoom / screenshot) still running when the lock is
+// released are ended then (_capKillPending), so a turn that is over leaves no
+// bridge process behind. The covered Wayland sessions never reach the
+// desktopCapturer tier (its portal picker is a desktop dialog nobody could
+// cancel); on the uncovered Wayland rows it is the only capture path and a
+// pending getSources() cannot be cancelled by Electron.
+var _capLockGen=0,_capKids=new Set(),_capKidSubs={"zoom":1,"screenshot":1},_capFails=0;
+function _capCancelled(){return _capSurface("Screenshot cancelled: the Computer Use turn ended while it was being taken.")}
+function _capKillPending(why){
+  if(!_capKids.size)return;
+  var n=0;_capKids.forEach(function(k){try{k.kill("SIGTERM");n++}catch(e){}});_capKids.clear();
+  globalThis.__cdbDiag("[claude-cu] "+n+" capture(s) still running at "+why+" - ended");
+}
+// A bridge capture failure worth one more try: the bridge answered that a
+// frame did not arrive in time (its own wait, not our process timeout). Not a
+// process timeout or a kill (the budget is spent, or the lock was released),
+// not an instruction for the model.
+function _capRetryable(e){
+  if(!e||typeof e!=="object")return !1;
+  if(e.__cdbNotShared||e.__cdbSurface||e.__cdbStoppedByUser||e.__cdbNoSession)return !1;
+  if(e.code==="ETIMEDOUT"||e.killed===!0||e.signal)return !1;
+  return /timed out waiting for (?:a )?(?:PipeWire )?frame/i.test(String(e.stderr||"")+"\n"+String(e.message||""));
+}
+// The bridge's own reason, one line: its last non-empty stderr/message line.
+function _capShort(e){
+  if(!e)return"the bridge returned no image";
+  if(e.killed===!0||e.code==="ETIMEDOUT")return"the bridge did not answer in time";
+  var s=String(e.stderr||e.message||e).split("\n").map(function(l){return l.trim()}).filter(function(l){return l&&!/^Command failed:/.test(l)});
+  var t=s.length?s[s.length-1]:String(e.message||e);
+  return t.length>200?t.slice(0,197)+"...":t;
+}
+function _capSurface(msg){var e=new Error(msg);e.__cdbSurface=!0;return e}
 // Async, non-blocking variant of _bridge. Used ONLY for the GNOME portal
 // session lifecycle (session-start/session-end), because session-start blocks
 // on the XDG RemoteDesktop consent dialog for up to timeoutMs — a synchronous
@@ -1105,7 +1143,7 @@ function _gnomePortalMarkDown(why){
 }
 function _gnomePortalClearDown(){_gnomePortalDownUntil=0}
 function _gnomePortalDownError(){
-  return new Error("gnome-portal-bridge portal session unavailable - session-start failed within the last "+Math.round(GNOME_PORTAL_COOLDOWN_MS/1000)+"s, so Computer Use input/capture cannot run on this GNOME Wayland session. Run `"+(_gnomeBridgeBin()||"gnome-portal-bridge")+" session-start` in a terminal to see why, and check ~/.config/Claude/logs/claude-patches.log.");
+  return Object.assign(new Error("gnome-portal-bridge portal session unavailable - session-start failed within the last "+Math.round(GNOME_PORTAL_COOLDOWN_MS/1000)+"s, so Computer Use input/capture cannot run on this GNOME Wayland session. Run `"+(_gnomeBridgeBin()||"gnome-portal-bridge")+" session-start` in a terminal to see why, and check ~/.config/Claude/logs/claude-patches.log."),{__cdbPortalDown:!0});
 }
 // Return {bin, name, timeout} for the active covered Wayland session, or null.
 function _wlBridge(){
@@ -1834,6 +1872,9 @@ async function _desktopCapturerRegion(lx,ly,lw,lh,displayIdx,xr){
 // uses imgW/imgH to map model image-pixel coordinates back to root pixels.
 // mk (from _maskFor): mask mode - the masking bridge only, never another tier.
 async function _captureRegion(x,y,w,h,sf,displayIdx,mk){
+  // The lock this capture belongs to (_capLockGen): a release meanwhile ends
+  // it with the cancellation, on every tier.
+  var _capGen=_capLockGen;
   if(!sf){var _m=_findMonByPoint(x,y);sf=_m?_m.scaleFactor:1}
   var _lx0=x,_ly0=y,_lw0=w,_lh0=h;
   // X11: per-display DIP -> root-pixel transform shared with the pointer paths
@@ -1844,7 +1885,10 @@ async function _captureRegion(x,y,w,h,sf,displayIdx,mk){
   var tmp=_path.join(_os.tmpdir(),"claude-cu-"+Date.now()+"-"+Math.random().toString(36).slice(2)+".png");
   if(_tgt&&_tgt.refuse)throw _tgtErr();
   // x11-bridge takes the root-pixel region, wlroots-bridge the logical one.
-  if(mk)return mk.be.kind==="x11"?await _captureMasked(mk,x,y,w,h):await _captureMasked(mk,Math.round(_lx0),Math.round(_ly0),Math.round(_lw0),Math.round(_lh0));
+  if(mk){
+    try{return mk.be.kind==="x11"?await _captureMasked(mk,x,y,w,h):await _captureMasked(mk,Math.round(_lx0),Math.round(_ly0),Math.round(_lw0),Math.round(_lh0))}
+    catch(me){if(_capGen!==_capLockGen)throw _capCancelled();throw me}
+  }
   var _de=_desktopId();
   // Native (non-downscaling) tiers crop to exactly w x h at native resolution
   // and emit PNG.
@@ -1873,27 +1917,57 @@ async function _captureRegion(x,y,w,h,sf,displayIdx,mk){
   // Wayland desktop takes the x11-bridge tier below, a wlroots target this one.
   var _wlb=_tgt||_wayland?_wlBridge():null;
   if(_wlb){
+    var _wlErr=null;
     try{
       var _lx=Math.round(x/(sf||1)),_ly=Math.round(y/(sf||1)),_lw=Math.round(w/(sf||1)),_lh=Math.round(h/(sf||1));
-      for(var _wtry=0,_wzr;;_wtry++){
+      for(var _wtry=0,_wzr,_wretried=!1;;_wtry++){
         var _wmr=await _wlMonForRegion(_lx,_ly);
         var _wzargs=["zoom","--x",String(_wmr?_wmr.x:_lx),"--y",String(_wmr?_wmr.y:_ly),"--w",String(_lw),"--h",String(_lh)];
         if(_wmr&&_wmr.name){_wzargs.push("--display",_wmr.name)}
         try{_wzr=await _wlBridgeCallAsync(_wzargs);break}
-        catch(ze){if(_wtry||!_wmr||!_wmr.name||!_cuDisplayNotFound(ze))throw ze;globalThis.__cdbDiag("[claude-cu] "+_wlb.name+" zoom: display "+_wmr.name+" not found - monitor list refreshed, retrying once");_wlScreensInvalidate()}
+        catch(ze){
+          if(!_wtry&&_wmr&&_wmr.name&&_cuDisplayNotFound(ze)){globalThis.__cdbDiag("[claude-cu] "+_wlb.name+" zoom: display "+_wmr.name+" not found - monitor list refreshed, retrying once");_wlScreensInvalidate();continue}
+          // A frame that did not arrive in time (gnome-portal-bridge: "timed
+          // out waiting for PipeWire frame", seen once in 18 turns on a GNOME
+          // 48 VM) is retried ONCE, async, while the same lock is held, and
+          // only as the first retry of this capture (two zooms at most). Not:
+          // an instruction for the model (not shared, stopped, reset), a
+          // bridge call that hit its process timeout (that budget is spent),
+          // another bridge error, or a lock released meanwhile.
+          if(_wretried||_wtry||!_capRetryable(ze)||_capGen!==_capLockGen)throw ze;
+          _wretried=!0;
+          globalThis.__cdbDiag("[claude-cu] "+_wlb.name+" zoom failed ("+_capShort(ze)+") - retrying once");
+        }
       }
-      if(_wzr&&_wzr.base64){globalThis.__cdbDiag("[claude-cu] screenshot: captured via "+_wlb.name);return{base64:_wzr.base64,imgW:_wzr.width||w,imgH:_wzr.height||h,mimeType:"image/jpeg"}}
+      if(_wzr&&_wzr.base64){_capFails=0;globalThis.__cdbDiag("[claude-cu] screenshot: captured via "+_wlb.name+(_wretried?" (second attempt)":""));return{base64:_wzr.base64,imgW:_wzr.width||w,imgH:_wzr.height||h,mimeType:"image/jpeg"}}
     }catch(e){
+      _wlErr=e;
       globalThis.__cdbDiag("[claude-cu] "+_wlb.name+" zoom failed: "+(e.message||e));
       // A monitor the user did not share, or a session that was reset: no
-      // other tier can fix that (the desktopCapturer fallback would raise a
-      // portal dialog of its own), and the model needs the instruction, not
+      // other tier can fix that, and the model needs the instruction, not
       // "every tier failed".
+      if(_capGen!==_capLockGen)throw _capCancelled();
+      // Instructions and known permanent states go to the model verbatim: a
+      // monitor not shared, a stop or reset (surfaced), the portal latched
+      // down (its text names the session-start check to run).
       if(e&&(e.__cdbNotShared||e.__cdbSurface))throw e;
+      if(e&&e.__cdbPortalDown){_capFails++;globalThis.__cdbDiag("[claude-cu] "+_wlb.name+" screenshot failed on a covered Wayland session (portal session down) - no third-party fallback, no desktopCapturer");throw _capSurface(String(e.message||e))}
     }
-    // Covered session with a resolved bridge: do NOT fall through to deleted
-    // third-party tools. Last resort is the Electron desktopCapturer tier below.
-    globalThis.__cdbDiag("[claude-cu] "+_wlb.name+" screenshot failed on a covered Wayland session — no third-party fallback (set COWORK_SCREENSHOT_CMD to override)");
+    // Covered session with a resolved bridge whose capture FAILED: no
+    // third-party tools, and no desktopCapturer either. On Wayland Electron's
+    // desktopCapturer goes through the xdg-desktop-portal ScreenCast picker:
+    // GNOME raises its "share your screen" dialog, xdg-desktop-portal-wlr /
+    // -hyprland their output chooser. That dialog blocks the tool call until
+    // the user answers it, outlives the lock, and cannot be cancelled from
+    // here. X11 (x11-bridge below) keeps the silent desktopCapturer tier.
+    globalThis.__cdbDiag("[claude-cu] "+_wlb.name+" screenshot failed on a covered Wayland session - no third-party fallback, and no desktopCapturer (its portal picker would raise a desktop dialog); set COWORK_SCREENSHOT_CMD to override");
+    if(_capGen!==_capLockGen)throw _capCancelled();
+    // The first failure of this lock: a retry is reasonable. From the second
+    // one in a row on: stop and tell the user (no retry loop).
+    _capFails++;
+    if(_tgt)throw new Error("Screenshot of the background display "+_tgt.display+" failed ("+_capShort(_wlErr)+"); "+(_capFails>1?"it failed before in this task too - stop retrying and tell the user. Details are in claude-patches.log.":"taking the screenshot again is reasonable. Details in claude-patches.log."));
+    if(_capFails>1)throw _capSurface("Screenshot failed again: "+_wlb.name+" could not capture the screen ("+_capShort(_wlErr)+"). Stop retrying: tell the user that screenshots are failing on this computer, that the details are in claude-patches.log (in Claude's logs folder, ~/.config/Claude/logs/), and that a different capture command can be set with COWORK_SCREENSHOT_CMD.");
+    throw _capSurface("Screenshot failed: "+_wlb.name+" could not capture the screen ("+_capShort(_wlErr)+"). This can be temporary - taking the screenshot again once is reasonable. If it keeps failing, details are in claude-patches.log.");
   }
   if(!_tgt&&_de.indexOf("kde")>=0&&_hasCmd("spectacle")){
     try{var stmp=_path.join(_os.tmpdir(),"claude-cu-spectacle-"+Date.now()+".png");
@@ -1930,11 +2004,14 @@ async function _captureRegion(x,y,w,h,sf,displayIdx,mk){
       globalThis.__cdbDiag("[claude-cu] no x11-bridge on an X11 session: "+_bridgeWhy("x11-bridge","X11_BRIDGE_BIN"));
     }
   }
+  // The turn ended while a tier ran (its bridge process was ended at the
+  // release): no further tier, no image after the turn.
+  if(_capGen!==_capLockGen)throw _capCancelled();
   // Target mode: desktopCapturer would capture the user's desktop. Fail here.
   if(_tgt)throw new Error("Screenshot of the background display "+_tgt.display+" failed (details in claude-patches.log).");
   // Electron desktopCapturer last resort: display-relative crop, downscaled by
   // the bridges' rule (see _desktopCapturerRegion).
-  try{var _dc=await _desktopCapturerRegion(_lx0,_ly0,_lw0,_lh0,displayIdx,_xr);globalThis.__cdbDiag("[claude-cu] screenshot: captured via desktopCapturer (Electron fallback, source by "+_dc.via+", "+_dc.imgW+"x"+_dc.imgH+")");return{base64:_dc.png.toString("base64"),imgW:_dc.imgW,imgH:_dc.imgH,mimeType:"image/png"}}catch(dce){globalThis.__cdbDiag("[claude-cu] desktopCapturer fallback failed: "+(dce&&dce.message||dce))}
+  try{var _dc=await _desktopCapturerRegion(_lx0,_ly0,_lw0,_lh0,displayIdx,_xr);if(_capGen!==_capLockGen){globalThis.__cdbDiag("[claude-cu] desktopCapturer answered after the turn ended - image discarded");throw _capCancelled()}globalThis.__cdbDiag("[claude-cu] screenshot: captured via desktopCapturer (Electron fallback, source by "+_dc.via+", "+_dc.imgW+"x"+_dc.imgH+")");return{base64:_dc.png.toString("base64"),imgW:_dc.imgW,imgH:_dc.imgH,mimeType:"image/png"}}catch(dce){if(_capGen!==_capLockGen)throw _capCancelled();globalThis.__cdbDiag("[claude-cu] desktopCapturer fallback failed: "+(dce&&dce.message||dce))}
   // Name the cause when it is a bridge that is missing or cannot run; when the
   // bridge is there, the per-tier failures are already in claude-patches.log.
   var _noX11=!_x11BridgeBin()&&(!_wayland||(globalThis.__cuBridgeFail&&globalThis.__cuBridgeFail["x11-bridge"]));
@@ -3026,6 +3103,92 @@ function _x11DockOnLock(held){
   });
   if(held)_x11DockWaiter=p;
 }
+// ── Dock check (every session where upstream docks) ──
+// Upstream's [cu-side-panel] controller docks Claude's main window when the
+// lock is taken: a maximized window is unmaximize()d, then animated with
+// setBounds over ~220 ms to a 520x720 panel at the top right of its work area,
+// then setAlwaysOnTop(true, "screen-saver"). GNOME Wayland applies the
+// unmaximize asynchronously and, now and then, only AFTER the animation: its
+// restore of the pre-maximize size (e.g. 1085x778) then overrides the dock and
+// the large window stays over the target app (on a row without a hit test the
+// model's clicks then land on Claude's own window, which drops them).
+// The check: the target is the last bounds upstream itself passed to
+// setBounds during this acquire (recorded on the window instance, no bundle
+// anchor; the animation's last frame is exactly the target), else the bounds
+// at the dock signal (nothing to animate). After the dock's own signal
+// (always-on-top-changed true) the window is checked on every resize /
+// unmaximize for DOCK_VERIFY_MS (and once DOCK_SETTLE_MS after the signal
+// when it was off already then and no event came): more than DOCK_TOLERANCE_PX off
+// the target size (a window still maximized has the maximized size), and
+// still docked (always on top, same
+// lock) -> asked ONCE more (unmaximize if needed, then setBounds(target)).
+// Size only: Wayland ignores a client's position. Not in kwin mode (its own
+// executor docks through the bridge) and not with the background display
+// (nothing on the user's desktop is involved). The release is left alone:
+// upstream's restore ends with its own maximize() and nothing races it.
+var DOCK_VERIFY_MS=1500,DOCK_SETTLE_MS=400,DOCK_TOLERANCE_PX=32,_dockGen=0,_dockOff=null;
+function _dockVerifyOnLock(held){
+  var gen=++_dockGen;
+  if(_dockOff){var f=_dockOff;_dockOff=null;f()}
+  if(!held||globalThis.__cuKwinMode||_tgt)return;
+  var wins=_x11DockWindows();
+  if(!wins.length||wins.some(function(w){return w.isAlwaysOnTop()}))return;
+  var offs=[],timer=null;
+  function cleanup(){if(timer){clearTimeout(timer);timer=null}offs.splice(0).forEach(function(f){try{f()}catch(e){}})}
+  _dockOff=cleanup;
+  wins.forEach(function(w){
+    var proto=w.setBounds,asked=null;
+    var rec=function(b){if(b&&typeof b==="object"&&b.width>0&&b.height>0)asked={x:b.x,y:b.y,width:b.width,height:b.height};return proto.apply(this,arguments)};
+    function unrec(){if(w.setBounds===rec){try{delete w.setBounds}catch(e){}if(w.setBounds===rec)w.setBounds=proto}}
+    w.setBounds=rec;
+    offs.push(unrec);
+    function onTop(e,v){
+      if(v!==!0||gen!==_dockGen)return;
+      try{w.removeListener("always-on-top-changed",onTop)}catch(er){}
+      unrec();
+      var b0=w.getBounds(),target=asked||{x:b0.x,y:b0.y,width:b0.width,height:b0.height},again=!1;
+      // Size only. isMaximized() alone is no miss: at the dock signal GNOME
+      // may not have confirmed the unmaximize yet while the size is right; the
+      // miss is the size its late restore then applies.
+      function off(){if(w.isDestroyed())return !1;var b=w.getBounds();return Math.abs(b.width-target.width)>DOCK_TOLERANCE_PX||Math.abs(b.height-target.height)>DOCK_TOLERANCE_PX}
+      function check(why){
+        if(gen!==_dockGen||again||w.isDestroyed()||!w.isAlwaysOnTop()||!off())return;
+        again=!0;
+        var b=w.getBounds();
+        globalThis.__cdbDiag("[claude-cu] dock: Claude's window is "+b.width+"x"+b.height+(w.isMaximized()?" (maximized)":"")+" after the dock, not the "+target.width+"x"+target.height+" upstream asked for ("+why+") - asking once more");
+        try{if(w.isMaximized())w.unmaximize();proto.call(w,target)}catch(er){}
+      }
+      // A resize that leaves the size the signal saw is no news (the
+      // configure of upstream's own last frame): the late one changes it.
+      var bs=w.getBounds();
+      var onResize=function(){var b=w.getBounds();if(Math.abs(b.width-bs.width)<=1&&Math.abs(b.height-bs.height)<=1)return;check("late resize")},onUnmax=function(){check("late unmaximize")};
+      w.on("resize",onResize);w.on("unmaximize",onUnmax);
+      offs.push(function(){try{w.removeListener("resize",onResize);w.removeListener("unmaximize",onUnmax)}catch(er){}});
+      // Off already at the signal (GNOME may still report the maximized
+      // size): the window manager's own late resize / unmaximize, which
+      // follows, owns the one re-assert - spending it now would leave that
+      // late restore in place. Only when none comes within DOCK_SETTLE_MS is
+      // it asked from here.
+      if(off()){var ts=setTimeout(function(){check("still off "+DOCK_SETTLE_MS+" ms after the dock signal")},DOCK_SETTLE_MS);if(ts&&ts.unref)ts.unref();offs.push(function(){clearTimeout(ts)})}
+      if(timer)clearTimeout(timer);
+      timer=setTimeout(function(){
+        timer=null;
+        if(gen!==_dockGen)return;
+        if(!w.isDestroyed()&&w.isAlwaysOnTop()&&off()){var b=w.getBounds();globalThis.__cdbDiag("[claude-cu] dock: Claude's window stayed "+b.width+"x"+b.height+", not the docked "+target.width+"x"+target.height+" - it may cover part of the screen while Computer Use runs")}
+        else if(again)globalThis.__cdbDiag("[claude-cu] dock: the docked size holds after asking once more");
+        cleanup();if(_dockOff===cleanup)_dockOff=null;
+      },DOCK_VERIFY_MS);
+      if(timer&&timer.unref)timer.unref();
+    }
+    w.on("always-on-top-changed",onTop);
+    offs.push(function(){try{w.removeListener("always-on-top-changed",onTop)}catch(e){}});
+  });
+  // No dock signal at all within the X11 wait budget plus the check window:
+  // stop recording (upstream did not dock, e.g. the window was hidden).
+  var t0=setTimeout(function(){if(gen===_dockGen&&!timer){cleanup();if(_dockOff===cleanup)_dockOff=null}},X11_DOCK_WAIT_MS+DOCK_VERIFY_MS);
+  if(t0&&t0.unref)t0.unref();
+  offs.push(function(){clearTimeout(t0)});
+}
 // The first capture or pointer hit test after a lock acquire waits for the
 // dock (bounded); whichever comes first uses the waiter up.
 async function _x11DockWait(what){var p=_x11DockWaiter;_x11DockWaiter=null;if(p){var why=await p;if(why!=="docked")globalThis.__cdbDiag?.("[claude-cu] x11 dock: first "+(what||"capture")+" after "+why)}}
@@ -3058,8 +3221,14 @@ var _ex=globalThis.__linuxExecutor={
     // The drawn pointer's "button held" state does not outlive a lock: a turn
     // that ended with the button down must not make the next turn's moves jump.
     _dpHeld=!1;
+    // A capture of the previous hold does not retry into this one, and its
+    // bridge process does not outlive the release.
+    _capLockGen++;_capFails=0;
+    if(!held)_capKillPending("lock release");
     // X11: follow upstream's side-panel dock / restore of this lock change.
     try{_x11DockOnLock(!!held)}catch(de){}
+    // Every session where upstream docks: check the dock landed.
+    try{_dockVerifyOnLock(!!held)}catch(de){}
     try{
     _blindSeen=!1;
     if(held){_gnomeShareFireArmed=!0;_noInfoSaid=!1}
@@ -3420,7 +3589,14 @@ var _ex=globalThis.__linuxExecutor={
     if(_appBackend().hitTest!=="native")return null;
     try{
       var _ap=_x11Px(x,y),px=_ap[0],py=_ap[1];
-      return _appRefFromCommand(_x11Bridge(["app-under-point","--x",String(px),"--y",String(py)]),function(){return _x11Bridge(["windows"])},function(w){var g=w.geometry;return w.is_minimized!==true&&w.is_visible!==false&&!!g&&px>=g.x&&px<g.x+g.width&&py>=g.y&&py<g.y+g.height});
+      var _hr=_appRefFromCommand(_x11Bridge(["app-under-point","--x",String(px),"--y",String(py)]),function(){return _x11Bridge(["windows"])},function(w){var g=w.geometry;return w.is_minimized!==true&&w.is_visible!==false&&!!g&&px>=g.x&&px<g.x+g.width&&py>=g.y&&py<g.y+g.height});
+      // A window that names no app: x11-bridge answers its client window id.
+      // When neither the window list nor its process resolves it to an app,
+      // say so in upstream's own shape ({bundleId:null,
+      // unattributedWindowOwner}), which its gate refuses explicitly ("no
+      // grant can cover it"); null would mean the desktop shell.
+      if(_hr&&typeof _hr.bundleId==="string"&&/^\d+$/.test(_hr.bundleId))return{bundleId:null,displayName:_hr.displayName,unattributedWindowOwner:_hr.displayName&&_hr.displayName!==_hr.bundleId?_hr.displayName:"window "+_hr.bundleId};
+      return _hr;
     }catch(e){return null}
   },
   // Live app-identity capabilities of the current backend (re-evaluated on

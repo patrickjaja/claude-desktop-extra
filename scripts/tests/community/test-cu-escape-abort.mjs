@@ -46,7 +46,7 @@
 
 import {
   readFileSync, writeFileSync, readdirSync, existsSync, mkdtempSync, rmSync,
-  accessSync, constants, mkdirSync, chmodSync, unlinkSync, copyFileSync,
+  accessSync, constants, mkdirSync, chmodSync, unlinkSync, copyFileSync, statSync, symlinkSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -1067,17 +1067,77 @@ console.log("\n[e0] the stopped-by-user watch only trusts a private runtime dir"
   const okW = SS && SS.watch("kwin-portal-bridge", () => {});
   ok(!!okW, "a 0755 dir owned by this user is watched");
   if (okW) okW.close();
+  // Ubuntu's GNOME session runs with umask 0002: the bridge makes its dir 0775
+  // inside the private (0700, ours) $XDG_RUNTIME_DIR. That dir is tightened to
+  // 0700 and watched, and a marker in it fires at once.
+  const modeOf = (p) => statSync(p).mode & 0o777;
   const open = join(runtime, "gnome-portal-bridge");
-  chmodSync(open, 0o777);
-  const n0 = realDiag.length;
-  const w2 = SS && SS.watch("gnome-portal-bridge", () => {});
-  ok(w2 === null && realDiag.slice(n0).some((d) => d.includes("not watching") && d.includes("writable by group or others")), "a group/other-writable dir is not watched (one line)", realDiag.slice(n0).join(" | "));
-  chmodSync(open, 0o755);
+  chmodSync(runtime, 0o700);
+  for (const m of [0o775, 0o777]) {
+    chmodSync(open, m);
+    const n0 = realDiag.length;
+    let hits = 0;
+    const w2 = SS && SS.watch("gnome-portal-bridge", () => { hits++; });
+    ok(!!w2 && modeOf(open) === 0o700, `a 0${m.toString(8)} bridge dir inside the private runtime dir is set to 0700 and watched`, "mode " + modeOf(open).toString(8) + " | " + realDiag.slice(n0).join(" | "));
+    ok(realDiag.slice(n0).filter((d) => d.includes("set to 0700")).length <= 1 && !realDiag.slice(n0).some((d) => d.includes("not watching")), "  logged at most once, never refused", realDiag.slice(n0).join(" | "));
+    if (w2) {
+      await marker("gnome-portal-bridge");
+      for (let i = 0; i < 40 && !hits; i++) await new Promise((r) => setTimeout(r, 10));
+      ok(hits >= 1, "  a stopped-by-user marker written there is noticed by the watch", hits);
+      w2.close();
+      try { unlinkSync(join(open, "stopped-by-user")); } catch {}
+    }
+  }
+  // Refused, mode left alone: the parent is not our private runtime dir.
   const saved = process.env.XDG_RUNTIME_DIR;
+  const shared = mkdtempSync(join(tmpdir(), "cdb-share-rt-"));
+  tempDirs.push(shared);
+  for (const [label, parentMode, childMode, want, b] of [
+    ["parent 0755 (not private)", 0o755, 0o775, "its parent is open to group or others (mode 755)", "kwin-portal-bridge"],
+    ["parent 0710 (group may traverse)", 0o710, 0o777, "its parent is open to group or others (mode 710)", "gnome-portal-bridge"],
+    ["parent 0700, child 0755 (already private)", 0o700, 0o755, null, "x-bridge"],
+  ]) {
+    chmodSync(shared, 0o700); mkdirSync(join(shared, b), { recursive: true });
+    chmodSync(shared, parentMode); chmodSync(join(shared, b), childMode);
+    process.env.XDG_RUNTIME_DIR = shared;
+    const n0 = realDiag.length;
+    const w = SS && SS.watch(b, () => {});
+    if (want) ok(w === null && modeOf(join(shared, b)) === childMode && realDiag.slice(n0).some((d) => d.includes("not watching") && d.includes(want)),
+      `${label}: a 0${childMode.toString(8)} bridge dir is not watched and not touched`, realDiag.slice(n0).join(" | "));
+    else ok(!!w && modeOf(join(shared, b)) === childMode, `${label}: watched as before, mode untouched`);
+    if (w) w.close();
+  }
+  chmodSync(shared, 0o700);
+  mkdirSync(join(shared, "gnome-portal-bridge"), { recursive: true });
+  // A symlinked bridge dir, even to a private dir of ours, is not a directory.
+  const real = join(shared, "real"); mkdirSync(real, { mode: 0o700 });
+  rmSync(join(shared, "gnome-portal-bridge"), { recursive: true, force: true });
+  symlinkSync(real, join(shared, "gnome-portal-bridge"));
+  process.env.XDG_RUNTIME_DIR = shared;
+  ok(SS && SS.watch("gnome-portal-bridge", () => {}) === null, "a symlink in place of the bridge dir is not watched");
+  // A runtime dir reached through a symlink is not trusted for tightening.
+  const linkRt = join(tmpdir(), "cdb-share-link-" + process.pid);
+  try { unlinkSync(linkRt); } catch {}
+  rmSync(join(shared, "gnome-portal-bridge"), { force: true });
+  mkdirSync(join(shared, "gnome-portal-bridge"), { mode: 0o700 }); chmodSync(join(shared, "gnome-portal-bridge"), 0o775);
+  symlinkSync(shared, linkRt);
+  process.env.XDG_RUNTIME_DIR = linkRt;
+  ok(SS && SS.watch("gnome-portal-bridge", () => {}) === null && modeOf(join(shared, "gnome-portal-bridge")) === 0o775, "XDG_RUNTIME_DIR that is a symlink: a 0775 bridge dir is not tightened");
+  try { unlinkSync(linkRt); } catch {}
+  // XDG_RUNTIME_DIR unset: /tmp/<bridge> as the bridges use it. Not there:
+  // nothing; there and group/other-writable: refused, never tightened (/tmp is
+  // not a private parent).
   delete process.env.XDG_RUNTIME_DIR;
   const w3 = SS && SS.watch("cdb-no-such-bridge-" + process.pid, () => {});
   ok(w3 === null, "XDG_RUNTIME_DIR unset: /tmp/<bridge> as the bridges use it, and nothing when it does not exist");
+  const tmpBridge = "cdb-share-tmp-" + process.pid, tmpDir = join("/tmp", tmpBridge);
+  try { mkdirSync(tmpDir); chmodSync(tmpDir, 0o777); } catch {}
+  const n1 = realDiag.length;
+  const w4 = SS && SS.watch(tmpBridge, () => {});
+  ok(w4 === null && modeOf(tmpDir) === 0o777 && realDiag.slice(n1).some((d) => d.includes("its parent is not $XDG_RUNTIME_DIR")), "XDG_RUNTIME_DIR unset: a 0777 /tmp/<bridge> is refused and left as it is", realDiag.slice(n1).join(" | "));
+  rmSync(tmpDir, { recursive: true, force: true });
   process.env.XDG_RUNTIME_DIR = saved;
+  chmodSync(open, 0o755);
 }
 
 console.log("\n[e2] KWin executor: the stopped-by-user marker aborts the turn at once, once per lock hold");

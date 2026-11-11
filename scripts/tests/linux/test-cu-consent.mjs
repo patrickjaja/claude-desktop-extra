@@ -352,6 +352,11 @@ const H = buildHandler();
   r = await H("left_click", { coordinate: [1, 1] }, s);
   ok(r.isError && /Could not tell which app is at these coordinates/.test(text(r)), "hit test error refuses the click");
   EX.appUnderPoint = gu;
+  // S1: a window no app answers for (x11-bridge client id, unresolved) is
+  // refused explicitly, never taken for the desktop.
+  resetEx(); s = session([FF]); EX.under["*"] = { bundleId: null, displayName: "Some Tool", unattributedWindowOwner: "Some Tool" };
+  r = await H("left_click", { coordinate: [3, 3] }, s);
+  ok(r.isError && /belongs to "Some Tool", a process with no app/.test(text(r)) && !EX.calls.some((c) => c[0] === "click"), "an unattributed window at the point: refused, nothing sent");
 
   // O1: an app whose window title / name is an approved app's is not it
   resetEx(); s = session([FF]);

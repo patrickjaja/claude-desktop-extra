@@ -110,6 +110,7 @@ function wlMaskReply(args, wins, tweak) {
 }
 
 // session: x11 | sway | hypr | niri | gnome | cosmic | kde-x11
+const HANG = Symbol("hang");
 function makeRig({ session = "x11", displays = MAINT, screens = MAINT_SCREENS, windows = X11_WINS, doctor = X11_DOCTOR, zoom, env = {}, target = null, bridges, overlays }) {
   const calls = [], diag = [], dc = [], spawned = [];
   const S = {
@@ -155,6 +156,11 @@ function makeRig({ session = "x11", displays = MAINT, screens = MAINT_SCREENS, w
       spawned.push(b + " " + args.join(" "));
       if (!known.has(b)) { setTimeout(() => cb(new Error("not found"), "", ""), 0); return; }
       calls.push({ b, args, opts });
+      // zoom() may answer HANG: the child runs until it is killed (code null, signal set).
+      if (args[0] === "zoom" && zoom && zoom(b, args, opts) === HANG) {
+        const kid = { killed: false, kill(sig) { if (kid.killed) return true; kid.killed = true; spawned.push("KILLED " + b + " zoom"); setTimeout(() => cb(Object.assign(new Error("Command failed: " + b + " zoom"), { killed: true, signal: sig || "SIGTERM", code: null }), "", ""), 0); return true; } };
+        return kid;
+      }
       setTimeout(() => { let out; try { out = reply(b, args, opts); } catch (e) { cb(e, "", String(e.message)); return; } cb(null, out, ""); }, 0);
     },
     spawn() { return { on() {}, unref() {} }; }
@@ -594,6 +600,21 @@ console.log("\n[I] Claude's glow / teach overlay: --ignore-window");
     const unfocusable = (src.match(/focusable:!1/g) || []).length;
     ok(unfocusable === 6, "upstream creates 6 unfocusable windows (glow, teach, cu-overlay label, watch-record pill, 2 BaseWindows) - re-audit #327 if this changes", unfocusable);
   }
+}
+
+// ── a masked capture still running when the lock is released ──────────────
+console.log("\n[Z] x11-bridge: a masked zoom still running at the release ends with the cancellation, not a mask refusal");
+{
+  const rig = makeRig({ zoom: () => HANG });
+  await rig.ex.__setLockHeld(true, "local_z");
+  const p = settle(rig.ex.resolvePrepareCapture({ allowedBundleIds: ["com.mitchellh.ghostty"], preferredDisplayId: 2, autoResolve: false, doHide: false }));
+  for (let i = 0; i < 40 && !zoomArgs(rig).length; i++) await new Promise((r) => setTimeout(r, 5));
+  await rig.ex.__setLockHeld(false);
+  const r = await Promise.race([p, new Promise((res) => setTimeout(() => res({ timeout: true }), 500))]);
+  const text = r && (r.e ? r.e.message : r.v && (r.v.captureError || "")) || "";
+  ok(rig.spawned.includes("KILLED x11-bridge zoom"), "the zoom process is ended at the release", JSON.stringify(rig.spawned.filter((x) => x.startsWith("KILLED"))));
+  ok(/turn ended while it was being taken/.test(text) && !/mask/i.test(text), "the capture ends with the cancellation text", text || JSON.stringify(r));
+  ok(rig.dc.length === 0, "no desktopCapturer", rig.dc.length);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

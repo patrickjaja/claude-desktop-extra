@@ -23,25 +23,65 @@ function msgOf(e){return e&&e.message?e.message:String(e)}
 // event in that dir; the caller re-checks its own session state. Returns
 // {close, check} or null (dir not there yet: the caller arms again after its
 // next session start). Only a real directory (not a symlink) owned by this
-// user with no group / other write access is watched: anywhere else (a
+// user that no other account can write into is watched: anywhere else (a
 // shared /tmp/<bridge> another account created) a planted marker could stop
 // the turn, so that case is not watched (one log line per directory) and a
 // stop is noticed on the next action as before.
+// A bridge dir that is group/other-writable only because the desktop session
+// runs with umask 0002 (Ubuntu's GNOME: the bridge creates it 0775) is
+// tightened to 0700 and watched, but only when ALL of these hold:
+//   - it is a real directory (lstat, not a symlink) owned by this uid;
+//   - its parent is $XDG_RUNTIME_DIR itself (set and absolute, never the /tmp
+//     default), a real directory owned by this uid with no group/other access
+//     at all (mode & 077 == 0, the 0700 pam_systemd / the XDG spec give it).
+// Why that is enough against another local (non-root) user planting
+// stopped-by-user: to create or rename anything in <bridge>/ they must first
+// traverse its parent, and a 0700 parent owned by us denies them search
+// permission, so the group/other write bit on <bridge>/ was never usable by
+// them; for the same reason they cannot swap <bridge>/ for their own dir or a
+// symlink between our lstat and the chmod. The chmod is defence in depth, and
+// the dir is checked again after it. root is out of scope (it can write the
+// marker anywhere).
 var _refused={};
+function _uid(){return typeof process.getuid==="function"?process.getuid():null}
 function safeDir(dir){
   var st;
   try{st=_fs.lstatSync(dir)}catch(e){return e&&e.code==="ENOENT"?"absent":"unreadable ("+(e&&e.code||msgOf(e))+")"}
   if(!st.isDirectory())return"not a directory";
-  var uid=typeof process.getuid==="function"?process.getuid():null;
+  var uid=_uid();
   if(uid!==null&&st.uid!==uid)return"owned by uid "+st.uid;
   if(st.mode&18)return"writable by group or others (mode "+(st.mode&511).toString(8)+")";
   return"";
+}
+// "" when base is our own private $XDG_RUNTIME_DIR, else why not.
+function privateParent(base){
+  var d=process.env.XDG_RUNTIME_DIR;
+  if(!d||!_path.isAbsolute(d)||_path.resolve(d)!==_path.resolve(base))return"its parent is not $XDG_RUNTIME_DIR";
+  var st;
+  try{st=_fs.lstatSync(base)}catch(e){return"its parent is unreadable ("+(e&&e.code||msgOf(e))+")"}
+  if(!st.isDirectory())return"its parent is not a directory";
+  var uid=_uid();
+  if(uid===null)return"the user id is unknown";
+  if(st.uid!==uid)return"its parent is owned by uid "+st.uid;
+  if(st.mode&63)return"its parent is open to group or others (mode "+(st.mode&511).toString(8)+")";
+  return"";
+}
+// safeDir, tightening a group/other-writable dir inside our private runtime dir.
+function trustDir(base,dir){
+  var bad=safeDir(dir);
+  if(bad.indexOf("writable by group or others")!==0)return bad;
+  var why=privateParent(base);
+  if(why)return bad+" and "+why;
+  try{_fs.chmodSync(dir,448)}catch(e){return bad+" and chmod 0700 failed ("+(e&&e.code||msgOf(e))+")"}
+  var again=safeDir(dir);
+  if(!again&&!_refused["tight:"+dir]){_refused["tight:"+dir]=1;var m=/mode (\d+)/.exec(bad);diag(dir+" had mode "+(m?m[1]:"?")+" (session umask); set to 0700 (it sits in the private "+base+") and watched")}
+  return again;
 }
 function watch(bridge,onMarker){
   var d=process.env.XDG_RUNTIME_DIR,base=d===void 0?"/tmp":d;
   if(!base||!_path.isAbsolute(base))return null;
   var dir=_path.join(base,bridge),file=_path.join(dir,"stopped-by-user"),closed=!1,w;
-  var bad=safeDir(dir);
+  var bad=trustDir(base,dir);
   if(bad==="absent")return null;
   if(bad){if(!_refused[dir]){_refused[dir]=1;diag("not watching "+dir+": "+bad+"; a stop is noticed on the next action")}return null}
   function check(){if(closed)return;_fs.lstat(file,function(err){if(err||closed)return;try{onMarker()}catch(e){diag("handler threw: "+msgOf(e))}})}

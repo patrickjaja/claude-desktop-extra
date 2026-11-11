@@ -48,6 +48,8 @@ const EXECUTOR = path.join(ROOT, "js", "cu_linux_executor.js");
 // clock (optional, see makeClock) replaces the executor's setTimeout /
 // clearTimeout, so the 120 s idle timer runs on a fake clock (cases [27]+).
 const rigSocket = { present: true, pid: null, stopped: false };
+// Electron's BrowserWindow.getAllWindows() for the dock check (case [55]).
+const rigWindows = { list: [] };
 function makeRig(consentMs, reply, displays, delays, clock) {
   const log = [], argv = [];
   const cp = {
@@ -80,7 +82,8 @@ function makeRig(consentMs, reply, displays, delays, clock) {
     screen: { getAllDisplays: () => displays || [], getPrimaryDisplay: () => (displays && displays[displays.primaryIdx || 0]) || ({ id: 1, bounds: {x:0,y:0,width:1,height:1}, workArea:{x:0,y:0,width:1,height:1}, scaleFactor:1, label:"e" }), getCursorScreenPoint: () => ({x:0,y:0}) },
     desktopCapturer: { getSources: async () => { log.push("CAPTURER"); return []; } },
     clipboard: { readText: () => "", writeText: () => {} },
-    nativeImage: {}
+    nativeImage: {},
+    BrowserWindow: { getAllWindows: () => rigWindows.list }
   };
   const requireStub = (id) => {
     if (id === "child_process") return cp;
@@ -2153,6 +2156,176 @@ console.log("\n[53] diagnostics: per-poll lines only with CDB_CU_DEBUG=1");
       await p;
     } finally { rig.restore(); }
   } finally { delete process.env.CDB_CU_DEBUG; }
+}
+
+console.log("\n[54] GNOME: a PipeWire frame timeout through the tool handler - one retry, no desktopCapturer, the session stays up");
+{
+  const FRAME = "timed out waiting for PipeWire frame on stream 64 (state events: stream 64 -> Connecting, stream 64 -> Paused, stream 64 -> Streaming)";
+  const st = { failZooms: 0 };
+  const rig = makeRig(20, (sub) => {
+    if (sub === "screens") return screensJson([true, true]);
+    if (sub === "zoom") {
+      if (st.failZooms > 0) { st.failZooms--; throw Object.assign(new Error("Command failed: zoom\n" + FRAME + "\n"), { code: 1, stderr: FRAME + "\n" }); }
+      return ZOOM_OK;
+    }
+    return "{}";
+  }, EDISPLAYS);
+  resetShot();
+  rig.ex.__setLockHeld(true, "local_frame");
+  await sleep(60);
+  st.failZooms = 1;
+  let z0 = countCalls(rig, "zoom");
+  let r = await handler("screenshot", {});
+  ok(r && r.content && r.content[0] && r.content[0].type === "image" && countCalls(rig, "zoom") === z0 + 2, "one frame timeout: the second zoom captures", String(countCalls(rig, "zoom") - z0));
+  st.failZooms = 2;
+  z0 = countCalls(rig, "zoom");
+  const cap0 = rig.log.filter(l => l === "CAPTURER").length;
+  const text = await shotText({});
+  ok(countCalls(rig, "zoom") === z0 + 2 && rig.log.filter(l => l === "CAPTURER").length === cap0, "two in a row: two zooms, no desktopCapturer (no Share Screen dialog)", (countCalls(rig, "zoom") - z0) + " zoom(s)");
+  ok(text.includes("could not capture the screen (" + FRAME) && text.includes("taking the screenshot again once is reasonable") && !text.includes("every capture tier failed"), "the model reads that the capture failed and may retry", text);
+  ok(countCalls(rig, "session-end") === 0, "the portal session is left up for the retry", String(countCalls(rig, "session-end")));
+  st.failZooms = 0;
+  r = await handler("screenshot", {});
+  ok(r && r.content && r.content[0] && r.content[0].type === "image", "and the model's retry captures");
+  rig.ex.__setLockHeld(false);
+  await sleep(40);
+  rig.restore && rig.restore();
+}
+
+console.log("\n[55] the dock of a maximized window: a late window-manager restore is undone once (GNOME VM: 1 of 14 cycles)");
+{
+  const { EventEmitter } = await import("node:events");
+  // A BrowserWindow stand-in: methods on the prototype (as in Electron, so an
+  // instance-level wrapper shadows them), 'resize' on every size change.
+  class Win extends EventEmitter {
+    constructor(b) { super(); this.b = { ...b }; this.max = false; this.top = false; this.calls = []; }
+    isDestroyed() { return false; } isVisible() { return true; } isFocusable() { return true; }
+    isAlwaysOnTop() { return this.top; } isMaximized() { return this.max; } isFullScreen() { return false; } isMinimized() { return false; }
+    getBounds() { return { ...this.b }; }
+    setBounds(b) { this.calls.push("setBounds " + b.width + "x" + b.height); if (this.frozen) return; this.b = { ...b }; this.emit("resize"); }
+    unmaximize() { this.calls.push("unmaximize"); }
+    maximize() { this.max = true; this.b = { x: 0, y: 0, width: 1280, height: 778 }; this.emit("resize"); }
+    setAlwaysOnTop(v) { this.top = v; this.emit("always-on-top-changed", {}, v); }
+  }
+  const TARGET = { x: 740, y: 52, width: 520, height: 720 };
+  // Upstream's dock (ZWo/QWo/JWo, 5.1231.2) in short: unmaximize, animate
+  // setBounds to the panel (its last frame is exactly the target), then
+  // setAlwaysOnTop(true). GNOME's restore of the pre-maximize size lands
+  // `lateMs` after the dock signal (late) or before the animation (normal).
+  async function upstreamDock(w, lateMs) {
+    const wasMax = w.isMaximized();
+    if (wasMax) w.unmaximize();
+    const restore = () => { w.max = false; w.b = { x: 97, y: 11, width: 1085, height: 778 }; w.emit("unmaximize"); w.emit("resize"); };
+    if (wasMax && lateMs === null) restore();
+    const r = w.getBounds();
+    for (const c of [0.1, 0.5, 0.9, 1]) { await sleep(5); w.setBounds({ x: Math.round(r.x + (TARGET.x - r.x) * c), y: Math.round(r.y + (TARGET.y - r.y) * c), width: Math.round(r.width + (TARGET.width - r.width) * c), height: Math.round(r.height + (TARGET.height - r.height) * c) }); }
+    w.setAlwaysOnTop(true);
+    if (wasMax && typeof lateMs === "number") setTimeout(restore, lateMs);
+  }
+  const dockLines = (rig) => rig.log.filter((l) => l.includes("[claude-cu] dock:"));
+  // Let the earlier cases' async lock hooks settle: they reach whichever
+  // executor is globalThis.__linuxExecutor by then.
+  await sleep(500);
+  const rigFor = () => { const rig = makeRig(5, (sub) => (sub === "screens" ? screensJson([true]) : "{}"), EDISPLAYS); return rig; };
+
+  // (a) the miss: GNOME's unmaximize restore lands 60 ms after the dock signal.
+  {
+    const w = new Win({ x: 0, y: 0, width: 1280, height: 778 }); w.max = true; rigWindows.list = [w];
+    const rig = rigFor();
+    const p = rig.ex.__setLockHeld(true, "local_a");
+    await upstreamDock(w, 60);
+    await sleep(150);
+    ok(w.b.width === 520 && w.b.height === 720 && !w.max, "late restore: the window is back at upstream's 520x720", w.b.width + "x" + w.b.height + " " + w.calls.slice(-2).join(","));
+    ok(dockLines(rig).length === 1 && /is 1085x778 after the dock, not the 520x720 upstream asked for \(late (resize|unmaximize)\) - asking once more/.test(dockLines(rig)[0]), "one line names the miss", dockLines(rig).join(" | "));
+    ok(!Object.prototype.hasOwnProperty.call(w, "setBounds"), "upstream's setBounds is no longer wrapped after the dock signal");
+    await sleep(1500);
+    ok(dockLines(rig).some((l) => l.includes("the docked size holds after asking once more")), "the check confirms the dock held", dockLines(rig).join(" | "));
+    rig.ex.__setLockHeld(false); await p; rig.restore();
+  }
+  // (b) a dock that lands: nothing is asked again, nothing logged.
+  {
+    const w = new Win({ x: 0, y: 0, width: 1280, height: 778 }); w.max = true; rigWindows.list = [w];
+    const rig = rigFor();
+    rig.ex.__setLockHeld(true, "local_b");
+    await upstreamDock(w, null);
+    const n = w.calls.length;
+    await sleep(1600);
+    ok(w.calls.length === n && dockLines(rig).length === 0 && w.b.width === 520, "a dock that landed: no second setBounds, no line", w.calls.slice(n).join(",") + " " + dockLines(rig).join(" | "));
+    rig.ex.__setLockHeld(false); rig.restore();
+  }
+  // (c) asked once only: a window manager that keeps the window large gets one
+  // more request, then one line that Claude's window may cover the screen.
+  {
+    const w = new Win({ x: 0, y: 0, width: 1280, height: 778 }); w.max = true; rigWindows.list = [w];
+    const rig = rigFor();
+    rig.ex.__setLockHeld(true, "local_c");
+    await upstreamDock(w, 30);
+    await sleep(60);
+    // The window manager puts its size back after every request from now on.
+    w.on("resize", () => { if (w.b.width !== 1085) setTimeout(() => { w.b = { x: 97, y: 11, width: 1085, height: 778 }; w.emit("resize"); }, 5); });
+    w.emit("resize");
+    await sleep(1600);
+    const again = w.calls.filter((c) => c === "setBounds 520x720").length;
+    ok(again === 2 && dockLines(rig).filter((l) => l.includes("asking once more")).length === 1 && dockLines(rig).some((l) => l.includes("stayed 1085x778, not the docked 520x720 - it may cover part of the screen")), "asked once more only, then the miss is logged", again + " | " + dockLines(rig).join(" | "));
+    rig.ex.__setLockHeld(false); rig.restore();
+  }
+  // (f) GNOME still reports the maximized size at the dock signal (the
+  // animation's frames were not applied yet); its late restore follows. That
+  // late event owns the one re-assert: the dock lands.
+  {
+    const w = new Win({ x: 0, y: 0, width: 1280, height: 778 }); w.max = true; w.frozen = true; rigWindows.list = [w];
+    const rig = rigFor();
+    rig.ex.__setLockHeld(true, "local_f");
+    await upstreamDock(w, false);
+    const atSignal = w.b.width + "x" + w.b.height;
+    w.emit("resize");                                   // a configure that keeps the maximized size: no news
+    await sleep(60);
+    w.frozen = false; w.max = false; w.b = { x: 97, y: 11, width: 1085, height: 778 }; w.emit("unmaximize"); w.emit("resize");
+    await sleep(100);
+    ok(atSignal === "1280x778" && w.b.width === 520 && w.b.height === 720, "maximized size at the signal, late restore after: the late event re-asserts, the dock lands", atSignal + " -> " + w.b.width + "x" + w.b.height + " | " + dockLines(rig).join(" | "));
+    ok(dockLines(rig).filter((l) => l.includes("asking once more")).length === 1 && dockLines(rig).some((l) => l.includes("(late unmaximize)")), "  asked once, by the late unmaximize", dockLines(rig).join(" | "));
+    await sleep(1500);
+    ok(dockLines(rig).some((l) => l.includes("the docked size holds")), "  and the dock holds", dockLines(rig).join(" | "));
+    rig.ex.__setLockHeld(false); rig.restore();
+  }
+  // (g) maximized size at the signal and no late event at all: asked once
+  // after the settle delay, so a stuck window is still corrected.
+  {
+    const w = new Win({ x: 0, y: 0, width: 1280, height: 778 }); w.max = true; w.frozen = true; rigWindows.list = [w];
+    const rig = rigFor();
+    rig.ex.__setLockHeld(true, "local_g");
+    await upstreamDock(w, false);
+    w.frozen = false;
+    await sleep(600);
+    ok(w.b.width === 520 && dockLines(rig).some((l) => l.includes("still off 400 ms after the dock signal")), "no late event: asked once after 400 ms", w.b.width + "x" + w.b.height + " | " + dockLines(rig).join(" | "));
+    rig.ex.__setLockHeld(false); rig.restore();
+  }
+  // (d) the lock is released before the dock signal: nothing stays wrapped,
+  // upstream's restore is not touched.
+  {
+    const w = new Win({ x: 0, y: 0, width: 1280, height: 778 }); w.max = true; rigWindows.list = [w];
+    const rig = rigFor();
+    rig.ex.__setLockHeld(true, "local_d");
+    ok(Object.prototype.hasOwnProperty.call(w, "setBounds"), "while the dock runs, upstream's setBounds calls are recorded on the window");
+    rig.ex.__setLockHeld(false);
+    ok(!Object.prototype.hasOwnProperty.call(w, "setBounds") && w.listenerCount("always-on-top-changed") === 0 && w.listenerCount("resize") === 0, "a release removes the wrapper and every listener");
+    rig.restore();
+  }
+  // (e) kwin mode (its own executor docks) and an already docked window: untouched.
+  {
+    const w = new Win({ x: 0, y: 0, width: 1280, height: 778 }); rigWindows.list = [w];
+    const rig = rigFor();
+    globalThis.__cuKwinMode = true;
+    rig.ex.__setLockHeld(true, "local_e");
+    ok(!Object.prototype.hasOwnProperty.call(w, "setBounds") && w.listenerCount("always-on-top-changed") === 0, "kwin mode: no dock check");
+    globalThis.__cuKwinMode = false;
+    rig.ex.__setLockHeld(false);
+    w.top = true;
+    rig.ex.__setLockHeld(true, "local_e2");
+    ok(!Object.prototype.hasOwnProperty.call(w, "setBounds"), "already always on top (docked): no dock check");
+    rig.ex.__setLockHeld(false); rig.restore();
+  }
+  rigWindows.list = [];
 }
 
 console.log("\n" + (fail ? `${pass} passed, ${fail} FAILED` : `ALL ${pass} CHECKS PASSED`));

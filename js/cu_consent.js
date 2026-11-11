@@ -195,6 +195,8 @@ function refuseFront(o,kind,c,list){
 // The app under a point. With a hit test, a click on Claude's own window is
 // refused too (nothing of Claude's is ever a target).
 function refusePoint(a,c,list){
+  // A window no app answers for (executor: upstream's unattributed shape).
+  if(a&&a.bundleId===null)return err("The window at this point belongs to \""+(a.unattributedWindowOwner||a.displayName||"an unknown process")+"\", a process with no app that no running app answers for, so no grant can cover it and actions on it are refused. Act on a window that belongs to an application instead, or ask the user to close or move this one.");
   if(a===null)return err("The click would land on the desktop (panels, docks, desktop icons or the background), which is not an approved app and can launch other applications. Bring an approved app forward with open_application, or ask the user.");
   if(grantFor(a.bundleId,list))return null;
   if(isHost(a,c))return err("Could not verify the click target - the Claude window is at these coordinates. Bring an approved app forward and retry.");

@@ -299,6 +299,33 @@ console.log("\n[3] x11-bridge: getFrontmostApp / appUnderPoint in the same ids")
   const d = await rig.ex.appUnderPoint(450, 450);
   ok(d && d.bundleId === rig.ex.capabilities.hostBundleId, "over Claude -> the host id", J(d));
   ok(await rig.ex.appUnderPoint(1919, 1079) === null, "over the bare desktop -> null");
+  // A reparenting WM (xfwm4): the title bar is the frame window above the
+  // client's geometry. x11-bridge now resolves a frame point to the client's
+  // app (bundleId = the client's own id, as for its client area); it used to
+  // answer the frame's bare window id, which no grant and no host check knew.
+  {
+    const frameHit = (answer) => (x, y) => (x >= 400 && x < 1000 && y >= 376 && y < 400) ? answer : null;   // Claude's title bar
+    const now = makeRig({ br: { windows: X11WINS, hit: frameHit({ bundleId: "com.anthropic.Claude", displayName: "Claude" }) } });
+    const t = await now.ex.appUnderPoint(700, 390);
+    ok(t && t.bundleId === now.ex.capabilities.hostBundleId, "Claude's own title bar (frame point, new bridge answer) -> the host id, so the self-hit refusal still fires", J(t));
+    // A window that names no app: x11-bridge answers its client window id.
+    // Unresolved by the window list and its process -> upstream's explicit
+    // "unattributed window" shape (refused, never the desktop shell).
+    const was = makeRig({ br: { windows: X11WINS, hit: frameHit({ bundleId: "7710972", displayName: "7710972" }) } });
+    const o = await was.ex.appUnderPoint(700, 390);
+    ok(o && o.bundleId === null && o.unattributedWindowOwner === "window 7710972", "a classless window's client id that nothing resolves -> {bundleId:null, unattributedWindowOwner}", J(o));
+    const titled = makeRig({ br: { windows: X11WINS, hit: frameHit({ bundleId: "7710972", displayName: "Some Tool" }) } });
+    const o2 = await titled.ex.appUnderPoint(700, 390);
+    ok(o2 && o2.bundleId === null && o2.unattributedWindowOwner === "Some Tool", "  with a title: the title names the owner", J(o2));
+    // A classless window whose process is a known app: still resolved by pid.
+    const classless = x11Win(null, null, R(1500, 600, 300, 200), { id: "424242", title: "untitled", pid: 5002, stacking_order: 20 });
+    const byPid = makeRig({ br: { windows: [...X11WINS, classless], hit: (x, y) => (x >= 1500 && y >= 600) ? { bundleId: "424242", displayName: "untitled" } : null } });
+    const p = await byPid.ex.appUnderPoint(1600, 700);
+    ok(p && p.bundleId === "google-chrome", "a classless window whose process is a known app -> that app (process lookup kept)", J(p));
+    const mp = makeRig({ br: { windows: X11WINS, hit: (x, y) => (x >= 950 && x < 1450 && y < 24) ? { bundleId: "Mousepad", displayName: "Untitled 1 - Mousepad" } : null } });
+    const m = await mp.ex.appUnderPoint(1200, 10);
+    ok(m && m.bundleId === "org.xfce.mousepad", "an approved app's title bar -> its canonical id, the same as its client area", J(m));
+  }
   const caps = rig.ex.capabilitiesNow();
   ok(caps.hitTest === "native" && caps.frontmost === "native" && caps.backend === "x11-bridge" && caps.windowList === "full" && caps.windowPositions === true && caps.screenshotFiltering === "none", "capabilitiesNow on X11", J(caps));
   ok(rig.ex.capabilities.hitTest === undefined && rig.ex.capabilities.screenshotFiltering === "none" && rig.ex.capabilities.platform === "linux", "capabilities on X11: hitTest undefined (a real hit test, upstream's per-app click gate)", J(rig.ex.capabilities));
