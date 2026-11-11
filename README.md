@@ -96,7 +96,7 @@ sudo apt install claude-desktop-extra
 
 It replaces Anthropic's own `claude-desktop` package if installed (same files). The local Cowork VM tools come in as `Recommends`; the remaining step is Settings -> Extra -> Cowork (Linux) -> Enable KVM access, or the `kvm` group ([Cowork setup](docs/cowork.md)).
 
-Without the repo: `wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/claude-desktop-extra_4.23118.1-6_amd64.deb && sudo dpkg -i claude-desktop-extra_*_amd64.deb`
+Without the repo: `wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/claude-desktop-extra_5.1231.2-1_amd64.deb && sudo dpkg -i claude-desktop-extra_*_amd64.deb`
 </details>
 
 <a name="fedora--rhel-dnf-repository"></a>
@@ -111,7 +111,7 @@ sudo dnf install claude-desktop-extra
 
 The local Cowork VM tools come in as weak deps; the remaining step is Settings -> Extra -> Cowork (Linux) -> Enable KVM access, or the `kvm` group ([Cowork setup](docs/cowork.md)).
 
-Without the repo: `wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/claude-desktop-extra-4.23118.1-6.x86_64.rpm && sudo dnf install ./claude-desktop-extra-*.x86_64.rpm`
+Without the repo: `wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/claude-desktop-extra-5.1231.2-1.x86_64.rpm && sudo dnf install ./claude-desktop-extra-*.x86_64.rpm`
 </details>
 
 <a name="nixos--nix"></a>
@@ -134,7 +134,7 @@ A background display for Claude: `programs.claude-desktop-extra.backgroundDispla
 Works on standard and immutable distros (Bazzite, Silverblue/Kinoite, SteamOS, Universal Blue). The `claude://` handler for sign-in registers itself on first launch.
 
 ```bash
-wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/Claude_Desktop-4.23118.1-x86_64.AppImage
+wget https://github.com/patrickjaja/claude-desktop-extra/releases/latest/download/Claude_Desktop-5.1231.2-x86_64.AppImage
 chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage
 ```
 
