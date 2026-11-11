@@ -2980,7 +2980,8 @@ function _wlHitTest(wins,x,y){
 // Claude's overlays are not focusable), bounded by a timeout.
 //  - The first capture after an acquire waits for the dock, so Claude's own
 //    window no longer covers the app in it (__lockSettled does not wait for
-//    it; _x11DockWait() is awaited by screenshot / resolvePrepareCapture).
+//    it; _x11DockWait() is awaited by screenshot / resolvePrepareCapture, and
+//    by the Linux tool handler before its first hit test, via __dockWait).
 //  - After the dock and the restore the window's input shape is sent again:
 //    xfwm4 keeps the frame's input shape from the last ShapeNotify, so a
 //    shape change made while docked left the restored window clickable only
@@ -3025,8 +3026,9 @@ function _x11DockOnLock(held){
   });
   if(held)_x11DockWaiter=p;
 }
-// The first capture after a lock acquire waits for the dock (bounded).
-async function _x11DockWait(){var p=_x11DockWaiter;_x11DockWaiter=null;if(p){var why=await p;if(why!=="docked")globalThis.__cdbDiag?.("[claude-cu] x11 dock: first capture after "+why)}}
+// The first capture or pointer hit test after a lock acquire waits for the
+// dock (bounded); whichever comes first uses the waiter up.
+async function _x11DockWait(what){var p=_x11DockWaiter;_x11DockWaiter=null;if(p){var why=await p;if(why!=="docked")globalThis.__cdbDiag?.("[claude-cu] x11 dock: first "+(what||"capture")+" after "+why)}}
 // ── X11 dock: input shape and first capture (end)
 // The latest __setLockHeld run (see __lockSettled).
 var _lockHookTail=Promise.resolve();
@@ -3053,6 +3055,9 @@ var _ex=globalThis.__linuxExecutor={
     _gnomeHolder=held&&typeof holder==="string"?holder:null;
     globalThis.__cdbDiag?.("[claude-cu] "+(held?"lock taken by "+(_gnomeHolder||"none"):"lock released"));
     var _settle;_lockHookTail=new Promise(function(r){_settle=r});
+    // The drawn pointer's "button held" state does not outlive a lock: a turn
+    // that ended with the button down must not make the next turn's moves jump.
+    _dpHeld=!1;
     // X11: follow upstream's side-panel dock / restore of this lock change.
     try{_x11DockOnLock(!!held)}catch(de){}
     try{
@@ -3092,6 +3097,10 @@ var _ex=globalThis.__linuxExecutor={
   // (js/cu_handler_injection.js) awaits it after it takes the lock, so the
   // first action of a turn never races the session start.
   __lockSettled(){return _lockHookTail},
+  // X11: the side-panel dock of the latest acquire (see _x11DockOnLock),
+  // awaited by the Linux tool handler before its first pointer hit test;
+  // resolves at once when nothing docks or the waiter was used.
+  __dockWait(){return _x11DockWait("pointer action")},
   // Task-end event: upstream's renderer IPC releaseRemoteCuLock (a cloud
   // session's running->idle edge, Stop, archive, delete), forwarded by
   // fix_computer_use_linux.nim with upstream's current lock holder. Safe to
@@ -3653,9 +3662,10 @@ var _ex=globalThis.__linuxExecutor={
     _moveMouse(x,y);
   },
   // Upstream's click handler glides the drawn pointer to the target first
-  // (await executor.showPointerTravel?.(x,y,isAborted), skipped for batched
-  // and unattended actions); true = it animated, then the handler checks the
-  // abort. Mirrors upstream's mixin: glideTo returns the ms until arrival,
+  // (await executor.showPointerTravel?.(x,y,isAborted), skipped while another
+  // call runs back to back and for unattended sessions); so does the Linux
+  // tool handler (js/cu_handler_injection.js) for Code-tab and local Cowork
+  // clicks. true = it animated, then the handler checks the abort. Mirrors upstream's mixin: glideTo returns the ms until arrival,
   // re-asked at most every 50 ms until it arrives or the turn is aborted
   // (Escape stop key). false when nothing is animated: no live arrow, already
   // there, reduced motion, a target off the glow's display. Never throws.

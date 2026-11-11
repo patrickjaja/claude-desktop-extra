@@ -131,6 +131,28 @@ function __pinDisplay(d){globalThis.__cuPinnedDisplay=d.displayId;globalThis.__c
 function __syncUpstreamShotDims(dims){
   try{if(__SESSION__&&typeof __SESSION__.onCuScreenshotDimsUpdated==="function")__SESSION__.onCuScreenshotDimsUpdated(dims)}catch(e){}
 }
+// The display Computer Use works on, reported to the session the way upstream's
+// dispatcher does (5.1231.2): a screenshot on another display than the
+// session's selected one -> onResolvedDisplayUpdated(id) (the session's
+// onCuSelectedDisplayUpdated), switch_display -> onDisplayPinned(id | undefined
+// for auto) (onCuDisplayPinned). Both set the session's cuSelectedDisplayId and
+// emit cuSelectedDisplayChanged, which moves the glow (sub-patch 10b1) and the
+// teach overlay (10b4); the glow at the next lock reads it too (10b2). The id
+// is our executor's (a monitor index): those entry points translate it to
+// Electron's id. Unlike upstream's batch (whose screenshots always capture the
+// selected display) a screenshot in our batch reports too, because ours picks
+// its display itself. Nothing on a background display (not the user's
+// monitors) or for a context without these callbacks.
+function __reportDisplay(id,pinned){
+  try{
+    if(ex.__targetActive&&ex.__targetActive())return;
+    var s=__SESSION__;if(!s)return;
+    if(pinned){if(typeof s.onCuDisplayPinned==="function")s.onCuDisplayPinned(id);return}
+    if(typeof id!=="number"||typeof s.onCuSelectedDisplayUpdated!=="function")return;
+    var cur=typeof s.getCuSelectedDisplayId==="function"?s.getCuSelectedDisplayId():void 0;
+    if(cur!==id)s.onCuSelectedDisplayUpdated(id);
+  }catch(e){}
+}
 // The grant gate for one input action (null = allowed). kind: "pointer" with
 // root/screen points, "keyboard" (opts.chord for key combos), "move".
 async function __gate(kind,pts,opts){return __ask?await __cc.gate(__SESSION__,kind,pts,opts):null}
@@ -158,17 +180,39 @@ async function __tgtErr(err){try{if(ex.__targetAfterError){var m=await ex.__targ
 // action as before; its overlays (not focusable) are click-through already and
 // are left alone.
 function __x11Hit(){var st=String(process.env.XDG_SESSION_TYPE||"").toLowerCase(),wl=st==="wayland"?!0:st==="x11"?!1:!!process.env.WAYLAND_DISPLAY;var c=ex.capabilities;return !wl&&!(ex.__targetActive&&ex.__targetActive())&&!!c&&c.hitTest!=="none"&&typeof ex.appUnderPoint==="function"}
-async function __selfHit(pts){if(!__x11Hit())return null;var host=ex.capabilities.hostBundleId;for(var __si=0;__si<pts.length;__si++){var __sp=pts[__si];if(!__sp)continue;var __sa=null;try{__sa=await ex.appUnderPoint(__sp[0],__sp[1])}catch(__se){__sa=null}if(__sa&&host&&__sa.bundleId===host){(globalThis.__cdbDiag||console.log)("[claude-cu] tool call refused ("+__TOOL_NAME__+"): the target is a Claude window");return{isError:!0,content:[{type:"text",text:"Could not verify the click target \u2014 the Claude overlay intercepted the hit test. Retry."}]}}}return null}
+// X11: the first pointer action after the lock was taken waits for upstream's
+// side-panel dock first (the executor's real always-on-top signal, bounded, a
+// no-op when nothing docks or the waiter was used), so the hit test sees the
+// docked layout, as the first capture does.
+async function __selfHit(pts){try{if(typeof ex.__dockWait==="function")await ex.__dockWait()}catch(__dw){}if(!__x11Hit())return null;var host=ex.capabilities.hostBundleId;for(var __si=0;__si<pts.length;__si++){var __sp=pts[__si];if(!__sp)continue;var __sa=null;try{__sa=await ex.appUnderPoint(__sp[0],__sp[1])}catch(__se){__sa=null}if(__sa&&host&&__sa.bundleId===host){(globalThis.__cdbDiag||console.log)("[claude-cu] tool call refused ("+__TOOL_NAME__+"): the target is a Claude window");return{isError:!0,content:[{type:"text",text:"Could not verify the click target \u2014 the Claude overlay intercepted the hit test. Retry."}]}}}return null}
+// Upstream's click handler glides its drawn pointer to the target first
+// (5.1231.2): `if(!r.pointerActionsBackToBack&&!r.isUnattended&&await(t.executor.
+// showPointerTravel?.(h,g,r.isAborted))&&r.isAborted?.())return R("Click aborted
+// (user interrupt).")`, its state from the session adapter: isAborted =
+// session.isAborted() || altToolModeCalls.timeLimitPassed, isUnattended =
+// session.isUnattendedSession(), pointerActionsBackToBack =
+// altToolModeCalls.anyRunning (another call answered by the alternate tool
+// mode; a batch's sub-actions glide too). Here after the refusal checks, so a
+// refused click never animates. The executor's showPointerTravel is false at
+// once wherever no drawn pointer shows (flag off, Wayland, kwin, background
+// display, no compositor).
+function __abortedNow(){try{return __SESSION__&&typeof __SESSION__.isAborted==="function"&&__SESSION__.isAborted()===!0||!!(__STATE__&&__STATE__.altToolModeCalls&&__STATE__.altToolModeCalls.timeLimitPassed===!0)}catch(e){return !0}}
+async function __travel(p){
+  if(typeof ex.showPointerTravel!=="function")return null;
+  try{if(__STATE__&&__STATE__.altToolModeCalls&&__STATE__.altToolModeCalls.anyRunning===!0)return null;if(__SESSION__&&typeof __SESSION__.isUnattendedSession==="function"&&__SESSION__.isUnattendedSession())return null}catch(e){return null}
+  var __tm=!1;try{__tm=await ex.showPointerTravel(p[0],p[1],__abortedNow)===!0}catch(e){__tm=!1}
+  return __tm&&__abortedNow()?{isError:!0,content:[{type:"text",text:"Click aborted (user interrupt)."}]}:null;
+}
 async function __hideWindows(fn){if(ex.__targetActive&&ex.__targetActive())return await fn();if(__x11Hit())return await fn();var __bws=require("electron").BrowserWindow.getAllWindows().filter(function(w){return!w.isDestroyed()&&(typeof w.isFocusable!=="function"||w.isFocusable())});for(var __i=0;__i<__bws.length;__i++)__bws[__i].setIgnoreMouseEvents(true);try{await new Promise(function(r){setTimeout(r,50)});return await fn()}finally{for(var __i=0;__i<__bws.length;__i++){if(!__bws[__i].isDestroyed())__bws[__i].setIgnoreMouseEvents(false)}}}
 // Accessibility tools (issue #306, js/cu_ax_tools.js): only while their switch
 // is on (__cdbAxHandles), otherwise these names fall through as before.
 if(typeof globalThis.__cdbAxHandles==="function"&&globalThis.__cdbAxHandles(__TOOL_NAME__)){try{return await globalThis.__cdbAxCall(__TOOL_NAME__,__INPUT__,Object.assign({sid:__SESSION__&&__SESSION__.sessionId,pin:__pinDisplay,sync:__syncUpstreamShotDims},__ask?__cc.axOpts(__SESSION__):{}))}catch(err){return(await __tgtErr(err))||{content:[{type:"text",text:"Error: "+(err&&err.message||err)}],isError:!0}}}
 if(__actionTools.has(__TOOL_NAME__)){try{return await __hideWindows(async function(){switch(__TOOL_NAME__){
-case"left_click":{await __relHeld();var __lc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]),__g=await __selfHit([__lc])||await __gate("pointer",[__lc]);if(__g)return __g;await ex.click(__lc[0],__lc[1],"left",1);return{content:[{type:"text",text:"Clicked at ("+__lc[0]+","+__lc[1]+")"}]}}
-case"right_click":{await __relHeld();var __rc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]),__g=await __selfHit([__rc])||await __gate("pointer",[__rc]);if(__g)return __g;await ex.click(__rc[0],__rc[1],"right",1);return{content:[{type:"text",text:"Right clicked"}]}}
-case"double_click":{await __relHeld();var __dc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]),__g=await __selfHit([__dc])||await __gate("pointer",[__dc]);if(__g)return __g;await ex.click(__dc[0],__dc[1],"left",2);return{content:[{type:"text",text:"Double clicked"}]}}
-case"triple_click":{await __relHeld();var __tc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]),__g=await __selfHit([__tc])||await __gate("pointer",[__tc]);if(__g)return __g;await ex.click(__tc[0],__tc[1],"left",3);return{content:[{type:"text",text:"Triple clicked"}]}}
-case"middle_click":{await __relHeld();var __mc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]),__g=await __selfHit([__mc])||await __gate("pointer",[__mc]);if(__g)return __g;await ex.click(__mc[0],__mc[1],"middle",1);return{content:[{type:"text",text:"Middle clicked"}]}}
+case"left_click":{await __relHeld();var __lc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]),__g=await __selfHit([__lc])||await __gate("pointer",[__lc]);if(__g)return __g;__g=await __travel(__lc);if(__g)return __g;await ex.click(__lc[0],__lc[1],"left",1);return{content:[{type:"text",text:"Clicked at ("+__lc[0]+","+__lc[1]+")"}]}}
+case"right_click":{await __relHeld();var __rc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]),__g=await __selfHit([__rc])||await __gate("pointer",[__rc]);if(__g)return __g;__g=await __travel(__rc);if(__g)return __g;await ex.click(__rc[0],__rc[1],"right",1);return{content:[{type:"text",text:"Right clicked"}]}}
+case"double_click":{await __relHeld();var __dc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]),__g=await __selfHit([__dc])||await __gate("pointer",[__dc]);if(__g)return __g;__g=await __travel(__dc);if(__g)return __g;await ex.click(__dc[0],__dc[1],"left",2);return{content:[{type:"text",text:"Double clicked"}]}}
+case"triple_click":{await __relHeld();var __tc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]),__g=await __selfHit([__tc])||await __gate("pointer",[__tc]);if(__g)return __g;__g=await __travel(__tc);if(__g)return __g;await ex.click(__tc[0],__tc[1],"left",3);return{content:[{type:"text",text:"Triple clicked"}]}}
+case"middle_click":{await __relHeld();var __mc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]),__g=await __selfHit([__mc])||await __gate("pointer",[__mc]);if(__g)return __g;__g=await __travel(__mc);if(__g)return __g;await ex.click(__mc[0],__mc[1],"middle",1);return{content:[{type:"text",text:"Middle clicked"}]}}
 case"type":{var __g=await __gate("keyboard");if(__g)return __g;await ex.type(__INPUT__.text||"",{viaClipboard:!1});return{content:[{type:"text",text:"Typed text"}]}}
 case"key":{var __kc=__INPUT__.text||__INPUT__.key||"",__krep=__INPUT__.repeat||__INPUT__.count||1,__g=await __gate("keyboard",null,{chord:__kc});if(__g)return __g;await ex.key(__kc,__krep);return{content:[{type:"text",text:"Pressed key: "+__kc}]}}
 case"scroll":{var __sc=__txC(__INPUT__.coordinate||[__INPUT__.x||0,__INPUT__.y||0]),__dir=__INPUT__.scroll_direction||__INPUT__.direction||"down",__amt=__INPUT__.scroll_amount!=null?__INPUT__.scroll_amount:(__INPUT__.amount!=null?__INPUT__.amount:3),__sv=__dir==="down"?__amt:__dir==="up"?-__amt:0,__sh=__dir==="right"?__amt:__dir==="left"?-__amt:0,__g=await __selfHit([__sc])||await __gate("pointer",[__sc]);if(__g)return __g;await ex.scroll(__sc[0],__sc[1],__sh,__sv);return{content:[{type:"text",text:"Scrolled "+__dir}]}}
@@ -232,7 +276,7 @@ default:return{content:[{type:"text",text:"Unknown action tool: "+__TOOL_NAME__}
 // then the executor's default (on GNOME the monitor shared in the portal
 // dialog), then Electron's primary.
 try{switch(__TOOL_NAME__){
-case"screenshot":{var __dlist=await ex.listDisplays();var __primaryIdx=0;for(var __pi=0;__pi<__dlist.length;__pi++){if(__dlist[__pi].isPrimary){__primaryIdx=__dlist[__pi].displayId;break}}var __did;if(globalThis.__cuPinnedDisplay!==void 0)__did=globalThis.__cuPinnedDisplay;else if(typeof __INPUT__.display_number==="number")__did=__INPUT__.display_number;else if(typeof __INPUT__.display_id==="number")__did=__INPUT__.display_id;else{var __sdid=typeof ex.__defaultDisplayId==="function"?await ex.__defaultDisplayId():null;__did=typeof __sdid==="number"?__sdid:__primaryIdx}var __actMon=__dlist.find(function(d){return d.displayId===__did})||__dlist[0]||{originX:0,originY:0};globalThis.__cuActiveOrigin={x:__actMon.originX||0,y:__actMon.originY||0};var __ss=await ex.screenshot({displayId:__did,allowedBundleIds:__ask?__cc.shotIds(__SESSION__):void 0});if(__ss&&__ss.captureError)return{content:[{type:"text",text:"Screenshot failed: "+__ss.captureError}],isError:!0};globalThis.__cuLastShot={imgW:__ss.imgW||__ss.displayWidth||(__actMon.width||0),imgH:__ss.imgH||__ss.displayHeight||(__actMon.height||0),dispW:__ss.displayWidth||__actMon.width||0,dispH:__ss.displayHeight||__actMon.height||0,originX:__ss.originX!=null?__ss.originX:(__actMon.originX||0),originY:__ss.originY!=null?__ss.originY:(__actMon.originY||0)};__syncUpstreamShotDims({width:globalThis.__cuLastShot.imgW,height:globalThis.__cuLastShot.imgH,displayWidth:globalThis.__cuLastShot.dispW,displayHeight:globalThis.__cuLastShot.dispH,displayId:__did,originX:globalThis.__cuLastShot.originX,originY:globalThis.__cuLastShot.originY});var __sn=__ask?__cc.shotNote(__SESSION__,__ss):null;return{content:[{type:"image",data:__ss.base64,mimeType:__ss.mimeType||"image/jpeg"}].concat(__sn?[{type:"text",text:__sn}]:[])}}
+case"screenshot":{var __dlist=await ex.listDisplays();var __primaryIdx=0;for(var __pi=0;__pi<__dlist.length;__pi++){if(__dlist[__pi].isPrimary){__primaryIdx=__dlist[__pi].displayId;break}}var __did;if(globalThis.__cuPinnedDisplay!==void 0)__did=globalThis.__cuPinnedDisplay;else if(typeof __INPUT__.display_number==="number")__did=__INPUT__.display_number;else if(typeof __INPUT__.display_id==="number")__did=__INPUT__.display_id;else{var __sdid=typeof ex.__defaultDisplayId==="function"?await ex.__defaultDisplayId():null;__did=typeof __sdid==="number"?__sdid:__primaryIdx}var __actMon=__dlist.find(function(d){return d.displayId===__did})||__dlist[0]||{originX:0,originY:0};globalThis.__cuActiveOrigin={x:__actMon.originX||0,y:__actMon.originY||0};var __ss=await ex.screenshot({displayId:__did,allowedBundleIds:__ask?__cc.shotIds(__SESSION__):void 0});if(__ss&&__ss.captureError)return{content:[{type:"text",text:"Screenshot failed: "+__ss.captureError}],isError:!0};globalThis.__cuLastShot={imgW:__ss.imgW||__ss.displayWidth||(__actMon.width||0),imgH:__ss.imgH||__ss.displayHeight||(__actMon.height||0),dispW:__ss.displayWidth||__actMon.width||0,dispH:__ss.displayHeight||__actMon.height||0,originX:__ss.originX!=null?__ss.originX:(__actMon.originX||0),originY:__ss.originY!=null?__ss.originY:(__actMon.originY||0)};__syncUpstreamShotDims({width:globalThis.__cuLastShot.imgW,height:globalThis.__cuLastShot.imgH,displayWidth:globalThis.__cuLastShot.dispW,displayHeight:globalThis.__cuLastShot.dispH,displayId:__did,originX:globalThis.__cuLastShot.originX,originY:globalThis.__cuLastShot.originY});__reportDisplay(typeof __ss.displayId==="number"?__ss.displayId:__did,!1);var __sn=__ask?__cc.shotNote(__SESSION__,__ss):null;return{content:[{type:"image",data:__ss.base64,mimeType:__ss.mimeType||"image/jpeg"}].concat(__sn?[{type:"text",text:__sn}]:[])}}
 case"zoom":{
   // region=[x0,y0,x1,y1] corner pairs in the coordinate space of the last
   // full-screen screenshot (image pixels). Map both corners to root pixels via
@@ -268,7 +312,7 @@ case"open_application":{var __oaName=__INPUT__.app||__INPUT__.application||"";va
   // action "opened" = Wayland-native/non-bridge launch-only, or an xdg-open of a
   // path/URL. Byte-for-byte the pre-feature text so non-X11 sessions are unchanged.
   return{content:[{type:"text",text:"Opened app"}]}}
-case"switch_display":{var __displays=await ex.listDisplays();var __target=__INPUT__.display;if(__target==="auto"||!__target){globalThis.__cuPinnedDisplay=void 0;globalThis.__cuLastShot=null;__syncUpstreamShotDims(void 0);return{content:[{type:"text",text:"Display mode set to auto (follows cursor). Available: "+__displays.map(function(d){return d.label+" ("+d.width+"x"+d.height+")"}).join(", ")}]}}var __found=__displays.find(function(d){return d.label===__target||String(d.displayId)===String(__target)});if(__found){__pinDisplay(__found);return{content:[{type:"text",text:"Switched to display: "+__found.label+" ("+__found.width+"x"+__found.height+"). Take a screenshot to refresh coordinates."}]}}return{content:[{type:"text",text:"Display '"+__target+"' not found. Available: "+__displays.map(function(d){return d.label}).join(", ")}]}}
+case"switch_display":{var __displays=await ex.listDisplays();var __target=__INPUT__.display;if(__target==="auto"||!__target){globalThis.__cuPinnedDisplay=void 0;globalThis.__cuLastShot=null;__syncUpstreamShotDims(void 0);__reportDisplay(void 0,!0);return{content:[{type:"text",text:"Display mode set to auto (follows cursor). Available: "+__displays.map(function(d){return d.label+" ("+d.width+"x"+d.height+")"}).join(", ")}]}}var __found=__displays.find(function(d){return d.label===__target||String(d.displayId)===String(__target)});if(__found){__pinDisplay(__found);__reportDisplay(__found.displayId,!0);return{content:[{type:"text",text:"Switched to display: "+__found.label+" ("+__found.width+"x"+__found.height+"). Take a screenshot to refresh coordinates."}]}}return{content:[{type:"text",text:"Display '"+__target+"' not found. Available: "+__displays.map(function(d){return d.label}).join(", ")}]}}
 case"list_granted_applications":{return{content:[{type:"text",text:"All applications are accessible on Linux (no grants needed)"}]}}
 case"read_clipboard":{var cb=await ex.readClipboard();return{content:[{type:"text",text:cb}]}}
 case"write_clipboard":{await ex.writeClipboard(__INPUT__.text||"");return{content:[{type:"text",text:"Written to clipboard"}]}}

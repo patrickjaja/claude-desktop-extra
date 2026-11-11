@@ -40,6 +40,14 @@
 //   [8] a context without lock functions behaves as before.
 //   [9] Escape for a local_ holder reaches the Code-tab manager's stopSession.
 //  [10] GNOME Stop sharing (__cdbCuShareStop.fire) stops a local_ holder.
+//  [14] X11 with a hit test: the first pointer action after the lock waits
+//       for the dock before its hit test; a click on Claude's window is
+//       refused with no drawn-pointer or bridge call; an allowed click glides
+//       (upstream's showPointerTravel rule, pinned from the bundle: back to
+//       back, unattended, abort text) before the cursor feed and the click;
+//       screenshot / switch_display report the display through the Code tab's
+//       own session callbacks (cut from the bundle), never on a background
+//       display.
 //
 // CDB_BUNDLE_DIR points at another extract; CDB_CU_PATCH_BIN / CDB_ESC_PATCH_BIN
 // at other compiled patches; CU_HANDLER_JS at another injection source (the
@@ -337,7 +345,7 @@ if (codePart) {
 if (!LockClass || !toolSrc || !rtsSrc || !stopPart || !M_ARM.test(patched)) { ok(false, "every piece loaded (lock, tool object, turn-end release, Escape functions, stop handler)"); finish(); }
 
 // ── a world: one lock, upstream's Escape rig, a fake executor, sessions ────
-const CU_KEYS = ["__linuxExecutor", "__cdbDiag", "__cdbCuConsent", "__cdbCuEscapeAbortEnabled", "__cdbCuEscWatch", "__cuKwinMode", "__cdbCuShareEnded", "__cdbCuShareStop", "__cdbCuHipaa", "__cdbAxHandles", "__cuActiveOrigin", "__cuLastShot", "__cuPinnedDisplay", "__cuMouseHeld", "__cdbCuBatchSubs"];
+const CU_KEYS = ["__cdbCuDrawnPointer", "__linuxExecutor", "__cdbDiag", "__cdbCuConsent", "__cdbCuEscapeAbortEnabled", "__cdbCuEscWatch", "__cuKwinMode", "__cdbCuShareEnded", "__cdbCuShareStop", "__cdbCuHipaa", "__cdbAxHandles", "__cuActiveOrigin", "__cuLastShot", "__cuPinnedDisplay", "__cuMouseHeld", "__cdbCuBatchSubs"];
 function world(opts = {}) {
   for (const k of CU_KEYS) delete globalThis[k];
   const lock = new LockClass();
@@ -356,7 +364,7 @@ function world(opts = {}) {
     __lockSettled() { return new Promise((r) => { const t = () => (settled ? r() : setTimeout(t, 2)); t(); }); },
     __targetActive: () => true,
     listDisplays: async () => [{ displayId: 0, isPrimary: true, width: 100, height: 80, originX: 0, originY: 0, label: "d0" }],
-    screenshot: async () => { exec.push(["screenshot", settled]); return { base64: "AA==", imgW: 100, imgH: 80, displayWidth: 100, displayHeight: 80, originX: 0, originY: 0 }; },
+    screenshot: async (o) => { exec.push(["screenshot", settled]); return { base64: "AA==", imgW: 100, imgH: 80, displayWidth: 100, displayHeight: 80, originX: 0, originY: 0, displayId: o && typeof o.displayId === "number" ? o.displayId : 0 }; },
     zoom: async () => { exec.push(["zoom", settled]); return { base64: "AA==" }; },
     click: async (x, y, b, n) => { exec.push(["click", settled]); },
     key: async () => { exec.push(["key", settled]); },
@@ -404,7 +412,7 @@ function world(opts = {}) {
   const rmap = {}; rmap[rtsNs] = partial({ [rtsLock]: lock });
   const rts = evalIn(rmap, rtsSrc);
   function turnEnd(s) { rts.call({ markTrackerStaleIfNoAdvance() {} }, s); }
-  const call = (s, name, input = {}) => toolObj.handleToolCall(state(), name, input, s);
+  const call = (s, name, input = {}, st) => toolObj.handleToolCall(st || state(), name, input, s);
   return { lock, events, diag, sw, watch, exec, hook, rig, stops, upCalls, call, codeSession, coworkSession, turnEnd, telem, ex };
 }
 const isHeldText = (r) => r && r.isError === true && r.content && r.content[0] && r.content[0].text === (upHeld || "\u0000");
@@ -725,6 +733,156 @@ console.log("\n[13] Claude's own windows: clickable for the user, refused for th
     } else {
       ok(!onClaude.isError && main.calls.join() === "true,false,true,false,true,false" && overlay.calls.length === 0, tag + ": as before, Claude's windows are click-through around each action; its overlays are left alone", J({ main: main.calls, overlay: overlay.calls }));
     }
+  }
+  if (saved.st === undefined) delete process.env.XDG_SESSION_TYPE; else process.env.XDG_SESSION_TYPE = saved.st;
+  if (saved.wd !== undefined) process.env.WAYLAND_DISPLAY = saved.wd;
+}
+
+// ── [14] X11: dock before the hit test, the glide before a click, the display ─
+console.log("\n[14] Code tab: the dock before the first hit test, the glide before a click, the display reported to the session");
+// Upstream's click (pristine bundle): the glide, its back-to-back / unattended
+// rule and its abort text. Upstream glides BEFORE its hit test; the block
+// glides after its refusal checks, so a refused click never animates.
+const TRAVEL_RE = /if\(!([\w$]+)\.pointerActionsBackToBack&&!\1\.isUnattended&&await\(([\w$]+)\.executor\.showPointerTravel\?\.\(([\w$]+),([\w$]+),\1\.isAborted\)\)&&\1\.isAborted\?\.\(\)\)return [\w$]+\("((?:[^"\\]|\\.)*)"\);let [\w$]+=!0,\[[\w$]+,[\w$]+\]=await Promise\.all\(\[[\w$]+\(\2,\3,\4\)/;
+const travelPart = partOf(P, (b) => TRAVEL_RE.test(b));
+const tm = travelPart && TRAVEL_RE.exec(travelPart.body);
+ok(!!tm && countRe(travelPart.body, /\.showPointerTravel\?\.\(/) === 1, "upstream's dispatcher glides once: !pointerActionsBackToBack && !isUnattended && showPointerTravel(x, y, isAborted) && isAborted() -> abort, then its hit test", travelPart && travelPart.name);
+const UP_ABORT = tm && JSON.parse('"' + tm[5] + '"');
+let clickTools = [];
+if (tm) {
+  const fnAt = travelPart.body.lastIndexOf("async function ", tm.index);
+  const clickFn = /^async function ([\w$]+)\(/.exec(travelPart.body.slice(fnAt))[1];
+  clickTools = [...travelPart.body.matchAll(new RegExp('case"([a-z_]+)":return ' + esc(clickFn) + "\\(", "g"))].map((m) => m[1]).sort();
+}
+ok(J(clickTools) === J(["double_click", "left_click", "middle_click", "right_click", "triple_click"]), "  the function holding it serves exactly the five click tools (a batch's click sub-actions included)", J(clickTools));
+const adapterPart = partOf(P, (b) => /isAborted:\(\)=>([\w$]+)\.isAborted\?\.\(\)===!0\|\|([\w$]+)\.timeLimitPassed,isUnattended:\1\.isUnattendedSession,getPointerActionsBackToBack:\(\)=>\2\.anyRunning[,}]/.test(b));
+ok(!!adapterPart && /[\w$]+\([\w$]+,[\w$]+\.altToolModeCalls\)/.test(adapterPart.body), "  its state: isAborted = session.isAborted() || altToolModeCalls.timeLimitPassed, isUnattended = session.isUnattendedSession, back to back = altToolModeCalls.anyRunning", adapterPart && adapterPart.name);
+ok(!!travelPart && /isAborted:([\w$]+)\.isAborted,isUnattended:\1\.isUnattended\?\.\(\),pointerActionsBackToBack:\1\.getPointerActionsBackToBack\?\.\(\)/.test(travelPart.body), "  read once per tool call into the dispatcher's state");
+// Upstream reports the display: a screenshot on another display than the
+// selected one, and switch_display (auto = undefined).
+ok(!!travelPart && countRe(travelPart.body, /\.displayId!==([\w$]+)\.selectedDisplayId&&\([^;]{0,200}?\1\.onResolvedDisplayUpdated\?\.\(([\w$]+)\.displayId\)\)/) === 1, "upstream: a screenshot whose display is not the selected one -> onResolvedDisplayUpdated(displayId)");
+ok(!!travelPart && /if\(!([\w$]+)\.onDisplayPinned\)return [^;]*;if\([\w$]+\.toLowerCase\(\)==="auto"\)return \1\.onDisplayPinned\(void 0\),[\s\S]{0,700}?\1\.onDisplayPinned\(([\w$]+)\.displayId\)/.test(travelPart.body), "upstream: switch_display -> onDisplayPinned(displayId), auto -> onDisplayPinned(undefined)");
+ok(!!adapterPart && /onResolvedDisplayUpdated:([\w$]+)\.onCuSelectedDisplayUpdated,onDisplayPinned:\1\.onCuDisplayPinned,/.test(adapterPart.body), "  through the session's onCuSelectedDisplayUpdated / onCuDisplayPinned");
+// The Code tab's own display callbacks, from the bundle.
+const SESS_DISP_RE = /getCuSelectedDisplayId:\(\)=>this\.sessions\.get\(([\w$]+)\)\?\.cuSelectedDisplayId,onCuSelectedDisplayUpdated:/;
+let sessDispSrc = null, sessDispId = null;
+if (codePart && SESS_DISP_RE.test(codePart.body)) {
+  const m = SESS_DISP_RE.exec(codePart.body);
+  const pinAt = codePart.body.indexOf("onCuDisplayPinned:", m.index);
+  const end = braceEnd(codePart.body, codePart.body.indexOf("{", pinAt));
+  sessDispSrc = "({" + codePart.body.slice(m.index, end) + "})";
+  sessDispId = m[1];
+}
+ok(!!sessDispSrc && /onCuSelectedDisplayUpdated:[\s\S]*emit\("cuSelectedDisplayChanged"[\s\S]*onCuDisplayPinned:/.test(sessDispSrc), "the Code tab's session: getCuSelectedDisplayId / onCuSelectedDisplayUpdated / onCuDisplayPinned emit cuSelectedDisplayChanged");
+function displaySession(w, id, rec, extra = {}) {
+  const emitted = [];
+  const mgr = { sessions: new Map([[id, rec]]), emit: (n, d) => emitted.push([n, d]) };
+  const fns = new Function(sessDispId, "return function(){return " + sessDispSrc + "}")(id).call(mgr);
+  const s = w.codeSession(id, Object.assign({}, fns, extra));
+  return { s, emitted, rec };
+}
+{
+  const HOST = "com.anthropic.Claude";
+  const saved = { st: process.env.XDG_SESSION_TYPE, wd: process.env.WAYLAND_DISPLAY };
+  process.env.XDG_SESSION_TYPE = "x11"; delete process.env.WAYLAND_DISPLAY;
+  // X11 with a hit test; the dock waiter is armed per acquire and used once
+  // (as _x11DockOnLock / _x11DockWait); a live stub drawn pointer.
+  const x11World = (opts = {}) => {
+    const w = world();
+    const order = []; w.order = order;
+    let docked = true, waiter = null;
+    w.ex.__targetActive = () => !!opts.target;
+    w.ex.capabilities = { hitTest: undefined, hostBundleId: HOST };
+    w.ex.listDisplays = async () => [{ displayId: 0, isPrimary: true, width: 100, height: 80, originX: 0, originY: 0, label: "d0" }, { displayId: 1, isPrimary: false, width: 100, height: 80, originX: 100, originY: 0, label: "d1" }];
+    w.ex.appUnderPoint = async (x) => { order.push("hit:" + (docked ? "docked" : "undocked")); return x > 500 ? { bundleId: HOST, displayName: "Claude" } : { bundleId: "org.xfce.mousepad", displayName: "Mousepad" }; };
+    const hook = w.ex.__setLockHeld;
+    w.ex.__setLockHeld = (held, holder) => { if (held) { docked = false; waiter = new Promise((r) => setTimeout(() => { docked = true; order.push("docked"); r(); }, 30)); } return hook(held, holder); };
+    w.ex.__dockWait = async () => { const p = waiter; waiter = null; if (p) await p; };
+    const dp = { live: () => true, glideTo: (p) => { order.push(`glideTo(${p.x},${p.y})`); return 0; }, jumpTo: (p) => order.push(`jumpTo(${p.x},${p.y})`), press: () => order.push("press"), realPointerGoesTo: (p) => order.push(`realPointerGoesTo(${p.x},${p.y})`) };
+    globalThis.__cdbCuDrawnPointer = dp;
+    w.ex.showPointerTravel = async (x, y, isAborted) => { order.push(`travel(${x},${y})`); dp.glideTo({ x, y }); w.travelAborted = isAborted; if (opts.duringTravel) opts.duringTravel(); return true; };
+    w.ex.click = async (x, y, b, n) => { dp.realPointerGoesTo({ x, y }); dp.press(); order.push(`bridge click ${x},${y} ${b} ${n}`); w.exec.push(["click", true]); };
+    return w;
+  };
+  const inputOnly = (o) => o.filter((x) => !/^hit:|^docked$/.test(x));
+  {
+    const w = x11World();
+    const s = w.codeSession("local_x1");
+    const r = await w.call(s, "left_click", { coordinate: [800, 100] });
+    ok(r?.isError && r?.content?.[0]?.text === "Could not verify the click target — the Claude overlay intercepted the hit test. Retry.", "a left_click on Claude's own window: refused with upstream's text", J(r?.content?.[0]?.text));
+    ok(J(inputOnly(w.order)) === "[]" && !w.exec.some((e) => e[0] === "click"), "  no drawn-pointer method, no travel, no bridge click", J(w.order));
+    ok(w.order.indexOf("docked") >= 0 && w.order.indexOf("docked") < w.order.indexOf("hit:docked"), "  its hit test ran after the dock", J(w.order));
+  }
+  {
+    const w = x11World();
+    const s = w.codeSession("local_x2");
+    const r = await w.call(s, "left_click", { coordinate: [100, 100] });
+    ok(!r.isError, "an allowed left_click runs", J(r?.content?.[0]));
+    ok(J(w.order.slice(0, 2)) === J(["docked", "hit:docked"]), "the first click after the lock waits for the dock signal, then hit-tests", J(w.order));
+    ok(J(inputOnly(w.order)) === J(["travel(100,100)", "glideTo(100,100)", "realPointerGoesTo(100,100)", "press", "bridge click 100,100 left 1"]), "  then the glide, the cursor feed / press, the bridge click (upstream's order)", J(inputOnly(w.order)));
+    ok(typeof w.travelAborted === "function" && w.travelAborted() === false && (s.aborted = true, w.travelAborted() === true), "  the glide gets the turn's abort check (session.isAborted)");
+    s.aborted = false;
+    w.order.length = 0;
+    await w.call(s, "right_click", { coordinate: [120, 100] });
+    ok(J(w.order) === J(["hit:docked", "travel(120,100)", "glideTo(120,100)", "realPointerGoesTo(120,100)", "press", "bridge click 120,100 right 1"]), "  the next click: no dock wait (used up), the glide again", J(w.order));
+    for (const [n, c] of [["double_click", 2], ["triple_click", 3], ["middle_click", 1]]) {
+      w.order.length = 0;
+      await w.call(s, n, { coordinate: [130, 100] });
+      ok(w.order[1] === "travel(130,100)" && w.order[w.order.length - 1] === `bridge click 130,100 ${n === "middle_click" ? "middle" : "left"} ${c}`, `  ${n}: glides, then clicks`, J(w.order));
+    }
+    w.order.length = 0;
+    await w.call(s, "computer_batch", { actions: [{ action: "left_click", coordinate: [140, 100] }, { action: "left_click", coordinate: [150, 100] }] });
+    ok(w.order.filter((x) => x.startsWith("travel(")).length === 2, "  a batch's click sub-actions glide too (upstream's batch runs the same click)", J(w.order));
+  }
+  {
+    const w = x11World();
+    const s = w.codeSession("local_x3");
+    await w.call(s, "screenshot", {});
+    w.order.length = 0;
+    const bb = { altToolModeCalls: { anyRunning: true, run: async (a, b) => ({ result: await b() }) } };
+    await w.call(s, "left_click", { coordinate: [100, 100] }, bb);
+    ok(!w.order.some((x) => x.startsWith("travel(")) && w.exec.some((e) => e[0] === "click"), "back to back (altToolModeCalls.anyRunning): no glide, the click runs", J(w.order));
+    const u = w.codeSession("local_x3", { isUnattendedSession: () => true });
+    w.order.length = 0;
+    await w.call(u, "left_click", { coordinate: [100, 100] });
+    ok(!w.order.some((x) => x.startsWith("travel(")) && w.order.some((x) => x.startsWith("bridge click")), "an unattended session: no glide, the click runs", J(w.order));
+  }
+  {
+    let s;
+    const w = x11World({ duringTravel: () => { s.aborted = true; } });
+    s = w.codeSession("local_x4");
+    const r = await w.call(s, "left_click", { coordinate: [100, 100] });
+    ok(r?.isError && r?.content?.[0]?.text === UP_ABORT && !w.order.some((x) => x.startsWith("bridge click")), "the turn aborted during the glide: upstream's text, no click", J(r?.content?.[0]?.text));
+  }
+  {
+    const w = x11World();
+    const rec = {};
+    const { s, emitted } = displaySession(w, "local_d1", rec);
+    await w.call(s, "screenshot", { display_number: 1 });
+    ok(J(emitted) === J([["cuSelectedDisplayChanged", { sessionId: "local_d1", displayId: 1 }]]) && rec.cuSelectedDisplayId === 1 && rec.cuDisplayPinnedByModel === false, "a screenshot on display 1: the session's selected display becomes 1 (our index), cuSelectedDisplayChanged once", J(emitted));
+    await w.call(s, "screenshot", { display_number: 1 });
+    ok(emitted.length === 1, "  the same display again: no report (upstream reports a change only)");
+    await w.call(s, "switch_display", { display: "d0" });
+    ok(J(emitted[1]) === J(["cuSelectedDisplayChanged", { sessionId: "local_d1", displayId: 0 }]) && rec.cuDisplayPinnedByModel === true, "switch_display d0: pinned through onCuDisplayPinned(0)", J(emitted[1]));
+    await w.call(s, "screenshot", {});
+    ok(emitted.length === 2, "  the pinned display's screenshot: no report");
+    await w.call(s, "switch_display", { display: "auto" });
+    ok(emitted.length === 3 && emitted[2][1].displayId === undefined && rec.cuSelectedDisplayId === undefined && rec.cuDisplayPinnedByModel === false, "switch_display auto: onCuDisplayPinned(undefined)", J(emitted[2]));
+  }
+  {
+    const w = x11World({ target: true });
+    const rec = {};
+    const { s, emitted } = displaySession(w, "local_d2", rec);
+    await w.call(s, "screenshot", { display_number: 1 });
+    await w.call(s, "switch_display", { display: "d1" });
+    ok(emitted.length === 0 && rec.cuSelectedDisplayId === undefined, "background display: no report (not the user's monitors)", J(emitted));
+  }
+  {
+    const w = x11World();
+    const s = w.codeSession("local_d3");
+    const r1 = await w.call(s, "screenshot", { display_number: 1 });
+    const r2 = await w.call(s, "switch_display", { display: "d1" });
+    ok(!r1.isError && !r2.isError, "a context without the display callbacks: screenshot and switch_display answer as before");
   }
   if (saved.st === undefined) delete process.env.XDG_SESSION_TYPE; else process.env.XDG_SESSION_TYPE = saved.st;
   if (saved.wd !== undefined) process.env.WAYLAND_DISPLAY = saved.wd;

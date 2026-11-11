@@ -54,7 +54,10 @@
 //       on a second monitor; flag off -> nothing animated, the bridge
 //       commands of an executor without a drawn pointer; abort cuts the
 //       glide; a throwing drawn pointer never breaks input; no call at all on
-//       Wayland rows, kwin mode and a background display.
+//       Wayland rows, kwin mode and a background display. Claude's own
+//       Escape under upstream's X11 grab resumes it exactly once when the
+//       bridge throws (the error propagates); a lock change clears the
+//       drawn pointer's held state.
 // Sections [2]-[5] SKIP (exit 3) when the binary or the extract is missing.
 // Exit codes follow the repo convention: 0 = PASS, 3 = SKIP, other = FAIL.
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdtempSync, rmSync, accessSync, constants } from "node:fs";
@@ -919,6 +922,38 @@ if (!haveBin || !existsSync(path.join(BUILD_DIR, "index.js"))) {
         const dpCalls = Object.values(steps).flat().filter((x) => !x.startsWith("bridge ") && !x.startsWith("threw "));
         check(`${row.label}: no drawn-pointer call (live() included)`, dpCalls.length + liveCalls, 0);
         check(`${row.label}: showPointerTravel false`, spt, false);
+      }
+      // Claude's own Escape while upstream's X11 grab is up (17h): the grab is
+      // resumed exactly once even when the cosmetic layer and the bridge fail,
+      // and the bridge error still reaches the caller.
+      {
+        // The stub x11-bridge throws on the key injection; the live drawn
+        // pointer's press throws.
+        loadExecutor({ displays: HOST, bridge: (args) => { if (args[0] === "key-sequence") throw new Error("bridge boom"); return "{}"; } });
+        const boom = () => { throw new Error("press boom"); };
+        globalThis.__cdbCuDrawnPointer = { live: () => true, glideTo: () => 0, jumpTo: () => {}, realPointerGoesTo: () => {}, press: boom };
+        let resumed = 0, suspended = 0;
+        globalThis.__cdbCuEscGrab = { suspend: () => { suspended++; return true; }, resume: () => { resumed++; } };
+        const keepW = globalThis.__cdbCuEscWatch;
+        globalThis.__cdbCuEscWatch = { hasEscape: () => true };
+        let err = null;
+        try { await globalThis.__linuxExecutor.key("Escape"); } catch (e) { err = e; }
+        check("key(\"Escape\") under the X11 grab, bridge throws: suspended once", suspended, 1);
+        check("  resumed exactly once", resumed, 1);
+        check("  the bridge error still propagates", err && /bridge boom/.test(String(err.message || err)), true);
+        delete globalThis.__cdbCuEscGrab;
+        if (keepW === undefined) delete globalThis.__cdbCuEscWatch; else globalThis.__cdbCuEscWatch = keepW;
+      }
+      // The drawn pointer's held state ends with the lock: a turn that ended
+      // with the button down does not make the next turn's moves jump.
+      for (const held of [true, false]) {
+        const r = rig({ displays: HOST, glowBounds: HOST[2].bounds });
+        await r.ex.mouseDown();
+        take();
+        await r.ex.__setLockHeld(held, held ? "local_next" : void 0);
+        take();
+        await r.ex.moveMouse(120, 130);
+        check(`lock ${held ? "taken" : "released"} after a mouseDown: the next move glides (held state cleared)`, take()[0], "glideTo(120,130)");
       }
       globalThis.__cuKwinMode = false;
       delete globalThis.__cdbCuDrawnPointer;
