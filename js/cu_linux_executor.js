@@ -1450,6 +1450,9 @@ var _gnomePortalCmds={"zoom":1,"screenshot":1,"pointer-move":1,"pointer-click":1
 function _wlBridgeCall(args){
   if(_tgt&&_tgt.refuse)throw _tgtErr();
   var b=_wlBridge();if(!b)throw new Error("no covered Wayland bridge available");
+  // The glow overlay's debug trace (CDB_CU_DEBUG=1, js/cu_wl_glow.js): the real
+  // pointer commands, on the overlay commands' clock. A flag check when off.
+  if(!_tgt&&/^(?:pointer-|left-mouse-)/.test(args[0])){try{var _wg=globalThis.__cdbCuWlGlow;if(_wg&&typeof _wg.input==="function")_wg.input(args)}catch(ge){}}
   if(b.name==="gnome-portal-bridge")_gnomeCheckTouch();
   var portalCmd=b.name==="gnome-portal-bridge"&&_gnomePortalCmds[args[0]]===1;
   // A portal command with no portal session behind it can only fail. Running it
@@ -1636,11 +1639,25 @@ async function _wlBridgeScreens(){
 }
 // Map a global-logical region to the bridge monitor containing its top-left,
 // returning {name, x, y} with monitor-relative x/y (mirrors _x11MonForRegion).
+function _wlScreenAt(screens,x,y){
+  for(var i=0;i<screens.length;i++){var g=screens[i].geometry||{};if(x>=g.x&&x<g.x+g.width&&y>=g.y&&y<g.y+g.height)return screens[i]}
+  return null;
+}
 async function _wlMonForRegion(x,y){
   var screens=await _wlBridgeScreens();
   if(!screens.length)return null;
-  var pick=null;
-  for(var i=0;i<screens.length;i++){var g=screens[i].geometry||{};if(x>=g.x&&x<g.x+g.width&&y>=g.y&&y<g.y+g.height){pick=screens[i];break}}
+  var pick=_wlScreenAt(screens,x,y);
+  // A point on no monitor of the cached list: the layout changed since it was
+  // cached (a monitor plugged in or moved; Electron already knows it, so
+  // switch_display and the click mapping use it). Enumerate once more before
+  // falling back, or the region is sent with an old monitor's name and the
+  // bridge refuses every capture there ("does not intersect").
+  if(!pick&&screens===_wlScreensCache){
+    _wlScreensInvalidate();
+    globalThis.__cdbDiag("[claude-cu] "+(_wlBridge()?_wlBridge().name:"bridge")+" screens: "+x+","+y+" is on no known monitor - monitor list refreshed");
+    var fresh=await _wlBridgeScreens();
+    if(fresh.length){screens=fresh;pick=_wlScreenAt(screens,x,y)}
+  }
   if(!pick){for(var j=0;j<screens.length;j++){if(screens[j].is_primary){pick=screens[j];break}}}
   if(!pick)pick=screens[0];
   var pg=pick.geometry||{x:0,y:0};
@@ -1966,7 +1983,7 @@ async function _captureRegion(x,y,w,h,sf,displayIdx,mk){
   if(_tgt&&_tgt.refuse)throw _tgtErr();
   // x11-bridge takes the root-pixel region, wlroots-bridge the logical one.
   if(mk){
-    try{return mk.be.kind==="x11"?await _captureMasked(mk,x,y,w,h):await _captureMasked(mk,Math.round(_lx0),Math.round(_ly0),Math.round(_lw0),Math.round(_lh0))}
+    try{return await _withCursorHidden(function(){return mk.be.kind==="x11"?_captureMasked(mk,x,y,w,h):_captureMasked(mk,Math.round(_lx0),Math.round(_ly0),Math.round(_lw0),Math.round(_lh0))})}
     catch(me){if(_capGen!==_capLockGen)throw _capCancelled();throw me}
   }
   var _de=_desktopId();
@@ -2004,7 +2021,7 @@ async function _captureRegion(x,y,w,h,sf,displayIdx,mk){
         var _wmr=await _wlMonForRegion(_lx,_ly);
         var _wzargs=["zoom","--x",String(_wmr?_wmr.x:_lx),"--y",String(_wmr?_wmr.y:_ly),"--w",String(_lw),"--h",String(_lh)];
         if(_wmr&&_wmr.name){_wzargs.push("--display",_wmr.name)}
-        try{_wzr=await _wlBridgeCallAsync(_wzargs);break}
+        try{_wzr=await _withCursorHidden(function(){return _wlBridgeCallAsync(_wzargs)});break}
         catch(ze){
           if(!_wtry&&_wmr&&_wmr.name&&_cuDisplayNotFound(ze)){globalThis.__cdbDiag("[claude-cu] "+_wlb.name+" zoom: display "+_wmr.name+" not found - monitor list refreshed, retrying once");_wlScreensInvalidate();continue}
           // A frame that did not arrive in time (gnome-portal-bridge: "timed
@@ -2073,7 +2090,7 @@ async function _captureRegion(x,y,w,h,sf,displayIdx,mk){
           var _mr=await _x11MonForRegion(x,y);
           var _zargs=["zoom","--x",String(_mr?_mr.x:x),"--y",String(_mr?_mr.y:y),"--w",String(w),"--h",String(h)];
           if(_mr&&_mr.name){_zargs.push("--display",_mr.name)}
-          try{_zr=await _x11BridgeAsync(_zargs);break}
+          try{_zr=await _withCursorHidden(function(){return _x11BridgeAsync(_zargs)});break}
           catch(ze){if(_xtry||!_mr||!_mr.name||!_cuDisplayNotFound(ze))throw ze;globalThis.__cdbDiag("[claude-cu] x11-bridge zoom: display "+_mr.name+" not found - monitor list refreshed, retrying once");_x11ScreensInvalidate()}
         }
         if(_zr&&_zr.base64){globalThis.__cdbDiag("[claude-cu] screenshot: captured via x11-bridge"+(_wayland?" (XWayland)":""));return{base64:_zr.base64,imgW:_zr.width||w,imgH:_zr.height||h,mimeType:"image/jpeg"}}
@@ -2240,7 +2257,17 @@ globalThis.__cdbCuElectronDisplayId=function(v){
 //    Unknown (no answer yet, a failed doctor, an older bridge without the key,
 //    no x11-bridge) counts as "no compositor": no glow rather than a risk of a
 //    black screen; Claude's own window still shows that Computer Use runs.
+// 0. Before both: Settings -> Extra -> Cowork (Linux) -> Computer Use ->
+//    "Show the glow while Claude uses the computer" is off
+//    (globalThis.__cdbCuGlowEnabled() === false, js/extra_settings_main.js,
+//    key computerUseGlow). Read on every call, so on every glow show: it
+//    applies from the next Computer Use start. Every session type follows it:
+//    here the X11 Electron glow (and with it the drawn cursor), and
+//    js/cu_wl_glow.js asks this same function before it draws the Wayland
+//    overlay. Nothing else changes (input, locks, screenshots).
 globalThis.__cdbCuGlowOff=function(){
+  if(_glowSwitchOff()){_glowSwitchNote(!0);return !0}
+  _glowSwitchNote(!1);
   var f=globalThis.__cuTargetRead;
   if(typeof f==="function"){try{if(f()!=null)return !0}catch(e){return !0}}
   else if(_tgt)return !0;
@@ -2248,6 +2275,15 @@ globalThis.__cdbCuGlowOff=function(){
   _glowOffNote(why);
   return !!why;
 };
+// The glow switch (default on: only an explicit false from the reader is off;
+// no reader, or one that throws, keeps the glow).
+function _glowSwitchOff(){var f=globalThis.__cdbCuGlowEnabled;if(typeof f!=="function")return !1;try{return f()===!1}catch(e){return !1}}
+var _glowSwitchLast=null;
+function _glowSwitchNote(off){
+  if(off===_glowSwitchLast||(_glowSwitchLast===null&&!off)){_glowSwitchLast=off;return}
+  _glowSwitchLast=off;
+  globalThis.__cdbDiag("[claude-cu] \"Claude is using your computer\" glow "+(off?"off: switched off in Settings -> Extra -> Cowork (Linux) -> Computer Use":"switched on again in Settings -> Extra -> Cowork (Linux) -> Computer Use"));
+}
 // null = a compositing manager runs (or not an X11 session: upstream shows no
 // glow on Wayland anyway), else why the glow stays off. Exec-free: the host
 // x11-bridge's cached doctor answer; a missing or stale one starts a refresh.
@@ -2347,17 +2383,122 @@ function _glowOffNote(why){
 //   live()                (ours) the arrow is shown right now
 // Every method is a no-op unless the glow window shows the arrow. It is fed
 // the way upstream's input mixin feeds it, method for method and in the same
-// order relative to the real pointer move. Only the user's own X11 desktop
-// shows that glow: Wayland sessions have none upstream (XWayland and the
-// exotic fallback included), kwin mode skips it (8a), a background display
-// and X11 without a compositing manager turn it off (10c); there nothing is
-// called. Cosmetic only: a throwing method is logged once and input goes on.
+// order relative to the real pointer move. On the user's own X11 desktop
+// that is upstream's object; on a Wayland row whose bridge draws the glow
+// overlay (wlroots, GNOME; XWayland follows the compositor's row) it is
+// js/cu_wl_glow.js's adapter with the same methods and return values, drawn
+// by `<bridge> overlay`. Upstream has no glow on Wayland, so every other
+// Wayland row (KDE < 6.6, exotic) gets none; kwin mode skips upstream's glow
+// (8a), a background display and X11 without a compositing manager turn it
+// off (10c); there nothing is called. Cosmetic only: a throwing method is
+// logged once and input goes on.
 var CU_DP_GLIDE_MAX_MS=2000;
 var _dpHeld=!1,_dpSaid=!1;
 function _dpObj(){
-  if(_wayland||_tgt||globalThis.__cuKwinMode)return null;
+  if(_tgt||globalThis.__cuKwinMode)return null;
+  if(_wayland){
+    var g=globalThis.__cdbCuWlGlow,a=null;
+    try{a=g&&typeof g.pointer==="function"?g.pointer():null}catch(e){a=null}
+    return a&&typeof a==="object"?a:null;
+  }
   var d=globalThis.__cdbCuDrawnPointer;
   return d&&typeof d==="object"?d:null;
+}
+// The real pointer's last position on a Wayland row (it cannot be queried
+// there): js/cu_wl_glow.js presses its arrow there and starts the next glow's
+// arrow there. Exec-free.
+function _wlPtr(x,y){
+  if(!_wayland||_tgt)return;
+  try{var g=globalThis.__cdbCuWlGlow;if(g&&typeof g.pointerAt==="function")g.pointerAt(x,y)}catch(e){}
+}
+// ── The Wayland glow overlay's bridge (js/cu_wl_glow.js) ──
+// The bridge that would draw the glow for this session: the input bridge of
+// a wlroots row (wlroots-bridge) or of GNOME Wayland (gnome-portal-bridge).
+// None on X11, in kwin mode (kwin-portal-bridge draws its own glow), on a
+// background display, on KDE < 6.6 or exotic Wayland (no first-party bridge).
+// Its overlay capability is the bridge's `doctor` capabilities.overlay, read
+// through the same cached async doctor as the screenshot mask (_bcProbe).
+function _wlGlowBridge(){
+  if(!_wayland||_tgt||globalThis.__cuKwinMode)return null;
+  var b=_wlBridge();
+  if(!b)return null;
+  return{kind:b.name==="wlroots-bridge"?"wlroots":"gnome",name:b.name,bin:b.bin};
+}
+// ── The drawn cursor and the badge stay out of Claude's screenshots ──
+// Upstream keeps its overlay out of captures on macOS (content protection);
+// X11 and Wayland have none, so the drawn arrow covered the spot Claude had
+// just clicked and the glow's "Claude is using your computer" badge sat over
+// kept app windows. Around each bridge capture (_captureRegion: the masked
+// capture, the Wayland and the x11-bridge zoom) the arrow, the press ring and
+// the badge are hidden and restored in a finally; the rim / classic glow
+// stays up, so the indicator does not blink at every screenshot. The masked
+// capture is wrapped as a whole (_captureMasked, its one retry after a stale
+// window list included): both attempts run hidden under one hide, instead of
+// the arrow flashing back between them.
+//  - Wayland overlay rows: js/cu_wl_glow.js captureCursor (`capture` scope
+//    "cursor"), its ack awaited at most CU_CAP_WL_ACK_MS. The overlay acks
+//    after a compositor round trip (measured on headless sway: 0.4 ms median,
+//    1.3 ms max); 50 ms leaves a loaded compositor 40x that and still costs a
+//    screenshot almost nothing when no ack comes.
+//  - X11: upstream's glow window (cu-glow.html) gets a class on <html> that a
+//    style of ours (inserted once per page load) turns into visibility:hidden
+//    for #cursor, #cursor-press and #badge (the arrow, the ring and bloom, the
+//    pill: upstream's own element ids). The page answers after two animation
+//    frames (the frame without them was submitted), then CU_CAP_X11_SETTLE_MS
+//    more for the compositing manager to put that frame on screen (one 60 Hz
+//    refresh); all of it bounded by CU_CAP_X11_MAX_MS. When the page shows
+//    none of the three (the arrow off, the badge faded out) it answers at once
+//    and nothing waits.
+//  - KDE kwin mode: kwin-portal-bridge's session glow has no arrow and is
+//    already left out of its captures: nothing to do. Background display: the
+//    overlay is not on the captured display.
+// Never blocks: async only, every wait bounded, failures ignored (the capture
+// runs regardless); the capture's own retry / failure accounting is untouched.
+var CU_CAP_WL_ACK_MS=50,CU_CAP_X11_MAX_MS=80,CU_CAP_X11_SETTLE_MS=17,CU_CAP_HIDE_CLASS="cdb-cu-capture";
+var CU_CAP_HIDE_JS='(()=>{const d=document,r=d.documentElement;if(!d.getElementById("cdb-cu-capture-style")){const s=d.createElement("style");s.id="cdb-cu-capture-style";s.textContent="html.'+CU_CAP_HIDE_CLASS+' #cursor,html.'+CU_CAP_HIDE_CLASS+' #cursor-press,html.'+CU_CAP_HIDE_CLASS+' #badge{visibility:hidden!important}";(d.head||r).appendChild(s)}'+
+  'const o=d.getElementById("overlay");if(!o||+getComputedStyle(o).opacity===0)return!1;'+
+  'const on=e=>{if(!e)return!1;const c=getComputedStyle(e);return c.visibility!=="hidden"&&c.display!=="none"&&+c.opacity>0};'+
+  'const any=on(d.getElementById("cursor"))||on(d.getElementById("cursor-ring"))||on(d.getElementById("cursor-bloom"))||on(d.getElementById("badge"));'+
+  'if(!any)return!1;r.classList.add("'+CU_CAP_HIDE_CLASS+'");return new Promise(f=>requestAnimationFrame(()=>requestAnimationFrame(()=>f(!0))))})()';
+var CU_CAP_SHOW_JS='document.documentElement.classList.remove("'+CU_CAP_HIDE_CLASS+'")';
+function _capTrace(m){try{if(process.env.CDB_CU_DEBUG==="1")globalThis.__cdbDiag("[claude-cu] glow trace: t="+(typeof performance!=="undefined"?performance.now():Date.now()).toFixed(1)+" "+m)}catch(e){}}
+function _capWait(p,ms){var t;return Promise.race([p,new Promise(function(r){t=setTimeout(function(){r("timeout")},ms)})]).then(function(v){clearTimeout(t);return v},function(){clearTimeout(t);return !1})}
+// -> a token for _capRestore, or null (nothing hidden, nothing to restore).
+async function _capHide(){
+  try{
+    if(_tgt||globalThis.__cuKwinMode||_glowSwitchOff())return null;
+    if(_wayland){
+      var g=globalThis.__cdbCuWlGlow;
+      var p=g&&typeof g.captureCursor==="function"?g.captureCursor(CU_CAP_WL_ACK_MS):null;
+      if(!p)return null;
+      var wt=await p;
+      return wt?{wl:wt}:null;
+    }
+    var wins=_glowWins().filter(function(w){try{return w.isVisible()}catch(e){return !1}});
+    if(!wins.length)return null;
+    var t0=Date.now();
+    var r=await _capWait(Promise.all(wins.map(function(w){try{return w.webContents.executeJavaScript(CU_CAP_HIDE_JS).then(function(v){return v===!0},function(){return !1})}catch(e){return Promise.resolve(!1)}})),CU_CAP_X11_MAX_MS-CU_CAP_X11_SETTLE_MS);
+    // A page that did not answer in time may still hide: restore it too.
+    var hid=r==="timeout"||(Array.isArray(r)&&r.some(function(v){return v}));
+    if(!hid){_capTrace("capture hide x11: nothing shown, no wait ("+(Date.now()-t0)+" ms)");return null}
+    await new Promise(function(f){setTimeout(f,CU_CAP_X11_SETTLE_MS)});
+    _capTrace("capture hide x11: "+(r==="timeout"?"page did not answer within the bound":"hidden")+" after "+(Date.now()-t0)+" ms");
+    return{x11:wins};
+  }catch(e){return null}
+}
+function _capRestore(tok){
+  if(!tok)return;
+  try{
+    if(tok.wl){var g=globalThis.__cdbCuWlGlow;if(g&&typeof g.captureRestore==="function")g.captureRestore(tok.wl);return}
+    (tok.x11||[]).forEach(function(w){try{if(!w.isDestroyed())w.webContents.executeJavaScript(CU_CAP_SHOW_JS).catch(function(){})}catch(e){}});
+    _capTrace("capture restore x11");
+  }catch(e){}
+}
+// fn's result or rejection unchanged; the restore always runs.
+async function _withCursorHidden(fn){
+  var tok=null;
+  try{tok=await _capHide()}catch(e){tok=null}
+  try{return await fn()}finally{_capRestore(tok)}
 }
 function _dpFail(m,e){
   if(_dpSaid)return;_dpSaid=!0;
@@ -2522,6 +2663,7 @@ function _tgtCursorSet(x,y){if(_tgt)_tgt.cursor={x:Math.round(x),y:Math.round(y)
 function _tgtCursor(){var c=_tgt&&_tgt.cursor;if(c)return c;var m=_findMon(null)||_defaultMon;return{x:Math.round(m.originX+m.width/2),y:Math.round(m.originY+m.height/2)}}
 function _moveMouse(x,y){
   _tgtCursorSet(x,y);
+  _wlPtr(x,y);
   if(_useWlBridge()){
     _logFirstUse("mouse",_wlBridge().name);_wlBridgeCall(["pointer-move","--x",String(Math.round(x)),"--y",String(Math.round(y))]);return;
   }
@@ -2743,7 +2885,7 @@ function _bcParse(be,doc){
   // result's mask.capture is what counts.
   var mmode=doc.screenshot_mask_mode==="toplevel"||doc.screenshot_mask_mode==="output"?doc.screenshot_mask_mode:null;
   var mproto=typeof doc.screenshot_mask_protocol==="string"&&/^[\w.-]{1,64}$/.test(doc.screenshot_mask_protocol)?doc.screenshot_mask_protocol:null;
-  return{mask:mask,mmode:mask?mmode:null,mproto:mask?mproto:null,geometry:be.kind==="x11"||doc.window_geometry===!0,gaps:mask?gaps:[],ignore:mask&&be.kind==="x11"&&c.screenshot_mask_ignore===!0,cm:c.compositing===!0?!0:c.compositing===!1?!1:null,cmWhy:typeof c.compositing_error==="string"?c.compositing_error:null};
+  return{mask:mask,mmode:mask?mmode:null,mproto:mask?mproto:null,geometry:be.kind==="x11"||doc.window_geometry===!0,gaps:mask?gaps:[],ignore:mask&&be.kind==="x11"&&c.screenshot_mask_ignore===!0,cm:c.compositing===!0?!0:c.compositing===!1?!1:null,cmWhy:typeof c.compositing_error==="string"?c.compositing_error:null,overlay:c.overlay===!0};
 }
 // Why a wlroots-bridge doctor's "no window geometry" is not a real negative,
 // or "" when it is (the compositor was reached and is not one that has
@@ -3644,6 +3786,10 @@ var _ex=globalThis.__linuxExecutor={
     // (4b passes upstream's exclusiveHolder; 4b.2 releases without one).
     _gnomeHolder=held&&typeof holder==="string"?holder:null;
     globalThis.__cdbDiag?.("[claude-cu] "+(held?"lock taken by "+(_gnomeHolder||"none"):"lock released"));
+    // The Wayland glow overlay follows the lock (js/cu_wl_glow.js): this runs
+    // synchronously before upstream's lock-change handlers show or hide the
+    // glow. Release stops its child.
+    try{var _wg=globalThis.__cdbCuWlGlow;if(_wg&&typeof _wg.lock==="function")_wg.lock(!!held)}catch(we){}
     var _settle;_lockHookTail=new Promise(function(r){_settle=r});
     // The drawn pointer's "button held" state does not outlive a lock: a turn
     // that ended with the button down must not make the next turn's moves jump.
@@ -3697,6 +3843,34 @@ var _ex=globalThis.__linuxExecutor={
   // awaited by the Linux tool handler before its first pointer hit test;
   // resolves at once when nothing docks or the waiter was used.
   __dockWait(){return _x11DockWait("pointer action")},
+  // The Wayland glow overlay's row (js/cu_wl_glow.js): {name, bin, overlay}
+  // with overlay = the bridge's doctor capabilities.overlay from the cached
+  // answer (true / false; null while unknown or after a failed doctor), or
+  // null on a row without one (see _wlGlowBridge). Exec-free.
+  __wlGlowRow(){
+    var be=_wlGlowBridge();if(!be)return null;
+    var c=_bcCache[_bcKey(be)],r=c&&c.res;
+    return{name:be.name,bin:be.bin,overlay:r?r.overlay===!0:null};
+  },
+  // -> Promise<true|false|null>: the overlay capability from a fresh or cached
+  // doctor (async, the shared _bcProbe; never blocks).
+  __wlGlowProbe(){
+    var be=_wlGlowBridge();if(!be)return Promise.resolve(null);
+    return _bcProbe(be).then(function(r){return r&&!r.error?r.overlay===!0:null},function(){return null});
+  },
+  // What draws "Claude is using your computer" on this session, for the
+  // Computer Use page: "x11" (upstream's Electron glow), "overlay" (the
+  // Wayland bridge overlay), "none" (no glow: background display, a Wayland
+  // row without the overlay), "unknown" (its doctor has not answered yet).
+  // The glow switch is not part of it. Exec-free (may start an async doctor).
+  __glowNow(){
+    if(_tgt)return{where:"none",why:"background display"};
+    if(!_wayland)return{where:"x11"};
+    var be=_wlGlowBridge();if(!be)return{where:"none",why:"no bridge draws the glow on this session"};
+    var r=_bcNow(be);
+    if(!r)return{where:"unknown",bridge:be.name};
+    return r.overlay===!0?{where:"overlay",bridge:be.name}:{where:"none",bridge:be.name,why:be.name+" does not draw the glow overlay"};
+  },
   // Task-end event: upstream's renderer IPC releaseRemoteCuLock (a cloud
   // session's running->idle edge, Stop, archive, delete), forwarded by
   // fix_computer_use_linux.nim with upstream's current lock holder. Safe to
@@ -4365,6 +4539,13 @@ var _ex=globalThis.__linuxExecutor={
       var _wfx=start?Math.round(start.x):Math.round(_wcp.x);
       var _wfy=start?Math.round(start.y):Math.round(_wcp.y);
       _tgtCursorSet(end.x,end.y);
+      // The Wayland glow overlay's arrow (js/cu_wl_glow.js), in upstream's
+      // mixin order as on X11 below: the real pointer at the start, the press
+      // ring there, the arrow jumps to the end while the button is held.
+      // pointer-drag makes the start move itself, so no extra move is sent.
+      var _wdp=_dpLive();
+      if(_wdp){if(start)_dpCall(_wdp,"realPointerGoesTo",start.x,start.y);_dpCall(_wdp,"press");_dpCall(_wdp,"jumpTo",end.x,end.y);_dpCall(_wdp,"realPointerGoesTo",end.x,end.y)}
+      _wlPtr(end.x,end.y);
       _wlBridgeCall(["pointer-drag","--from-x",String(_wfx),"--from-y",String(_wfy),"--to-x",String(Math.round(end.x)),"--to-y",String(Math.round(end.y))]);
     }else if(_wayland&&_checkYdotool()){
       if(start)_moveMouse(start.x,start.y);

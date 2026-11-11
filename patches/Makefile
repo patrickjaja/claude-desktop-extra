@@ -50,6 +50,7 @@ linux/fix_computer_use_linux: \
   ../js/cu_display_target.js \
   ../js/cu_consent.js \
   ../js/cu_share_stop.js \
+  ../js/cu_wl_glow.js \
   ../js/executor_linux.js
 
 community/add_feature_auto_archive_grace: ../js/auto_archive_grace.js

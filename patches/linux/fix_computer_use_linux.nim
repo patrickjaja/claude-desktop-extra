@@ -9,7 +9,7 @@
 # embeds them via staticRead at compile time; Python reads them at runtime.
 # No codegen — the .js files are the single source of truth.
 #
-# All 64 sub-patches use std/nre (PCRE) because many require backreferences.
+# All 70 sub-patches use std/nre (PCRE) because many require backreferences.
 # "Ask before Computer Use controls an app" (js/cu_consent.js, injected by
 # Patch 1 after the executors): sub-patch 6b makes upstream's grants full level
 # in the regular executor mode, 6c lets upstream's terminal / file-manager
@@ -55,7 +55,11 @@
 # glow off while Computer Use runs on a background display. 10d exposes
 # upstream's drawn-pointer object (globalThis.__cdbCuDrawnPointer), which the
 # X11 executor feeds as upstream's input mixin does when upstream shows its
-# drawn pointer in the glow.
+# drawn pointer in the glow. 10e-10g hand upstream's glow show, hide and
+# display change to js/cu_wl_glow.js (embedded by Patch 1), which draws the
+# glow and the drawn pointer through the bridge's layer-shell overlay on a
+# Wayland row whose bridge announces it; 10h exposes upstream's glide planner
+# (globalThis.__cdbCuGlidePlan) so that arrow moves exactly like upstream's.
 # Sub-patch 17c exposes upstream's "user stopped sharing" abort as
 # globalThis.__cdbCuShareEnded, so the executors stop the running turn the
 # moment the user clicks Stop sharing (issue #323; js/cu_share_stop.js,
@@ -87,6 +91,7 @@ const SESSION_CHECK_JS = staticRead("../../js/cu_session_check.js")
 const DISPLAY_TARGET_JS = staticRead("../../js/cu_display_target.js")
 const CONSENT_JS = staticRead("../../js/cu_consent.js")
 const SHARE_STOP_JS = staticRead("../../js/cu_share_stop.js")
+const WL_GLOW_JS = staticRead("../../js/cu_wl_glow.js")
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -386,6 +391,11 @@ proc endStateMarkers(): seq[EndStateMarker] =
       """globalThis\.__cdbCuDisplayTarget=\{pick:""",
     ),
     rx(
+      # js/cu_wl_glow.js embedded by Patch 1: its one definition.
+      "1 wl glow embed",
+      """globalThis\.__cdbCuWlGlow=\{""",
+    ),
+    rx(
       # js/cu_consent.js embedded by Patch 1: its one definition.
       "1 consent embed",
       """globalThis\.__cdbCuConsent=\{active:active,""",
@@ -528,7 +538,8 @@ proc endStateMarkers(): seq[EndStateMarker] =
     ),
     rx(
       "10c glow off on a background display",
-      """\{if\(![\w$]+\|\|process\.platform==="linux"&&globalThis\.__cdbCuGlowOff\?\.\(\)===!0\)return Promise\.resolve\(\);""",
+      # `{` pristine-adjacent, `;` once 10e put its takeover in front.
+      """[{;]if\(![\w$]+\|\|process\.platform==="linux"&&globalThis\.__cdbCuGlowOff\?\.\(\)===!0\)return Promise\.resolve\(\);""",
     ),
     lit("10c glow-off helper (executor)", "globalThis.__cdbCuGlowOff=function(){"),
     rx(
@@ -543,6 +554,22 @@ proc endStateMarkers(): seq[EndStateMarker] =
       # Our assignment, right before the factory it calls.
       "10d drawn pointer for the Linux executor",
       """process\.platform==="linux"&&\(globalThis\.__cdbCuDrawnPointer=Object\.assign\(([\w$]+)\(e=>e\),\{live:([\w$]+)\(!1,\(\)=>!0\)\}\)\);function \1\([\w$]+\)\{return\{glideTo:\2\(0,""",
+    ),
+    rx(
+      "10e glow show to the Wayland overlay",
+      """\{if\(process\.platform==="linux"&&globalThis\.__cdbCuWlGlow\?\.show\?\.\([\w$]+,[\w$]+,[\w$]+\)===!0\)return Promise\.resolve\(\);if\(!""",
+    ),
+    rx(
+      "10f glow hide to the Wayland overlay",
+      """\(\)\{process\.platform==="linux"&&globalThis\.__cdbCuWlGlow\?\.hide\?\.\(\);if\(\+\+""",
+    ),
+    rx(
+      "10g glow display to the Wayland overlay",
+      """=[\w$]+\?\?null,process\.platform==="linux"&&globalThis\.__cdbCuWlGlow\?\.display\?\.\([\w$]+\),""",
+    ),
+    rx(
+      "10h glide planner for the Linux executor",
+      """process\.platform==="linux"&&\(globalThis\.__cdbCuGlidePlan=\{plan:([\w$]+),frameMs:\(\)=>[\w$]+\.frameMs\}\);function \1\(""",
     ),
     rx(
       "13a allowlist gate",
@@ -729,7 +756,7 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 66
+  const EXPECTED_PATCHES = 70
 
   let gateSet = cuPlatformSetName(content)
   if gateSet == "":
@@ -794,6 +821,9 @@ proc apply*(input: string): string =
     # The Stop-sharing marker watch goes before both executors with the
     # session check: each calls globalThis.__cdbCuShareStop at run time.
     let shareStopJs = SHARE_STOP_JS.strip()
+    # The Wayland glow overlay (10e-10h) goes after the executors: it asks the
+    # executor for its row (__wlGlowRow) only at call time.
+    let wlGlowJs = WL_GLOW_JS.strip()
     # v1.26832.0 switched minifier: most string literals became backtick
     # template literals (app.on(`ready`)). Accept either quote style here and
     # everywhere else a literal is part of an anchor.
@@ -809,7 +839,7 @@ proc apply*(input: string): string =
         m.captures[0] & "if(process.platform===\"linux\"){" & MODE_PREAMBLE_JS &
           sessionJs & "\n" & shareStopJs & "\n" & displayTargetJs & "\n" &
           "if(globalThis.__cuKwinMode){" & kwinJs & "}else{" & regularJs & "}" & axJs &
-          "\n" & consentJs & "}",
+          "\n" & wlGlowJs & "\n" & consentJs & "}",
     )
     if n >= 1:
       echo &"  [OK] Linux executor: injected session check + regular + kwin-wayland variants ({n} match)"
@@ -2033,6 +2063,285 @@ proc apply*(input: string): string =
           fnName & "(e=>e),{live:" & wrap & "(!1,()=>!0)}));"
         content = content[0 ..< at] & inject & content[at .. ^1]
         echo &"  [OK] 10d drawn pointer factory {fnName} (wrapper {wrap}): exposed to the Linux executor, DIP mapper (1 match)"
+        inc changes
+        inc patchesApplied
+
+  # ── Patches 10e-10h: upstream's glow on a Wayland row -> js/cu_wl_glow.js ─
+  # Upstream's glow lifecycle (5.1231.2 names, main chunk):
+  #   show    function GUo(e){if(!pai)return Promise.resolve();IUo&&=(...);
+  #             let t=++BUo;N7(!0);let n=e?.showBadge??!0,
+  #             r=(e?.claudeHasThePointer??!0)&&toi();...e.setBounds(HUo().bounds)...}
+  #           (10c added `||linux&&__cdbCuGlowOff()` to its gate). Callers: the
+  #           cuLockChanged handler `UUo(r),GUo().catch(...showGlow failed)`
+  #           and, through its export, watch-record's
+  #           `t.dr({showBadge:!1,claudeHasThePointer:!1})` (outside a lock).
+  #   hide    function KUo(){if(++BUo,PQa(),!M7||M7.isDestroyed()){N7(!1);return}...}
+  #           Callers: the same handler's release arm, watch-record's `t.cr()`.
+  #   display function UUo(e){VUo=e??null,M7&&!M7.isDestroyed()&&(M7.setBounds(HUo().bounds),FQa())}
+  #           Callers: the handler (`UUo(r)` before the show), the glow switch
+  #           (10b1), watch-record's `t.ur(...)`.
+  # pai = CLICK_THROUGH_WINDOWS = !isWayland(), so on any Wayland session
+  # (XWayland included) upstream's show returns at once and draws nothing.
+  # 10e puts js/cu_wl_glow.js's show in front of that gate: it answers true
+  # only on a Wayland row whose bridge can draw the overlay, inside a lock,
+  # and then upstream's body is skipped (it would draw nothing); false runs
+  # upstream's own body unchanged (X11, macOS/Windows, Wayland rows without
+  # the overlay, watch-record outside a lock). It gets upstream's options, its
+  # display getter (HUo) and its drawn-cursor flag decision (toi, flag
+  # 1916550538), so look and display are upstream's own decisions. 10f / 10g
+  # call the module first in the hide and display setter; upstream's bodies
+  # still run (no window exists on Wayland, so they do nothing there). 10h
+  # exposes upstream's glide planner (rQa: the arc, tilt and lift frames its
+  # drawn arrow animates) and its frame interval as globalThis.__cdbCuGlidePlan.
+  # Anchors: each function exactly once, tied to each other through the
+  # shared generation counter, busy setter, window and getter; the getter is
+  # the overlay display resolver's (10b); the flag decision reads 1916550538;
+  # every direct caller counted (the show and hide each once, from the lock
+  # handler; the display setter twice) and the one cross-chunk show caller
+  # passes claudeHasThePointer:!1; the planner is the one the drawn-pointer
+  # factory (10d) calls with its interpolated position.
+  block:
+    let showPat =
+      re"""(function ([\w$]+)\(([\w$]+)\)\{)(if\(!([\w$]+)\|\|process\.platform==="linux"&&globalThis\.__cdbCuGlowOff\?\.\(\)===!0\)return Promise\.resolve\(\);([\w$]+)&&=\(clearTimeout\(\6\),null\);let ([\w$]+)=\+\+([\w$]+);([\w$]+)\(!0\);let [\w$]+=\3\?\.showBadge\?\?!0,[\w$]+=\(\3\?\.claudeHasThePointer\?\?!0\)&&([\w$]+)\(\);)"""
+    var shows: seq[RegexMatch] = @[]
+    for m in content.findIter(showPat):
+      shows.add m
+    let resolverRe =
+      re"""function ([\w$]+)\(([\w$]+)\)\{return \2===null\?[\w$]+\.screen\.getPrimaryDisplay\(\):[\w$]+\.screen\.getAllDisplays\(\)\.find\(\(?([\w$]+)\)?=>\3\.id===\2\)?\)\?\?[\w$]+\.screen\.getPrimaryDisplay\(\)\}"""
+    var resolvers: seq[string] = @[]
+    for m in content.findIter(resolverRe):
+      resolvers.add m.captures[0]
+    proc callers(c, name: string): int =
+      ## `name(` call sites, the definition excluded.
+      countMatches(c, re("(?<![\\w$.])" & escapeRe(name) & "\\(")) -
+        countMatches(c, re("function " & escapeRe(name) & "\\("))
+
+    if shows.len != 1:
+      echo &"  [FAIL] 10e glow show (10c-patched `function G(e){{if(!CT||...)return Promise.resolve();...claudeHasThePointer??!0)&&F();`): {shows.len} matches, expected 1 - re-audit"
+    elif resolvers.len != 1:
+      echo &"  [FAIL] 10e overlay display resolver: {resolvers.len} definitions, expected 1 - re-audit"
+    else:
+      let sm = shows[0]
+      let showFn = sm.captures[1]
+      let param = sm.captures[2]
+      let gen = sm.captures[7]
+      let busy = sm.captures[8]
+      let flagFn = sm.captures[9]
+      let resolver = resolvers[0]
+      let body = content[sm.matchBounds.a ..< min(content.len, sm.matchBounds.a + 2500)]
+      # The getter the show sizes its window with, the window it shows.
+      let boundsRe =
+        re"""\(([\w$]+)\.isDestroyed\(\)\|\|\(\1\.setBounds\(([\w$]+)\(\)\.bounds\),\1\.isVisible\(\)\|\|\1\.showInactive\(\)"""
+      var getter = ""
+      var boundsHits = 0
+      for m in body.findIter(boundsRe):
+        inc boundsHits
+        getter = m.captures[1]
+      let getterOk =
+        getter != "" and
+        countMatches(
+          content,
+          re(
+            "function " & escapeRe(getter) & "\\(\\)\\{return " & escapeRe(resolver) &
+              "\\([\\w$]+\\)\\}"
+          ),
+        ) == 1
+      let flagRe = re(
+        "function " & escapeRe(flagFn) &
+          """\(\)\{try\{let ([\w$]+)=[\w$]+\(\);return \1==="default"\?[\w$]+\(([\w$]+)\):\1==="on"\}catch"""
+      )
+      var flagVar = ""
+      var flagHits = 0
+      for m in content.findIter(flagRe):
+        inc flagHits
+        flagVar = m.captures[1]
+      let flagOk =
+        flagHits == 1 and
+        countMatches(
+          content, re("(?<![\\w$.])" & escapeRe(flagVar) & "=\"1916550538\"")
+        ) == 1
+      let lockCall = countMatches(
+        content,
+        re(
+          "(?<![\\w$.])" & escapeRe(showFn) &
+            """\(\)\.catch\(\(?[\w$]+\)?=>\{?[\w$]+\.warn\(["'`]\[cu-glow\] showGlow failed"""
+        ),
+      )
+      # Its export key, and the one namespace call through it (watch-record).
+      var exportKey = ""
+      var exportHits = 0
+      for m in content.findIter(
+        re(
+          """Object\.defineProperty\(exports,"([\w$]+)",\{enumerable:!0,get:function\(\)\{return """ &
+            escapeRe(showFn) & "\\}\\}\\)"
+        )
+      ):
+        inc exportHits
+        exportKey = m.captures[0]
+      let watchCall =
+        if exportKey == "":
+          0
+        else:
+          countMatches(
+            content,
+            re(
+              "[\\w$]\\." & escapeRe(exportKey) &
+                """\(\{showBadge:!1,claudeHasThePointer:!1\}\)\.catch\("""
+            ),
+          )
+      if boundsHits != 1 or not getterOk:
+        echo &"  [FAIL] 10e glow show {showFn}: its display getter is not `function G(){{return {resolver}(X)}}` ({boundsHits} setBounds sites, getter '{getter}') - re-audit"
+      elif not flagOk:
+        echo &"  [FAIL] 10e glow show {showFn}: {flagFn}() is not the flag 1916550538 decision ({flagHits} definitions) - re-audit"
+      elif callers(content, showFn) != 1 or lockCall != 1:
+        echo &"  [FAIL] 10e glow show {showFn}: {callers(content, showFn)} direct callers ({lockCall} lock-handler calls), expected the lock handler only - re-audit"
+      elif exportHits != 1 or watchCall != 1:
+        echo &"  [FAIL] 10e glow show {showFn}: export '{exportKey}' ({exportHits}) with {watchCall} watch-record calls `{{showBadge:!1,claudeHasThePointer:!1}}`, expected 1 each - re-audit"
+      else:
+        let n = replaceFirst(
+          content,
+          showPat,
+          proc(m: RegexMatch): string =
+            m.captures[0] &
+              "if(process.platform===\"linux\"&&globalThis.__cdbCuWlGlow?.show?.(" &
+              param & "," & getter & "," & flagFn & ")===!0)return Promise.resolve();" &
+              m.captures[3],
+        )
+        if n == 1:
+          echo &"  [OK] 10e glow show {showFn}: Wayland overlay rows go to js/cu_wl_glow.js (getter {getter}, flag {flagFn}; 1 match)"
+          inc changes
+          inc patchesApplied
+        else:
+          echo "  [FAIL] 10e glow show: replacement did not apply"
+
+        # 10f: the hide, tied to the show's generation counter and busy setter.
+        let hidePat = re(
+          "(function ([\\w$]+)\\(\\)\\{)(if\\(\\+\\+" & escapeRe(gen) &
+            ",([\\w$]+)\\(\\),!([\\w$]+)\\|\\|\\5\\.isDestroyed\\(\\)\\)\\{" &
+            escapeRe(busy) & "\\(!1\\);return\\})"
+        )
+        var hides: seq[RegexMatch] = @[]
+        for m in content.findIter(hidePat):
+          hides.add m
+        if hides.len != 1:
+          echo &"  [FAIL] 10f glow hide (`function H(){{if(++{gen},X(),!W||W.isDestroyed()){{{busy}(!1);return}}`): {hides.len} matches, expected 1 - re-audit"
+        else:
+          let hideFn = hides[0].captures[1]
+          let win = hides[0].captures[4]
+          let releaseCall = countMatches(
+            content,
+            re(
+              "\\}else " & escapeRe(hideFn) &
+                """\(\)\}\)\),[\w$]+\.info\(["'`]\[cu-glow\] initialized"""
+            ),
+          )
+          if callers(content, hideFn) != 1 or releaseCall != 1:
+            echo &"  [FAIL] 10f glow hide {hideFn}: {callers(content, hideFn)} direct callers ({releaseCall} in the lock handler's release arm), expected 1 - re-audit"
+          else:
+            let nh = replaceFirst(
+              content,
+              hidePat,
+              proc(m: RegexMatch): string =
+                m.captures[0] &
+                  "process.platform===\"linux\"&&globalThis.__cdbCuWlGlow?.hide?.();" &
+                  m.captures[2],
+            )
+            if nh == 1:
+              echo &"  [OK] 10f glow hide {hideFn}: js/cu_wl_glow.js first, upstream's body unchanged (1 match)"
+              inc changes
+              inc patchesApplied
+            else:
+              echo "  [FAIL] 10f glow hide: replacement did not apply"
+
+            # 10g: the display setter on the same window and getter.
+            let dispPat = re(
+              "(function ([\\w$]+)\\(([\\w$]+)\\)\\{[\\w$]+=\\3\\?\\?null,)(" &
+                escapeRe(win) & "&&!" & escapeRe(win) & "\\.isDestroyed\\(\\)&&\\(" &
+                escapeRe(win) & "\\.setBounds\\(" & escapeRe(getter) &
+                "\\(\\)\\.bounds\\),[\\w$]+\\(\\)\\)\\})"
+            )
+            var disps: seq[RegexMatch] = @[]
+            for m in content.findIter(dispPat):
+              disps.add m
+            if disps.len != 1:
+              echo &"  [FAIL] 10g glow display setter (`function S(e){{V=e??null,{win}&&!{win}.isDestroyed()&&({win}.setBounds({getter}().bounds),R())}}`): {disps.len} matches, expected 1 - re-audit"
+            else:
+              let dispFn = disps[0].captures[1]
+              # The lock handler (before the show) and the glow switch (10b1).
+              let atLock = countMatches(
+                content,
+                re(
+                  "(?<![\\w$.])" & escapeRe(dispFn) & "\\(([\\w$]+)\\)," &
+                    escapeRe(showFn) & "\\(\\)\\.catch\\("
+                ),
+              )
+              if callers(content, dispFn) != 2 or atLock != 1:
+                echo &"  [FAIL] 10g glow display setter {dispFn}: {callers(content, dispFn)} direct callers ({atLock} right before the show), expected 2 - re-audit"
+              else:
+                let nd = replaceFirst(
+                  content,
+                  dispPat,
+                  proc(m: RegexMatch): string =
+                    m.captures[0] &
+                      "process.platform===\"linux\"&&globalThis.__cdbCuWlGlow?.display?.(" &
+                      getter & ")," & m.captures[3],
+                )
+                if nd == 1:
+                  echo &"  [OK] 10g glow display setter {dispFn}: js/cu_wl_glow.js follows the display (1 match)"
+                  inc changes
+                  inc patchesApplied
+                else:
+                  echo "  [FAIL] 10g glow display setter: replacement did not apply"
+
+  block:
+    let planPat =
+      re"""(?<![\w$.])function ([\w$]+)\(([\w$]+),([\w$]+)\)\{let [\w$]+=([\w$]+),[\w$]+=\3\.x-\2\.x,[\w$]+=\3\.y-\2\.y,([\w$]+)=Math\.hypot\([\w$]+,[\w$]+\);if\(\5<\.5\)return\{durationMs:0,arriveMs:0,frames:\[\]\};"""
+    var plans: seq[RegexMatch] = @[]
+    for m in content.findIter(planPat):
+      plans.add m
+    if plans.len != 1:
+      echo &"  [FAIL] 10h glide planner (`function P(e,t){{let n=C,r=t.x-e.x,...;if(a<.5)return{{durationMs:0,arriveMs:0,frames:[]}};`): {plans.len} matches, expected 1 - re-audit"
+    else:
+      let at = plans[0].matchBounds.a
+      let planFn = plans[0].captures[0]
+      let cfg = plans[0].captures[3]
+      let cfgDecl = re("(?<![\\w$.])" & escapeRe(cfg) & "=\\{baseMs:")
+      var cfgAt = -1
+      var cfgHits = 0
+      for m in content.findIter(cfgDecl):
+        inc cfgHits
+        cfgAt = m.matchBounds.a
+      let cfgOk =
+        cfgHits == 1 and cfgAt < at and
+        content[cfgAt ..< min(content.len, cfgAt + 600)].contains("frameMs:")
+      # The drawn-pointer factory (10d) calls it with its interpolated
+      # position: `...&&P(I(),r)` once, inside the factory.
+      let facPat = re"""(?<![\w$.])function ([\w$]+)\(([\w$]+)\)\{return\{glideTo:"""
+      var facAt = -1
+      var facHits = 0
+      for m in content.findIter(facPat):
+        inc facHits
+        facAt = m.matchBounds.a
+      let useRe = re("&&" & escapeRe(planFn) & "\\([\\w$]+\\(\\),[\\w$]+\\)")
+      let useAll = countMatches(content, useRe)
+      let useIn =
+        if facAt < 0:
+          0
+        else:
+          countMatches(content[facAt ..< min(content.len, facAt + 1500)], useRe)
+      let prev = (if at > 0: content[at - 1] else: ';')
+      if not cfgOk:
+        echo &"  [FAIL] 10h glide planner {planFn}: its config {cfg} is not the one `{cfg}={{baseMs:...frameMs:...}}` before it ({cfgHits} declarations) - re-audit"
+      elif facHits != 1 or useAll != 1 or useIn != 1:
+        echo &"  [FAIL] 10h glide planner {planFn}: not the drawn-pointer factory's planner ({facHits} factories, {useAll} `&&{planFn}(I(),r)` calls, {useIn} inside it) - re-audit"
+      elif prev notin {';', '}', '\n'}:
+        echo &"  [FAIL] 10h glide planner {planFn}: not at a statement boundary (preceded by '{prev}') - re-audit"
+      else:
+        let inject =
+          "process.platform===\"linux\"&&(globalThis.__cdbCuGlidePlan={plan:" & planFn &
+          ",frameMs:()=>" & cfg & ".frameMs});"
+        content = content[0 ..< at] & inject & content[at .. ^1]
+        echo &"  [OK] 10h glide planner {planFn} (config {cfg}): exposed to js/cu_wl_glow.js (1 match)"
         inc changes
         inc patchesApplied
 

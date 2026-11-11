@@ -133,7 +133,9 @@ function fakeGlow({ url = "file:///tmp/cu-glow.html", visible = false, loading =
     isDestroyed: () => w.destroyed, isVisible: () => w.visible, destroy() { w.destroyed = true; w.visible = false; },
     on(n, f) { (ev[n] = ev[n] || []).push(f); },
     emit(n) { (ev[n] || []).forEach((f) => f()); },
-    webContents: { isDestroyed: () => w.destroyed, getURL: () => w.url, isLoading: () => w.loading },
+    webContents: { isDestroyed: () => w.destroyed, getURL: () => w.url, isLoading: () => w.loading,
+      // The capture hide / restore scripts (section [6]); jsResult: the page's answer.
+      executeJavaScript: (js) => { (w.js ||= []).push(js); capLog.push(/classList\.remove/.test(js) ? "js show" : "js hide"); return w.jsAnswer ? w.jsAnswer(js) : Promise.resolve(w.jsResult !== undefined ? w.jsResult : true); } },
   };
   fakeWins.push(w);
   (appListeners["browser-window-created"] || []).forEach((f) => f({}, w));
@@ -141,7 +143,8 @@ function fakeGlow({ url = "file:///tmp/cu-glow.html", visible = false, loading =
 }
 // `bridge(args)`: the stub x11-bridge's synchronous answer (input commands);
 // without it every synchronous tool call fails as "not found".
-function loadExecutor({ displays, session = "x11", desktop = "XFCE", target = null, doctor = X11_DOCTOR(true), bridge = null }) {
+const capLog = [];
+function loadExecutor({ displays, session = "x11", desktop = "XFCE", target = null, doctor = X11_DOCTOR(true), bridge = null, asyncBridge = null }) {
   fakeWins.length = 0;
   for (const k of Object.keys(appListeners)) delete appListeners[k];
   const screen = makeScreen(displays);
@@ -160,6 +163,7 @@ function loadExecutor({ displays, session = "x11", desktop = "XFCE", target = nu
         setTimeout(() => (d instanceof Error ? c(d, "", String(d.message)) : c(null, JSON.stringify(d), "")), 0);
         return { on() {} };
       }
+      if (asyncBridge && args && args[0] !== "screens") { const r = asyncBridge(args); setTimeout(() => c && (r instanceof Error ? c(r, "", String(r.message)) : c(null, r, "")), r && r.delayMs || 0); return { on() {} }; }
       setTimeout(() => c && c(new Error("not found"), "", ""), 0); return { on() {} };
     },
     spawn() { return { on() {}, unref() {}, stdout: { on() {} }, stderr: { on() {} } }; },
@@ -371,10 +375,12 @@ const D = reEsc(DID);
 const RESOLVER_RE = /function ([\w$]+)\(([\w$]+)\)\{return \2===null\?([\w$]+)\.screen\.getPrimaryDisplay\(\):\3\.screen\.getAllDisplays\(\)\.find\(\(?([\w$]+)\)?=>\4\.id===\2\)?\)\?\?\3\.screen\.getPrimaryDisplay\(\)\}/;
 // v5.1231.0 wraps the setBounds with a drawn-cursor redraw:
 // `(j.setBounds(U().bounds),R())`; both shapes are the same setter.
-const GLOW_SET_RE = /function ([\w$]+)\(([\w$]+)\)\{([\w$]+)=\2\?\?null,([\w$]+)&&!\4\.isDestroyed\(\)&&(?:\4\.setBounds\(([\w$]+)\(\)\.bounds\)|\(\4\.setBounds\(([\w$]+)\(\)\.bounds\),[\w$]+\(\)\))\}/;
+// 10g (test-cu-wl-glow.mjs) adds the Wayland overlay's display hook after the assignment.
+const GLOW_SET_RE = /function ([\w$]+)\(([\w$]+)\)\{([\w$]+)=\2\?\?null,(?:process\.platform==="linux"&&globalThis\.__cdbCuWlGlow\?\.display\?\.\([\w$]+\),)?([\w$]+)&&!\4\.isDestroyed\(\)&&(?:\4\.setBounds\(([\w$]+)\(\)\.bounds\)|\(\4\.setBounds\(([\w$]+)\(\)\.bounds\),[\w$]+\(\)\))\}/;
 const TEACH_SET_RE = /function ([\w$]+)\(([\w$]+)\)\{([\w$]+)=\2\?\?null;let ([\w$]+)=([\w$]+)\(\);\4&&\4\.setBounds\(([\w$]+)\(\)\.workArea\)\}/;
 const GLOW_RE = /function ([\w$]+)\(([\w$]+)\)\{if\(!([\w$]+)\)return Promise\.resolve\(\);([\w$]+)&&=\(clearTimeout\(\4\),null\);let [\w$]+=\+\+[\w$]+;([\w$]+)\(!0\);/;
-const GLOW_PATCHED_RE = /function ([\w$]+)\(([\w$]+)\)\{if\(!([\w$]+)\|\|process\.platform==="linux"&&globalThis\.__cdbCuGlowOff\?\.\(\)===!0\)return Promise\.resolve\(\);([\w$]+)&&=\(clearTimeout\(\4\),null\);let [\w$]+=\+\+[\w$]+;([\w$]+)\(!0\);/;
+// 10e (test-cu-wl-glow.mjs) puts the Wayland overlay's takeover in front.
+const GLOW_PATCHED_RE = /function ([\w$]+)\(([\w$]+)\)\{(?:if\(process\.platform==="linux"&&globalThis\.__cdbCuWlGlow\?\.show\?\.\(\2,[\w$]+,[\w$]+\)===!0\)return Promise\.resolve\(\);)?if\(!([\w$]+)\|\|process\.platform==="linux"&&globalThis\.__cdbCuGlowOff\?\.\(\)===!0\)return Promise\.resolve\(\);([\w$]+)&&=\(clearTimeout\(\4\),null\);let [\w$]+=\+\+[\w$]+;([\w$]+)\(!0\);/;
 // Sub-patch 10d: upstream's drawn-pointer factory, and our assignment in
 // front of it (captures: factory, wrapper).
 const DP_FACTORY_RE = /(?<![\w$.])function ([\w$]+)\(([\w$]+)\)\{return\{glideTo:([\w$]+)\(0,\(\(([\w$]+),([\w$]+)\)=>\{let [\w$]+=\2\(\5\);/;
@@ -960,6 +966,104 @@ if (!haveBin || !existsSync(path.join(BUILD_DIR, "index.js"))) {
       // The KWin executor has no showPointerTravel: upstream's handler skips the glide.
       const kwinSrc = readFileSync(path.join(repo, "js", "executor_linux.js"), "utf8");
       check("KWin executor: no showPointerTravel, no drawn-pointer use (8a: no glow in kwin mode)", /showPointerTravel|__cdbCuDrawnPointer/.test(kwinSrc), false);
+    }
+
+    console.log("\n[6] the drawn cursor and the badge stay out of the screenshots (X11 glow page)");
+    {
+      const J = (x) => JSON.stringify(x);
+      // (a) The element ids our hide style targets, in the REAL glow page.
+      const pageRe = /([\w$]+)=`<!doctype html>\\n<html>\\n<head>[\s\S]*?<\/html>`/;
+      const pm = pageRe.exec(blob);
+      const pageTpl = pm ? pm[0] : "";
+      check("glow page template located (one cu-glow.html source)", countRe(blob, /<span id="badge-label">Claude is using your computer<\/span>/) === 1 && !!pm, true);
+      const arrowTplM = /,([\w$]+)=`\\n    <div id="cursor-press">[\s\S]*?`/.exec(blob);
+      for (const id of ["overlay", "badge", "cursor", "cursor-press", "cursor-ring", "cursor-bloom"]) {
+        check(`real page has #${id}`, (pageTpl + (arrowTplM ? arrowTplM[0] : "")).includes(`id="${id}"`), true);
+      }
+      // (b) The real page in headless Chromium: hide, then restore.
+      const exSrc = readFileSync(EXECUTOR, "utf8");
+      const constSrc = (/var CU_CAP_WL_ACK_MS=[^\n]*\n/.exec(exSrc) || [""])[0] + (/var CU_CAP_HIDE_JS='[\s\S]*?';\n/.exec(exSrc) || [""])[0] + (/var CU_CAP_SHOW_JS='[^\n]*';\n/.exec(exSrc) || [""])[0];
+      const consts = new Function(constSrc + "return{hide:CU_CAP_HIDE_JS,show:CU_CAP_SHOW_JS};")();
+      check("hide / restore scripts read from the executor", /cursor-press/.test(consts.hide) && /classList\.remove/.test(consts.show), true);
+      let chromium = null;
+      for (const c of ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome"]) { try { accessSync(c, constants.X_OK); chromium = c; break; } catch {} }
+      // The page as upstream writes it: its constants (colour, scale, the
+      // arrow path, the shadow function, the cursor CSS and markup) evaluated
+      // from the bundle, then the page template.
+      const startM = /var ([\w$]+)="rgb\(217, 119, 87\)",([\w$]+)=2,/.exec(blob);
+      const endM = arrowTplM;
+      let page = "";
+      if (startM && endM && pm) {
+        const decl = blob.slice(startM.index + 4, endM.index + endM[0].length);
+        try { page = new Function("let " + decl + ";return " + pageTpl.slice(pm[1].length + 1) + ";")(); } catch (e) { page = ""; console.log("    page build failed: " + e.message); }
+      }
+      check("real glow page rebuilt from the bundle", page.includes('id="cursor-ring"') && page.includes('id="badge"'), true);
+      if (!chromium || !page) {
+        console.log("  SKIP the in-page check: " + (chromium ? "no page" : "no chromium"));
+      } else {
+        const probe = `<script>
+(async()=>{const o=document.getElementById("overlay");o.style.transition="none";o.classList.add("own-cursor","own-cursor-shown");o.style.opacity="1";
+document.getElementById("badge").style.opacity="1";
+const st=id=>getComputedStyle(document.getElementById(id)).visibility;
+const ids=["cursor","cursor-press","badge","glow"];
+const before=ids.map(st);
+const hp=(${consts.hide});
+const during=ids.map(st);
+// Headless Chromium with virtual time issues no frame for a page without
+// damage, so the second animation frame may never come here; the executor
+// bounds that wait (CU_CAP_X11_MAX_MS).
+const hid=await Promise.race([hp,new Promise(f=>setTimeout(()=>f("bounded"),200))]);
+${consts.show};
+const after=ids.map(st);
+// Nothing shown: the overlay faded out -> answers false, adds nothing.
+o.style.transition="none";o.style.opacity="0";const none=await Promise.race([(${consts.hide}),new Promise(f=>setTimeout(()=>f("bounded"),200))]);const cls=document.documentElement.className;
+document.body.setAttribute("data-r",JSON.stringify({before,hid,during,after,none,cls,styles:document.querySelectorAll("#cdb-cu-capture-style").length}));})();
+</script>`;
+        const f = path.join(scratch, "glow-page.html");
+        writeFileSync(f, page.replace("</body>", probe + "</body>"));
+        let dump = "";
+        try { dump = execFileSync(chromium, ["--headless", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=3000", "--dump-dom", "file://" + f], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { dump = ""; }
+        const m = /data-r="([^"]*)"/.exec(dump);
+        const r = m ? JSON.parse(m[1].replace(/&quot;/g, '"')) : null;
+        check("real page: arrow, ring and badge visible before", r && J(r.before), J(["visible", "visible", "visible", "visible"]));
+        check("real page: hidden during the capture, the glow / rim stays", r && J(r.during), J(["hidden", "hidden", "hidden", "visible"]));
+        check("real page: the hide answered true (two animation frames) or was cut by the bound", !!r && (r.hid === true || r.hid === "bounded"), true);
+        check("real page: visible again after the restore", r && J(r.after), J(["visible", "visible", "visible", "visible"]));
+        check("real page: nothing shown -> false, no class added", r && r.none === false && r.cls === "", true);
+        check("real page: the style is inserted once per page load", r && r.styles, 1);
+      }
+      // (c) The executor around x11-bridge captures, with a fake glow window.
+      const J2 = (x) => JSON.stringify(x);
+      const zoomOk = () => JSON.stringify({ base64: "AA==", width: 10, height: 10 });
+      const run = async ({ bridgeAnswer = zoomOk, glow = true, switchOn = true, jsResult = true, jsAnswer = null }) => {
+        capLog.length = 0;
+        loadExecutor({ displays: HOST, asyncBridge: (args) => { capLog.push("bridge " + args[0]); return bridgeAnswer(args); } });
+        await tick();
+        globalThis.__cdbCuGlowEnabled = () => switchOn;
+        let g = null;
+        if (glow) { g = fakeGlow({ visible: true }); g.jsResult = jsResult; g.jsAnswer = jsAnswer; }
+        capLog.length = 0;
+        let err = null, res = null;
+        const t0 = performance.now();
+        try { res = await globalThis.__linuxExecutor.zoom({ x: 100, y: 100, w: 50, h: 50 }, undefined, null, 1, { globalCoords: true }); } catch (e) { err = e; }
+        const ms = performance.now() - t0;
+        await tick();
+        delete globalThis.__cdbCuGlowEnabled;
+        return { log: capLog.slice(), err, res, ms };
+      };
+      let o = await run({});
+      check("x11: hide, then the bridge capture, then restore", J2(o.log.filter((x) => x !== "bridge screens")), J2(["js hide", "bridge zoom", "js show"]));
+      check("x11: the capture result is unchanged", !!o.res && !o.err, true);
+      o = await run({ bridgeAnswer: () => new Error("Command failed: zoom\nx11-bridge: XGetImage failed") });
+      check("x11: capture fails -> restored anyway", o.log.includes("js hide") && o.log.indexOf("js show") > o.log.indexOf("bridge zoom"), true);
+      o = await run({ jsResult: false });
+      check(`x11: nothing shown in the page -> no restore, no wait (${Math.round(o.ms)} ms)`, J2(o.log.filter((x) => x !== "bridge screens")), J2(["js hide", "bridge zoom"]));
+      o = await run({ jsAnswer: () => new Promise(() => {}) });
+      check(`x11: a page that never answers: capture after the bound (${Math.round(o.ms)} ms, bound 80), restored`, o.ms >= 60 && o.ms < 300 && J2(o.log.filter((x) => x !== "bridge screens")) === J2(["js hide", "bridge zoom", "js show"]), true);
+      o = await run({ glow: false });
+      check("x11: no glow window -> no executeJavaScript at all", o.log.filter((x) => /^js/.test(x)).length, 0);
+      o = await run({ switchOn: false });
+      check("x11: glow switch off -> no executeJavaScript at all", o.log.filter((x) => /^js/.test(x)).length, 0);
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
