@@ -301,7 +301,7 @@ console.log("\n[3] x11-bridge: getFrontmostApp / appUnderPoint in the same ids")
   ok(await rig.ex.appUnderPoint(1919, 1079) === null, "over the bare desktop -> null");
   const caps = rig.ex.capabilitiesNow();
   ok(caps.hitTest === "native" && caps.frontmost === "native" && caps.backend === "x11-bridge" && caps.windowList === "full" && caps.windowPositions === true && caps.screenshotFiltering === "none", "capabilitiesNow on X11", J(caps));
-  ok(!("hitTest" in rig.ex.capabilities) && rig.ex.capabilities.screenshotFiltering === "none" && rig.ex.capabilities.platform === "linux", "static capabilities: still no hitTest key", J(rig.ex.capabilities));
+  ok(rig.ex.capabilities.hitTest === undefined && rig.ex.capabilities.screenshotFiltering === "none" && rig.ex.capabilities.platform === "linux", "capabilities on X11: hitTest undefined (a real hit test, upstream's per-app click gate)", J(rig.ex.capabilities));
 }
 
 // ── [4] grant -> window matcher, findWindowDisplays ────────────────────────
@@ -351,7 +351,11 @@ console.log("\n[6] wlroots-bridge: app_id ids, frontmost only from the activated
   ok(J((await rig.ex.listRunningApps()).map((a) => a.bundleId)) === J(["google-chrome", "org.xfce.mousepad", "org.gnome.TextEditor", "foot"]), "listRunningApps: app_ids, unknown foot kept");
   ok((await rig.ex.getFrontmostApp()).bundleId === "org.xfce.mousepad", "frontmost: the activated toplevel");
   const rig2 = makeRig({ session: "wayland", desktop: "sway", bridges: { wlroots: true }, br: { windows: wins.map((w) => ({ ...w, is_active: false })), front: { bundleId: "google-chrome", displayName: "first" } } });
-  ok(await rig2.ex.getFrontmostApp() === null && !rig2.calls.some((c) => c.includes("frontmost-app")), "no activated toplevel (ext-foreign-toplevel-list): null, never wlroots-bridge's first-toplevel guess", J(rig2.calls));
+  // Issue #326: without window geometry (no hit test) a null front app would
+  // let upstream's gate skip the tier check, so "nothing in front" is the
+  // shared screen there.
+  const f2 = await rig2.ex.getFrontmostApp();
+  ok((f2 === null || f2.bundleId === "com.anthropic.cu.screen") && (rig2.ex.capabilities.hitTest === "none" ? f2 && f2.bundleId === "com.anthropic.cu.screen" : f2 === null) && !rig2.calls.some((c) => c.includes("frontmost-app")), "no activated toplevel (ext-foreign-toplevel-list): the Screen pseudo-app without a hit test (null with one), never wlroots-bridge's first-toplevel guess", J([f2, rig2.ex.capabilities.hitTest, rig2.calls]));
   ok(await rig.ex.appUnderPoint(10, 10) === null && !rig.calls.some((c) => c.includes("app-under-point")), "appUnderPoint: null without asking the bridge");
   const caps = rig.ex.capabilitiesNow();
   ok(caps.hitTest === "none" && caps.frontmost === "native" && caps.backend === "wlroots-bridge" && caps.windowPositions === false, "capabilitiesNow on wlroots", J(caps));
@@ -367,9 +371,12 @@ console.log("\n[7] gnome-portal-bridge (Introspect): same ids, no hit test");
   ok(await rig.ex.appUnderPoint(10, 10) === null && !rig.calls.some((c) => c.includes("app-under-point")), "appUnderPoint: null (no global window origin on GNOME)");
   ok(!rig.calls.some((c) => / session-start/.test(c)), "enumeration never opens a portal session", J(rig.calls));
   const rigE = makeRig({ session: "wayland", desktop: "GNOME", bridges: { gnome: true }, br: { windows: [] } });
-  ok(await rigE.ex.getFrontmostApp() === null && J(await rigE.ex.listRunningApps()) === "[]", "Introspect restricted ([]): frontmost null, no running apps");
+  // Issue #326: where Introspect is refused the front window cannot be named;
+  // the answer is upstream's own Wayland one (the Screen pseudo-app).
+  ok((await rigE.ex.getFrontmostApp()).bundleId === "com.anthropic.cu.screen" && J(await rigE.ex.listRunningApps()) === "[]", "Introspect restricted ([]): front app = the Screen pseudo-app, no running apps");
+  ok(rigE.ex.capabilitiesNow().frontmost === "none" && rigE.ex.capabilities.hitTest === "none", "Introspect restricted: frontmost none, hitTest none", J(rigE.ex.capabilitiesNow()));
   const caps = rig.ex.capabilitiesNow();
-  ok(caps.hitTest === "none" && caps.backend === "gnome-portal-bridge" && caps.windowList === "best-effort", "capabilitiesNow on GNOME", J(caps));
+  ok(caps.hitTest === "none" && caps.frontmost === "native" && caps.backend === "gnome-portal-bridge" && caps.windowList === "best-effort", "capabilitiesNow on GNOME (a window list answered: Introspect works)", J(caps));
 }
 
 // ── [8] XWayland ───────────────────────────────────────────────────────────
@@ -377,13 +384,13 @@ console.log("\n[8] XWayland (uncovered Wayland, x11-bridge): X clients listed, f
 {
   const rig = makeRig({ session: "wayland", desktop: "COSMIC", br: { windows: [{ ...chromeW, is_active: true }], hit: () => ({ bundleId: "Google-chrome", displayName: "x" }), front: { bundleId: "Google-chrome", displayName: "x" } } });
   ok(J((await rig.ex.listRunningApps()).map((a) => a.bundleId)) === J(["google-chrome"]), "listRunningApps: the X clients");
-  ok(await rig.ex.getFrontmostApp() === null && await rig.ex.appUnderPoint(10, 10) === null, "frontmost / appUnderPoint: null (a native Wayland window may be on top)");
+  ok((await rig.ex.getFrontmostApp()).bundleId === "com.anthropic.cu.screen" && await rig.ex.appUnderPoint(10, 10) === null, "front app = the Screen pseudo-app, appUnderPoint null (a native Wayland window may be on top)");
   ok(!rig.calls.some((c) => /frontmost-app|app-under-point/.test(c)), "and the bridge is not asked", J(rig.calls));
   const caps = rig.ex.capabilitiesNow();
   ok(caps.hitTest === "none" && caps.frontmost === "none" && caps.windowList === "partial" && caps.backend === "x11-bridge (XWayland)", "capabilitiesNow on XWayland", J(caps));
   const rn = makeRig({ session: "wayland", desktop: "COSMIC", bridges: {} });
   const cn = rn.ex.capabilitiesNow();
-  ok(cn.backend === "none" && cn.hitTest === "none" && J(await rn.ex.listRunningApps()) === "[]" && await rn.ex.getFrontmostApp() === null, "no bridge, no ydotool: nothing known", J(cn));
+  ok(cn.backend === "none" && cn.hitTest === "none" && J(await rn.ex.listRunningApps()) === "[]" && (await rn.ex.getFrontmostApp()).bundleId === "com.anthropic.cu.screen", "no bridge, no ydotool: nothing known (front app = the Screen pseudo-app)", J(cn));
 }
 
 // ── [9] background X display (Xvfb) ────────────────────────────────────────

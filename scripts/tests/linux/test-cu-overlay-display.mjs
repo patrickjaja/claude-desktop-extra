@@ -27,7 +27,10 @@
 //   [1] the REAL executor helpers on every session row whose monitor list
 //       comes from Electron (X11 incl. HiDPI, XWayland, wlroots, GNOME), the
 //       misaligned small-id layout (ids {1,4}, indexes {0,1}), the EDID-less
-//       ids == indexes layout, the background display, the glow-off flag.
+//       ids == indexes layout, the background display, the glow-off flag;
+//       [1b] the glow stays off on X11 without a compositing manager (x11-bridge
+//       doctor capabilities.compositing false / unknown, issue #327), picks up
+//       a compositor switched on or off at run time, one line per change.
 //   [2] the pristine anchors (setters, resolver, five entry sites), the
 //       compiled patch applies with the full counter, is idempotent, leaves the
 //       resolver byte-unchanged, the changed chunk passes node --check.
@@ -98,17 +101,51 @@ function makeScreen(displays) {
 }
 
 // Loads the REAL executor with stubs; returns the screen object it reads.
-function loadExecutor({ displays, session = "x11", desktop = "XFCE", target = null }) {
+// x11-bridge doctor (src/doctor.rs); `doctor` = the object, a function of the
+// call count, or an Error. Default: a compositing manager runs.
+const X11_DOCTOR = (cm, extra = {}) => ({ contract: 1, bridge: "x11-bridge", version: "0.1.0", backend: "x11", session_match: true, backend_reachable: true, capabilities: { screenshot_mask: true, screenshot_mask_ignore: true, compositing: cm, ...extra } });
+const diagLines = [];
+let doctorCalls = 0;
+// Fake BrowserWindows (only what the glow guard uses) and the app's
+// browser-window-created listeners, so a "show" can be fired like Electron's.
+const fakeWins = [];
+const appListeners = {};
+function fakeGlow({ url = "file:///tmp/cu-glow.html", visible = false, loading = false } = {}) {
+  const ev = {};
+  const w = {
+    destroyed: false, visible, loading, url,
+    isDestroyed: () => w.destroyed, isVisible: () => w.visible, destroy() { w.destroyed = true; w.visible = false; },
+    on(n, f) { (ev[n] = ev[n] || []).push(f); },
+    emit(n) { (ev[n] || []).forEach((f) => f()); },
+    webContents: { isDestroyed: () => w.destroyed, getURL: () => w.url, isLoading: () => w.loading },
+  };
+  fakeWins.push(w);
+  (appListeners["browser-window-created"] || []).forEach((f) => f({}, w));
+  return w;
+}
+function loadExecutor({ displays, session = "x11", desktop = "XFCE", target = null, doctor = X11_DOCTOR(true) }) {
+  fakeWins.length = 0;
+  for (const k of Object.keys(appListeners)) delete appListeners[k];
   const screen = makeScreen(displays);
+  doctorCalls = 0;
   const cp = {
     execFileSync() { throw new Error("not found"); },
     execSync() { throw new Error("nope"); },
     spawnSync() { return { status: 1 }; },
-    execFile(bin, args, opts, cb) { const c = typeof opts === "function" ? opts : cb; setTimeout(() => c && c(new Error("not found"), "", ""), 0); return { on() {} }; },
+    execFile(bin, args, opts, cb) {
+      const c = typeof opts === "function" ? opts : cb;
+      if (path.basename(String(bin)) === "x11-bridge" && args && args[0] === "doctor") {
+        const d = typeof doctor === "function" ? doctor(++doctorCalls) : (++doctorCalls, doctor);
+        setTimeout(() => (d instanceof Error ? c(d, "", String(d.message)) : c(null, JSON.stringify(d), "")), 0);
+        return { on() {} };
+      }
+      setTimeout(() => c && c(new Error("not found"), "", ""), 0); return { on() {} };
+    },
     spawn() { return { on() {}, unref() {}, stdout: { on() {} }, stderr: { on() {} } }; },
   };
   const electron = {
-    app: { commandLine: { getSwitchValue: () => "" }, getPath: () => os.tmpdir() },
+    app: { commandLine: { getSwitchValue: () => "" }, getPath: () => os.tmpdir(), on(n, f) { (appListeners[n] = appListeners[n] || []).push(f); } },
+    BrowserWindow: { getAllWindows: () => fakeWins.filter((w) => !w.destroyed) },
     screen,
     desktopCapturer: { getSources: async () => [] },
     clipboard: { readText: () => "", writeText: () => {} },
@@ -122,7 +159,8 @@ function loadExecutor({ displays, session = "x11", desktop = "XFCE", target = nu
     if (id === "fs") return { readFileSync: () => Buffer.alloc(0), writeFileSync() {}, unlinkSync() {}, existsSync: () => false, renameSync() {}, accessSync() { throw new Error("no"); }, readdirSync: () => [], statSync: () => ({ isDirectory: () => false }), constants: { X_OK: 1 } };
     throw new Error("unexpected require " + id);
   };
-  globalThis.__cdbDiag = () => {};
+  diagLines.length = 0;
+  globalThis.__cdbDiag = (m) => diagLines.push(String(m));
   globalThis.__cuX11BridgeBin = "/res/x11-bridge";
   delete globalThis.__cuGnomeBridgeBin; delete globalThis.__cuWlrootsBridgeBin;
   globalThis.__cuKwinMode = false;
@@ -136,6 +174,7 @@ function loadExecutor({ displays, session = "x11", desktop = "XFCE", target = nu
   return screen;
 }
 const T = (v) => globalThis.__cdbCuElectronDisplayId?.(v);
+const tick = () => new Promise((r) => setTimeout(r, 5));
 
 console.log("\n[1] the executor helpers on each session row (monitor list from Electron)");
 const rows = [
@@ -155,7 +194,8 @@ for (const row of rows) {
   check(`${row.name}: null stays null`, T(null), null);
   check(`${row.name}: unknown index 7 unchanged`, T(7), 7);
   check(`${row.name}: -1 / 1.5 / "2" unchanged`, JSON.stringify([T(-1), T(1.5), T("2")]), JSON.stringify([-1, 1.5, "2"]));
-  check(`${row.name}: glow on (desktop session)`, globalThis.__cdbCuGlowOff?.(), false);
+  await tick(); // the doctor warmed at executor load answers
+  check(`${row.name}: glow on (desktop session, compositing manager running)`, globalThis.__cdbCuGlowOff?.(), false);
 }
 {
   loadExecutor({ displays: MISALIGNED });
@@ -190,8 +230,110 @@ for (const row of rows) {
   globalThis.__cuTargetRead = () => { throw new Error("unreadable"); };
   check("setting unreadable: glow off (fail closed, as the latch refuses)", globalThis.__cdbCuGlowOff?.(), true);
   globalThis.__cuTargetRead = () => null;
+  await tick();
   check("setting off: glow on", globalThis.__cdbCuGlowOff?.(), false);
   delete globalThis.__cuTargetRead;
+}
+
+console.log("\n[1b] glow off on X11 without a compositing manager (issue #327)");
+{
+  const offLines = () => diagLines.filter((m) => /glow off:/.test(m));
+  loadExecutor({ displays: HOST, doctor: X11_DOCTOR(false) });
+  await tick();
+  check("no compositing manager: glow off", globalThis.__cdbCuGlowOff?.(), true);
+  globalThis.__cdbCuGlowOff?.(); globalThis.__cdbCuGlowOff?.();
+  check("one diag line, not one per lock", offLines().length, 1);
+  check("the line names the reason", /no compositing manager runs on this X11 display/.test(offLines()[0] || ""), true);
+  loadExecutor({ displays: HOST, doctor: X11_DOCTOR(null, { compositing_error: "no X connection" }) });
+  await tick();
+  check("compositing null (unknown): glow off", globalThis.__cdbCuGlowOff?.(), true);
+  check("unknown: the line carries the bridge's reason", /did not say whether a compositing manager runs \(no X connection\)/.test(offLines()[0] || ""), true);
+  const old = X11_DOCTOR(true); delete old.capabilities.compositing;
+  loadExecutor({ displays: HOST, doctor: old });
+  await tick();
+  check("bridge without the doctor key: glow off", globalThis.__cdbCuGlowOff?.(), true);
+  loadExecutor({ displays: HOST, doctor: new Error("Command failed: doctor timed out") });
+  await tick();
+  check("doctor failed: glow off", globalThis.__cdbCuGlowOff?.(), true);
+  loadExecutor({ displays: HOST, doctor: X11_DOCTOR(true) });
+  check("no doctor answer yet (sync read at load): glow off", globalThis.__cdbCuGlowOff?.(), true);
+  check("the sync read spawned no second doctor while one runs", doctorCalls, 1);
+  await tick();
+  check("after the answer: glow on", globalThis.__cdbCuGlowOff?.(), false);
+  check("glow back on: one 'glow on' line", diagLines.filter((m) => /glow on: a compositing manager runs/.test(m)).length, 1);
+  // Compositor stopped between tasks: the decision is synchronous, so the
+  // cached "compositor" answer still lets upstream create the glow, but the
+  // decision itself starts a fresh doctor (even inside the 60 s TTL) and its
+  // "no compositor" answer closes the glow window before or right after the
+  // show - never a task in black.
+  loadExecutor({ displays: HOST, doctor: (n) => X11_DOCTOR(n === 1) });
+  await tick();
+  check("stopped between tasks: load answer (compositing) -> glow on", globalThis.__cdbCuGlowOff?.(), false);
+  await tick(); // the refresh that decision started answers: compositor gone
+  check("stopped between tasks: every decision asks a fresh doctor (inside the TTL)", doctorCalls, 2);
+  check("stopped between tasks: next decision -> glow off", globalThis.__cdbCuGlowOff?.(), true);
+  {
+    // Upstream created the glow on the stale answer (loading, then shown).
+    loadExecutor({ displays: HOST, doctor: (n) => X11_DOCTOR(n === 1) });
+    await tick();
+    check("stale: decision says glow on", globalThis.__cdbCuGlowOff?.(), false);
+    const g = fakeGlow({ loading: true });
+    await tick(); // fresh answer: no compositor; the window is still loading
+    check("stale: a glow window still loading is not destroyed by the answer (upstream's creation completes)", g.destroyed, false);
+    g.loading = false; g.visible = true; g.emit("show");
+    check("stale: shown while 'no compositor' is known -> not destroyed synchronously (upstream's show function completes)", g.destroyed, false);
+    await tick();
+    check("stale: destroyed one tick after the show", g.destroyed, true);
+    check("stale: one line says why", diagLines.filter((m) => /glow window closed: no compositing manager is known to run/.test(m)).length, 1);
+    // Same, but the window was already shown when the answer arrived.
+    loadExecutor({ displays: HOST, doctor: (n) => X11_DOCTOR(n === 1) });
+    await tick();
+    globalThis.__cdbCuGlowOff?.();
+    const g2 = fakeGlow({ visible: true }); g2.emit("show"); // cached answer still "compositor": kept
+    await tick();
+    check("stale: an already shown glow is destroyed when the answer says no compositor", g2.destroyed, true);
+    // A hidden, loaded glow (created in an earlier task under a compositor)
+    // is destroyed too, so it is never reused without one.
+    const g3 = fakeGlow({ visible: false });
+    globalThis.__cdbCuGlowOff?.();
+    await tick();
+    check("hidden loaded glow: destroyed on a 'no compositor' answer", g3.destroyed, true);
+    // Unrelated windows are never touched.
+    const other = fakeGlow({ url: "file:///tmp/cu-teach-1.html", visible: true });
+    const main = fakeGlow({ url: "https://claude.ai/new", visible: true });
+    globalThis.__cdbCuGlowOff?.();
+    await tick();
+    check("teach overlay and main window are never destroyed", other.destroyed || main.destroyed, false);
+  }
+  {
+    // Compositor running throughout: the glow window is kept and reused.
+    loadExecutor({ displays: HOST, doctor: X11_DOCTOR(true) });
+    await tick();
+    check("compositor: glow on", globalThis.__cdbCuGlowOff?.(), false);
+    const g = fakeGlow({ visible: true }); g.emit("show");
+    await tick(); globalThis.__cdbCuGlowOff?.(); await tick();
+    check("compositor: the glow window is kept (upstream reuses it)", g.destroyed, false);
+    // A doctor that fails while the glow is up: unknown -> closed.
+    loadExecutor({ displays: HOST, doctor: (n) => (n === 1 ? X11_DOCTOR(true) : new Error("doctor timed out")) });
+    await tick();
+    globalThis.__cdbCuGlowOff?.();
+    const gf = fakeGlow({ visible: true });
+    await tick();
+    check("doctor fails while the glow is up: glow window closed", gf.destroyed, true);
+  }
+  // Never on Wayland (upstream shows no glow there), never asks for it.
+  loadExecutor({ displays: HOST, session: "wayland", desktop: "sway", doctor: X11_DOCTOR(false) });
+  await tick();
+  check("Wayland: the compositor rule does not apply", globalThis.__cdbCuGlowOff?.(), false);
+  // Background display still wins (no host doctor needed).
+  loadExecutor({ displays: HOST, target: { kind: "x11", display: ":99", env: {} }, doctor: X11_DOCTOR(true) });
+  await tick();
+  check("background display + compositor: glow off", globalThis.__cdbCuGlowOff?.(), true);
+  // No x11-bridge at all on X11: off.
+  loadExecutor({ displays: HOST });
+  delete globalThis.__cuX11BridgeBin;
+  check("X11 without x11-bridge: glow off", globalThis.__cdbCuGlowOff?.(), true);
+  globalThis.__cuX11BridgeBin = "/res/x11-bridge";
 }
 {
   const src = readFileSync(EXECUTOR, "utf8");
@@ -284,7 +426,7 @@ if (!haveBin || !existsSync(path.join(BUILD_DIR, "index.js"))) {
     check("no [FAIL] line", /\[FAIL\]/.test(r1.out), false);
     check(`[PASS] ${EXPECTED_PATCHES}/${EXPECTED_PATCHES} reported`, r1.out.includes(`[PASS] ${EXPECTED_PATCHES}/${EXPECTED_PATCHES} sub-patches applied`), true);
     for (const [name] of SITES) check(`${name} reported [OK]`, r1.out.includes(`[OK] ${name}: Linux display id -> Electron id`), true);
-    check("10c reported [OK]", r1.out.includes(`[OK] 10c glow show ${glowFn}: off while Computer Use runs on a background display (1 match)`), true);
+    check("10c reported [OK]", r1.out.includes(`[OK] 10c glow show ${glowFn}: off on a background display or without a compositing manager (1 match)`), true);
     if (r1.status !== 0) console.log(r1.out);
     const patched = readFileSync(staged, "utf8");
     const r2 = run(staged);

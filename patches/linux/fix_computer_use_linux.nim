@@ -9,7 +9,7 @@
 # embeds them via staticRead at compile time; Python reads them at runtime.
 # No codegen — the .js files are the single source of truth.
 #
-# All 59 sub-patches use std/nre (PCRE) because many require backreferences.
+# All 62 sub-patches use std/nre (PCRE) because many require backreferences.
 # "Ask before Computer Use controls an app" (js/cu_consent.js, injected by
 # Patch 1 after the executors): sub-patch 6b makes upstream's grants full level
 # in the regular executor mode, 6c lets upstream's terminal / file-manager
@@ -38,7 +38,12 @@
 # Sub-patches 16a-16d make upstream's per-app answers follow the active
 # backend (js/cu_consent.js): the system-prompt suffix after the tier rules,
 # the computerUsePerAppAccess feature, the renderer re-signal when that answer
-# changes, and the "Entire screen" pseudo-grant.
+# changes, and the "Entire screen" pseudo-grant. 16f gives cloud sessions the
+# same pseudo-grant on a backend without a hit test, and 17f exposes
+# upstream's "a Claude dialog is open" predicate and 17g its own-input
+# marker for the Wayland input guard: with them the executor
+# answers upstream's whole-screen gate as upstream's own Wayland executor does
+# (issue #326).
 # Sub-patch 4h routes the Linux arm of upstream's unhideComputerUseApps (turn-end
 # auto-unhide) to the active Linux executor's __unhideApps when it has one, so
 # the KWin executor lifts the capture exclusions it set (upstream's own Linux
@@ -392,6 +397,17 @@ proc endStateMarkers(): seq[EndStateMarker] =
       "1 screen grant helper",
       """globalThis\.__cdbCuNoScreenGrant=function\(\)\{""",
     ),
+    rx(
+      # js/cu_consent.js: the one "whole shared screen" predicate (issue #326)
+      # behind both pseudo-grant sites (16d local, 16f cloud).
+      "1 whole-screen predicate",
+      """globalThis\.__cdbCuScreenOnly=function\(\)\{""",
+    ),
+    rx(
+      # js/cu_consent.js: the cloud pseudo-grant helper 16f calls.
+      "1 cloud screen grant helper",
+      """globalThis\.__cdbCuWithScreenGrant=function\(""",
+    ),
     lit(
       "6b full grant level",
       "cuOnlyMode:process.platform===\"linux\"&&!globalThis.__cuKwinMode||process.env.COWORK_CU_ONLY",
@@ -658,6 +674,24 @@ proc endStateMarkers(): seq[EndStateMarker] =
       "16d screen pseudo-grant",
       """\{if\(process\.platform==="linux"&&globalThis\.__cdbCuNoScreenGrant\?\.\(\)===!0\|\|[\w$]+\.[\w$]+!==[\w$]+\.[\w$]+\|\|""",
     ),
+    rx(
+      "16f cloud screen pseudo-grant",
+      """getAllowedApps:\(\)=>process\.platform==="linux"&&typeof globalThis\.__cdbCuWithScreenGrant=="function"\?globalThis\.__cdbCuWithScreenGrant\(""",
+    ),
+    rx(
+      "16f cloud grants stored without it",
+      """\.apps=process\.platform==="linux"\?\[\.\.\.[\w$]+\]\.filter\(__cuScr=>__cuScr\.bundleId!==[\w$]+\.[\w$]+\):\[\.\.\.[\w$]+\],""",
+    ),
+    rx(
+      # The runtime global's defining assignment, after upstream's function.
+      "17f dialog-open predicate",
+      """\{return [\w$]+>0\}process\.platform==="linux"&&\(globalThis\.__cdbCuDialogOpen=[\w$]+\);""",
+    ),
+    rx(
+      # Inside upstream's guard install branch (Wayland sessions only).
+      "17g own-input marker",
+      """\(([\w$]+)=!0,process\.platform==="linux"&&\(globalThis\.__cdbCuMarkInput=[\w$]+\),[\w$]+\(\),""",
+    ),
   ]
 
 # ─── main patch ─────────────────────────────────────────────────────────────
@@ -667,7 +701,7 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 59
+  const EXPECTED_PATCHES = 62
 
   let gateSet = cuPlatformSetName(content)
   if gateSet == "":
@@ -1832,7 +1866,10 @@ proc apply*(input: string): string =
   # Promise.resolve();...`) already skips the glow where it cannot draw it
   # (Z2r = CLICK_THROUGH_WINDOWS = not a Wayland session). On Linux it also
   # skips it while the executor says __cdbCuGlowOff() (target mode: Computer
-  # Use works on a background display, not the user's monitors). Anchor: the
+  # Use works on a background display, not the user's monitors; or an X11
+  # session without a compositing manager, where Electron would draw the
+  # transparent glow as an opaque black screen - x11-bridge doctor
+  # capabilities.compositing, issue #327). Anchor: the
   # show function exactly once, its flag the CLICK_THROUGH_WINDOWS key, and its
   # one call the cuLockChanged handler's "[cu-glow] showGlow failed" catch.
   block:
@@ -1870,7 +1907,7 @@ proc apply*(input: string): string =
               m.captures[3] & "&&=(clearTimeout(" & m.captures[3] & "),null);",
         )
         if n == 1:
-          echo &"  [OK] 10c glow show {fnName}: off while Computer Use runs on a background display (1 match)"
+          echo &"  [OK] 10c glow show {fnName}: off on a background display or without a compositing manager (1 match)"
           inc changes
           inc patchesApplied
         else:
@@ -2885,9 +2922,11 @@ proc apply*(input: string): string =
   # session - kwin mode included, where upstream dispatches - the model's
   # list_granted_applications showed an "Entire screen" grant at the most
   # permissive tier. On Linux it is left out when __cdbCuNoScreenGrant() says
-  # so (kwin mode, or "Ask before Computer Use controls an app" on in regular
-  # mode: our gate refuses unapproved apps); it is only ever removed, never
-  # added, and with the switch off upstream's rule is unchanged.
+  # so: unless __cdbCuScreenOnly() (regular mode on a backend without a hit
+  # test, where upstream's whole-screen gate needs it - 16f gives cloud
+  # sessions the same) and upstream's gate is the one checking (with "Ask
+  # before Computer Use controls an app" on, the Code-tab gate of
+  # js/cu_consent.js checks instead). It is only ever removed, never added.
   block:
     let pat =
       re"""(function ([\w$]+)\(([\w$]+),[\w$]+\)\{if\()(([\w$]+)\.([\w$]+)!==\5\.([\w$]+)\|\|\3\.some\(\(?([\w$]+)=>\8\.bundleId===(["'`])com\.anthropic\.cu\.screen\9\)\)?\)return \3;)"""
@@ -2934,7 +2973,7 @@ proc apply*(input: string): string =
               m.captures[3],
         )
         if n == 1:
-          echo &"  [OK] 16d screen pseudo-grant: {fnName} leaves \"Entire screen\" out on Linux in kwin mode and while ask-before-control is on (1 match)"
+          echo &"  [OK] 16d screen pseudo-grant: {fnName} leaves \"Entire screen\" out on Linux unless the backend shares the whole screen without a hit test and upstream's gate checks (1 match)"
           inc changes
           inc patchesApplied
         else:
@@ -2989,6 +3028,270 @@ proc apply*(input: string): string =
         inc patchesApplied
       else:
         echo &"  [FAIL] 16e enable card: {n}/2 rewrites"
+
+  # 16f: the "Entire screen" pseudo-grant for cloud sessions (issue #326).
+  # Upstream's cloud Cowork / Dispatch dispatch context (4.23118.1
+  # d__15XcO) reads the session's grants as `getAllowedApps:()=>G(i.grants)`
+  # and never adds the pseudo-grant: its cloud Computer Use does not run on
+  # Wayland. Our executors do, and on a backend without a hit test upstream's
+  # whole-screen rules need it (the shared screen is the app in front while
+  # Claude's own window is). On Linux the list goes through
+  # globalThis.__cdbCuWithScreenGrant (js/cu_consent.js), which applies the
+  # local rule of upstream's `ye` (D4NaWzj8: tier = the most permissive
+  # explicit grant, nothing without one) only when __cdbCuScreenOnly() - the
+  # same predicate 16d follows. It gets upstream's own grant class, tier order
+  # and screen id, read from `ye` and resolved to the same chunks here. The
+  # second rewrite drops the pseudo-grant where the context stores the
+  # session's grants after an approval (`a.apps=[...t]`), as upstream's local
+  # sessions do (`be`), so it is never kept as a real grant.
+  block:
+    let yePat =
+      re"""function ([\w$]+)\(([\w$]+),([\w$]+)\)\{if\((?:process\.platform==="linux"&&globalThis\.__cdbCuNoScreenGrant\?\.\(\)===!0\|\|)?[\w$]+\.[\w$]+!==[\w$]+\.[\w$]+\|\|\2\.some\(\(?([\w$]+)=>\4\.bundleId===(["'`])com\.anthropic\.cu\.screen\5\)\)?\)return \2;let ([\w$]+)=new ([\w$]+)\.([\w$]+)\(\2,\3\)\.explicitGrants;if\(\6\.length===0\)return \2;let ([\w$]+)=\6\.map\(\(?([\w$]+)=>\10\.tier\?\?(["'`])full\11\)\)?\.reduce\(\(?\(([\w$]+),([\w$]+)\)=>\7\.([\w$]+)\[\12\]>=\7\.\14\[\13\]\?\12:\13\)\)?;return\[\.\.\.\2,\{bundleId:([\w$]+)\.([\w$]+),displayName:(["'`])Entire screen\17"""
+    let ctxPat =
+      re"""(\{sessionId:[\w$]+,skipFirstRequestWarnings:!0,getAllowedApps:\(\)=>)(([\w$]+)\(([\w$]+)\.grants\))(,getGrantFlags:\(\)=>\4\.grants\.flags,getUserDeniedBundleIds:\(\)=>(([\w$]+)\.([\w$]+)\(\)),)"""
+    var yeHits: seq[RegexMatch] = @[]
+    for m in content.findIter(yePat):
+      yeHits.add m
+    var ctxHits: seq[RegexMatch] = @[]
+    for m in content.findIter(ctxPat):
+      ctxHits.add m
+    if yeHits.len != 1:
+      echo &"  [FAIL] 16f upstream's local pseudo-grant rule (`function F(e,r){{if(...)return e;let i=new N.C(e,r).explicitGrants;...displayName:\"Entire screen\"`): {yeHits.len} matches, expected 1 - re-audit"
+    elif ctxHits.len != 1:
+      echo &"  [FAIL] 16f cloud dispatch context (`{{sessionId:r,skipFirstRequestWarnings:!0,getAllowedApps:()=>G(i.grants),getGrantFlags:...,getUserDeniedBundleIds:()=>e.D(),`): {ctxHits.len} matches, expected 1 - re-audit"
+    else:
+      let y = yeHits[0]
+      let fnName = y.captures[0]
+      let (yps, ype) = partSpan(content, y.matchBounds.a)
+      let yePart = content[yps ..< ype]
+      let grantsFile = requiredChunk(yePart, y.captures[6])
+      let screenFile = requiredChunk(yePart, y.captures[14])
+      let grantsTarget = namedPart(content, grantsFile)
+      let screenTarget = namedPart(content, screenFile)
+      let grantsLocal = exportTarget(grantsTarget, y.captures[7])
+      let rankLocal = exportTarget(grantsTarget, y.captures[13])
+      let screenLocal = exportTarget(screenTarget, y.captures[15])
+      # The local sessions' user-denied list, which `ye` is called with.
+      let yeCall = re(
+        """getAllowedApps:\(\)=>""" & escapeRe(fnName) &
+          """\([\w$]+\.getCuAllowedApps\?\.\(\)\?\?\[\],([\w$]+)\.([\w$]+)\(\)\)"""
+      )
+      var deniedLocal = ""
+      var callHits = 0
+      for m in yePart.findIter(yeCall):
+        inc callHits
+        if requiredChunk(yePart, m.captures[0]) == screenFile:
+          deniedLocal = exportTarget(screenTarget, m.captures[1])
+      let c = ctxHits[0]
+      let (cps, cpe) = partSpan(content, c.matchBounds.a)
+      let cloudPart = content[cps ..< cpe]
+      let deniedNs = c.captures[6]
+      let deniedFile = requiredChunk(cloudPart, deniedNs)
+      let cloudDeniedLocal = exportTarget(namedPart(content, deniedFile), c.captures[7])
+      # The cloud chunk's namespace for upstream's grant chunk.
+      var grantsNs: seq[string] = @[]
+      for m in cloudPart.findIter(
+        re(
+          """(?<![\w$.])([\w$]+)=require\(["`]\./""" & escapeRe(grantsFile) &
+            """["`]\)"""
+        )
+      ):
+        grantsNs.add m.captures[0]
+      # The store of the session's grants after an approval, in the same context.
+      let tailEnd = min(c.matchBounds.b + 1 + 2500, cloudPart.len + cps)
+      let ctxTail = content[c.matchBounds.b + 1 ..< tailEnd]
+      let storePat =
+        re"""onAllowedAppsChanged:\(([\w$]+),([\w$]+)\)=>\{[^\n]{0,1200}?(?<![\w$.])([\w$]+)\.apps=\[\.\.\.\1\],\3\.flags=\2,"""
+      var storeHits: seq[RegexMatch] = @[]
+      for m in ctxTail.findIter(storePat):
+        storeHits.add m
+      let classOk =
+        grantsLocal != "" and
+        countMatches(
+          grantsTarget,
+          re(
+            "(?<![\\w$.])" & escapeRe(grantsLocal) & """=class\{kind=(["'`])explicit\1"""
+          ),
+        ) == 1
+      let rankOk =
+        rankLocal != "" and
+        countMatches(
+          grantsTarget,
+          re("(?<![\\w$.])" & escapeRe(rankLocal) & """=\{read:0,click:1,full:2\}"""),
+        ) == 1
+      let screenOk =
+        screenLocal != "" and
+        countMatches(
+          screenTarget,
+          re(
+            "(?<![\\w$.])" & escapeRe(screenLocal) &
+              """=(["'`])com\.anthropic\.cu\.screen\1"""
+          ),
+        ) == 1
+      if grantsFile == "" or screenFile == "":
+        echo &"  [FAIL] 16f {fnName}: its grant class / screen id namespaces resolve to no single chunk ('{grantsFile}' / '{screenFile}') - re-audit"
+      elif not classOk or not rankOk or not screenOk:
+        echo &"  [FAIL] 16f {fnName}: {y.captures[6]}.{y.captures[7]} / .{y.captures[13]} / {y.captures[14]}.{y.captures[15]} are not the explicit grant class / tier order / screen id ('{grantsLocal}' / '{rankLocal}' / '{screenLocal}') - re-audit"
+      elif callHits != 1 or deniedLocal == "" or deniedFile != screenFile or
+          cloudDeniedLocal != deniedLocal:
+        echo &"  [FAIL] 16f cloud context: its user-denied list {c.captures[5]} ('{cloudDeniedLocal}' in '{deniedFile}') is not the one {fnName} gets ({callHits} call(s), '{deniedLocal}') - re-audit"
+      elif grantsNs.len != 1:
+        echo &"  [FAIL] 16f cloud chunk: `N=require(\"./{grantsFile}\")` {grantsNs.len} matches, expected 1 - re-audit"
+      elif storeHits.len != 1:
+        echo &"  [FAIL] 16f cloud context: `onAllowedAppsChanged:(t,n)=>{{...a.apps=[...t],a.flags=n,` {storeHits.len} matches after getAllowedApps, expected 1 - re-audit"
+      else:
+        let gNs = grantsNs[0]
+        let screenExpr = deniedNs & "." & y.captures[15]
+        let sh = storeHits[0]
+        let storeOld =
+          sh.captures[2] & ".apps=[..." & sh.captures[0] & "]," & sh.captures[2] &
+          ".flags=" & sh.captures[1] & ","
+        let storeNew =
+          sh.captures[2] & ".apps=process.platform===\"linux\"?[..." & sh.captures[0] &
+          "].filter(__cuScr=>__cuScr.bundleId!==" & screenExpr & "):[..." &
+          sh.captures[0] & "]," & sh.captures[2] & ".flags=" & sh.captures[1] & ","
+        # Exactly once in the whole staged file, so the literal rewrite below
+        # lands on this context.
+        if countOccurrences(content, storeOld) != 1:
+          echo &"  [FAIL] 16f cloud context: `{storeOld}` is not unique in the bundle - re-audit"
+        else:
+          let ctxOld = c.match
+          let ctxNew =
+            c.captures[0] &
+            "process.platform===\"linux\"&&typeof globalThis.__cdbCuWithScreenGrant==\"function\"?globalThis.__cdbCuWithScreenGrant(" &
+            c.captures[1] & "," & c.captures[5] & "," & gNs & "." & y.captures[7] & "," &
+            gNs & "." & y.captures[13] & "," & screenExpr & "):" & c.captures[1] &
+            c.captures[4]
+          let n1 = replaceLiteralFirst(content, storeOld, storeNew)
+          let n2 = replaceLiteralFirst(content, ctxOld, ctxNew)
+          if n1 == 1 and n2 == 1:
+            echo &"  [OK] 16f cloud screen pseudo-grant: the cloud dispatch context adds \"Entire screen\" by {fnName}'s rule ({gNs}.{y.captures[7]}, {gNs}.{y.captures[13]}, {screenExpr}) when __cdbCuScreenOnly() and stores grants without it (2 sites)"
+            inc changes, 2
+            inc patchesApplied
+          else:
+            echo &"  [FAIL] 16f cloud screen pseudo-grant: {n1 + n2}/2 rewrites"
+
+  # ─── Patch 17f: upstream's "a Claude dialog is open" predicate ─────────
+  # Upstream (4.23118.1, index.chunk-k6x_9PBk.js), installed at module load on
+  # every Wayland session:
+  #   var NJ=0;function Sxi(){let e=u.dialog;for(let t of["showMessageBox",
+  #   "showOpenDialog","showSaveDialog"]){...NJ++,t.finally((()=>{NJ--}))...}}
+  #   function Cxi(){if(NJ>0)throw Error("A Claude dialog is open on the
+  #   screen; ...")}function wxi(){return NJ>0}
+  # wxi is what upstream's own Wayland executor asks in getFrontmostApp
+  # (`nO()?{bundleId:host+" (dialog)",...}`). It is exposed as
+  # globalThis.__cdbCuDialogOpen right after its declaration (Linux only), so
+  # the regular executor answers the same on a backend without a hit test
+  # (issue #326). Nothing is called here. Pre-assert: the counter is the one
+  # the dialog wrapper counts.
+  block:
+    let pat =
+      re"""(function [\w$]+\(\)\{if\(([\w$]+)>0\)throw Error\((["'`])A Claude dialog is open on the screen; wait for the user to answer it before clicking, scrolling or typing\.\3\)\}function ([\w$]+)\(\)\{return \2>0\})"""
+    var hits: seq[RegexMatch] = @[]
+    for m in content.findIter(pat):
+      hits.add m
+    if hits.len != 1:
+      echo &"  [FAIL] 17f dialog-open predicate (`function F(){{if(N>0)throw Error(\"A Claude dialog is open on the screen; ...\")}}function G(){{return N>0}}`): {hits.len} matches, expected 1 - re-audit"
+    else:
+      let counter = hits[0].captures[1]
+      let fn = hits[0].captures[3]
+      let wrapHits = countMatches(
+        content,
+        re(
+          """\[(["'`])showMessageBox\1,\1showOpenDialog\1,\1showSaveDialog\1\]\)\{[^}]{0,200}?""" &
+            escapeRe(counter) & """\+\+,[\w$]+\.finally\(\(?\(\)=>\{""" &
+            escapeRe(counter) & """--\}\)?\)"""
+        ),
+      )
+      if wrapHits != 1:
+        echo &"  [FAIL] 17f dialog-open predicate {fn}: the showMessageBox/showOpenDialog/showSaveDialog wrapper does not count {counter} ({wrapHits} matches, expected 1) - re-audit"
+      else:
+        let n = replaceFirst(
+          content,
+          pat,
+          proc(m: RegexMatch): string =
+            m.captures[0] &
+              "process.platform===\"linux\"&&(globalThis.__cdbCuDialogOpen=" & fn & ");",
+        )
+        if n == 1:
+          echo &"  [OK] 17f dialog-open predicate: {fn} (counter {counter}, counted by upstream's dialog wrapper) exposed as globalThis.__cdbCuDialogOpen on Linux (1 match)"
+          inc changes
+          inc patchesApplied
+        else:
+          echo "  [FAIL] 17f dialog-open predicate: replacement did not apply"
+
+  # ─── Patch 17g: upstream's own-input marker for its Wayland input guard ─
+  # Upstream (4.23118.1, index.chunk-k6x_9PBk.js) installs, at module load and
+  # on Wayland sessions only, a guard on every webContents created after it
+  # (xxi: `before-mouse-event` / `before-input-event` / `input-event`) that
+  # discards input of a kind while Claude itself is injecting that kind:
+  #   function Exi(){Txi||!WO()||(Txi=!0,xxi(),Sxi(),...)}
+  #   async function gxi(e,t){MJ[e].inFlight++;try{return await t()}finally
+  #     {MJ[e].inFlight--,MJ[e].until=performance.now()+mxi}}
+  #   function _xi(e){...let t=MJ[e];return t.inFlight>0||performance.now()<t.until}
+  # Its own Wayland executor wraps each injected motion / button / wheel / key
+  # in gxi, which is what makes its whole-screen click gate (Claude's window in
+  # front = the shared screen) safe: a click that lands in a Claude window is
+  # dropped. Our executors bypass that wrapper. gxi is exposed as
+  # globalThis.__cdbCuMarkInput INSIDE the install branch, so the global exists
+  # exactly when the guard is installed; js/cu_linux_executor.js wraps its
+  # input in it on backends without a hit test and refuses a Claude window in
+  # front when it is missing (issue #326). Pre-asserts: the install branch
+  # calls the guard installer (web-contents-created + before-mouse-event), the
+  # marker counts the map the guard's predicate reads.
+  block:
+    let instPat =
+      re"""(function [\w$]+\(\)\{([\w$]+)\|\|![\w$]+\(\)\|\|\(\2=!0,)(([\w$]+)\(\),[\w$]+\(\),)"""
+    let markPat =
+      re"""async function ([\w$]+)\(([\w$]+),([\w$]+)\)\{([\w$]+)\[\2\]\.inFlight\+\+;try\{return await \3\(\)\}finally\{\4\[\2\]\.inFlight--,\4\[\2\]\.until=performance\.now\(\)\+[\w$]+\}\}"""
+    var inst: seq[RegexMatch] = @[]
+    for m in content.findIter(instPat):
+      inst.add m
+    var marks: seq[RegexMatch] = @[]
+    for m in content.findIter(markPat):
+      marks.add m
+    if marks.len != 1:
+      echo &"  [FAIL] 17g own-input marker (`async function G(e,t){{M[e].inFlight++;try{{return await t()}}finally{{...}}}}`): {marks.len} matches, expected 1 - re-audit"
+    else:
+      let markFn = marks[0].captures[0]
+      let mapName = marks[0].captures[3]
+      let predHits = countMatches(
+        content,
+        re(
+          """function [\w$]+\(([\w$]+)\)\{if\(!\1\)return!1;let ([\w$]+)=""" &
+            escapeRe(mapName) &
+            """\[\1\];return \2\.inFlight>0\|\|performance\.now\(\)<\2\.until\}"""
+        ),
+      )
+      var guardOk = 0
+      var installer = ""
+      for m in inst:
+        let g = m.captures[3]
+        let body = re(
+          "function " & escapeRe(g) &
+            """\(\)\{let [\s\S]{0,1600}?before-mouse-event[\s\S]{0,1200}?\.app\.on\((["'`])web-contents-created\1"""
+        )
+        if countMatches(content, body) == 1:
+          inc guardOk
+          installer = g
+      if predHits != 1:
+        echo &"  [FAIL] 17g own-input marker {markFn}: the guard's predicate does not read {mapName} ({predHits} matches, expected 1) - re-audit"
+      elif inst.len != 1 or guardOk != 1:
+        echo &"  [FAIL] 17g guard install branch (`function F(){{T||!W()||(T=!0,guard(),dialogs(),...`): {inst.len} matches, {guardOk} with the webContents guard, expected 1 - re-audit"
+      else:
+        let n = replaceFirst(
+          content,
+          instPat,
+          proc(m: RegexMatch): string =
+            m.captures[0] & "process.platform===\"linux\"&&(globalThis.__cdbCuMarkInput=" &
+              markFn & ")," & m.captures[2],
+        )
+        if n == 1:
+          echo &"  [OK] 17g own-input marker: {markFn} (counts {mapName}, read by the guard {installer} installs) exposed as globalThis.__cdbCuMarkInput where the guard is installed (1 match)"
+          inc changes
+          inc patchesApplied
+        else:
+          echo "  [FAIL] 17g own-input marker: replacement did not apply"
 
   # ─── Patch 17c: Stop sharing stops the running turn ───────────────────
   # Upstream (4.23118.1, index.chunk-k6x_9PBk.js):

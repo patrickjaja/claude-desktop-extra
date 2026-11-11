@@ -307,7 +307,7 @@
       "predicate": "isWaylandSession",
       "shape": "if\\(process\\.platform===[\"`]linux[\"`]&&globalThis\\.__cdbCuNoScreenGrant\\?\\.\\(\\)===!0\\|\\|@@!==",
       "consumers": 1,
-      "reason": "'Entire screen' pseudo-grant (16d): on Linux it is left out in kwin mode or while ask-before-control is on (__cdbCuNoScreenGrant() true); our term only ever removes it, otherwise upstream's preset test adds it."
+      "reason": "'Entire screen' pseudo-grant (16d): on Linux it is left out (__cdbCuNoScreenGrant() true) unless __cdbCuScreenOnly() (regular mode on a backend without a hit test) and ask-before-control is off (on: the Code-tab gate checks instead); our term only ever removes it, otherwise upstream's preset test adds it. 16f gives cloud sessions the same pseudo-grant under the same predicate."
     },
     {
       "predicate": "isWaylandSession",

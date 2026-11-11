@@ -967,7 +967,7 @@ _appimage_integrate() {
 Name=Claude (${CLAUDE_PROFILE})
 Comment=Desktop application for Claude.ai
 GenericName=AI Assistant
-Keywords=AI;Chat;Assistant;Claude;Code;LLM;
+Keywords=AI;Chat;Assistant;Code;LLM;
 ${desired_exec}
 Icon=claude-desktop
 Type=Application
@@ -982,7 +982,7 @@ DESKTOP_EOF
 Name=Claude
 Comment=Desktop application for Claude.ai
 GenericName=AI Assistant
-Keywords=AI;Chat;Assistant;Claude;Code;LLM;
+Keywords=AI;Chat;Assistant;Code;LLM;
 ${desired_exec}
 Icon=claude-desktop
 Type=Application

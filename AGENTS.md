@@ -252,7 +252,7 @@ vboxmanage startvm "Ubuntu"
 # Credentials: osboxes / osboxes.org
 # SSH (port 2222) is unreliable - use guest control instead:
 # Copy file to VM:  vboxmanage guestcontrol "Ubuntu" copyto --target-directory /home/osboxes/ <file> --username osboxes --password "osboxes.org"
-# Run command in VM: vboxmanage guestcontrol "Ubuntu" run --exe /bin/bash --username osboxes --password "osboxes.org" -- bash -c "<cmd>"
+# Run command in VM: vboxmanage guestcontrol "Ubuntu" run --exe /bin/bash --username osboxes --password "osboxes.org" --wait-stdout --wait-stderr -- -c "<cmd>"
 
 # Fedora 43 KDE VM (RPM testing)
 vboxmanage startvm "Fedora43-KDE"

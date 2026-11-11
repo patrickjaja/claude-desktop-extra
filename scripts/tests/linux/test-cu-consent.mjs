@@ -618,7 +618,8 @@ async function perAppTruth(patched, pristineBlob) {
     ctx.nowCalls = 0;
     ctx.__linuxExecutor = {
       // The live getter upstream reads (exec-free); capabilitiesNow() may run pgrep.
-      capabilities: { get screenshotFiltering() { return caps.screenshotFiltering || "none"; }, platform: "linux", hostBundleId: "com.anthropic.Claude" },
+      // hitTest: the executor's exec-free getter ("none" without a real hit test, issue #326).
+      capabilities: { get screenshotFiltering() { return caps.screenshotFiltering || "none"; }, get hitTest() { return caps.hitTest === "native" ? undefined : "none"; }, platform: "linux", hostBundleId: "com.anthropic.Claude" },
       capabilitiesNow() { ctx.nowCalls++; return Object.assign({ platform: "linux", hostBundleId: "com.anthropic.Claude", screenshotMaskGaps: [] }, caps); },
     };
     vm.createContext(ctx);
@@ -656,7 +657,10 @@ async function perAppTruth(patched, pristineBlob) {
     ["gnome-portal-bridge", { caps: { screenshotFiltering: "none", hitTest: "none", frontmost: "native", backend: "gnome-portal-bridge" } }, { suffix: "none", hit: "frontmost", perApp: "unsupported", pseudo: false, card: "none" }],
     ["fallback tools on Wayland", { caps: { screenshotFiltering: "none", hitTest: "none", frontmost: "none", backend: "none" } }, { suffix: "none", hit: "none", perApp: "unsupported", pseudo: false, card: "none" }],
     ["fallback tools on X11 (no bridge)", { host: "x11", caps: { screenshotFiltering: "none", hitTest: "none", frontmost: "none", backend: "none" } }, { suffix: "none", hit: "none", perApp: "unsupported", pseudo: false, card: "none" }],
-    ["ask switch off, sway mask-capable", { ask: false, caps: { ...MASK, backend: "wlroots-bridge" } }, { suffix: "off", perApp: "unsupported", pseudo: true, card: "none" }],
+    // "Entire screen" follows __cdbCuScreenOnly() (issue #326): only a backend
+    // without a hit test, and only where upstream's gate checks (switch off).
+    ["ask switch off, sway mask-capable", { ask: false, caps: { ...MASK, backend: "wlroots-bridge" } }, { suffix: "off", perApp: "unsupported", pseudo: false, card: "none" }],
+    ["ask switch off, gnome-portal-bridge (no hit test)", { ask: false, caps: { screenshotFiltering: "none", hitTest: "none", frontmost: "none", backend: "gnome-portal-bridge" } }, { suffix: "off", perApp: "unsupported", pseudo: true, card: "none" }],
     ["ask switch off, x11-bridge on X11", { host: "x11", ask: false, caps: { ...MASK, backend: "x11-bridge" } }, { suffix: "off", perApp: "unsupported", pseudo: false, card: "none" }],
   ];
   for (const [label, row, w] of ROWS) {

@@ -41,7 +41,7 @@
 // shared by every session, which is why active() does not depend on the
 // session: the descriptions hold for every Code session.
 if(process.platform!=="linux"||globalThis.__cdbCuConsent)return;
-var SCREEN="com.anthropic.cu.screen";
+var SCREEN="com.anthropic.cu.screen",DIALOG=" (dialog)",WINDOW=" (window)";
 function ex(){return globalThis.__linuxExecutor||null}
 function switchOn(){try{var f=globalThis.__cdbCuAskBeforeControl;return typeof f==="function"?f()!==!1:!0}catch(e){return!0}}
 function on(){return!globalThis.__cuKwinMode&&switchOn()}
@@ -216,7 +216,20 @@ async function gate(s,kind,points,opts){
   if(typeof e.getFrontmostApp==="function"){
     try{front=await e.getFrontmostApp()}
     catch(er){return err("Could not tell which app is in front ("+String(er&&er.message||er).trim().slice(0,200)+"), so nothing was sent. Take a screenshot and retry.")}
+    // Read again: the front-window source may have just answered (GNOME Introspect).
+    c=caps();
   }
+  // The executor's answers for a backend that cannot name the window in front
+  // (issue #326; upstream's own rules use them): the shared screen = nothing
+  // known (null, as before); Claude (Electron's own focused window, a known
+  // positive) = Claude's window, so keystrokes are refused as upstream does;
+  // "<host> (window)" (Claude's window where upstream's input guard is
+  // missing) = Claude's window too; a Claude dialog = every input refused, as
+  // upstream's gate and its delivery do (its input guard does not cover
+  // native dialogs).
+  if(front&&c.host&&front.bundleId===c.host+DIALOG)return err("One of Claude's own dialogs is open on the shared screen. Wait for the user to answer it before clicking, scrolling or typing.");
+  if(front&&c.host&&front.bundleId===c.host+WINDOW)front={bundleId:c.host,displayName:front.displayName};
+  if(front&&front.bundleId===SCREEN)front=null;
   // No hit test: the host in front stands for the shared screen, which any grant covers.
   if(kind==="pointer"&&c.hitTest!=="native"&&isHost(front,c))front=null;
   var r=refuseFront(front,kind,c,list);
@@ -283,10 +296,11 @@ function diag(m){try{var d=globalThis.__cdbDiag;if(typeof d==="function")d(m)}ca
 //                Linux session in regular mode: "" in kwin mode (per-app,
 //                upstream's own rules hold), else what the live backend does.
 //   __cdbCuSharedScreen()  true = upstream's "shares the whole screen" answer
-//                (computerUsePerAppAccess unsupported, the "Entire screen"
-//                pseudo-grant). False in kwin mode; else true unless "Ask
-//                before Computer Use controls an app" is on AND the capture
-//                bridge masks (mask with gaps counts). Exec-free: it runs on
+//                (computerUsePerAppAccess unsupported). False in kwin mode;
+//                else true unless "Ask before Computer Use controls an app"
+//                is on AND the capture bridge masks (mask with gaps counts).
+//                The "Entire screen" pseudo-grant follows __cdbCuScreenOnly()
+//                (below) instead. Exec-free: it runs on
 //                every supported-features build (#184), so it reads the
 //                executor's capabilities getter (cached doctor), never
 //                capabilitiesNow() (which may run pgrep).
@@ -319,18 +333,59 @@ globalThis.__cdbCuSharedScreen=function(){
   if(v!==_ssLogged){_ssLogged=v;diag("[claude-cu] per-app access: "+(v?"whole shared screen (unsupported)":"per app (supported)"))}
   return v;
 };
-// "Entire screen" pseudo-grant (16d): upstream adds it on Wayland, at the most
-// permissive tier of the grants, as if the whole screen were one app. Left out
-// (true here) in kwin mode (per app) and whenever "Ask before Computer Use
-// controls an app" is on in regular mode: our gate refuses unapproved apps, so
-// a listed whole-screen grant would mislead the model. This only removes the
-// pseudo-grant; with the switch off upstream's own rule decides.
+// The backend shares the whole screen and cannot check per app: regular
+// executor mode on a backend without a hit test (the executor's exec-free
+// capabilities.hitTest "none": GNOME, niri / river, XWayland, ydotool). There
+// upstream's own whole-screen rules run its gate (issue #326), and they need
+// the "Entire screen" pseudo-grant: the shared screen is the app in front
+// whenever Claude's own window is. The one predicate behind both pseudo-grant
+// sites, local sessions (16d) and cloud sessions (16f).
+var _soLogged;
+function screenOnly(){
+  try{
+    if(globalThis.__cuKwinMode)return!1;
+    var e=ex(),c=e&&e.capabilities;
+    return!!c&&c.hitTest==="none";
+  }catch(err){return!1}
+}
+globalThis.__cdbCuScreenOnly=function(){
+  var v=screenOnly();
+  if(v!==_soLogged){_soLogged=v;diag("[claude-cu] whole shared screen: "+(v?"yes (no hit test: upstream's whole-screen rules, \"Entire screen\" grant)":"no (per-app checks)"))}
+  return v;
+};
+// "Entire screen" pseudo-grant, local sessions (16d): upstream adds it on
+// Wayland (its local dispatch context's getAllowedApps), at the most permissive
+// tier of the grants, as if the whole screen were one app. Left out (true
+// here) unless __cdbCuScreenOnly() and upstream's own gate is the one checking
+// a local session: kwin mode and backends with a hit test check per app, and
+// with "Ask before Computer Use controls an app" on our Code-tab gate checks
+// instead (it never counts the pseudo-grant), so its list_granted_applications
+// stays as it was. This only removes the pseudo-grant; where it stays,
+// upstream's own rule decides.
 var _ngLogged;
 globalThis.__cdbCuNoScreenGrant=function(){
   var v;
-  try{v=!!globalThis.__cuKwinMode||switchOn()}catch(e){v=!1}
+  try{v=!globalThis.__cdbCuScreenOnly()||switchOn()}catch(e){v=!0}
   if(v!==_ngLogged){_ngLogged=v;diag("[claude-cu] \"Entire screen\" grant: "+(v?"left out (per-app rules apply)":"upstream's rule"))}
   return v;
+};
+// "Entire screen" pseudo-grant, cloud sessions (16f: upstream's cloud dispatch
+// context's getAllowedApps; upstream never adds it there, its cloud Computer
+// Use does not run on Wayland). Upstream's local rule, with its own grant
+// class and tier order handed in by the patch: apps unchanged unless
+// __cdbCuScreenOnly(), the list has explicit grants (user-denied and policy
+// apps dropped by Grants) and no pseudo-grant yet; then the pseudo-grant at
+// the most permissive explicit tier. 16f also drops it again before upstream
+// stores the session's grants, as upstream's local sessions do.
+globalThis.__cdbCuWithScreenGrant=function(apps,denied,Grants,rank,id){
+  try{
+    if(!Array.isArray(apps)||!globalThis.__cdbCuScreenOnly()||typeof Grants!=="function"||!rank||typeof id!=="string")return apps;
+    if(apps.some(function(a){return a&&a.bundleId===id}))return apps;
+    var g=new Grants(apps,denied).explicitGrants;
+    if(!Array.isArray(g)||g.length===0)return apps;
+    var tier=g.map(function(a){return a.tier!=null?a.tier:"full"}).reduce(function(a,b){return rank[a]>=rank[b]?a:b});
+    return apps.concat([{bundleId:id,displayName:"Entire screen",grantedAt:g[0].grantedAt,tier:tier}]);
+  }catch(err){diag("[claude-cu] \"Entire screen\" grant (cloud): "+(err&&err.message||err));return apps}
 };
 function capChanged(why){
   diag("[claude-cu] per-app access check ("+why+")");

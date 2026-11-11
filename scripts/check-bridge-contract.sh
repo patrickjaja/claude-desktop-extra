@@ -3,6 +3,7 @@
 # contract (docs/computer-use-bridge-contract.md).
 #
 #   scripts/check-bridge-contract.sh <dir>
+#   scripts/check-bridge-contract.sh --x11-caps <x11-bridge binary>
 #
 # Checks each executable `*-bridge` in <dir>. Every command runs with an empty
 # environment (PATH kept), a throwaway HOME / XDG_STATE_HOME / XDG_RUNTIME_DIR,
@@ -11,15 +12,28 @@
 # the bundled resources/ of the tarball. Needs python3 for the JSON checks (CI
 # only; the launcher itself never needs it).
 #
+# x11-bridge must also have what the app needs on X11 (issue #327): doctor
+# `capabilities.screenshot_mask_ignore: true` (masked screenshots look through
+# Claude's own overlays) and a `capabilities.compositing` key (without it the
+# app keeps the "Claude is using your computer" glow off on every X11
+# session). An older bridge passes the contract but would ship that silently.
+# `--x11-caps <file>` runs only this check on one binary; build-patched-tarball.sh
+# calls it on the bundled x11-bridge, so local builds and CI fail alike. A
+# binary that cannot run on this host (the aarch64 one on an x86_64 builder)
+# is checked by the doctor field names compiled into it instead.
+#
 # Exit: 0 when every check passed, 1 when any failed, 2 on bad usage.
 
 set -uo pipefail
 
-if (( $# != 1 )) || [[ ! -d "$1" ]]; then
-    echo >&2 "usage: $0 <dir-with-bridges>"
+x11_caps_only=''
+if (( $# == 2 )) && [[ "$1" == --x11-caps && -f "$2" ]]; then
+    x11_caps_only="$2"
+elif (( $# != 1 )) || [[ ! -d "$1" ]]; then
+    echo >&2 "usage: $0 <dir-with-bridges> | --x11-caps <x11-bridge>"
     exit 2
 fi
-dir="$1"
+dir="${1}"
 command -v python3 >/dev/null 2>&1 || { echo >&2 "$0: python3 is required"; exit 2; }
 
 scratch="$(mktemp -d)"
@@ -86,6 +100,17 @@ if mode == "doctor":
                 if v[key] != want:
                     problems.append("%r must be %s without a session, got %s"
                                     % (key, json.dumps(want), json.dumps(v[key])))
+elif mode == "x11-caps":
+    caps = v.get("capabilities")
+    if not isinstance(caps, dict):
+        problems.append("no capabilities object")
+    else:
+        if caps.get("screenshot_mask_ignore") is not True:
+            problems.append("capabilities.screenshot_mask_ignore must be true (masked screenshots must look through Claude's own overlays)")
+        if "compositing" not in caps:
+            problems.append("capabilities.compositing is missing (the app would keep the glow off on every X11 session)")
+        elif caps["compositing"] not in (True, False, None):
+            problems.append("capabilities.compositing must be true, false or null")
 elif mode == "session-end":
     if v.get("ok") is not True: problems.append("ok must be true")
     if v.get("ended") is not False: problems.append("ended must be false with no daemon")
@@ -146,6 +171,39 @@ leftovers() {
     find "$1/home" "$1/state" "$1/run" -mindepth 1 2>/dev/null | sed "s|^$1/||" | head -5 | tr '\n' ' '
 }
 
+# x11-bridge capabilities the app relies on (issue #327); see the header.
+check_x11_caps() {
+    local bin="$1" sb why
+    sb="$(sandbox)"
+    run_bridge "$sb" "$bin" doctor
+    if [[ "$RC" == 0 ]]; then
+        if why="$(json_check x11-caps <<< "$OUT")"; then
+            pass "x11-bridge: doctor capabilities.screenshot_mask_ignore + compositing"
+        else
+            fail "x11-bridge: doctor capabilities" "$why"
+        fi
+    elif [[ "$RC" == 126 || "$RC" == 127 ]] || ! "$bin" --version >/dev/null 2>&1; then
+        # Not runnable here (foreign architecture): the serde field names are
+        # string literals in the static binary.
+        if grep -aq screenshot_mask_ignore "$bin" && grep -aq compositing_error "$bin"; then
+            pass "x11-bridge: capabilities screenshot_mask_ignore + compositing present in the binary (not runnable on this host)"
+        else
+            fail "x11-bridge: doctor capabilities" "the binary has no screenshot_mask_ignore / compositing (older x11-bridge; not runnable on this host)"
+        fi
+    else
+        fail "x11-bridge: doctor capabilities" "doctor exited $RC: ${ERR:0:120}"
+    fi
+}
+
+if [[ -n "$x11_caps_only" ]]; then
+    echo "== x11-bridge capabilities ($x11_caps_only)"
+    check_x11_caps "$x11_caps_only"
+    echo
+    echo "x11-bridge capabilities: $passes passed, $fails failed"
+    (( fails == 0 ))
+    exit
+fi
+
 check_bridge() {
     local bin="$1" name sb why supported='' first sub
     name="${bin##*/}"
@@ -170,6 +228,8 @@ check_bridge() {
         fail "$name: doctor" "$supported"
         supported=''
     fi
+
+    [[ "$name" == x11-bridge ]] && check_x11_caps "$bin"
 
     sb="$(sandbox)"
     run_bridge "$sb" "$bin" session-end

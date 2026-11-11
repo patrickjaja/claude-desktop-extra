@@ -26,9 +26,14 @@
 //       maskGaps, __lastCapture for the status line); getFrontmostApp tells a
 //       failed bridge from nothing focused; the lock release clears the
 //       ask-before-control notes
+//   [I] Claude's own see-through overlays (issue #327): the glow and teach
+//       overlay XIDs go to x11-bridge with --ignore-window when its doctor
+//       has capabilities.screenshot_mask_ignore; never to an older bridge, a
+//       background display or wlroots-bridge; the report is checked; the
+//       page names the lookup keys on are still in the bundle
 //
 // Exit codes follow the repo convention: 0 = PASS, other = FAIL.
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
@@ -75,6 +80,8 @@ const MAINT = Object.assign([disp(1, "Built-in display", R(7040, 0, 1920, 1200))
 // x11-bridge doctor (live, trimmed) and an x11-bridge without the mask flags.
 const X11_DOCTOR = { contract: 1, bridge: "x11-bridge", version: "0.1.0", backend: "x11", session_match: true, backend_reachable: true, backend_error: null, session_supported: false, restore_token_present: false, restore_token_path: null, daemon_running: false, session_socket: null, display: ":0", atspi: { bus: true, is_enabled: false, screen_reader: false }, capabilities: { screenshot_mask: true } };
 const X11_DOCTOR_OLD = { ...X11_DOCTOR, capabilities: undefined };
+// x11-bridge with --ignore-window (issue #327).
+const X11_DOCTOR_IGN = { ...X11_DOCTOR, capabilities: { screenshot_mask: true, screenshot_mask_ignore: true } };
 // wlroots-bridge doctor on sway / Hyprland / niri (src/doctor.rs).
 const wlDoctor = (o) => ({ contract: 1, bridge: "wlroots-bridge", version: "0.2.0", backend: "wlroots", session_match: true, backend_reachable: true, backend_error: null, session_supported: false, restore_token_present: false, restore_token_path: null, daemon_running: false, session_socket: null, window_geometry: false, screenshot_mask: false, screenshot_mask_gaps: [], ...o });
 const SWAY_DOCTOR = wlDoctor({ window_geometry: true, screenshot_mask: true, screenshot_mask_gaps: ["popups", "layer_shell_top_overlay", "xwayland_unmanaged"] });
@@ -86,9 +93,11 @@ function x11MaskReply(args, wins) {
   const keep = [];
   for (let i = 0; i < args.length; i++) if (args[i] === "--keep-window") keep.push(args[i + 1]);
   const all = args.includes("--mask-all");
+  const ignore = [];
+  for (let i = 0; i < args.length; i++) if (args[i] === "--ignore-window") ignore.push(args[i + 1]);
   const masked = wins.filter((w) => !keep.includes(w.id) && w.is_visible !== false).map((w) => ({ id: w.id, frame: String(+w.id + 1), pid: w.pid, desktop_file_name: w.desktop_file_name, resource_class: w.resource_class, resource_name: w.resource_name, override_redirect: false }));
   masked.push({ id: "77777777", frame: "77777777", pid: 4321, desktop_file_name: null, resource_class: "Xfce4-notifyd", resource_name: "xfce4-notifyd", override_redirect: true });
-  return { base64: "MASKED", width: 1568, height: 441, mask: { mode: all ? "all" : "keep", fill: "#1E1E1E", kept: keep.filter((k) => wins.some((w) => w.id === k && w.is_visible !== false)), kept_hidden: [], kept_missing: keep.filter((k) => !wins.some((w) => w.id === k && w.is_visible !== false)), auto_kept: [], masked } };
+  return { base64: "MASKED", width: 1568, height: 441, mask: { mode: all ? "all" : "keep", fill: "#1E1E1E", kept: keep.filter((k) => wins.some((w) => w.id === k && w.is_visible !== false)), kept_hidden: [], kept_missing: keep.filter((k) => !wins.some((w) => w.id === k && w.is_visible !== false)), auto_kept: [], masked, ignored: ignore, ignored_missing: [], ignored_refused: [] } };
 }
 // wlroots-bridge masked zoom answer (src/mask.rs MaskReport, camelCase kept).
 function wlMaskReply(args, wins, tweak) {
@@ -101,7 +110,7 @@ function wlMaskReply(args, wins, tweak) {
 }
 
 // session: x11 | sway | hypr | niri | gnome | cosmic | kde-x11
-function makeRig({ session = "x11", displays = MAINT, screens = MAINT_SCREENS, windows = X11_WINS, doctor = X11_DOCTOR, zoom, env = {}, target = null, bridges }) {
+function makeRig({ session = "x11", displays = MAINT, screens = MAINT_SCREENS, windows = X11_WINS, doctor = X11_DOCTOR, zoom, env = {}, target = null, bridges, overlays }) {
   const calls = [], diag = [], dc = [], spawned = [];
   const S = {
     x11: { XDG_CURRENT_DESKTOP: "XFCE", XDG_SESSION_TYPE: "x11", DISPLAY: ":0" },
@@ -157,6 +166,7 @@ function makeRig({ session = "x11", displays = MAINT, screens = MAINT_SCREENS, w
     clipboard: { readText: () => "", writeText: () => {} },
     nativeImage: {}
   };
+  if (overlays) electron.BrowserWindow = { getAllWindows: () => (typeof overlays === "function" ? overlays() : overlays) };
   const installed = new Set(["/usr/bin/spectacle", "/usr/bin/convert"]);
   const requireStub = (id) => {
     if (id === "child_process") return cp;
@@ -491,6 +501,99 @@ console.log("\n[H] capture results say what was done; frontmost errors; lock rel
   await rig.ex.__setLockHeld(false);
   delete globalThis.__cdbCuConsent;
   ok(n === 1, "lock release calls __cdbCuConsent.lockReleased once (not on acquire)", n);
+}
+
+// ── [I] Claude's own see-through overlays (issue #327) ─────────────────────
+console.log("\n[I] Claude's glow / teach overlay: --ignore-window");
+{
+  // Fake BrowserWindows as Electron reports them on X11 (measured with
+  // Electron 44 under Xvfb: getNativeWindowHandle() = the XID, 8 bytes LE).
+  const bw = (xid, url, o = {}) => {
+    const h = Buffer.alloc(8); h.writeUInt32LE(xid, 0);
+    return { isDestroyed: () => false, isVisible: () => o.visible !== false, getNativeWindowHandle: () => h, webContents: { isDestroyed: () => false, getURL: () => url } };
+  };
+  const OVERLAYS = [
+    bw(37748800, "file:///tmp/cu-glow.html"),
+    bw(37748900, "file:///tmp/cu-teach-1762800000000.html"),
+    bw(37748740, "https://claude.ai/new"),                             // main window
+    bw(37749000, "file:///tmp/cu-glow.html", { visible: false }),      // hidden: not passed
+    bw(37749100, "file:///tmp/notes/cu-glow.html.bak")                 // other page
+  ];
+  const ign = (rig) => { const a = rig.calls.filter((c) => c.args[0] === "zoom").pop(); const out = []; if (a) for (let i = 0; i < a.args.length; i++) if (a.args[i] === "--ignore-window") out.push(a.args[i + 1]); return out; };
+  const rig = makeRig({ doctor: X11_DOCTOR_IGN, overlays: OVERLAYS });
+  const r = await rig.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
+  ok(r.base64 === "MASKED" && JSON.stringify(ign(rig)) === JSON.stringify(["37748800", "37748900"]), "screenshot path: visible glow + teach overlay passed with --ignore-window, never the main window, a hidden glow or another page", JSON.stringify(zoomArgs(rig)));
+  ok(/--keep-window 79691779 --ignore-window 37748800 --ignore-window 37748900$/.test(zoomArgs(rig)[0] || ""), "flags follow --keep-window", zoomArgs(rig)[0]);
+  ok(rig.diag.some((m) => /looked through 2 Claude overlay\(s\)/.test(m)), "capture line counts the overlays looked through", JSON.stringify(rig.diag));
+  rig.reset();
+  await rig.ex.zoom({ x: 10, y: 20, w: 300, h: 200 }, ["google-chrome"], 1, 1);
+  ok(JSON.stringify(ign(rig)) === JSON.stringify(["37748800", "37748900"]), "zoom path passes them too", JSON.stringify(zoomArgs(rig)));
+  rig.reset();
+  await rig.ex.resolvePrepareCapture({ allowedBundleIds: [], preferredDisplayId: 1 });
+  ok(/--mask-all --ignore-window 37748800 --ignore-window 37748900$/.test(zoomArgs(rig)[0] || ""), "--mask-all with --ignore-window", zoomArgs(rig)[0]);
+  rig.reset();
+  const legacy = await rig.ex.screenshot({ displayId: 1 });
+  ok(legacy.base64 === "PLAIN" && !/--ignore-window/.test(zoomArgs(rig)[0] || ""), "legacy unmasked capture: no --ignore-window", zoomArgs(rig)[0]);
+}
+{
+  // Older bridge (X11_BRIDGE_BIN override): behaviour as before + one line.
+  const bw = (xid, url) => { const h = Buffer.alloc(8); h.writeUInt32LE(xid, 0); return { isDestroyed: () => false, isVisible: () => true, getNativeWindowHandle: () => h, webContents: { isDestroyed: () => false, getURL: () => url } }; };
+  const rig = makeRig({ doctor: X11_DOCTOR, overlays: [bw(37748800, "file:///tmp/cu-glow.html")] });
+  await rig.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
+  await rig.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
+  ok(zoomArgs(rig).length === 2 && zoomArgs(rig).every((z) => !/--ignore-window/.test(z)), "bridge without screenshot_mask_ignore: no --ignore-window", JSON.stringify(zoomArgs(rig)));
+  ok(rig.diag.filter((m) => /does not take --ignore-window/.test(m)).length === 1, "one diag line says why screenshots may come back blank", JSON.stringify(rig.diag));
+  // No overlay up: no line.
+  const quiet = makeRig({ doctor: X11_DOCTOR, overlays: [] });
+  await quiet.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
+  ok(!quiet.diag.some((m) => /--ignore-window/.test(m)), "no overlay shown: no line");
+}
+{
+  const bw = (xid, url) => { const h = Buffer.alloc(8); h.writeUInt32LE(xid, 0); return { isDestroyed: () => false, isVisible: () => true, getNativeWindowHandle: () => h, webContents: { isDestroyed: () => false, getURL: () => url } }; };
+  const ov = [bw(37748800, "file:///tmp/cu-glow.html")];
+  // Background display: host XIDs never go to the target's bridge.
+  const TS = [{ id: "screen", name: "screen", geometry: R(0, 0, 1280, 800), scale: 1, is_primary: true }];
+  const tw = [xw(4194307, "Xterm", "xterm", R(0, 0, 640, 400))];
+  const bg = makeRig({ session: "x11", screens: TS, windows: tw, target: { kind: "x11", display: ":99" }, doctor: X11_DOCTOR_IGN, overlays: ov });
+  const rb = await bg.ex.resolvePrepareCapture({ allowedBundleIds: ["xterm"], preferredDisplayId: 0 });
+  ok(rb.base64 === "MASKED" && !/--ignore-window/.test(zoomArgs(bg)[0] || ""), "background display: no --ignore-window", JSON.stringify(zoomArgs(bg)));
+  // wlroots-bridge: never (upstream shows no glow on a Wayland session).
+  const wl = makeRig({ session: "sway", displays: SWAY_DISPLAYS, screens: SWAY_SCREENS, windows: SWAY_WINS, doctor: SWAY_DOCTOR, overlays: ov });
+  await wl.ex.resolvePrepareCapture({ allowedBundleIds: ["firefox"], preferredDisplayId: 0 });
+  ok(zoomArgs(wl).length === 1 && !/--ignore-window/.test(zoomArgs(wl)[0]), "wlroots-bridge: no --ignore-window", zoomArgs(wl)[0]);
+  // The report is checked: an id that was not asked for discards the image.
+  const liar = makeRig({ doctor: X11_DOCTOR_IGN, overlays: ov, zoom: (b, a) => { const z = x11MaskReply(a, X11_WINS); z.mask.ignored = ["18874372"]; return z; } });
+  const rl = await liar.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
+  ok(rl.base64 === "" && /looked through window 18874372, which was not asked for/.test(rl.captureError || ""), "a bridge that ignored an id we did not pass: image discarded", rl.captureError);
+  const mute = makeRig({ doctor: X11_DOCTOR_IGN, overlays: ov, zoom: (b, a) => { const z = x11MaskReply(a, X11_WINS); delete z.mask.ignored; return z; } });
+  const rm = await mute.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
+  ok(rm.base64 === "" && /did not report the --ignore-window outcome/.test(rm.captureError || ""), "no `ignored` key after --ignore-window: image discarded", rm.captureError);
+  // A refused overlay keeps the (masked) image and says why.
+  const ref = makeRig({ doctor: X11_DOCTOR_IGN, overlays: ov, zoom: (b, a) => { const z = x11MaskReply(a, X11_WINS); z.mask.ignored = []; z.mask.ignored_refused = [{ id: "37748800", reason: "foreign_pid", pid: 1, caller_pid: 2 }]; z.mask.kept_hidden = ["79691779"]; z.mask.kept = []; return z; } });
+  const rr = await ref.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
+  ok(rr.base64 === "MASKED" && ref.diag.some((m) => /did not look through Claude's own overlay 37748800 \(foreign_pid\)/.test(m)) && ref.diag.some((m) => /1 kept window\(s\) fully covered/.test(m)), "refused overlay: image kept (masked), diag names the reason and the covered window", JSON.stringify(ref.diag));
+  // Hidden list unchanged: the glow is not in `windows`, so it never shows as a masked app.
+  ok(JSON.stringify(rr.hidden) === JSON.stringify(["com.mitchellh.ghostty"]), "hidden list still built from `windows` only (the glow is not a masked app)", JSON.stringify(rr.hidden));
+}
+{
+  // The lookup keys on upstream's page names: both must still be in the bundle.
+  const dir = path.join(process.env.CDB_BUNDLE_DIR || path.join(ROOT, "tmp", "app.asar.contents"), ".vite", "build");
+  if (!existsSync(dir)) console.log("  NOTE bundle check skipped: no extract at " + dir);
+  else {
+    const src = readdirSync(dir).filter((f) => /^index.*\.js$/.test(f)).map((f) => readFileSync(path.join(dir, f), "latin1")).join("\n");
+    ok(/["'`]cu-glow\.html["'`]/.test(src), "bundle still writes the glow page as cu-glow.html");
+    ok(/`cu-teach-\$\{[^}]+\}\.html`/.test(src), "bundle still writes the teach page as cu-teach-<n>.html");
+    ok(/["'`]cu-glow\.html["'`][\s\S]{0,800}new [\w$.]+BrowserWindow\(\{[^}]*focusable:!1/.test(src), "the glow window is still focusable:false (override-redirect on X11)");
+    ok(/`cu-teach-\$\{[^}]+\}\.html`[\s\S]{0,800}new [\w$.]+BrowserWindow\(\{[^}]*focusable:!1/.test(src), "the teach window is still focusable:false (override-redirect on X11)");
+    // Every unfocusable (override-redirect on X11) window upstream creates, as
+    // of 4.23118.1: the glow and the teach overlay (looked through above), the
+    // `cu-overlay` label (disabled upstream), the [watch-record] pill and two
+    // BaseWindows (no page). All but the first two are simply masked; a new or
+    // removed one shows here so its effect on masked screenshots and on the
+    // no-compositor case (opaque black when transparent) is re-checked.
+    const unfocusable = (src.match(/focusable:!1/g) || []).length;
+    ok(unfocusable === 6, "upstream creates 6 unfocusable windows (glow, teach, cu-overlay label, watch-record pill, 2 BaseWindows) - re-audit #327 if this changes", unfocusable);
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -2,6 +2,20 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-11
+
+### Computer Use in cloud sessions on GNOME Wayland, niri and river, screenshots inside action batches (#326)
+
+- Cloud Cowork, Dispatch and chats linked to this computer work on desktops that cannot tell which window is in front or under the pointer (GNOME Wayland, and niri and river where the compositor gives no window positions). Clicks were refused as landing "on the desktop shell" and typing as "no app is frontmost". These sessions now follow the whole-screen rules Anthropic's own Wayland code uses: once at least one app is approved, clicks and keystrokes go to whatever is on screen, except Claude's own windows: a click aimed at one is discarded by Anthropic's own input guard, which the Linux backends arm around every input they send on GNOME Wayland, niri, river and the fallback Wayland paths (where that guard does not exist, an X11 session without the bundled x11-bridge, the click is refused). A read-only approval still blocks input, nothing is allowed before an app is approved, typing is refused while Claude's own window has keyboard focus, and input is refused while one of Claude's dialogs is open. `list_granted_applications` lists "Entire screen" there. X11, sway, Hyprland and KDE Plasma Wayland keep the per-app check, and on niri and river input is still refused while an unapproved app is in front.
+- A screenshot taken inside a batch of actions reports its monitor and size, so with two or more monitors it is no longer rejected as taken on monitor "display undefined", and the click after it no longer fails with "coordinate could not be scaled" (every backend except KDE). A screenshot without a chosen monitor uses the default monitor, on GNOME the shared one.
+- What Claude is told about access on GNOME says the session cannot tell which window is in front or under a point. `claude-patches.log` gets one `[claude-cu] no window info: <backend> (<reason>)` line per task when a backend answers without window info. See [Computer Use](docs/computer-use.md).
+
+### Computer Use screenshots on X11 show the approved apps under the glow (#327)
+
+- Cloud Cowork, Dispatch and chats linked to this computer: masked screenshots on X11 no longer come back as one solid colour while the "Claude is using your computer" glow is up. The bundled `x11-bridge` looks through Claude's own glow and teach overlay (new `--ignore-window`, honoured only for Claude's own click-through overlay windows), so the approved apps show with the glow's rim over them as on screen; other apps stay masked.
+- On X11 without a compositing manager (i3, openbox, xfwm4 with its compositor off) the glow is no longer shown: Electron drew it as an opaque black screen there. `x11-bridge doctor` reports `capabilities.compositing`; the glow stays off while it is false or unknown, a compositor stopped between tasks is noticed when the next task starts (a glow already shown is closed at once), and `claude-patches.log` says so once. Teach mode on X11 still needs a compositing manager. See [Computer Use](docs/computer-use.md).
+- Builds fail when the bundled `x11-bridge` lacks these `doctor` capabilities (`scripts/check-bridge-contract.sh`, run by local builds and CI).
+
 ## 2026-11-10
 
 ### Computer Use from cloud Cowork and Dispatch on Wayland, truthful access descriptions, an opt-in Escape stop key (#323)

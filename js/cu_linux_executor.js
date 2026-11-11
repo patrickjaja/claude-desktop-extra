@@ -2063,16 +2063,120 @@ globalThis.__cdbCuElectronDisplayId=function(v){
   return v;
 };
 // Upstream's glow ("Claude is using your computer", sub-patch 10c) frames the
-// user's monitor. On a background display Computer Use is not using it, so
-// true = upstream's own no-glow path. The glow is decided when the CU lock is
-// taken, before the executor re-latches the setting (__setLockHeld awaits the
-// setting's signature first), so this reads the setting itself; without the
-// reader, the latched state.
+// user's monitor. true = upstream's own no-glow path, in two cases:
+// 1. A background display: Computer Use is not using the user's monitor. The
+//    glow is decided when the CU lock is taken, before the executor re-latches
+//    the setting (__setLockHeld awaits the setting's signature first), so this
+//    reads the setting itself; without the reader, the latched state.
+// 2. An X11 session without a compositing manager (issue #327): X has no
+//    alpha blending there, so Electron draws the transparent full-display glow
+//    as an opaque black screen with an orange rim, on the monitor and in every
+//    screenshot. The answer is x11-bridge's doctor `capabilities.compositing`
+//    (owner of _NET_WM_CM_S<screen>), read from the doctor cache: this runs
+//    synchronously in upstream's lock-change handler, so it can only use the
+//    cached answer (primed at executor load, refreshed by captures, 60 s TTL).
+//    Every call also starts a fresh doctor (_glowHostRefresh, the in-flight one
+//    is reused), and _glowEnforce acts on the answer: a compositor that stopped
+//    since the cached answer gets the glow window destroyed before or right
+//    after it is shown (see _glowEnforce), never a whole task in black; one
+//    that started gets the glow from the next lock on.
+//    Unknown (no answer yet, a failed doctor, an older bridge without the key,
+//    no x11-bridge) counts as "no compositor": no glow rather than a risk of a
+//    black screen; Claude's own window still shows that Computer Use runs.
 globalThis.__cdbCuGlowOff=function(){
   var f=globalThis.__cuTargetRead;
-  if(typeof f==="function"){try{return f()!=null}catch(e){return !0}}
-  return !!_tgt;
+  if(typeof f==="function"){try{if(f()!=null)return !0}catch(e){return !0}}
+  else if(_tgt)return !0;
+  var why=_glowCmOff();
+  _glowOffNote(why);
+  return !!why;
 };
+// null = a compositing manager runs (or not an X11 session: upstream shows no
+// glow on Wayland anyway), else why the glow stays off. Exec-free: the host
+// x11-bridge's cached doctor answer; a missing or stale one starts a refresh.
+function _glowCmOff(){
+  if(_wayland)return null;
+  var bin=process.env.X11_BRIDGE_BIN||globalThis.__cuX11BridgeBin;
+  if(!bin)return"no x11-bridge to ask whether a compositing manager runs";
+  var c=_bcCache["x11\n"+bin+"\n"];
+  if(!_tgt)_glowHostRefresh();
+  var r=c&&c.res;
+  if(!r)return"x11-bridge has not answered whether a compositing manager runs";
+  if(r.cm===!0)return null;
+  if(r.cm===!1)return"no compositing manager runs on this X11 display";
+  return"x11-bridge did not say whether a compositing manager runs"+(r.cmWhy?" ("+r.cmWhy+")":" (bridge older than the doctor key)");
+}
+// The host x11-bridge (never a background display's), or null.
+function _glowHostBridge(){
+  if(_wayland||_tgt)return null;
+  var bin=process.env.X11_BRIDGE_BIN||globalThis.__cuX11BridgeBin;
+  return bin?{kind:"x11",name:"x11-bridge",bin:bin}:null;
+}
+// Start a doctor now even when the cached answer is fresh (reuses one in
+// flight; a failed doctor is not retried within its negative TTL).
+function _glowHostRefresh(){
+  var be=_glowHostBridge();if(!be)return;
+  try{
+    var c=_bcCache[_bcKey(be)];
+    if(c&&!c.p&&!c.res&&c.failAt&&Date.now()-c.failAt<CU_BRIDGE_CAPS_FAIL_TTL_MS)return;
+    if(c&&c.res&&!c.p)c.at=0;
+    _bcProbe(be).catch(function(){});
+  }catch(e){}
+}
+// ── The glow window against the compositor's real state (issue #327) ──
+// Chromium picks a window's X visual when it creates it: with a compositing
+// manager an ARGB one, without one an opaque one. So a glow window shown
+// while no compositor runs is black, and one CREATED without a compositor
+// stays black even after one starts (upstream reuses the window, so until a
+// restart). Whenever the host doctor answers "no compositor" (or cannot
+// say), every glow window that is shown or fully loaded is destroyed (a
+// window still loading is left to the show check below, so upstream's own
+// creation does not fail half-way); upstream's own 'closed' handler resets its
+// state (j7=null, the page file removed, the busy flag false) and its next show
+// creates a fresh window with the visual of that moment. A glow window that
+// is shown while the latest answer is not "compositor" is destroyed just after
+// the show (deferred one tick so upstream's show function completes). The
+// window is upstream's cu-glow.html page (no code anchor).
+var CU_GLOW_PAGE_RE=/^file:\/\/.*\/cu-glow\.html$/;
+function _glowWins(){
+  var out=[];
+  try{var B=_electron.BrowserWindow;(B&&typeof B.getAllWindows==="function"?B.getAllWindows():[]).forEach(function(bw){try{if(bw&&!bw.isDestroyed()&&bw.webContents&&!bw.webContents.isDestroyed()&&CU_GLOW_PAGE_RE.test(String(bw.webContents.getURL()||"")))out.push(bw)}catch(e){}})}catch(e){}
+  return out;
+}
+function _glowCmNow(){var be=_glowHostBridge(),c=be&&_bcCache[_bcKey(be)];return c&&c.res?c.res.cm:null}
+function _glowDrop(bw,why){
+  try{
+    if(!bw||bw.isDestroyed())return;
+    globalThis.__cdbDiag("[claude-cu] \"Claude is using your computer\" glow window closed: "+why+" (a fresh one is created the next time the glow is shown with a compositor)");
+    bw.destroy();
+  }catch(e){}
+}
+function _glowEnforce(why){
+  if(_glowCmNow()===!0)return;
+  _glowWins().forEach(function(bw){try{if(bw.isVisible()||!bw.webContents.isLoading())_glowDrop(bw,why)}catch(e){}});
+}
+function _glowShowCheck(bw){
+  try{
+    if(!bw||bw.isDestroyed()||!bw.webContents||!CU_GLOW_PAGE_RE.test(String(bw.webContents.getURL()||"")))return;
+    if(_glowCmNow()!==!0)setTimeout(function(){_glowDrop(bw,"no compositing manager is known to run")},0);
+  }catch(e){}
+}
+var _glowHooked=!1;
+function _glowHook(){
+  if(_glowHooked||_wayland)return;
+  try{
+    var A=_electron.app;if(!A||typeof A.on!=="function")return;
+    _glowHooked=!0;
+    A.on("browser-window-created",function(ev,bw){try{bw.on("show",function(){_glowShowCheck(bw)})}catch(e){}});
+  }catch(e){}
+}
+var _glowOffLast=null;
+function _glowOffNote(why){
+  if(why===_glowOffLast)return;
+  _glowOffLast=why;
+  if(why)globalThis.__cdbDiag("[claude-cu] \"Claude is using your computer\" glow off: "+why+" - without one Electron draws the transparent glow as an opaque black screen");
+  else globalThis.__cdbDiag("[claude-cu] \"Claude is using your computer\" glow on: a compositing manager runs");
+}
 // X11 HiDPI: Electron reports displays in DIP, but x11-bridge (XTest motion,
 // GetImage crop) works in X root PIXELS. Chromium does not lay DIP origins out
 // as px/scale: ConvertDisplayBoundsToDips (ui/base/x/x11_display_util.cc)
@@ -2285,7 +2389,8 @@ function _appRefFromCommand(result,wins,pick){
 //   hitTest     native = appUnderPoint asks the window system (x11-bridge
 //               app-under-point; wlroots-bridge with window geometry: a JS
 //               hit test of `windows` by stacking_order); none = null
-//   frontmost   native = the window system names the focused window
+//   frontmost   native = the window system names the focused window (GNOME:
+//               only once its Introspect answered, see _gnIntroNow)
 //   windowList  full | partial (XWayland: X clients only) | best-effort (GNOME
 //               Introspect, may be []) | none
 //   windowPositions  window rects map to the screenshot's displays
@@ -2296,8 +2401,10 @@ function _appBackend(){
     var b=_wlBridge();
     // sway / Hyprland (doctor window_geometry): positions and a JS hit test
     // by stacking_order; niri, river: no positions, no hit test.
-    if(b.name==="wlroots-bridge"){var gc=_bcNow(_bcBridge(!0)),geo=!!(gc&&gc.geometry);return{name:"wlroots-bridge"+(_tgt?" (background display "+_tgt.display+")":""),hitTest:geo?"native":"none",frontmost:"native",windowList:"full",windowPositions:geo}}
-    return{name:b.name,hitTest:"none",frontmost:"native",windowList:"best-effort",windowPositions:!1};
+    if(b.name==="wlroots-bridge"){_bcNow(_bcBridge(!0));var geo=_wlGeoCached();return{name:"wlroots-bridge"+(_tgt?" (background display "+_tgt.display+")":""),hitTest:geo===!1?"none":"native",frontmost:"native",windowList:"full",windowPositions:geo===!0}}
+    // GNOME: Introspect gives no window positions (no hit test) and names the
+    // front window only where the shell lets the bridge call it (_gnIntroNow).
+    return{name:b.name,hitTest:"none",frontmost:_gnIntroNow()===!0?"native":"none",windowList:"best-effort",windowPositions:!1};
   }
   if(_wayland&&!_tgt&&_checkYdotool()){none.name="ydotool";return none}
   if(!_x11BridgeBin())return none;
@@ -2379,6 +2486,9 @@ async function _dtResolve(bundleIds){
 //   geometry  wlroots-bridge `window_geometry`: windows carry geometry,
 //             output, is_visible and stacking_order (x11-bridge always does).
 //   gaps      wlroots-bridge `screenshot_mask_gaps`: what the mask cannot cover.
+//   ignore    x11-bridge `capabilities.screenshot_mask_ignore`: mask mode takes
+//             --ignore-window <xid> for Claude's own see-through overlays
+//             (_ownOverlayXids).
 // A bridge that answers without the keys (or exits 2: contract 0) cannot mask:
 // {mask:false}. A doctor that fails (timeout, crash, non-JSON) is {error}:
 // capture with an allowlist then FAILS CLOSED rather than guess "cannot mask".
@@ -2406,10 +2516,28 @@ function _bcKey(be){return be.kind+"\n"+be.bin+"\n"+(_tgt?_tgt.key:"")}
 function _bcParse(be,doc){
   if(!doc||typeof doc!=="object"||Array.isArray(doc))return{error:be.name+" doctor answered no JSON object"};
   if(typeof doc.contract!=="number"||doc.contract<1)return{mask:!1,geometry:be.kind==="x11",gaps:[],why:"contract 0"};
+  // wlroots-bridge answers window_geometry / screenshot_mask false both where
+  // the compositor has no geometry (niri, river) and where it could not tell
+  // (sway / Hyprland IPC over its budget, Wayland connect failed). Only the
+  // first is a negative; the second is an unknown and stays fail-closed: no
+  // whole-screen gate, no unmasked capture (issue #326).
+  if(be.kind==="wlroots"&&doc.window_geometry!==!0){var amb=_wlDoctorUnsure(doc);if(amb)return{error:be.name+" doctor: "+amb}}
   var c=doc.capabilities&&typeof doc.capabilities==="object"?doc.capabilities:{};
   var mask=doc.screenshot_mask===!0||c.screenshot_mask===!0;
   var gaps=Array.isArray(doc.screenshot_mask_gaps)?doc.screenshot_mask_gaps.filter(function(g){return typeof g==="string"}):[];
-  return{mask:mask,geometry:be.kind==="x11"||doc.window_geometry===!0,gaps:mask?gaps:[]};
+  return{mask:mask,geometry:be.kind==="x11"||doc.window_geometry===!0,gaps:mask?gaps:[],ignore:mask&&be.kind==="x11"&&c.screenshot_mask_ignore===!0,cm:c.compositing===!0?!0:c.compositing===!1?!1:null,cmWhy:typeof c.compositing_error==="string"?c.compositing_error:null};
+}
+// Why a wlroots-bridge doctor's "no window geometry" is not a real negative,
+// or "" when it is (the compositor was reached and is not one that has
+// geometry). sway / Hyprland: the doctor's compositor field (the bridge's own
+// environment, so a background display's compositor too) and, on the user's
+// desktop, our own SWAYSOCK / HYPRLAND_INSTANCE_SIGNATURE.
+function _wlDoctorUnsure(doc){
+  if(doc.backend_reachable!==!0)return"the compositor was not reached ("+(typeof doc.backend_error==="string"&&doc.backend_error?doc.backend_error:"backend_reachable false")+")";
+  var comp=String(doc.compositor||"").toLowerCase();
+  if(comp==="sway"||comp==="hyprland")return comp+" did not report window geometry (its IPC did not answer in time)";
+  if(!_tgt&&(process.env.SWAYSOCK||process.env.HYPRLAND_INSTANCE_SIGNATURE))return"no window geometry on a sway / Hyprland session (its IPC did not answer in time)";
+  return"";
 }
 // -> Promise<{mask, geometry, gaps} | {error}>, or null without a bridge.
 function _bcProbe(be){
@@ -2425,12 +2553,16 @@ function _bcProbe(be){
     if(_bcCache[k]!==ent)return res;
     ent.p=null;
     // A failed doctor is asked again on the next capture, not kept a minute.
-    if(res.error){ent.res=null;ent.at=0;ent.failAt=Date.now()}else{ent.res=res;ent.at=Date.now();ent.failAt=0}
+    if(res.error){ent.res=null;ent.at=0;ent.failAt=Date.now()}else{ent.res=res;ent.at=Date.now();ent.failAt=0;ent.geo=ent.geo===!0||!!res.geometry}
     var line="[claude-cu] "+be.name+" capabilities: "+(res.error?res.error:"screenshot mask "+(res.mask?"yes"+(res.gaps.length?" (not covered: "+res.gaps.join(", ")+")":""):"no"+(res.why?" ("+res.why+")":""))+", window geometry "+(res.geometry?"yes":"no"));
     if(ent.line!==line){ent.line=line;globalThis.__cdbDiag(line)}
     // The per-app access answer upstream's UI shows may follow the mask
     // (js/cu_consent.js capChanged re-signals the renderer when it changed).
     _cuCapChanged(be.name+" doctor answered");
+    // The host x11-bridge says no compositor (or cannot say): no glow window
+    // may stay (issue #327).
+    var hb=_glowHostBridge();
+    if(hb&&_bcKey(hb)===k&&!(ent.res&&ent.res.cm===!0))_glowEnforce(res.error?"x11-bridge doctor failed":res.cm===!1?"no compositing manager runs on this X11 display":"x11-bridge did not say whether a compositing manager runs");
     return res;
   });
   return ent.p;
@@ -2461,8 +2593,127 @@ function _cuAnnounceCheck(why){
   globalThis.__cdbDiag("[claude-cu] remote device: computer tools withdrawn on Wayland ("+why+"): no first-party bridge usable now - cloud Cowork and Dispatch are refused until a restart");
 }
 function _cuCapChanged(why){try{var cc=globalThis.__cdbCuConsent;if(cc&&typeof cc.capChanged==="function")cc.capChanged(why)}catch(e){}}
-function _bcForget(be){if(be)delete _bcCache[_bcKey(be)]}
+// The window-geometry answer survives (_wlGeoCached: a forgotten entry must
+// not turn a hit-test backend into a "none" one).
+function _bcForget(be){if(!be)return;var k=_bcKey(be),c=_bcCache[k];delete _bcCache[k];if(c&&typeof c.geo==="boolean")_bcCache[k]={res:null,at:0,p:null,geo:c.geo}}
 function _filteringNow(){var r=_bcNow(_bcBridge());return r&&r.mask?"mask":"none"}
+// ── Backends without window info (issue #326) ──
+// Upstream's dispatch (cloud Cowork / Dispatch, teach mode) reads
+// capabilities.hitTest on every click and key gate. "none" selects the rules of
+// upstream's own Wayland executor: no appUnderPoint, the app in front stands
+// for the click target, Claude's own window in front stands for the shared
+// screen (the pseudo-app CU_SCREEN_APP), and a Claude dialog blocks input.
+// Backends with a real hit test (x11-bridge on X11 or a background display,
+// wlroots-bridge with window geometry: sway / Hyprland) keep upstream's per-app
+// gate. Exec-free (env, the latched background display, the cached doctor
+// answer warmed at executor load and on every lock acquire by _bcWarm): the
+// getter is read on every gate. wlroots-bridge counts as hit-test capable
+// until its doctor says otherwise for certain (_wlDoctorUnsure): before the
+// first answer, after failed or inconclusive doctors (appUnderPoint then
+// waits for the doctor and refuses the click rather than guess), and for good
+// once it reported window geometry for this bridge.
+var CU_SCREEN_APP="com.anthropic.cu.screen",CU_DIALOG_SUFFIX=" (dialog)";
+// true / false = the doctor's window_geometry (a seen true is kept for the
+// bridge; the last certain answer survives a failed doctor and _bcForget);
+// null = not known.
+function _wlGeoCached(){var be=_bcBridge(!0),c=be?_bcCache[_bcKey(be)]:null;if(!c)return null;if(c.geo===!0)return!0;if(c.res)return!!c.res.geometry;return typeof c.geo==="boolean"?c.geo:null}
+// Latched for the Computer Use lock: once a gate could see "none", every input
+// until the next lock transition is delivered marked (_markInput), so an
+// answer that changes between upstream's gate and the delivery never skips
+// the guard. The gate itself always reads the live, fail-closed answer.
+var _blindSeen=!1;
+function _hitTestNow(){var r=_hitTestLive();if(r==="none")_blindSeen=!0;return r}
+function _hitTestLive(){
+  if(_tgt&&(_tgt.refuse||!_tgt.bin))return"none";
+  // wlroots-bridge: "none" only on the doctor's explicit no (niri, river).
+  // Unknown (no answer yet, or only failed doctors) counts as a hit test, so
+  // upstream asks appUnderPoint, which waits for the doctor and refuses the
+  // click while it cannot tell (fail closed).
+  if(_useWlBridge())return _wlBridge().name==="wlroots-bridge"&&_wlGeoCached()!==!1?"native":"none";
+  // XWayland x11-bridge, ydotool, no bridge: no hit test on a Wayland desktop.
+  if(_wayland&&!_tgt)return"none";
+  return _x11BridgeBin()?"native":"none";
+}
+// GNOME Shell Introspect (the bridge's windows / frontmost-app): stock GNOME
+// 41+ refuses it to callers that are not allowlisted, and the bridge then
+// answers windows [] and frontmost-app null - the same as a desktop without
+// windows. A non-empty window list (upstream's listRunningApps at session
+// open, getFrontmostApp) proves Introspect answers; until then the window in
+// front counts as unknown. No probe of its own: nothing is spawned for it.
+var _gnIntro={val:null};
+function _gnIntroSet(v,why){
+  var old=_gnIntro.val;
+  _gnIntro.val=v;
+  if(old===v)return;
+  globalThis.__cdbDiag("[claude-cu] gnome-portal-bridge: GNOME Shell Introspect answers (the window in front is known; "+why+")");
+  _cuCapChanged("gnome-portal-bridge introspect available");
+}
+function _gnIntroNow(){return _isGnomeCovered()?_gnIntro.val:null}
+// "A Claude dialog is open": upstream's own count of open Electron dialog boxes
+// (showMessageBox / showOpenDialog / showSaveDialog), installed by upstream on
+// every Wayland session and exposed by fix_computer_use_linux.nim 17f. Absent
+// (not a Wayland session) = none open.
+function _dialogOpen(){try{var f=globalThis.__cdbCuDialogOpen;return typeof f==="function"&&f()===!0}catch(e){return!1}}
+function _appName(){try{return _electron.app.getName()||"Claude"}catch(e){return"Claude"}}
+// The front app where the backend cannot name the window in front, as
+// upstream's own Wayland executor answers: Claude while one of its windows has
+// focus, else the shared screen. A background display never shows Claude's
+// windows, so there it is always the screen.
+function _screenFront(){
+  if(!_tgt){try{if(_electron.BrowserWindow.getFocusedWindow())return _hostFront()}catch(e){}}
+  return{bundleId:CU_SCREEN_APP,displayName:"Screen"};
+}
+// Claude's own window in front on a backend without a hit test. Upstream
+// takes it for the shared screen (a click there passes its gate) because its
+// Wayland input guard drops Claude's own injected input that lands in a
+// Claude window; _markInput feeds that guard. Where the guard is not
+// installed (globalThis.__cdbCuMarkInput missing: not a Wayland session, or
+// 17g absent) the answer is an id no grant covers, so upstream refuses the
+// input instead of delivering it into Claude's own UI.
+function _hostFront(){
+  if(typeof globalThis.__cdbCuMarkInput==="function")return{bundleId:_hostId(),displayName:_appName()};
+  return{bundleId:_hostId()+CU_WINDOW_SUFFIX,displayName:"Claude's own window"};
+}
+var CU_WINDOW_SUFFIX=" (window)";
+// Run one injected input through upstream's own-input marker (17g), with
+// upstream's kinds (its Wayland executor: motion "move", buttons "button",
+// wheel "wheel", keys and text "key"), on a backend without a hit test and
+// not on the background display (Claude's windows are not there). Elsewhere,
+// or without the marker, fn runs as before. The marker is an async counter:
+// no exec, no wait beyond fn itself.
+// release: a button / key release, which upstream sends even with a dialog
+// open (its own executor skips the dialog check there).
+// With a Claude dialog open the input is refused at delivery as well, with
+// upstream's text (its executor re-checks before every primitive). After the
+// delivery the marker stays held CU_MARK_SETTLE_MS on the event loop, so input
+// events queued while a synchronous bridge call ran are seen while the guard
+// is still armed (costs that much per action, on these backends only).
+var CU_MARK_SETTLE_MS=50,_CU_DIALOG_OPEN="A Claude dialog is open on the screen; wait for the user to answer it before clicking, scrolling or typing.";
+function _markInput(kinds,fn,release){
+  var m=globalThis.__cdbCuMarkInput;
+  if(_tgt)return fn();
+  var blind=_hitTestNow()==="none"||_blindSeen;
+  if(!blind)return fn();
+  if(!release&&_dialogOpen())return Promise.reject(new Error(_CU_DIALOG_OPEN));
+  if(typeof m!=="function")return fn();
+  var run=function(){return Promise.resolve(fn()).then(function(r){return new Promise(function(ok){setTimeout(function(){ok(r)},CU_MARK_SETTLE_MS)})})};
+  for(var i=kinds.length-1;i>=0;i--)run=(function(k,inner){return function(){return m(k,inner)}})(kinds[i],run);
+  return run();
+}
+// One [claude-cu] line per Computer Use lock (and one before the first) when
+// upstream's gate runs in that mode, naming the backend and why.
+var _noInfoSaid=!1;
+function _noInfoNote(be){
+  if(_noInfoSaid)return;
+  _noInfoSaid=!0;
+  var n=be.name,why;
+  if(/^gnome-portal-bridge/.test(n))why=_gnIntro.val===!0?"GNOME Shell Introspect gives no window positions":"GNOME Shell Introspect gave no window list (refused on stock GNOME 41+): no window positions, no window in front";
+  else if(/^wlroots-bridge/.test(n))why="the compositor reports no window geometry (the window in front is still known)";
+  else if(/XWayland/.test(n))why="x11-bridge on XWayland sees only X clients";
+  else if(n==="ydotool")why="ydotool has no window list";
+  else why="no window backend";
+  globalThis.__cdbDiag("[claude-cu] no window info: "+n+" ("+why+") - upstream's whole-screen rules apply: no hit test, the front app is "+(be.frontmost==="native"?"the window in front":"the shared screen, or Claude while one of its windows has focus")+", input refused while a Claude dialog is open, Claude's own windows drop its input");
+}
 // ── Allowlist mask (screenshot / zoom / resolvePrepareCapture) ──
 // allowedBundleIds undefined = legacy unmasked capture: only our own
 // Code-session handler sends that, with "Ask before Computer Use controls an
@@ -2534,6 +2785,54 @@ function _maskHiddenIds(mk,list){
   return out;
 }
 function _rectsMeet(a,b){return !!a&&!!b&&a.width>0&&a.height>0&&b.width>0&&b.height>0&&a.x<b.x+b.width&&b.x<a.x+a.width&&a.y<b.y+b.height&&b.y<a.y+a.height}
+// ── Claude's own see-through overlays (issue #327) ──
+// Upstream's "Claude is using your computer" glow (<tmpdir>/cu-glow.html: the
+// whole display, transparent, click-through, always on top, shown on every
+// non-Wayland session while Computer Use holds the lock) and its teach overlay
+// (<tmpdir>/cu-teach-<ms>.html, the work area) are BrowserWindows with
+// focusable:false, which Electron creates override-redirect on X11. Upstream
+// hides its windows from capture with setContentProtection, a no-op on X11,
+// so x11-bridge's mask saw one window above every app and masked the whole
+// image (kept [], kept_hidden [the app]). The ids go to x11-bridge with
+// --ignore-window (doctor capabilities.screenshot_mask_ignore); the bridge
+// treats such a window as absent and honours an id only for a viewable
+// override-redirect window whose _NET_WM_PID is its parent (this process), so
+// a wrong id here can never uncover another app's window. Found by the page
+// each window loaded (no upstream code anchor): a renamed page finds nothing
+// and capture stays as before (masked under the overlay);
+// scripts/tests/linux/test-cu-screenshot-mask.mjs [I] checks both names in
+// the bundle. XID = getNativeWindowHandle() (X11: the window's XID as an
+// unsigned long, little-endian; XIDs fit in 29 bits). Only for the host
+// display: a background display (_tgt) never shows Claude's windows.
+var CU_OWN_OVERLAY_PAGE_RE=/^file:\/\/.*\/(?:cu-glow|cu-teach-\d+)\.html$/;
+function _ownOverlayXids(){
+  var out=[];
+  if(_tgt||_wayland)return out;
+  var all;
+  try{var B=_electron.BrowserWindow;all=B&&typeof B.getAllWindows==="function"?B.getAllWindows():[]}catch(e){return out}
+  (all||[]).forEach(function(bw){
+    try{
+      if(!bw||bw.isDestroyed()||!bw.isVisible())return;
+      var wc=bw.webContents;if(!wc||wc.isDestroyed())return;
+      if(!CU_OWN_OVERLAY_PAGE_RE.test(String(wc.getURL()||"")))return;
+      var h=bw.getNativeWindowHandle(),id=h&&h.length>=4?h.readUInt32LE(0):0;
+      if(id>0&&out.indexOf(String(id))<0)out.push(String(id));
+    }catch(e){}
+  });
+  return out;
+}
+// One line per bridge binary whose doctor lacks --ignore-window while an
+// overlay is up (an X11_BRIDGE_BIN override older than the bundled bridge).
+// With such a bridge the glow is always off (no compositing key = unknown),
+// so in practice that overlay is the teach overlay.
+var _ovOldSaid={};
+// Last "did not look through" line: logged when it changes, not per capture.
+var _ovRefusedLast="";
+function _ovOldNote(be){
+  if(_ovOldSaid[be.bin])return;
+  _ovOldSaid[be.bin]=1;
+  globalThis.__cdbDiag("[claude-cu] "+be.name+" ("+be.bin+") does not take --ignore-window (doctor capabilities.screenshot_mask_ignore missing): Claude's teach overlay covers the screen, so masked screenshots during teach mode can come back blank (#1E1E1E); the glow stays off with this bridge (it does not report capabilities.compositing) - use the bundled x11-bridge");
+}
 // Masked capture of a region. x/y/w/h: x11-bridge root pixels, or the wlroots
 // global logical region (lx..). Returns {base64, imgW, imgH, mimeType, hidden}.
 async function _captureMasked(mk,x,y,w,h){
@@ -2545,7 +2844,12 @@ async function _captureMasked(mk,x,y,w,h){
   var keep=mk.allowed.length&&globalThis.__cdbCuAppIds?globalThis.__cdbCuAppIds.windowIds(mk.allowed,cand):[];
   var flags=[];
   if(keep.length)keep.forEach(function(id){flags.push("--keep-window",id)});else flags.push("--mask-all");
-  var x11=be.kind==="x11",r=null;
+  var x11=be.kind==="x11",r=null,ign=[];
+  if(x11){
+    var ov=_ownOverlayXids();
+    if(ov.length){if(mk.caps&&mk.caps.ignore===!0)ign=ov;else _ovOldNote(be)}
+    ign.forEach(function(id){flags.push("--ignore-window",id)});
+  }
   for(var tr=0;;tr++){
     var mr=x11?await _x11MonForRegion(x,y):await _wlMonForRegion(x,y);
     // Bridge zoom coordinates are relative to --display: never without it.
@@ -2567,6 +2871,12 @@ async function _captureMasked(mk,x,y,w,h){
     // the masked windows itself (topmost first, client ids as in `windows`).
     var kept=Array.isArray(m.kept)?m.kept.map(String):[];
     for(var ki=0;ki<kept.length;ki++)if(keep.indexOf(kept[ki])<0)throw _maskErr(mk,"it kept window "+kept[ki]+", which was not asked for");
+    var ignd=Array.isArray(m.ignored)?m.ignored.map(String):[];
+    for(var ii=0;ii<ignd.length;ii++)if(ign.indexOf(ignd[ii])<0)throw _maskErr(mk,"it looked through window "+ignd[ii]+", which was not asked for");
+    if(ign.length&&!Array.isArray(m.ignored))throw _maskErr(mk,"it did not report the --ignore-window outcome");
+    var refused=Array.isArray(m.ignored_refused)?m.ignored_refused:[];
+    var rl=refused.length?"[claude-cu] x11-bridge did not look through Claude's own overlay "+refused.map(function(v){return(v&&v.id)+" ("+(v&&v.reason)+")"}).join(", ")+" - the apps under it are masked":"";
+    if(rl!==_ovRefusedLast){_ovRefusedLast=rl;if(rl)globalThis.__cdbDiag(rl)}
     var byId={};wins.forEach(function(v){if(v&&v.id!=null)byId[String(v.id)]=v});
     hidden=_maskHiddenIds(mk,(Array.isArray(m.masked)?m.masked:[]).map(function(v){var lw=v&&byId[String(v.id)];return lw?lw:null}).filter(Boolean));
   }else{
@@ -2589,7 +2899,7 @@ async function _captureMasked(mk,x,y,w,h){
     var reg={x:x,y:y,width:w,height:h};
     hidden=_maskHiddenIds(mk,wins.filter(function(v){return v&&keep.indexOf(String(v.id))<0&&v.is_minimized!==!0&&v.is_visible!==!1&&_rectsMeet(v.geometry,reg)}));
   }
-  globalThis.__cdbDiag("[claude-cu] screenshot: captured via "+be.name+" (mask "+m.mode+", kept "+keep.length+" window(s)"+(hidden.length?", masked apps "+hidden.join(","):"")+")");
+  globalThis.__cdbDiag("[claude-cu] screenshot: captured via "+be.name+" (mask "+m.mode+", kept "+keep.length+" window(s)"+(x11&&Array.isArray(m.ignored)&&m.ignored.length?", looked through "+m.ignored.length+" Claude overlay(s)":"")+(x11&&Array.isArray(m.kept_hidden)&&m.kept_hidden.length?", "+m.kept_hidden.length+" kept window(s) fully covered":"")+(hidden.length?", masked apps "+hidden.join(","):"")+")");
   return{base64:r.base64,imgW:r.width||w,imgH:r.height||h,mimeType:"image/jpeg",hidden:hidden};
 }
 // wlroots-bridge with window geometry: the app whose window is topmost
@@ -2611,11 +2921,13 @@ var _ex=globalThis.__linuxExecutor={
   // screenshotFiltering, hitTest): request_access's result and the session
   // tools read executor.capabilities.screenshotFiltering live, so it is a
   // getter with capabilitiesNow()'s value ("mask" when the live bridge masks,
-  // else "none"; "none" too until its doctor answered once). No hitTest key:
-  // it stays as before; the live per-backend values are capabilitiesNow().
-  // hostBundleId is Claude's own canonical id (com.anthropic.Claude), the id
-  // its windows resolve to.
-  capabilities:{get screenshotFiltering(){return _filteringNow()},platform:"linux",get hostBundleId(){return _hostId()}},
+  // else "none"; "none" too until its doctor answered once). hitTest is "none"
+  // on a backend without a hit test (see _hitTestNow; upstream's click and key
+  // gates then use its whole-screen rules) and undefined where appUnderPoint
+  // asks the window system, as upstream expects from a real hit test. Both
+  // getters are exec-free. hostBundleId is Claude's own canonical id
+  // (com.anthropic.Claude), the id its windows resolve to.
+  capabilities:{get screenshotFiltering(){return _filteringNow()},platform:"linux",get hostBundleId(){return _hostId()},get hitTest(){return _hitTestNow()==="none"?"none":void 0}},
   // CU lock lifecycle hook, invoked by the upstream lock holder (Patches 4b/4b.2
   // call __linuxExecutor?.__setLockHeld?.(!0/!1) on every Linux lock transition
   // and chain .catch() — so this MUST return a Promise, hence async). On GNOME
@@ -2626,7 +2938,8 @@ var _ex=globalThis.__linuxExecutor={
     // (4b passes upstream's exclusiveHolder; 4b.2 releases without one).
     _gnomeHolder=held&&typeof holder==="string"?holder:null;
     globalThis.__cdbDiag?.("[claude-cu] "+(held?"lock taken by "+(_gnomeHolder||"none"):"lock released"));
-    if(held)_gnomeShareFireArmed=!0;
+    _blindSeen=!1;
+    if(held){_gnomeShareFireArmed=!0;_noInfoSaid=!1}
     if(!held)_gnomeCheckStop("lock released");
     // The ask-before-control notes ("screenshots are not filtered") are once
     // per session and lock (js/cu_consent.js).
@@ -2748,15 +3061,24 @@ var _ex=globalThis.__linuxExecutor={
   },
   // opts {displayId, allowedBundleIds, scale}. allowedBundleIds undefined =
   // unmasked; an array = mask mode (see "Allowlist mask"), which throws
-  // rather than capture unmasked.
+  // rather than capture unmasked. No displayId: the display
+  // resolvePrepareCapture would take (on GNOME the monitor shared in the
+  // portal dialog), else Electron's primary.
   async screenshot(opts){
     _escAct();
     await _tgtPrime();
-    var mon=_findMon(opts&&opts.displayId);
+    var did=opts&&opts.displayId;
+    if(did==null){var sdid=await _gnomeSharedDefaultDisplayId();if(sdid!=null)did=sdid}
+    var mon=_findMon(did);
     var al=opts?opts.allowedBundleIds:void 0,mk=await _maskFor(al);
     var shot=await _screenshotMon(mon,mk);
-    // {base64, imgW, imgH, mimeType, displayWidth, displayHeight, originX,
-    // originY, masked, filtering, maskGaps[, hidden]}
+    // Upstream's ScreenshotResult (computer_batch / teach_batch and the
+    // pixel check capture through screenshot(), not resolvePrepareCapture):
+    // width/height = the image, displayId = the monitor captured (a
+    // _getMonitors() index, as resolvePrepareCapture reports it).
+    shot.width=shot.imgW;shot.height=shot.imgH;shot.displayId=mon.displayId;
+    // {base64, imgW, imgH, width, height, displayId, mimeType, displayWidth,
+    // displayHeight, originX, originY, masked, filtering, maskGaps[, hidden]}
     return _capNote(shot,mk,al);
   },
   // opts {allowedBundleIds, preferredDisplayId, autoResolve, doHide, scale}.
@@ -2819,7 +3141,9 @@ var _ex=globalThis.__linuxExecutor={
     var mk=legacy?null:await _maskFor(allowedBundleIds);
     globalThis.__cdbDiag("[claude-cu] zoom: rect="+JSON.stringify(rect)+(local?" (display-relative)":"")+" displayId="+displayId+" mon="+((mon&&mon.label)||"?")+" sf="+sf+(mk?" mask "+(mk.allowed.length?mk.allowed.join(","):"all"):Array.isArray(allowedBundleIds)?" unmasked (backend cannot mask)":""));
     var cap=await _captureRegion(rx,ry,rect.w,rect.h,sf,displayId!=null&&mon?mon.displayId:void 0,mk);
-    // {base64, imgW, imgH, mimeType, masked, filtering, maskGaps[, hidden]}
+    cap.width=cap.imgW;cap.height=cap.imgH;
+    // {base64, imgW, imgH, width, height, mimeType, masked, filtering,
+    // maskGaps[, hidden]}
     return _capNote(cap,mk,legacy?void 0:allowedBundleIds);
   },
   async prepareForAction(bundleIds,displayId){return[]},
@@ -2873,6 +3197,7 @@ var _ex=globalThis.__linuxExecutor={
     try{
       _logFirstUse("app",be.name);
       var wins=_appWins(),apps=[],seen={};
+      if(Array.isArray(wins)&&wins.length&&_isGnomeCovered()&&_useWlBridge())_gnIntroSet(!0,"window list");
       if(Array.isArray(wins)){
         for(var i=0;i<wins.length;i++){
           var w=wins[i];
@@ -2890,26 +3215,46 @@ var _ex=globalThis.__linuxExecutor={
   // The focused window's app: the window list's active window (all bridges
   // report is_active; wlroots from the foreign-toplevel activated state);
   // x11-bridge without one falls back to its frontmost-app (GetInputFocus on a
-  // WM without EWMH). null when the backend cannot know: XWayland (a native
-  // Wayland window may have the focus), ydotool, no bridge, no active window
-  // (wlroots-bridge's own frontmost-app would pick the first toplevel), or
-  // nothing focused. A bridge that FAILED throws (an Error with __cdbFront):
-  // "could not tell" is not "nothing in front" - js/cu_consent.js refuses
-  // input then, and upstream's own check (cloud Cowork, teach) fails the
-  // action, as it does with its own executors.
+  // WM without EWMH). null when the backend can name the window in front and
+  // none is (wlroots-bridge's own frontmost-app would pick the first
+  // toplevel). A bridge that FAILED throws (an Error with __cdbFront): "could
+  // not tell" is not "nothing in front" - js/cu_consent.js refuses input then,
+  // and upstream's own check (cloud Cowork, teach) fails the action, as it does
+  // with its own executors.
+  // A backend without a hit test answers as upstream's own Wayland executor
+  // (issue #326): a Claude dialog open -> "<host> (dialog)"; where the backend
+  // cannot name the window in front (GNOME without Introspect, XWayland,
+  // ydotool, no bridge): Claude while one of its windows has focus, else the
+  // shared screen (CU_SCREEN_APP). The GNOME bridge is always asked (plain
+  // D-Bus, no portal); an empty answer there means "cannot name". js/cu_consent.js reads these answers as "unknown" for the Code tab.
   async getFrontmostApp(){
     await _tgtPrime();
-    var be=_appBackend();
-    if(be.frontmost!=="native")return null;
+    // wlroots-bridge before its first doctor answer: wait for it here (the
+    // gates ask the front app before they read capabilities.hitTest), so the
+    // first click is judged with the real answer, not the fail-closed one.
+    if(_useWlBridge()&&_wlBridge().name==="wlroots-bridge"&&_wlGeoCached()===null){try{await _bcProbe(_bcBridge(!0))}catch(pe){}}
+    var be=_appBackend(),blind=_hitTestNow()==="none";
+    if(blind){
+      _noInfoNote(be);
+      if(!_tgt&&_dialogOpen())return{bundleId:_hostId()+CU_DIALOG_SUFFIX,displayName:_appName()+" dialog"};
+    }
+    // Without a hit test upstream's gates take a null front app for "allowed,
+    // no tier to check" (a read-only grant would pass), so a backend that
+    // cannot name the window in front answers the shared screen instead.
+    var unknown=function(){return blind?_screenFront():null};
+    var named=function(r){return r&&blind&&r.bundleId===_hostId()?_hostFront():r||unknown()};
+    var gnome=_useWlBridge()&&_wlBridge().name==="gnome-portal-bridge";
+    if(!gnome&&be.frontmost!=="native")return unknown();
     var wins,act=null;
     try{
       _logFirstUse("window",be.name);
       wins=_appWins();
       if(!Array.isArray(wins))throw new Error("the window list is not an array");
+      if(gnome&&wins.length)_gnIntroSet(!0,"window list");
       for(var i=0;i<wins.length;i++){var w=wins[i];if(w&&w.is_active===true&&(!act||(w.stacking_order||0)>(act.stacking_order||0)))act=w}
-      if(act)return _appRefFromWindow(act);
-      if(_useWlBridge())return null;
-      return _appRefFromCommand(_x11Bridge(["frontmost-app"]),function(){return wins},function(w){return w.is_minimized!==true});
+      if(act)return named(_appRefFromWindow(act));
+      if(_useWlBridge())return unknown();
+      return named(_appRefFromCommand(_x11Bridge(["frontmost-app"]),function(){return wins},function(w){return w.is_minimized!==true}));
     }catch(e){
       var fe=new Error(be.name+": "+String(e&&e.message||e).trim().split("\n").slice(-1)[0]);
       fe.__cdbFront=!0;
@@ -3382,7 +3727,20 @@ var _ex=globalThis.__linuxExecutor={
     await _electron.clipboard.writeText(text||"","clipboard");
   }
 };
+// Upstream's own-input marker around every injected input (see _markInput).
+// Kinds per method as upstream's Wayland executor marks the primitives each
+// one sends: a click moves and presses (and marks keys only while it holds
+// modifier keys), a drag moves and presses, a scroll moves and turns the
+// wheel. mouseUp is a release (sent even with a dialog open).
+(function(){
+  var K={moveMouse:function(){return["move"]},click:function(a){var h=a[4];return h&&(Array.isArray(h)?h.length:String(h).trim())?["move","button","key"]:["move","button"]},mouseDown:function(){return["button"]},mouseUp:function(){return["button"]},drag:function(){return["move","button"]},scroll:function(){return["move","wheel"]},key:function(){return["key"]},holdKey:function(){return["key"]},type:function(){return["key"]}};
+  Object.keys(K).forEach(function(n){var f=_ex[n];if(typeof f!=="function")return;_ex[n]=function(){var a=arguments;return _markInput(K[n](a),function(){return f.apply(_ex,a)},n==="mouseUp")}});
+})();
 // Ask the capture bridge's doctor now (async), so the first prompt suffix and
 // supported-features answer (js/cu_consent.js) already know whether it masks.
 _bcWarm();
+// Ask the host x11-bridge whether a compositing manager runs (the glow, issue
+// #327; the capture bridge above may be another one) and watch glow shows.
+_glowHostRefresh();
+_glowHook();
 })();

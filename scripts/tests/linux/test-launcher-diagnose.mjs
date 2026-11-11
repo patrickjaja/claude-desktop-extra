@@ -673,13 +673,15 @@ safe("D10", () => {
   const PY = (spawnSync("sh", ["-c", "command -v python3"], { encoding: "utf8" }).stdout || "").trim();
   if (!PY) { console.log("  SKIP python3 not found"); return; }
   const checker = join(repo, "scripts", "check-bridge-contract.sh");
-  const stub = (name, supported, forgetRm = "rm -f \"$f\"") => `#!/bin/sh
+  // x11-bridge's doctor must also carry the #327 capabilities.
+  const X11_CAPS = '{"screenshot_mask": true, "screenshot_mask_ignore": true, "compositing": null, "compositing_error": "no display"}';
+  const stub = (name, supported, forgetRm = "rm -f \"$f\"", caps = X11_CAPS) => `#!/bin/sh
 NAME=${name}
 case "$1" in
   --version) echo "$NAME 1.0.0" ;;
   doctor)
     if [ ${supported} = true ]; then tp="\\"$XDG_STATE_HOME/$NAME/restore-token.json\\""; sk="\\"$XDG_RUNTIME_DIR/$NAME/session.sock\\""; else tp=null; sk=null; fi
-    printf '{\\n  "contract": 1,\\n  "bridge": "%s",\\n  "version": "1.0.0",\\n  "backend": "x",\\n  "session_match": false,\\n  "backend_reachable": false,\\n  "backend_error": "no display",\\n  "session_supported": ${supported},\\n  "restore_token_present": false,\\n  "restore_token_path": %s,\\n  "daemon_running": false,\\n  "session_socket": %s\\n}\\n' "$NAME" "$tp" "$sk" ;;
+    printf '{\\n  "contract": 1,\\n  "bridge": "%s",\\n  "version": "1.0.0",\\n  "backend": "x",\\n  "session_match": false,\\n  "backend_reachable": false,\\n  "backend_error": "no display",\\n  "session_supported": ${supported},\\n  "restore_token_present": false,\\n  "restore_token_path": %s,\\n  "daemon_running": false,\\n  "session_socket": %s,\\n  "capabilities": ${caps}\\n}\\n' "$NAME" "$tp" "$sk" ;;
   session-end) echo '{"ok":true,"ended":false,"daemon":"none"}' ;;
   forget-session)
     if [ ${supported} != true ]; then echo '{"ok":true,"ended":false,"daemon":"none","token_removed":false,"token_path":null}'; exit 0; fi
@@ -696,7 +698,18 @@ esac
   let r = spawnSync(BASH, [checker, good], { encoding: "utf8", timeout: 120000 });
   check("compliant bridges: exit 0", r.status, 0);
   check("compliant bridges: 2 checked, no FAIL",
-    (r.stdout || "").includes("2 bridge(s): 20 passed, 0 failed") && !/^FAIL/m.test(r.stdout || ""), true);
+    (r.stdout || "").includes("2 bridge(s): 21 passed, 0 failed") && !/^FAIL/m.test(r.stdout || ""), true);
+  // An x11-bridge older than the #327 capabilities passes the contract but
+  // fails here (the app would keep the glow off on every X11 session).
+  const old = join(scratch, "d10", "old");
+  writeExe(join(old, "x11-bridge"), stub("x11-bridge", "false", undefined, '{"screenshot_mask": true}'));
+  r = spawnSync(BASH, [checker, old], { encoding: "utf8", timeout: 120000 });
+  check("older x11-bridge without screenshot_mask_ignore / compositing: exit 1", r.status, 1);
+  check("...named in a FAIL line", /^FAIL x11-bridge: doctor capabilities - capabilities\.screenshot_mask_ignore must be true.*capabilities\.compositing is missing/m.test(r.stdout || ""), true);
+  r = spawnSync(BASH, [checker, "--x11-caps", join(old, "x11-bridge")], { encoding: "utf8", timeout: 60000 });
+  check("--x11-caps on the older x11-bridge: exit 1", r.status, 1);
+  r = spawnSync(BASH, [checker, "--x11-caps", join(good, "x11-bridge")], { encoding: "utf8", timeout: 60000 });
+  check("--x11-caps on a current x11-bridge: exit 0", r.status, 0);
   const bad = join(scratch, "d10", "bad");
   writeExe(join(bad, "kwin-portal-bridge"), stub("kwin-portal-bridge", "true", 'rm -rf "$(dirname "$f")"'));
   r = spawnSync(BASH, [checker, bad], { encoding: "utf8", timeout: 120000 });

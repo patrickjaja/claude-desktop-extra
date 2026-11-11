@@ -196,7 +196,7 @@ cat > %{buildroot}/usr/share/applications/com.anthropic.Claude.desktop << 'DESKT
 Name=Claude
 Comment=Desktop application for Claude.ai
 GenericName=AI Assistant
-Keywords=AI;Chat;Assistant;Claude;Code;LLM;
+Keywords=AI;Chat;Assistant;Code;LLM;
 Exec=claude-desktop %U
 Icon=claude-desktop
 Type=Application

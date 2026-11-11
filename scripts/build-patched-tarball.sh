@@ -717,6 +717,17 @@ elif command -v cargo &>/dev/null && [ -d "$X11_BRIDGE_SRC_DIR" ]; then
 else
     log_warn "x11-bridge not available — skipping (X11 Computer Use will require manual install)"
 fi
+# The bundled x11-bridge must have what this app relies on on X11 (issue
+# #327): doctor capabilities.screenshot_mask_ignore and compositing. An older
+# bridge passes everything else but keeps the glow off on every X11 session
+# and blanks masked screenshots under the teach overlay. Same check as CI's
+# bridge contract step (scripts/check-bridge-contract.sh).
+if [ -f "$TREE_DIR/resources/x11-bridge" ]; then
+    if ! bash "$SCRIPT_DIR/check-bridge-contract.sh" --x11-caps "$TREE_DIR/resources/x11-bridge"; then
+        log_error "the bundled x11-bridge is older than this app needs - rebuild it from the current x11-bridge source"
+        exit 1
+    fi
+fi
 
 # Bundle wlroots-bridge into resources/ (= process.resourcesPath) for wlroots
 # Wayland (Sway/Hyprland/Niri) Computer Use. First-party replacement for
