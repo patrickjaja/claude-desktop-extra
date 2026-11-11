@@ -1,10 +1,10 @@
 # Escape stops Computer Use
 
-Opt-in: Settings -> Extra -> Community Features -> **Escape stops Computer Use** (group *Computer Use*), or the same switch on the Extra -> Computer Use page (one setting, off by default; the `computerUseEscapeAbort` key in `claude-desktop-extra.jsonc` locks it). Press Escape anywhere to stop Computer Use while Claude is working, on the desktops listed below. The patch is [`add_feature_cu_escape_abort.nim`](../patches/community/add_feature_cu_escape_abort.nim); the watcher logic is [`js/cu_esc_watch.js`](../js/cu_esc_watch.js).
+Opt-in: Settings -> Extra -> Community Features -> **Escape stops Computer Use** (group *Computer Use*), or the same switch on the Extra -> Cowork (Linux) page under Computer Use -> Options (one setting, off by default; the `computerUseEscapeAbort` key in `claude-desktop-extra.jsonc` locks it). Press Escape anywhere to stop Computer Use while Claude is working, on the desktops listed below. The patch is [`add_feature_cu_escape_abort.nim`](../patches/community/add_feature_cu_escape_abort.nim); the watcher logic is [`js/cu_esc_watch.js`](../js/cu_esc_watch.js).
 
 ## Off (the default)
 
-Anthropic's own handling, unchanged. On X11 it takes a global Escape grab while Claude is working: Escape stops Computer Use, and an Escape Claude itself sends can be swallowed by that grab. On Wayland there is no global stop key; only Escape in Claude's own window works. Nothing is spawned and nothing is cleaned up.
+Anthropic's own handling, unchanged. On X11 it takes a global Escape grab while Claude is working, in every session type (Code sessions, local and cloud Cowork, Dispatch): Escape stops Computer Use and does not reach your apps while Claude holds the Computer Use lock (in Code sessions and local Cowork from the first Computer Use action of a turn to its end). An Escape Claude itself sends still reaches the app: the grab is dropped for that injection and registered again right after (if registering fails twice, `claude-patches.log` says `esc-grab:` and Escape stops nothing until the next Computer Use turn; Stop in the app and Stop sharing still do). Escape stops the session's turn the way Stop does: in a Code session the Claude Code process is restarted with the next message. On Wayland there is no global stop key; only Escape in Claude's own window works. Nothing is spawned and nothing is cleaned up.
 
 ## On, per desktop
 
@@ -18,7 +18,7 @@ The switch applies live, from the next Computer Use task. Each desktop uses the 
 | KDE Plasma (Wayland) | `kwin-portal-bridge abort-watch`, through kglobalaccel | Escape only stops Computer Use: it does not close Overview, menus or the launcher, cancel a window move, or reach the app. Alt+Tab and the lock screen work as usual. Not enabled when another global shortcut already uses Escape. While armed, KDE records the component name (never a key) in `kglobalshortcutsrc`. |
 | GNOME, niri, other compositors | not available | Use **Stop sharing** on the screen-share indicator (GNOME, KDE) or **Stop** in the app. |
 
-The watcher runs only while Claude works: for the length of the Computer Use lock in the Code tab and local Cowork, per turn in cloud Cowork. Escape is never taken while Claude is idle.
+The watcher runs only while Claude works. Code sessions and local Cowork take the Computer Use lock at the first Computer Use action of a turn and release it when the turn ends (also on Stop and errors), so the watcher runs from that action to the turn end; in cloud Cowork and Dispatch it runs per turn. Escape is never taken while Claude is idle.
 
 The KDE stop key needs a runnable `kwin-portal-bridge` (glibc 2.39 or newer), so it is not available on Debian 12, Ubuntu 22.04, RHEL 9 and NixOS, where the bundled dynamic bridge does not run. On a Hyprland Lua config the bind is set through Hyprland's `eval`, which clears the config-error list Hyprland displays until the next config reload.
 
@@ -35,7 +35,7 @@ Log lines are `[claude-cu] esc-watch: ...` in `~/.config/Claude/logs/claude-patc
 
 ## Stop sharing
 
-Independent of this switch (always on): **Stop sharing** on the GNOME or KDE screen-share indicator stops the running Computer Use turn at once (log prefix `[claude-cu] stop-sharing:`). It also fires when the desktop itself ends the share (for example a portal restart, possibly a screen lock). Where `XDG_RUNTIME_DIR` is unset, the marker directory is watched only if it is a real directory owned by you without group or other write access.
+Independent of this switch (always on): **Stop sharing** on the GNOME or KDE screen-share indicator stops the running Computer Use turn at once, in Code sessions as in local and cloud Cowork (log prefix `[claude-cu] stop-sharing:`). It also fires when the desktop itself ends the share (for example a portal restart, possibly a screen lock). Where `XDG_RUNTIME_DIR` is unset, the marker directory is watched only if it is a real directory owned by you without group or other write access.
 
 ## Checking the state
 

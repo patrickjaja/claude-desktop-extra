@@ -3157,7 +3157,9 @@
   // --- Computer Use: Escape stops it (issue #323) -------------------------
   // Off by default. Main side: cdb-cu-esc:* in js/extra_settings_main.js;
   // patches/community/add_feature_cu_escape_abort.nim reads the switch each
-  // time Computer Use takes its lock, so a flip applies from the next task.
+  // time Computer Use takes its lock (every session type: the Code tab and local
+  // Cowork take it at the first Computer Use action of a turn), so a flip
+  // applies from the next task.
   // One setting, two views: the same row on Community Features (its own
   // "Computer Use" group) and on the Cowork (Linux) page under Computer Use ->
   // Options (cuPage). Both read and write cdb-cu-esc:* and each page reads it

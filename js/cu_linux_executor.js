@@ -2321,7 +2321,24 @@ function _logFirstUse(op,backend){if(!_inputLogDone[op]){_inputLogDone[op]=true;
 // armed watcher that is not syntheticSafe (KDE kglobalaccel) and else just runs
 // it. Other input is never wrapped; without the community patch, or with its
 // switch off, fn just runs.
-function _escAround(esc,fn,ms){var w=globalThis.__cdbCuEscWatch;return esc&&typeof w?.suspendAround==="function"?w.suspendAround(fn,ms):fn()}
+// An injection that carries an Escape (a key, a chord, held keys, typed text).
+// The community Escape watcher suspends itself around it (suspendAround).
+// X11: while Anthropic's own Escape grab is registered (the switch off, or the
+// watcher fell back to it) the grab would swallow Claude's Escape, so the app
+// never got it (sub-patch 17h): the grab is dropped, the key is injected after
+// one event-loop turn (Chromium sends the ungrab to the X server then;
+// measured: injecting in the same turn still hits the grab), and upstream's
+// own lock-change function registers it again (logged if that fails twice).
+// The user's Escape is not a stop key only for the length of the injection.
+function _escAround(esc,fn,ms){
+  var w=globalThis.__cdbCuEscWatch;
+  var run=function(){return esc&&typeof w?.suspendAround==="function"?w.suspendAround(fn,ms):fn()};
+  var g=globalThis.__cdbCuEscGrab,off=!1;
+  if(esc&&!_wayland&&g&&typeof g.suspend==="function"){try{off=g.suspend()===!0}catch(e){off=!1}}
+  if(!off)return run();
+  var back=function(){try{g.resume("Claude's own Escape")}catch(e){}};
+  return new Promise(function(r){setTimeout(r,10)}).then(run).then(function(v){back();return v},function(e){back();throw e});
+}
 function _escKeys(v){var w=globalThis.__cdbCuEscWatch;return typeof w?.hasEscape==="function"&&w.hasEscape(v)===!0}
 // Upstream's own executor marks each key / holdKey whose keys are exactly one
 // Escape as expected (sub-patch 17e: globalThis.__cdbCuExpectEscape, a 100 ms
@@ -2955,6 +2972,64 @@ function _wlHitTest(wins,x,y){
   }
   return best;
 }
+// X11: upstream docks Claude's main window into a side panel when the Computer
+// Use lock is taken and restores it at release (always on top while docked).
+// Both end with setAlwaysOnTop on that window, which emits
+// "always-on-top-changed" once its bounds are applied: the real signal used
+// here, per lock change, on the windows that can dock (visible, focusable;
+// Claude's overlays are not focusable), bounded by a timeout.
+//  - The first capture after an acquire waits for the dock, so Claude's own
+//    window no longer covers the app in it (__lockSettled does not wait for
+//    it; _x11DockWait() is awaited by screenshot / resolvePrepareCapture).
+//  - After the dock and the restore the window's input shape is sent again:
+//    xfwm4 keeps the frame's input shape from the last ShapeNotify, so a
+//    shape change made while docked left the restored window clickable only
+//    in the dock-sized corner. Re-sending it is a no-op where nothing was wrong.
+// Only on an X11 session in regular mode without the background display
+// (kwin mode uses the other executor; Wayland windows have no X shape).
+function _isX11Dock(){return !_wayland&&!globalThis.__cuKwinMode&&!_tgt}
+// ── X11 dock: input shape and first capture (begin)
+var X11_DOCK_WAIT_MS=1500,X11_RESTORE_WAIT_MS=4000,_x11DockWaiter=null,_x11DockGen=0;
+function _x11DockWindows(){try{return _electron.BrowserWindow.getAllWindows().filter(function(w){return !w.isDestroyed()&&w.isVisible()&&w.isFocusable()})}catch(e){return[]}}
+// Send the window's input shape again: a lone setIgnoreMouseEvents(false) on a
+// window that is not ignored changes nothing (measured: xfwm4 keeps the stale
+// frame shape), so it is set and reset back to back - two ShapeNotify, the
+// window manager recomputes the frame from the full shape. Only the window
+// that docked (it is never click-through otherwise).
+function _x11Reshape(w,why){try{if(!w.isDestroyed()){w.setIgnoreMouseEvents(!0);w.setIgnoreMouseEvents(!1);globalThis.__cdbDiag?.("[claude-cu] x11 dock: input shape sent again ("+why+")")}}catch(e){}}
+function _x11DockOnLock(held){
+  var gen=++_x11DockGen;
+  _x11DockWaiter=null;
+  if(!_isX11Dock())return;
+  var wins=_x11DockWindows();
+  // Docked already (always on top): upstream's dock changes nothing, no signal.
+  if(!wins.length||held&&wins.some(function(w){return w.isAlwaysOnTop()}))return;
+  var offs=[],timer=null,done=!1;
+  var p=new Promise(function(resolve){
+    function finish(why){if(done)return;done=!0;if(timer)clearTimeout(timer);offs.forEach(function(f){f()});resolve(why)}
+    wins.forEach(function(w){
+      function onTop(e,v){
+        if(v!==held||gen!==_x11DockGen)return;
+        _x11Reshape(w,held?"docked":"restored");
+        // A maximize after the restore resizes once more: send it again then.
+        var again=function(){_x11Reshape(w,"resized after "+(held?"dock":"restore"))};
+        w.once("resize",again);
+        var t2=setTimeout(function(){try{w.removeListener("resize",again)}catch(e){}},1000);if(t2&&t2.unref)t2.unref();
+        finish(held?"docked":"restored");
+      }
+      w.on("always-on-top-changed",onTop);
+      offs.push(function(){try{w.removeListener("always-on-top-changed",onTop)}catch(e){}});
+    });
+    timer=setTimeout(function(){finish("no "+(held?"dock":"restore")+" signal")},held?X11_DOCK_WAIT_MS:X11_RESTORE_WAIT_MS);
+    if(timer&&timer.unref)timer.unref();
+  });
+  if(held)_x11DockWaiter=p;
+}
+// The first capture after a lock acquire waits for the dock (bounded).
+async function _x11DockWait(){var p=_x11DockWaiter;_x11DockWaiter=null;if(p){var why=await p;if(why!=="docked")globalThis.__cdbDiag?.("[claude-cu] x11 dock: first capture after "+why)}}
+// ── X11 dock: input shape and first capture (end)
+// The latest __setLockHeld run (see __lockSettled).
+var _lockHookTail=Promise.resolve();
 var _ex=globalThis.__linuxExecutor={
   // Read by upstream's dispatch on every call (platform, hostBundleId,
   // screenshotFiltering, hitTest): request_access's result and the session
@@ -2977,6 +3052,10 @@ var _ex=globalThis.__linuxExecutor={
     // (4b passes upstream's exclusiveHolder; 4b.2 releases without one).
     _gnomeHolder=held&&typeof holder==="string"?holder:null;
     globalThis.__cdbDiag?.("[claude-cu] "+(held?"lock taken by "+(_gnomeHolder||"none"):"lock released"));
+    var _settle;_lockHookTail=new Promise(function(r){_settle=r});
+    // X11: follow upstream's side-panel dock / restore of this lock change.
+    try{_x11DockOnLock(!!held)}catch(de){}
+    try{
     _blindSeen=!1;
     if(held){_gnomeShareFireArmed=!0;_noInfoSaid=!1}
     if(!held)_gnomeCheckStop("lock released");
@@ -3006,7 +3085,13 @@ var _ex=globalThis.__linuxExecutor={
     // counts its idle time from here.
     _gnomeIdleCancel();
     if(held){_gnomeStoppedClear("new lock");await _gnomeEnsureSession();if(_gnomeSessionActive&&!_gnomeIdleTimer)_gnomeIdleArm();_gnomeCheckArm()}else await _gnomeSessionEnd();
+    }finally{_settle()}
   },
+  // Settles once the latest lock hook has (the portal session started or
+  // ended, the background display latched). The Linux tool handler
+  // (js/cu_handler_injection.js) awaits it after it takes the lock, so the
+  // first action of a turn never races the session start.
+  __lockSettled(){return _lockHookTail},
   // Task-end event: upstream's renderer IPC releaseRemoteCuLock (a cloud
   // session's running->idle edge, Stop, archive, delete), forwarded by
   // fix_computer_use_linux.nim with upstream's current lock holder. Safe to
@@ -3106,6 +3191,7 @@ var _ex=globalThis.__linuxExecutor={
   async screenshot(opts){
     _escAct();
     await _tgtPrime();
+    await _x11DockWait();
     var did=opts&&opts.displayId;
     if(did==null){var sdid=await _gnomeSharedDefaultDisplayId();if(sdid!=null)did=sdid}
     var mon=_findMon(did);
@@ -3127,6 +3213,7 @@ var _ex=globalThis.__linuxExecutor={
   // hidden ... call request_access" note. Nothing is hidden on screen, so
   // __unhideApps stays a no-op.
   async resolvePrepareCapture(opts){
+    await _x11DockWait();
     if(!opts||!Array.isArray(opts.allowedBundleIds))return _ex.__resolvePrepareCapture(opts);
     try{return await _ex.__resolvePrepareCapture(opts)}
     catch(e){

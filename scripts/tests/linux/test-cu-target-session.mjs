@@ -461,7 +461,9 @@ console.log("\n[handler: refusal + teach]");
   forwarded = 0; hidden = 0;
   await call("teach_step", {});
   const c2 = await call("left_click", { coordinate: [5, 5] });
-  check(forwarded === 1 && !c2.isError && hidden > 0, "switch off: teach forwarded, click-through unchanged", JSON.stringify({ forwarded, hidden }));
+  // X11 with a hit test: Claude's windows are no longer made click-through
+  // (the hit test refuses a click on them instead, js/cu_handler_injection.js).
+  check(forwarded === 1 && !c2.isError && hidden === 0, "switch off: teach forwarded; X11 with a hit test: no click-through", JSON.stringify({ forwarded, hidden }));
 }
 
 // ----------------------------------------- 7. T5 geometry + cursor (target)

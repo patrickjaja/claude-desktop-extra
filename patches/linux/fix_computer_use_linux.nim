@@ -9,7 +9,7 @@
 # embeds them via staticRead at compile time; Python reads them at runtime.
 # No codegen — the .js files are the single source of truth.
 #
-# All 63 sub-patches use std/nre (PCRE) because many require backreferences.
+# All 64 sub-patches use std/nre (PCRE) because many require backreferences.
 # "Ask before Computer Use controls an app" (js/cu_consent.js, injected by
 # Patch 1 after the executors): sub-patch 6b makes upstream's grants full level
 # in the regular executor mode, 6c lets upstream's terminal / file-manager
@@ -668,6 +668,11 @@ proc endStateMarkers(): seq[EndStateMarker] =
       """function [\w$]+\(\)\{[\w$]+\+\+,setTimeout\(\(?\(\)=>\{[\w$]+>0&&[\w$]+--\}\)?,100\)\}process\.platform==="linux"&&\(globalThis\.__cdbCuExpectEscape=[\w$]+\);""",
     ),
     rx(
+      # The runtime global's defining assignment, after upstream's lock-change function.
+      "17h Escape grab",
+      """===0\?[\w$]+\(\):[\w$]+\(\)\}process\.platform==="linux"&&\(globalThis\.__cdbCuEscGrab=\{suspend:function\(\)\{""",
+    ),
+    rx(
       # The runtime global's defining assignment, after upstream's function.
       "17c share-ended abort",
       """\}process\.platform==="linux"&&\(globalThis\.__cdbCuShareEnded=[\w$]+\);""",
@@ -709,7 +714,7 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 63
+  const EXPECTED_PATCHES = 64
 
   let gateSet = cuPlatformSetName(content)
   if gateSet == "":
@@ -3569,6 +3574,95 @@ proc apply*(input: string): string =
           inc patchesApplied
         else:
           echo "  [FAIL] 17e expected-Escape marker: replacement did not apply"
+
+  # ─── Patch 17h: Claude's own Escape passes upstream's X11 Escape grab ──
+  # Upstream (4.23118.1, k6x_9PBk; the community patch may have prefixed the
+  # register function with its 17a hook, which this does not depend on):
+  #   function obi(){...if(!(pJ||WO())){mJ=0;try{if(!u.globalShortcut.register("Escape",nbi))...
+  #   function sbi(){...pJ&&(u.globalShortcut.unregister("Escape"),pJ=!1,mJ=0,...)}
+  #   function cbi(){zU.currentHolder&&$yi===0?obi():sbi()}
+  # While upstream's grab is registered (Escape switch off, or its watcher
+  # fell back to the grab) a key grab takes every Escape, the one Claude
+  # injects too: 17e only keeps it from stopping the turn, the app never gets
+  # it. Exposed right after cbi, on Linux only, as globalThis.__cdbCuEscGrab:
+  #   suspend(): drop upstream's grab if it is registered (true) - the
+  #              executor injects the key after one event-loop turn (Chromium
+  #              flushes the ungrab then), then calls
+  #   resume(why): upstream's own lock-change function (cbi) puts back what the
+  #              lock state asks for; a register that failed is tried once
+  #              more, then logged (Escape stops nothing until the next lock).
+  # Pre-asserts: cbi calls the register / unregister pair, the register
+  # function registers "Escape" under the flag, the unregister drops it.
+  block:
+    let lcPat =
+      re"""(?<=[;}])(function ([\w$]+)\(\)\{([\w$]+)\.currentHolder&&([\w$]+)===0\?([\w$]+)\(\):([\w$]+)\(\)\})"""
+    var hits: seq[RegexMatch] = @[]
+    for m in content.findIter(lcPat):
+      hits.add m
+    if hits.len != 1:
+      echo &"  [FAIL] 17h Escape lock-change function (`function C(){{L.currentHolder&&Y===0?R():U()}}`): {hits.len} matches, expected 1 - re-audit"
+    else:
+      let lc = hits[0].captures[1]
+      let lockName = hits[0].captures[2]
+      let yi = hits[0].captures[3]
+      let regFn = hits[0].captures[4]
+      let unregFn = hits[0].captures[5]
+      # The register function's body (brace-balanced) holds upstream's register.
+      let rAt = content.find("function " & regFn & "(){")
+      var rBody = ""
+      if rAt >= 0:
+        var depth = 0
+        var j = content.find('{', rAt)
+        while j < content.len:
+          if content[j] == '{':
+            inc depth
+          elif content[j] == '}':
+            dec depth
+            if depth == 0:
+              break
+          inc j
+        if j < content.len:
+          rBody = content[rAt .. j]
+      let regPat =
+        re"""if\(!\(([\w$]+)\|\|([\w$]+)\(\)\)\)\{([\w$]+)=0;try\{if\(!([\w$]+)\.globalShortcut\.register\(["'`]Escape["'`],([\w$]+)\)\)"""
+      let rm = rBody.find(regPat)
+      if rm.isNone:
+        echo &"  [FAIL] 17h Escape register function {regFn}: no `if(!(F||W())){{N=0;try{{if(!E.globalShortcut.register(\"Escape\",H))` in its body - re-audit"
+      else:
+        let flag = rm.get().captures[0]
+        let el = rm.get().captures[3]
+        let unregHits = countMatches(
+          content,
+          re(
+            """function """ & escapeRe(unregFn) &
+              """\(\)\{(?:process\.platform==="linux"&&globalThis\.__cdbCuEscWatch\?\.disarm\(\);)?""" &
+              escapeRe(flag) & """&&\(""" & escapeRe(el) &
+              """\.globalShortcut\.unregister\(["'`]Escape["'`]\),""" & escapeRe(flag) &
+              """=!1,"""
+          ),
+        )
+        if unregHits != 1:
+          echo &"  [FAIL] 17h Escape unregister function {unregFn}: does not drop \"Escape\" under {flag} ({unregHits} matches, expected 1) - re-audit"
+        else:
+          let n = replaceFirst(
+            content,
+            lcPat,
+            proc(m: RegexMatch): string =
+              m.captures[0] &
+                "process.platform===\"linux\"&&(globalThis.__cdbCuEscGrab={suspend:function(){if(!" &
+                flag & ")return!1;" & el & ".globalShortcut.unregister(\"Escape\");" &
+                flag & "=!1;return!0},resume:function(w){" & lc & "();if(" & flag & "||!" &
+                lockName & ".currentHolder||" & yi &
+                "!==0)return!0;if(globalThis.__cdbCuEscapeAbortEnabled?.()===true&&globalThis.__cdbCuEscWatch?.state?.().armed===true)return!0;" &
+                lc & "();if(" & flag &
+                ")return!0;(globalThis.__cdbDiag||console.warn)(\"[claude-cu] esc-grab: Anthropic's Escape stop key could not be registered again after Claude's own Escape (\"+w+\"); Escape does not stop Computer Use until the next Computer Use turn, Stop in the app and Stop sharing still do\");return!1}});",
+          )
+          if n == 1:
+            echo &"  [OK] 17h Escape grab: {regFn} / {unregFn} (flag {flag}, lock change {lc}) exposed as globalThis.__cdbCuEscGrab on Linux (1 match)"
+            inc changes
+            inc patchesApplied
+          else:
+            echo "  [FAIL] 17h Escape grab: replacement did not apply"
 
   if patchesApplied < EXPECTED_PATCHES:
     raise newException(

@@ -12,7 +12,8 @@
 // ON: upstream's Escape register function (17a) arms the watcher here instead
 // of its X11 grab, its unregister function (17b) disarms it. Both follow
 // upstream's cuLockChanged, so every session type is covered by upstream's own
-// trigger. The switch is read at arm time (no restart). arm() answers false
+// trigger (the Code tab and local Cowork take the lock in our Linux tool
+// handler, js/cu_handler_injection.js, as upstream's dispatcher does). The switch is read at arm time (no restart). arm() answers false
 // when no watcher can run here right now (no watcher for this desktop, bridge
 // missing or known not to run, the breaker tripped): 17a then runs upstream's
 // own body - on X11 its grab, on Wayland nothing. A watcher that fails later
@@ -20,7 +21,8 @@
 // register function is called again and this time runs its own body.
 //
 // Turn-scoped: the watcher runs only while the model works. Code tab and local
-// Cowork release the lock after each turn (lock-scoped is turn-scoped there).
+// Cowork take the lock at the first Computer Use action of a turn and release
+// it at the turn end (lock-scoped is turn-scoped there).
 // Cloud Cowork / Dispatch keep the lock until the idle sweep or Stop: there the
 // turn end (taskEnded: upstream's releaseRemoteCuLock IPC and the #293
 // session-check poller, both through the executors' __cuTaskBoundary) parks
