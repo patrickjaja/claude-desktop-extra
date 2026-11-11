@@ -22,15 +22,28 @@
 # binary that cannot run on this host (the aarch64 one on an x86_64 builder)
 # is checked by the doctor field names compiled into it instead.
 #
+# wlroots-bridge must report how it masks (issue #329): doctor top-level keys
+# `screenshot_mask_mode` ("toplevel" | "output", null when no compositor was
+# reached - always the case here) and `screenshot_mask_protocol` (a string or
+# null), present even without a compositor, and the per-kept-window
+# `coveredBy` field of its masked zoom report (a string compiled into the
+# binary). The values need a live compositor; the keys and the report field
+# do not. `--wlroots-caps <file>` runs only this check;
+# build-patched-tarball.sh calls it on the bundled wlroots-bridge. A binary
+# that cannot run here is checked by the field names compiled into it.
+#
 # Exit: 0 when every check passed, 1 when any failed, 2 on bad usage.
 
 set -uo pipefail
 
 x11_caps_only=''
+wl_caps_only=''
 if (( $# == 2 )) && [[ "$1" == --x11-caps && -f "$2" ]]; then
     x11_caps_only="$2"
+elif (( $# == 2 )) && [[ "$1" == --wlroots-caps && -f "$2" ]]; then
+    wl_caps_only="$2"
 elif (( $# != 1 )) || [[ ! -d "$1" ]]; then
-    echo >&2 "usage: $0 <dir-with-bridges> | --x11-caps <x11-bridge>"
+    echo >&2 "usage: $0 <dir-with-bridges> | --x11-caps <x11-bridge> | --wlroots-caps <wlroots-bridge>"
     exit 2
 fi
 dir="${1}"
@@ -111,6 +124,17 @@ elif mode == "x11-caps":
             problems.append("capabilities.compositing is missing (the app would keep the glow off on every X11 session)")
         elif caps["compositing"] not in (True, False, None):
             problems.append("capabilities.compositing must be true, false or null")
+elif mode == "wlroots-caps":
+    if "screenshot_mask_mode" not in v:
+        problems.append("screenshot_mask_mode is missing (an older wlroots-bridge: masked screenshots on Hyprland cut the approved window away under a full-output layer)")
+    elif v["screenshot_mask_mode"] not in ("toplevel", "output", None):
+        problems.append("screenshot_mask_mode must be \"toplevel\", \"output\" or null, got %s" % json.dumps(v["screenshot_mask_mode"]))
+    if "screenshot_mask_protocol" not in v:
+        problems.append("screenshot_mask_protocol is missing")
+    elif not is_str_or_null(v["screenshot_mask_protocol"]):
+        problems.append("screenshot_mask_protocol must be a string or null")
+    elif v.get("screenshot_mask_mode") == "toplevel" and not v["screenshot_mask_protocol"]:
+        problems.append("screenshot_mask_mode \"toplevel\" needs a screenshot_mask_protocol")
 elif mode == "session-end":
     if v.get("ok") is not True: problems.append("ok must be true")
     if v.get("ended") is not False: problems.append("ended must be false with no daemon")
@@ -195,11 +219,48 @@ check_x11_caps() {
     fi
 }
 
+# wlroots-bridge mask report the app relies on (issue #329); see the header.
+check_wl_caps() {
+    local bin="$1" sb why
+    sb="$(sandbox)"
+    run_bridge "$sb" "$bin" doctor
+    if [[ "$RC" == 0 ]]; then
+        if why="$(json_check wlroots-caps <<< "$OUT")"; then
+            pass "wlroots-bridge: doctor screenshot_mask_mode + screenshot_mask_protocol"
+        else
+            fail "wlroots-bridge: doctor mask mode" "$why"
+        fi
+        if grep -aq coveredBy "$bin"; then
+            pass "wlroots-bridge: masked zoom report has coveredBy"
+        else
+            fail "wlroots-bridge: masked zoom report" "the binary has no coveredBy (older wlroots-bridge: no per-window shown / reason / coveredBy)"
+        fi
+    elif [[ "$RC" == 126 || "$RC" == 127 ]] || ! "$bin" --version >/dev/null 2>&1; then
+        # Not runnable here (foreign architecture): the serde field names are
+        # string literals in the static binary.
+        if grep -aq screenshot_mask_mode "$bin" && grep -aq screenshot_mask_protocol "$bin" && grep -aq coveredBy "$bin"; then
+            pass "wlroots-bridge: screenshot_mask_mode, screenshot_mask_protocol and coveredBy present in the binary (not runnable on this host)"
+        else
+            fail "wlroots-bridge: mask report" "the binary has no screenshot_mask_mode / screenshot_mask_protocol / coveredBy (older wlroots-bridge; not runnable on this host)"
+        fi
+    else
+        fail "wlroots-bridge: doctor mask mode" "doctor exited $RC: ${ERR:0:120}"
+    fi
+}
+
 if [[ -n "$x11_caps_only" ]]; then
     echo "== x11-bridge capabilities ($x11_caps_only)"
     check_x11_caps "$x11_caps_only"
     echo
     echo "x11-bridge capabilities: $passes passed, $fails failed"
+    (( fails == 0 ))
+    exit
+fi
+if [[ -n "$wl_caps_only" ]]; then
+    echo "== wlroots-bridge mask report ($wl_caps_only)"
+    check_wl_caps "$wl_caps_only"
+    echo
+    echo "wlroots-bridge mask report: $passes passed, $fails failed"
     (( fails == 0 ))
     exit
 fi
@@ -230,6 +291,7 @@ check_bridge() {
     fi
 
     [[ "$name" == x11-bridge ]] && check_x11_caps "$bin"
+    [[ "$name" == wlroots-bridge ]] && check_wl_caps "$bin"
 
     sb="$(sandbox)"
     run_bridge "$sb" "$bin" session-end

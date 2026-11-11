@@ -177,6 +177,12 @@ const C = loadConsent();
   resetEx({ screenshotMaskGaps: ["popups", "layer_shell_top_overlay"], backend: "wlroots-bridge" });
   ok(/popup menus, panels and overlays can still show/.test(C.text("screenshot")) && /popup menus, panels and overlays can still show/.test(C.text("access")) && /popups,layer_shell_top_overlay/.test(C.key()),
     "O3: the wlroots mask gaps are named in the screenshot and request_access texts and change the cache key: " + C.key());
+  // Issue #329: Hyprland's per-window capture leaves things OUT; it shows nothing more.
+  resetEx({ screenshotMaskGaps: ["popups_outside_window", "xwayland_unmanaged"], backend: "wlroots-bridge" });
+  ok(/In screenshots here, an approved app's own menus and popups are cut off where they reach past its window; XWayland menus and tooltips that cannot be matched to an approved window are left out\./.test(C.text("screenshot")) && !/can still show|popups outside window/.test(C.text("screenshot")),
+    "Hyprland per-window gaps: said as left out of the image, never as showing over the approved windows: " + C.text("screenshot"));
+  resetEx({ screenshotMaskGaps: ["popups", "layer_shell_top_overlay", "xwayland_unmanaged"], backend: "wlroots-bridge" });
+  ok(/popup menus, panels and overlays, XWayland menus and tooltips can still show/.test(C.text("screenshot")) && !/In screenshots here/.test(C.text("screenshot")), "sway (output capture): xwayland_unmanaged still a gap that can show");
   resetEx({ screenshotFiltering: "none", screenshotMaskGaps: ["popups"] });
   ok(!/popup/.test(C.text("screenshot")) && !/popups/.test(C.key()), "O3: no gap sentence where nothing is masked");
   resetEx();

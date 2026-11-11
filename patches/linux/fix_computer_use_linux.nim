@@ -705,6 +705,21 @@ proc endStateMarkers(): seq[EndStateMarker] =
       "17g own-input marker",
       """\(([\w$]+)=!0,process\.platform==="linux"&&\(globalThis\.__cdbCuMarkInput=[\w$]+\),[\w$]+\(\),""",
     ),
+    rx(
+      # The screenshot handler's two image returns (resolvePrepareCapture /
+      # screenshot()).
+      "5c screenshot mask note",
+      """\.\.\.\(process\.platform==="linux"&&globalThis\.__cdbCuShotNote\?\.\(([\w$]+)\.base64\)\|\|\[\]\),\{type:"image",data:\1\.base64,mimeType:"image/jpeg"\}\],screenshot:\1\}""",
+      2,
+    ),
+    rx(
+      "5c zoom mask note",
+      """\{content:\(__cdbZ=>\[\.\.\.\(process\.platform==="linux"&&globalThis\.__cdbCuShotNote\?\.\(__cdbZ\.base64\)\|\|\[\]\),\{type:"image",data:__cdbZ\.base64,mimeType:"image/jpeg"\}\]\)\(await [\w$]+\.executor\.zoom\(""",
+    ),
+    rx(
+      "5d teach-step refusal text",
+      """return ([\w$]+)\.isError\?process\.platform==="linux"\?\{content:\[\{type:"text",text:JSON\.stringify\(([\w$]+)\)\},\.\.\.\1\.content\]\}:[\w$]+\(\2\):\{content:""",
+    ),
   ]
 
 # ─── main patch ─────────────────────────────────────────────────────────────
@@ -714,7 +729,7 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 64
+  const EXPECTED_PATCHES = 66
 
   let gateSet = cuPlatformSetName(content)
   if gateSet == "":
@@ -3663,6 +3678,138 @@ proc apply*(input: string): string =
             inc patchesApplied
           else:
             echo "  [FAIL] 17h Escape grab: replacement did not apply"
+
+  # ─── Patch 5c: the masked capture's note reaches the model (issue #329) ──
+  # Upstream (5.1231.2, Dd4SYic5) builds the screenshot tool's answer from the
+  # executor's image plus its own notes (other monitors, hidden apps, scale)
+  # and nothing else; zoom answers with the image alone:
+  #   ...f?[{type:"text",text:f}]:[],{type:"image",data:u.base64,mimeType:"image/jpeg"}],screenshot:u}
+  #   ...d?[{type:"text",text:d}]:[],{type:"image",data:c.base64,mimeType:"image/jpeg"}],screenshot:c}
+  #   {content:[{type:"image",data:(await e.executor.zoom(p,g,c.displayId,h)).base64,mimeType:"image/jpeg"}]}
+  # The Linux executor's masked capture leaves a note for the image it
+  # returned (which approved app is covered, and by what; which is not in the
+  # image, and why). globalThis.__cdbCuShotNote(base64) hands it over once,
+  # for that exact image, as text blocks ([] otherwise, and on any other
+  # platform the expression is []). A refusal needs no patch: the executor
+  # throws, and upstream gives the model the error text without an image.
+  # Pre-asserts: both screenshot returns sit in the handler that answers
+  # "No applications are granted for this session.", the zoom return right
+  # after the handler's "take a screenshot before zooming" refusal.
+  block:
+    let shotPat =
+      re"""(?<=\])(,)(\{type:"image",data:([\w$]+)\.base64,mimeType:"image/jpeg"\}\],screenshot:\3\})"""
+    let zoomPat =
+      re"""\{content:\[\{type:"image",data:\((await [\w$]+\.executor\.zoom\([^()]*\))\)\.base64,mimeType:"image/jpeg"\}\]\}"""
+    var shotAt: seq[int] = @[]
+    for m in content.findIter(shotPat):
+      shotAt.add m.matchBounds.a
+    # The refusal nearest before the first return (the string is used twice).
+    let grantAt =
+      if shotAt.len > 0:
+        content.rfind(
+          "\"No applications are granted for this session. Call request_access first.\"",
+          last = shotAt[0],
+        )
+      else:
+        -1
+    var zoomAt: seq[int] = @[]
+    for m in content.findIter(zoomPat):
+      zoomAt.add m.matchBounds.a
+    let zoomGuard = content.find("take a screenshot before zooming")
+    # The handler's two capture calls: executor.resolvePrepareCapture before
+    # the first return, and before the second a helper whose body calls
+    # executor.screenshot({allowedBundleIds:...}).
+    var handlerOk = false
+    if shotAt.len == 2 and grantAt >= 0 and grantAt < shotAt[0] and
+        shotAt[1] - grantAt <= 4000:
+      let rpc =
+        content.find(".executor.resolvePrepareCapture({allowedBundleIds:", grantAt)
+      let between = content[shotAt[0] ..< shotAt[1]]
+      let sc = between.find(re"""=await ([\w$]+)\([\w$]+\.executor,""")
+      if rpc > grantAt and rpc < shotAt[0] and sc.isSome:
+        let helper = sc.get().captures[0]
+        handlerOk =
+          countMatches(
+            content,
+            re(
+              "async function " & escapeRe(helper) &
+                """\([\w$,]+\)\{let [\w$]+=await [\w$]+\.screenshot\(\{allowedBundleIds:"""
+            ),
+          ) == 1
+    if shotAt.len != 2:
+      echo &"  [FAIL] 5c screenshot returns (`...,{{type:\"image\",data:X.base64,mimeType:\"image/jpeg\"}}],screenshot:X}}`): {shotAt.len} matches, expected 2 - re-audit"
+    elif not handlerOk:
+      echo "  [FAIL] 5c screenshot returns are not in the handler that refuses \"No applications are granted for this session.\" - re-audit"
+    elif zoomAt.len != 1:
+      echo &"  [FAIL] 5c zoom return (`{{content:[{{type:\"image\",data:(await E.executor.zoom(...)).base64,...}}]}}`): {zoomAt.len} matches, expected 1 - re-audit"
+    elif zoomGuard < 0 or zoomAt[0] < zoomGuard or zoomAt[0] - zoomGuard > 2500:
+      echo "  [FAIL] 5c zoom return does not follow the zoom handler's \"take a screenshot before zooming\" refusal - re-audit"
+    else:
+      let ns = replaceAllRegex(
+        content,
+        shotPat,
+        proc(m: RegexMatch): string =
+          ",...(process.platform===\"linux\"&&globalThis.__cdbCuShotNote?.(" &
+            m.captures[2] & ".base64)||[])," & m.captures[1],
+      )
+      let nz = replaceFirst(
+        content,
+        zoomPat,
+        proc(m: RegexMatch): string =
+          "{content:(__cdbZ=>[...(process.platform===\"linux\"&&globalThis.__cdbCuShotNote?.(__cdbZ.base64)||[]),{type:\"image\",data:__cdbZ.base64,mimeType:\"image/jpeg\"}])(" &
+            m.captures[0] & ")}",
+      )
+      if ns == 2 and nz == 1:
+        echo "  [OK] 5c mask note: screenshot (2 returns) and zoom answer with globalThis.__cdbCuShotNote's note for their image on Linux"
+        inc changes
+        inc patchesApplied
+      else:
+        echo &"  [FAIL] 5c mask note: replacements did not apply ({ns}/2 screenshot, {nz}/1 zoom)"
+
+  # ─── Patch 5d: a refused teach-step screenshot keeps its text (issue #329) ──
+  # Upstream (5.1231.2) ends teach_step / teach_batch with the screenshot
+  # handler and drops its answer when that is an error:
+  #   async function ha(e,t,n,r){let i=await Ca(t,n,r);return i.isError?B(e):{content:[{type:"text",text:JSON.stringify(e)},...i.content],screenshot:i.screenshot}}
+  # so a masked capture refused with a reason ("no window of the approved apps
+  # can be shown ...") reached the model as the step results alone. On Linux
+  # the error's text follows the step results (still no image). Pre-assert:
+  # the called function is the screenshot handler (it refuses "No
+  # applications are granted for this session.").
+  block:
+    let teachPat =
+      re"""(async function [\w$]+\(([\w$]+),[\w$]+,[\w$]+,[\w$]+\)\{let ([\w$]+)=await ([\w$]+)\([\w$]+,[\w$]+,[\w$]+\);return \3\.isError\?)([\w$]+\(\2\))(:\{content:\[\{type:"text",text:JSON\.stringify\(\2\)\},\.\.\.\3\.content\],screenshot:\3\.screenshot\}\})"""
+    var hits: seq[RegexMatch] = @[]
+    for m in content.findIter(teachPat):
+      hits.add m
+    if hits.len != 1:
+      echo &"  [FAIL] 5d teach-step screenshot answer (`return i.isError?B(e):{{content:[...JSON.stringify(e)...,...i.content],...}}`): {hits.len} matches, expected 1 - re-audit"
+    else:
+      let shotFn = hits[0].captures[3]
+      let isHandler = countMatches(
+        content,
+        re(
+          "async function " & escapeRe(shotFn) &
+            """\([\w$,]+\)\{if\([\w$]+\.grants\.isEmpty\(\)\)return [\w$]+\("No applications are granted for this session\."""
+        ),
+      )
+      if isHandler != 1:
+        echo &"  [FAIL] 5d teach-step: {shotFn} is not the screenshot handler ({isHandler} matches) - re-audit"
+      else:
+        let n = replaceFirst(
+          content,
+          teachPat,
+          proc(m: RegexMatch): string =
+            m.captures[0] &
+              "process.platform===\"linux\"?{content:[{type:\"text\",text:JSON.stringify(" &
+              m.captures[1] & ")},..." & m.captures[2] & ".content]}:" & m.captures[4] &
+              m.captures[5],
+        )
+        if n == 1:
+          echo &"  [OK] 5d teach-step: a refused screenshot ({shotFn}) keeps its text after the step results on Linux"
+          inc changes
+          inc patchesApplied
+        else:
+          echo "  [FAIL] 5d teach-step: replacement did not apply"
 
   if patchesApplied < EXPECTED_PATCHES:
     raise newException(

@@ -705,8 +705,87 @@ function _appIndex(fresh){
     for(var y=0;y<list.length;y++){if(list[y].mergedInto)byId[_akey(list[y].id)]=list[y].mergedInto}
     list=list.filter(function(q){return !q.mergedInto});
   }
-  _appIdx={keys:keys,byId:byId,list:list,exe:null,words:null};_appIdxAt=now;
+  // Web apps and terminal apps (issue #329): their windows carry a class the
+  // entry does not declare as StartupWMClass.
+  var web=Object.create(null);
+  for(var wi=0;wi<list.length;wi++){
+    var wr=list[wi];
+    var wu=_aWebUrl(wr.e);
+    if(wu){wr.web=wu;_aWebNames(wu).forEach(function(n){_aclaim(web,n,wr,1)})}
+    var tc=_aTermApp(wr.e);
+    if(tc)wr.term=tc;
+  }
+  _appIdx={keys:keys,byId:byId,list:list,exe:null,words:null,web:web};_appIdxAt=now;
   return _appIdx;
+}
+// ── Web apps (Chromium-family --app=<url>) ──
+// A web-app entry starts a Chromium-family browser with --app=<url>, directly
+// or through a launcher script that passes its first argument on as
+// --app="$1" (Omarchy: Exec=omarchy-launch-webapp https://youtube.com/). Its
+// window's class is the browser's prefix, Chromium's app name for the URL
+// (host "_" path, characters not allowed in a file name as "_") and the
+// profile: chrome-youtube.com__-Default (measured on Hyprland 0.56.2,
+// Chromium; brave-, msedge-, vivaldi- ... the same way). The name comes from
+// the URL alone, so a web-app grant owns windows of that URL's app only -
+// never the browser's own windows or another site's app. Two entries for one
+// URL (or one URL with and without its trailing "_") are ambiguous and own
+// nothing.
+var _CR_APP_CLASS_RE=/^(?:chrome|chromium|brave|msedge|vivaldi|opera|helium|thorium)-(.+)-([^-]+)$/i;
+var _WEBAPP_WRAP_RE=/--app=("?)\$(?:1|\{1\})\1(?![\w}])/;
+// A launcher script (#!, at most 64 KiB) that passes its first argument as --app=.
+function _aWebWrapper(p){
+  try{
+    var st=_fs.statSync(p);if(!st.isFile()||st.size<3||st.size>65536)return !1;
+    var s=String(_fs.readFileSync(p,"utf8"));
+    return s.slice(0,2)==="#!"&&_WEBAPP_WRAP_RE.test(s);
+  }catch(e){return !1}
+}
+// Entry -> the http(s) URL it opens as an app window, or null.
+function _aWebUrl(e){
+  var a=e&&e.argv;if(!a)return null;
+  var pi=_entryProgIdx(a);if(pi<0)return null;
+  var u=null;
+  for(var i=pi+1;i<a.length&&!u;i++){var m=/^--app=(.+)$/.exec(a[i]);if(m)u=m[1]}
+  if(!u&&pi+1<a.length&&/^https?:\/\//i.test(a[pi+1])){var w=_aWhich(a[pi]);if(w&&_aWebWrapper(w))u=a[pi+1]}
+  if(!u)return null;
+  var p;try{p=new URL(u)}catch(er){return null}
+  return(p.protocol==="http:"||p.protocol==="https:")&&p.hostname?p:null;
+}
+// Chromium's app name for a URL as the window class carries it: as written,
+// and trimmed of "_" (both forms claimed; keys are case-insensitive).
+function _aWebNames(p){
+  var n=(p.hostname+"_"+p.pathname).replace(/[\u0000-\u001f\u007f"*\/:<>?\\|]/g,"_");
+  var t=n.replace(/^_+|_+$/g,"");
+  return(t&&t!==n?[n,t]:[n]).map(_akey);
+}
+// Window own id -> the web-app record, or null.
+function _aWebWin(idx,own){
+  for(var i=0;i<own.length;i++){var m=_CR_APP_CLASS_RE.exec(own[i]);if(m){var r=_alook(idx.web,_akey(m[1]));if(r)return r}}
+  return null;
+}
+// ── Terminal apps (explicit --app-id / --class) ──
+// A terminal-app entry starts a terminal with an explicit class and a command
+// (Omarchy: Exec=xdg-terminal-exec --app-id=TUI.float -e bash -c "dua i /").
+// Such an entry never owns a window: the class says nothing (every Omarchy
+// TUI shares TUI.float or TUI.tile), the terminal process's command line is
+// that of its first window (one process may serve several: foot --server,
+// single-instance terminals), its child is not the entry's argv (bash -c
+// "dua i /" execs dua), and a pid read now proves nothing about the window
+// a wlroots id named at capture time. The window keeps its terminal's id;
+// the entry's class only lets a refusal name the app that has a window of it
+// (_mkNoWindow).
+function _aTermApp(e){
+  var a=e&&e.argv;if(!a)return null;
+  var pi=_entryProgIdx(a);if(pi<0)return null;
+  var cls=null,ci=-1;
+  for(var i=pi+1;i<a.length;i++){
+    if(a[i]==="-e"||a[i]==="--"){ci=i;break}
+    var m=/^--(?:app-id|class)=(.+)$/.exec(a[i]);
+    if(m){cls=m[1];continue}
+    if((a[i]==="--app-id"||a[i]==="--class")&&i+1<a.length){cls=a[++i];continue}
+  }
+  if(!cls||ci<0||ci+1>=a.length)return null;
+  return{cls:cls};
 }
 function _alook(map,k){var c=k?map[k]:null;return c&&!c.amb?c.r:null}
 // Exact canonical id first, then any alias.
@@ -763,6 +842,7 @@ function _aWin(w){
   if(w.pid===process.pid){var h=_hostId();return{id:h,rec:idx.byId[_akey(h)]||null,host:!0}}
   var own=_aOwnIds(w);
   for(i=0;i<own.length;i++){r=_arec(idx,own[i]);if(r)return{id:r.id,rec:r}}
+  r=_aWebWin(idx,own);if(r)return{id:r.id,rec:r};
   for(var p=w.transient_for,n=0;p&&typeof p==="object"&&n<8;p=p.transient_for,n++){var po=_aOwnIds(p);for(i=0;i<po.length;i++){r=_arec(idx,po[i]);if(r)return{id:r.id,rec:r}}}
   r=_aProc(idx,w.pid);if(r)return{id:r.id,rec:r};
   var raw=_aRawFirst(w);
@@ -1564,7 +1644,7 @@ async function _wlMonForRegion(x,y){
   if(!pick){for(var j=0;j<screens.length;j++){if(screens[j].is_primary){pick=screens[j];break}}}
   if(!pick)pick=screens[0];
   var pg=pick.geometry||{x:0,y:0};
-  return{name:pick.name||pick.id,x:x-pg.x,y:y-pg.y};
+  return{name:pick.name||pick.id,x:x-pg.x,y:y-pg.y,geo:pick.geometry||null};
 }
 // Default display for a GNOME capture that names no display (issue #293).
 // The portal ScreenCast session streams only the monitor(s) the user shared in
@@ -1781,7 +1861,7 @@ async function _x11MonForRegion(x,y){
     _x11DiagOnce("region:"+x+","+y,"x11 capture origin "+x+","+y+" (root px) is on no RandR monitor - using "+(pick.name||pick.id));
   }
   var pg=pick.geometry||{x:0,y:0};
-  return{name:pick.name||pick.id,x:x-pg.x,y:y-pg.y};
+  return{name:pick.name||pick.id,x:x-pg.x,y:y-pg.y,geo:pick.geometry||null};
 }
 // The bridges' frame-size rule (compute_target_dims in x11/wlroots/gnome/kwin
 // bridges): long edge <= 1568 px, total <= 1_150_000 px, keep the aspect ratio,
@@ -2658,7 +2738,12 @@ function _bcParse(be,doc){
   var c=doc.capabilities&&typeof doc.capabilities==="object"?doc.capabilities:{};
   var mask=doc.screenshot_mask===!0||c.screenshot_mask===!0;
   var gaps=Array.isArray(doc.screenshot_mask_gaps)?doc.screenshot_mask_gaps.filter(function(g){return typeof g==="string"}):[];
-  return{mask:mask,geometry:be.kind==="x11"||doc.window_geometry===!0,gaps:mask?gaps:[],ignore:mask&&be.kind==="x11"&&c.screenshot_mask_ignore===!0,cm:c.compositing===!0?!0:c.compositing===!1?!1:null,cmWhy:typeof c.compositing_error==="string"?c.compositing_error:null};
+  // wlroots-bridge: how a masked capture is made (issue #329) - "toplevel"
+  // (each kept window on its own) or "output"; informational, the capture
+  // result's mask.capture is what counts.
+  var mmode=doc.screenshot_mask_mode==="toplevel"||doc.screenshot_mask_mode==="output"?doc.screenshot_mask_mode:null;
+  var mproto=typeof doc.screenshot_mask_protocol==="string"&&/^[\w.-]{1,64}$/.test(doc.screenshot_mask_protocol)?doc.screenshot_mask_protocol:null;
+  return{mask:mask,mmode:mask?mmode:null,mproto:mask?mproto:null,geometry:be.kind==="x11"||doc.window_geometry===!0,gaps:mask?gaps:[],ignore:mask&&be.kind==="x11"&&c.screenshot_mask_ignore===!0,cm:c.compositing===!0?!0:c.compositing===!1?!1:null,cmWhy:typeof c.compositing_error==="string"?c.compositing_error:null};
 }
 // Why a wlroots-bridge doctor's "no window geometry" is not a real negative,
 // or "" when it is (the compositor was reached and is not one that has
@@ -2687,7 +2772,7 @@ function _bcProbe(be){
     ent.p=null;
     // A failed doctor is asked again on the next capture, not kept a minute.
     if(res.error){ent.res=null;ent.at=0;ent.failAt=Date.now()}else{ent.res=res;ent.at=Date.now();ent.failAt=0;ent.geo=ent.geo===!0||!!res.geometry}
-    var line="[claude-cu] "+be.name+" capabilities: "+(res.error?res.error:"screenshot mask "+(res.mask?"yes"+(res.gaps.length?" (not covered: "+res.gaps.join(", ")+")":""):"no"+(res.why?" ("+res.why+")":""))+", window geometry "+(res.geometry?"yes":"no"));
+    var line="[claude-cu] "+be.name+" capabilities: "+(res.error?res.error:"screenshot mask "+(res.mask?"yes"+(res.gaps.length?" (not covered: "+res.gaps.join(", ")+")":""):"no"+(res.why?" ("+res.why+")":""))+", window geometry "+(res.geometry?"yes":"no")+(res.mmode?", mask capture "+res.mmode+(res.mproto?" ("+res.mproto+")":""):""));
     if(ent.line!==line){ent.line=line;globalThis.__cdbDiag(line)}
     // The per-app access answer upstream's UI shows may follow the mask
     // (js/cu_consent.js capChanged re-signals the renderer when it changed).
@@ -2875,9 +2960,12 @@ function _isHostWin(w){
   var r=_aWin(w);
   return !!(r&&(r.host||_akey(r.id)===_akey(_hostId())));
 }
+// Upstream's "Entire screen" pseudo-grant (16d / 16f) is not an app: it owns
+// no window, and the mask keeps nothing for it.
+function _maskPseudo(b){return _akey(b)===_akey(CU_SCREEN_APP)}
 function _maskAllowed(ids){
   var out=[],seen={},h=_akey(_hostId());
-  (Array.isArray(ids)?ids:[]).forEach(function(b){if(typeof b!=="string"||!b.trim())return;var k=_akey(b);if(!k||seen[k]||k===h)return;seen[k]=1;out.push(b)});
+  (Array.isArray(ids)?ids:[]).forEach(function(b){if(typeof b!=="string"||!b.trim()||_maskPseudo(b))return;var k=_akey(b);if(!k||seen[k]||k===h)return;seen[k]=1;out.push(b)});
   return out;
 }
 var _lastCap=null;
@@ -2894,13 +2982,28 @@ async function _maskFor(allowed){
   if(!Array.isArray(allowed))return null;
   var be=_bcBridge();if(!be)return null;
   var caps=await _bcProbe(be);
-  if(caps&&caps.error)throw new Error("Screenshot not taken: could not check whether "+be.name+" can hide the apps that are not allowed ("+caps.error+").");
+  if(caps&&caps.error){
+    globalThis.__cdbDiag("[claude-cu] screenshot: not taken via "+be.name+" (mask: could not check whether it can mask: "+caps.error+")");
+    throw new Error(MK_TXT_NOCHECK);
+  }
   if(!caps||!caps.mask)return null;
-  return{be:be,caps:caps,allowed:_maskAllowed(allowed)};
+  // asked: the caller's allowlist named an app (it may still hold only
+  // Claude's own id, which _maskAllowed drops). Only the pseudo-grant = not
+  // asked: --mask-all, as before.
+  return{be:be,caps:caps,allowed:_maskAllowed(allowed),asked:allowed.some(function(b){return typeof b==="string"&&!!b.trim()&&!_maskPseudo(b)})};
 }
-function _maskErr(mk,why){
-  var e=new Error("Screenshot not taken: "+mk.be.name+" could not hide the apps that are not allowed ("+why+"). Nothing was captured unmasked; try again, or ask the user.");
-  e.__cdbSurface=!0;e.__cdbMask=!0;return e;
+// What the model reads when a masked capture fails: no window id, app id,
+// pid or bridge name (those go to the log line, see _captureMasked).
+var MK_TXT_FAIL="Screenshot not taken: the screen capture could not hide the apps that are not allowed, so nothing was captured. Take the screenshot again; if it keeps failing, ask the user.";
+var MK_TXT_SHIFT="Screenshot not taken: the windows on the screen changed while it was being taken. Take the screenshot again.";
+var MK_TXT_OLD="Screenshot not taken: this Claude Desktop's screen capture helper cannot hide the apps that are not allowed, so nothing was captured. Ask the user to update Claude Desktop.";
+var MK_TXT_NOCHECK="Screenshot not taken: could not check whether the apps that are not allowed can be hidden on this screen, so nothing was captured. Take the screenshot again; if it keeps failing, ask the user.";
+// why: the detail for the log. kind: "shift" (the report disagrees with the
+// window list: retried once with a fresh list), "old" (bridge without the
+// mask flags), else a failed or malformed capture.
+function _maskErr(mk,why,kind){
+  var e=new Error(kind==="shift"?MK_TXT_SHIFT:kind==="old"?MK_TXT_OLD:MK_TXT_FAIL);
+  e.__cdbSurface=!0;e.__cdbMask=!0;e.__cdbMaskWhy=String(why);if(kind==="shift")e.__cdbMaskShift=!0;return e;
 }
 function _maskWindows(mk){return mk.be.kind==="x11"?_x11BridgeAsync(["windows"]):_wlBridgeCallAsync(["windows"])}
 // Canonical ids of masked windows for upstream's "X was hidden" note: no
@@ -2918,6 +3021,171 @@ function _maskHiddenIds(mk,list){
   return out;
 }
 function _rectsMeet(a,b){return !!a&&!!b&&a.width>0&&a.height>0&&b.width>0&&b.height>0&&a.x<b.x+b.width&&b.x<a.x+a.width&&a.y<b.y+b.height&&b.y<a.y+a.height}
+// ── What the model is told about a masked capture (issue #329) ──
+// A masked capture where no window of an approved app is shown is the mask
+// colour alone; returned as a success, the model reads it as "the app shows
+// nothing" and acts on a guess. So a non-empty allowlist never yields such an
+// image: when no kept window is shown, or no window resolves to an approved
+// app at all, the capture throws a __cdbSurface error naming the reason per
+// approved app - upstream's dispatcher hands that to the model as the tool's
+// error text (screenshot: captureError, zoom: "Tool \"zoom\" failed: ..."),
+// with no image. When some are shown, the image goes out with a note
+// (__cdbCuShotNote, sub-patch 5c puts it next to the image) on what covers a
+// shown window and which approved apps are missing and why. Names only:
+// approved apps by their Name, covering apps the same way upstream's
+// hidden-apps note names them, layer surfaces by namespace; never a title.
+// An empty allowlist keeps --mask-all (nothing granted: upstream refuses
+// before it captures).
+var _MK_NAME_RE=/^[\p{L}\p{N}_ .&'()+\-]+$/u;
+function _mkName(s){
+  var t=typeof s==="string"?s.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g,"").trim():"";
+  return t&&t.length<=40&&_MK_NAME_RE.test(t)?t:null;
+}
+// An approved or covering app id -> its quoted Name (the id when it has no
+// entry, "(name withheld)" when neither reads as a name).
+function _mkApp(id){
+  if(typeof id!=="string")return"\"(name withheld)\"";
+  if(_akey(_acanon(id)||id)===_akey(_hostId()))return"one of Claude's own windows";
+  var r=_arec(_appIndex(),id);
+  var n=_mkName(r&&r.name)||_mkName(r?r.id:_araw(id).split("/").pop());
+  return"\""+(n||"(name withheld)")+"\"";
+}
+function _mkList(a){return a.length<2?a.join(""):a.slice(0,-1).join(", ")+" and "+a[a.length-1]}
+// coveredBy entries (app ids, "layer:<namespace>") -> phrases, deduped.
+// The window list of the capture being described (set by _captureMaskedOnce).
+var _mkWinsNow=null;
+// A covering app id -> the name of the app that owns a listed window with
+// that id (the hidden list's resolution: entry, alias, process), or null when
+// none has an entry (a Chromium app class without one would hand the model a
+// site's host).
+function _mkCoverName(c){
+  var ws=Array.isArray(_mkWinsNow)?_mkWinsNow:[];
+  for(var i=0;i<ws.length;i++){
+    var v=ws[i];if(!v||!_aOwnIds(v).some(function(o){return _akey(o)===_akey(c)}))continue;
+    var r=_aWin(v);
+    if(r&&r.host)return"one of Claude's own windows";
+    if(r&&r.rec){var n=_mkName(r.rec.name);return n?"\""+n+"\"":null}
+  }
+  if(_CR_APP_CLASS_RE.test(c))return null;
+  var e=_arec(_appIndex(),c),en=e&&_mkName(e.name);
+  if(e&&_akey(e.id)===_akey(_hostId()))return"one of Claude's own windows";
+  return en?"\""+en+"\"":null;
+}
+function _mkCovers(list){
+  var out=[];
+  (Array.isArray(list)?list:[]).forEach(function(c){
+    if(typeof c!=="string"||!c.trim())return;
+    var s;
+    if(/^layer:/.test(c)){var ns=_mkName(c.slice(6));s=ns?"a desktop layer (\""+ns+"\")":"a desktop layer"}
+    // wlroots-bridge: a window without an app id.
+    else if(c==="unknown")s="a window without an app name";
+    else s=_mkCoverName(c)||"\"(name withheld)\"";
+    if(out.indexOf(s)<0)out.push(s);
+  });
+  return out;
+}
+// One reason of one approved app -> "<what> - <what would help>".
+function _mkWhy(r){
+  var cv=_mkCovers(r.cover);
+  switch(r.reason){
+    case"no_window":return r.owner?"has no window of its own on screen - "+r.owner:"has no open window - if it was just opened, wait a moment and take the screenshot again; otherwise open it with open_application, or ask the user to open it";
+    case"other_workspace":return"is on another workspace - try open_application to bring it forward; if it stays hidden, ask the user to switch to that workspace";
+    case"minimized":return"is minimized - try open_application to bring it forward; if it stays hidden, ask the user to restore its window";
+    case"other_output":return"is on another monitor - use switch_display to capture that monitor";
+    case"outside_region":return"is not in the zoomed area - zoom on a part of the last screenshot where it is";
+    // open_application raises the window (activate-window); it cannot move a
+    // desktop layer (a notification, a bar): there only waiting or the user helps.
+    case"covered":
+      var lay=(r.cover||[]).length>0&&(r.cover||[]).every(function(v){return /^layer:/.test(v)});
+      if(lay)return"is covered by "+_mkList(cv)+" - wait until "+(cv.length>1?"they close":"it closes")+" and take a screenshot again, or ask the user to close "+(cv.length>1?"them":"it");
+      return"is covered by "+(cv.length?_mkList(cv):"something else on the screen")+" - try open_application to bring it forward; if it stays covered, ask the user to move "+(cv.length>1?"them":"it")+" out of the way";
+    case"capture_failed":return"could not be captured - take the screenshot again, and ask the user if it keeps failing";
+    default:return"could not be shown (no reason was given) - take the screenshot again";
+  }
+}
+// rows: [{app, why:[{reason, cover, owner}]}] -> "\"A\" is ... \"B\" has ...".
+function _mkRows(rows){
+  return rows.map(function(row){
+    var seen={},ph=[];
+    row.why.forEach(function(r){var p=_mkWhy(r);if(!seen[p]){seen[p]=1;ph.push(p)}});
+    return _mkApp(row.app)+" "+ph.join("; another of its windows ")+".";
+  }).join(" ");
+}
+function _mkRefuse(mk,rows){
+  var t=rows.length?"Screenshot not taken: no window of the approved apps can be shown, so the image would be the grey mask alone. "+_mkRows(rows)
+    :"Screenshot not taken: the only approved app is Claude itself, and Claude's own windows are never shown. Call request_access for the app to work in.";
+  var e=new Error(t);e.__cdbSurface=!0;e.__cdbMask=!0;e.__cdbMaskEmpty=!0;return e;
+}
+// The note for an image that shows some of the approved apps.
+var MK_ROWS_MAX=5;
+function _mkNote(rows,covered,capt){
+  var out=[];
+  covered.forEach(function(c){
+    // toplevel: a layer entry only says a shell surface's rect meets the
+    // window (the bridge cannot know what it draws: Omarchy's notification
+    // host spans the output, the bar meets every fullscreen window), and the
+    // window's own pixels are in the image - left out. Windows in front are
+    // real. output: whatever met the window was cut away - all named.
+    var cv=_mkCovers(capt==="toplevel"?c.cover.filter(function(v){return !/^layer:/.test(v)}):c.cover);if(!cv.length)return;
+    var who=_mkList(cv);
+    // Upstream's own note says the covering apps "got hidden": they are left
+    // out of the image, and still in front on the screen.
+    var pl=cv.length>1;
+    out.push(capt==="toplevel"?_mkApp(c.app)+" is shown whole. "+who.charAt(0).toUpperCase()+who.slice(1)+" "+(pl?"are":"is")+" left out of this image but "+(pl?"are":"is")+" in front of part of "+_mkApp(c.app)+" on the screen: a click on that part is refused."
+      :"Part of "+_mkApp(c.app)+" is covered on the screen by "+who+"; that part is painted over in this image.");
+  });
+  // At most MK_ROWS_MAX apps (a wildcard grant can name many).
+  if(rows.length)out.push("Not in this image: "+_mkRows(rows.slice(0,MK_ROWS_MAX))+(rows.length>MK_ROWS_MAX?" And "+(rows.length-MK_ROWS_MAX)+" more approved app"+(rows.length-MK_ROWS_MAX>1?"s":"")+".":""));
+  return out.join(" ");
+}
+// An approved app none of whose windows is in the window list. A web app or a
+// terminal app whose window could not be told apart (see "Web apps" /
+// "Terminal apps") may still be on screen under another app's id: a window of
+// its declared class (terminal) or of a Chromium app class for its host (web)
+// names that app, so the model can ask for it. Names only.
+function _mkNoWindow(app,cand){
+  var idx=_appIndex(),rec=_arec(idx,app),own=[];
+  if(rec&&(rec.term||rec.web))(cand||[]).forEach(function(w){
+    if(!w||w.is_dock===!0||w.is_desktop===!0)return;
+    var ids=_aOwnIds(w);
+    var maybe=rec.term&&ids.some(function(i){return _akey(i)===_akey(rec.term.cls)})||rec.web&&ids.some(function(i){var m=_CR_APP_CLASS_RE.exec(i);return !!m&&_akey(m[1]).indexOf(_akey(rec.web.hostname)+"_")===0});
+    if(!maybe)return;
+    var r=_aWin(w);
+    if(!r||!r.id||r.host||_akey(r.id)===_akey(rec.id))return;
+    if(own.indexOf(r.id)<0)own.push(r.id);
+  });
+  if(!own.length)return{reason:"no_window"};
+  var who=_mkList(own.map(_mkApp));
+  return{reason:"no_window",ownerId:own.join("+"),owner:"a window that may be it belongs to "+who+" here; to work in it, request access to "+who+" (that covers every window of "+(own.length>1?"those apps":who)+")"};
+}
+// The note waits for the image it belongs to: upstream's dispatcher (5c) and
+// our Code-tab handler ask with that image's base64; anything else gets none.
+// Up to MK_NOTES_MAX images keep their note (upstream's live preview and
+// pixel check capture too, between a screenshot and its answer); a note is
+// dropped when handed out, the oldest first beyond the cap.
+var MK_NOTES_MAX=8,_mkNotes=new Map();
+function _mkNoteSet(b64,t){
+  if(typeof b64!=="string"||!b64)return;
+  _mkNotes.delete(b64);
+  if(!t)return;
+  _mkNotes.set(b64,t);
+  while(_mkNotes.size>MK_NOTES_MAX)_mkNotes.delete(_mkNotes.keys().next().value);
+}
+globalThis.__cdbCuShotNote=function(b64){
+  if(typeof b64!=="string"||!b64||!_mkNotes.has(b64))return[];
+  var t=_mkNotes.get(b64);_mkNotes.delete(b64);
+  return[{type:"text",text:t}];
+};
+// One line per masked capture (claude-patches.log): mode, capture kind,
+// kept / shown counts and, when not everything is shown, why and for which
+// app ids (ids only, never titles).
+function _mkLog(be,taken,o){
+  var s="[claude-cu] screenshot: "+(taken?"captured":"not taken")+" via "+be.name+" (mask "+o.mode+(o.capt?", capture "+o.capt:"")+", kept "+o.kept+" window(s)"+(o.shown!=null?", shown "+o.shown:"");
+  if(o.rows&&o.rows.length)s+=", not shown: "+o.rows.map(function(r){return r.app+" ("+r.why.map(function(w){return w.reason+(w.reason!=="outside_region"&&w.cover&&w.cover.length?" by "+w.cover.join("+"):"")+(w.ownerId?" -> window of "+w.ownerId:"")}).join(", ")+")"}).join(", ");
+  if(o.covered&&o.covered.length)s+=", covered: "+o.covered.map(function(c){return c.app+" by "+c.cover.join("+")}).join(", ");
+  if(o.extra)s+=o.extra;
+  globalThis.__cdbDiag(s+")");
+}
 // ── Claude's own see-through overlays (issue #327) ──
 // Upstream's "Claude is using your computer" glow (<tmpdir>/cu-glow.html: the
 // whole display, transparent, click-through, always on top, shown on every
@@ -2964,34 +3232,63 @@ var _ovRefusedLast="";
 function _ovOldNote(be){
   if(_ovOldSaid[be.bin])return;
   _ovOldSaid[be.bin]=1;
-  globalThis.__cdbDiag("[claude-cu] "+be.name+" ("+be.bin+") does not take --ignore-window (doctor capabilities.screenshot_mask_ignore missing): Claude's teach overlay covers the screen, so masked screenshots during teach mode can come back blank (#1E1E1E); the glow stays off with this bridge (it does not report capabilities.compositing) - use the bundled x11-bridge");
+  globalThis.__cdbDiag("[claude-cu] "+be.name+" ("+be.bin+") does not take --ignore-window (doctor capabilities.screenshot_mask_ignore missing): Claude's teach overlay covers the screen, so masked screenshots during teach mode are refused (the approved apps are covered); the glow stays off with this bridge (it does not report capabilities.compositing) - use the bundled x11-bridge");
 }
 // Masked capture of a region. x/y/w/h: x11-bridge root pixels, or the wlroots
-// global logical region (lx..). Returns {base64, imgW, imgH, mimeType, hidden}.
+// global logical region (lx..). Returns {base64, imgW, imgH, mimeType, hidden}
+// and leaves the image's note for __cdbCuShotNote; throws a __cdbSurface error
+// when the image could show no approved app (see "What the model is told").
+// A report that disagrees with the window list (wlroots ids shift when a
+// window opens or closes; an x11 id that was not asked for) is retried once
+// with a fresh window list; every check holds on both attempts.
 async function _captureMasked(mk,x,y,w,h){
+  // The retry runs only within the lock this capture began in (_capLockGen):
+  // after a release _captureRegion answers with the cancellation.
+  var gen=_capLockGen;
+  for(var at=0;;at++){
+    try{return await _captureMaskedOnce(mk,x,y,w,h)}
+    catch(e){
+      if(!e||!e.__cdbMaskWhy)throw e;
+      var line="[claude-cu] screenshot: not taken via "+mk.be.name+" (mask: "+e.__cdbMaskWhy+")";
+      if(e.__cdbMaskShift&&!at&&gen===_capLockGen){globalThis.__cdbDiag(line+" - the report disagrees with the window list: listing the windows again and capturing once more");continue}
+      globalThis.__cdbDiag(line+(e.__cdbMaskShift?" - again on the second attempt":""));
+      throw e;
+    }
+  }
+}
+async function _captureMaskedOnce(mk,x,y,w,h){
   if(_tgt&&_tgt.refuse)throw _tgtErr();
+
   var be=mk.be,wins;
   try{wins=await _maskWindows(mk)}catch(e){throw _maskErr(mk,"window list failed: "+(e&&e.message||e))}
+  _mkWinsNow=Array.isArray(wins)?wins:null;
   if(!Array.isArray(wins))throw _maskErr(mk,"the window list is not an array");
   var cand=wins.filter(function(v){return v&&!_isHostWin(v)});
   var keep=mk.allowed.length&&globalThis.__cdbCuAppIds?globalThis.__cdbCuAppIds.windowIds(mk.allowed,cand):[];
+  // An allowlist with no window of any approved app: --mask-all would be the
+  // mask colour alone. Nothing is captured; the model is told why.
+  if(mk.asked&&!keep.length){
+    var nrows=mk.allowed.map(function(a){return{app:a,why:[_mkNoWindow(a,cand)]}});
+    _mkLog(be,!1,{mode:"keep",kept:0,shown:0,rows:nrows,extra:nrows.length?"":", only Claude's own id approved"});
+    throw _mkRefuse(mk,nrows);
+  }
   var flags=[];
   if(keep.length)keep.forEach(function(id){flags.push("--keep-window",id)});else flags.push("--mask-all");
-  var x11=be.kind==="x11",r=null,ign=[];
+  var x11=be.kind==="x11",r=null,ign=[],mr=null;
   if(x11){
     var ov=_ownOverlayXids();
     if(ov.length){if(mk.caps&&mk.caps.ignore===!0)ign=ov;else _ovOldNote(be)}
     ign.forEach(function(id){flags.push("--ignore-window",id)});
   }
   for(var tr=0;;tr++){
-    var mr=x11?await _x11MonForRegion(x,y):await _wlMonForRegion(x,y);
+    mr=x11?await _x11MonForRegion(x,y):await _wlMonForRegion(x,y);
     // Bridge zoom coordinates are relative to --display: never without it.
     if(!mr||!mr.name)throw _maskErr(mk,"no monitor list from the bridge");
     var args=["zoom","--x",String(mr.x),"--y",String(mr.y),"--w",String(w),"--h",String(h),"--display",mr.name].concat(flags);
     try{r=x11?await _x11BridgeAsync(args):await _wlBridgeCallAsync(args);break}
     catch(ze){
       if(!tr&&_cuDisplayNotFound(ze)){globalThis.__cdbDiag("[claude-cu] "+be.name+" masked zoom: display "+mr.name+" not found - monitor list refreshed, retrying once");if(x11)_x11ScreensInvalidate();else _wlScreensInvalidate();continue}
-      if(_bridgeExitCode(ze)===2){_bcForget(be);throw _maskErr(mk,"this "+be.name+" does not take --keep-window / --mask-all; update the package")}
+      if(_bridgeExitCode(ze)===2){_bcForget(be);throw _maskErr(mk,"this "+be.name+" does not take --keep-window / --mask-all; update the package","old")}
       if(ze&&ze.__cdbSurface)throw ze;
       throw _maskErr(mk,(ze&&ze.message||String(ze)).trim());
     }
@@ -3003,36 +3300,166 @@ async function _captureMasked(mk,x,y,w,h){
     // x11-bridge: XIDs are stable while it holds the server grab; it reports
     // the masked windows itself (topmost first, client ids as in `windows`).
     var kept=Array.isArray(m.kept)?m.kept.map(String):[];
-    for(var ki=0;ki<kept.length;ki++)if(keep.indexOf(kept[ki])<0)throw _maskErr(mk,"it kept window "+kept[ki]+", which was not asked for");
+    for(var ki=0;ki<kept.length;ki++)if(keep.indexOf(kept[ki])<0)throw _maskErr(mk,"it kept window "+kept[ki]+", which was not asked for","shift");
     var ignd=Array.isArray(m.ignored)?m.ignored.map(String):[];
-    for(var ii=0;ii<ignd.length;ii++)if(ign.indexOf(ignd[ii])<0)throw _maskErr(mk,"it looked through window "+ignd[ii]+", which was not asked for");
+    for(var ii=0;ii<ignd.length;ii++)if(ign.indexOf(ignd[ii])<0)throw _maskErr(mk,"it looked through window "+ignd[ii]+", which was not asked for","shift");
     if(ign.length&&!Array.isArray(m.ignored))throw _maskErr(mk,"it did not report the --ignore-window outcome");
     var refused=Array.isArray(m.ignored_refused)?m.ignored_refused:[];
     var rl=refused.length?"[claude-cu] x11-bridge did not look through Claude's own overlay "+refused.map(function(v){return(v&&v.id)+" ("+(v&&v.reason)+")"}).join(", ")+" - the apps under it are masked":"";
     if(rl!==_ovRefusedLast){_ovRefusedLast=rl;if(rl)globalThis.__cdbDiag(rl)}
     var byId={};wins.forEach(function(v){if(v&&v.id!=null)byId[String(v.id)]=v});
-    hidden=_maskHiddenIds(mk,(Array.isArray(m.masked)?m.masked:[]).map(function(v){var lw=v&&byId[String(v.id)];return lw?lw:null}).filter(Boolean));
-  }else{
-    // wlroots-bridge ids are per-connection protocol ids that can shift
-    // between our `windows` and its capture: every kept entry (the app id and
-    // title the bridge resolved at capture time) must be a window we asked
-    // for, of an allowed app, and never Claude. A title that changed is fine
-    // (terminals, browsers); an app id that is not allowed discards the image.
-    var listed={};cand.forEach(function(v){if(v&&v.id!=null)listed[String(v.id)]=v});
-    var kl=Array.isArray(m.kept)?m.kept:[];
-    if(kl.length!==keep.length)throw _maskErr(mk,"it reported "+kl.length+" kept window(s) for "+keep.length+" asked for");
-    for(var wi=0;wi<kl.length;wi++){
-      var k=kl[wi]||{},lw2=listed[String(k.id)],aid=typeof k.appId==="string"?k.appId:"";
-      // The listed window (pid included) when it still has this app id, else
-      // the app id alone.
-      var pw=lw2&&aid&&(lw2.desktop_file_name===aid||lw2.resource_class===aid)?lw2:{id:k.id,title:k.title,desktop_file_name:aid||null,resource_class:aid||null,resource_name:null,pid:null};
-      var okWin=!!aid&&keep.indexOf(String(k.id))>=0&&!_isHostWin(pw)&&mk.allowed.some(function(b){return _aOwns(b,pw)});
-      if(!okWin)throw _maskErr(mk,"kept window "+k.id+" ("+(aid||"no app id")+") is not a window of an allowed app any more - the image was discarded");
+    var maskedWins=(Array.isArray(m.masked)?m.masked:[]).map(function(v){var lw=v&&byId[String(v.id)];return lw?lw:null}).filter(Boolean);
+    hidden=_maskHiddenIds(mk,maskedWins);
+    var xextra=(Array.isArray(m.ignored)&&m.ignored.length?", looked through "+m.ignored.length+" Claude overlay(s)":"")+(Array.isArray(m.kept_hidden)&&m.kept_hidden.length?", "+m.kept_hidden.length+" kept window(s) fully covered":"")+(hidden.length?", masked apps "+hidden.join(","):"");
+    if(!keep.length){
+      _mkLog(be,!0,{mode:m.mode,kept:0,extra:xextra});
+      return{base64:r.base64,imgW:r.width||w,imgH:r.height||h,mimeType:"image/jpeg",hidden:hidden};
     }
-    var reg={x:x,y:y,width:w,height:h};
-    hidden=_maskHiddenIds(mk,wins.filter(function(v){return v&&keep.indexOf(String(v.id))<0&&v.is_minimized!==!0&&v.is_visible!==!1&&_rectsMeet(v.geometry,reg)}));
+    // Which approved app is in the image (issue #329): `kept` = asked-for ids
+    // with visible pixels, `kept_hidden` = viewable but no pixel here (outside
+    // the region, or fully covered), `kept_missing` = not viewable (unmapped:
+    // another workspace, minimized). None kept = the mask colour alone: the
+    // reasons as text instead of the image.
+    var xh=m.kept_hidden==null?[]:m.kept_hidden,xm=m.kept_missing==null?[]:m.kept_missing,xa=m.auto_kept==null?[]:m.auto_kept;
+    if(!Array.isArray(xh)||!Array.isArray(xm)||!Array.isArray(xa))throw _maskErr(mk,"its kept_hidden / kept_missing / auto_kept are not lists");
+    xh=xh.map(String);xm=xm.map(String);
+    for(var xi=0;xi<xh.length+xm.length;xi++){var xid=xi<xh.length?xh[xi]:xm[xi-xh.length];if(keep.indexOf(xid)<0)throw _maskErr(mk,"it reported window "+xid+", which was not asked for","shift")}
+    var xreg={x:x,y:y,width:w,height:h},xrows=[];
+    mk.allowed.forEach(function(a){
+      var mine=keep.filter(function(id){var lw=byId[id];return !!lw&&_aOwns(a,lw)});
+      if(mine.some(function(id){return kept.indexOf(id)>=0}))return;
+      xrows.push({app:a,why:mine.length?mine.map(function(id){
+        var lw=byId[id];
+        if(xm.indexOf(id)>=0)return{reason:lw.is_minimized===!0?"minimized":"other_workspace"};
+        if(xh.indexOf(id)<0)return{reason:""};
+        // Not on the captured monitor: switch_display; on it but outside a zoom: zoom elsewhere.
+        if(lw.geometry&&mr&&mr.geo&&!_rectsMeet(lw.geometry,mr.geo))return{reason:"other_output"};
+        if(lw.geometry&&!_rectsMeet(lw.geometry,xreg))return{reason:"outside_region"};
+        // Masked windows above it (the window list's stacking order), by app.
+        var cov=[];
+        maskedWins.forEach(function(v){
+          if(!_rectsMeet(v.geometry,lw.geometry)||typeof v.stacking_order==="number"&&typeof lw.stacking_order==="number"&&v.stacking_order<lw.stacking_order||v.is_dock===!0||v.is_desktop===!0)return;
+          var rw=_aWin(v);if(rw&&rw.id&&cov.indexOf(rw.id)<0)cov.push(rw.host?_hostId():rw.id);
+        });
+        // Claude's own overlay the bridge would not look through (not in `windows`).
+        if(refused.length&&cov.indexOf(_hostId())<0)cov.push(_hostId());
+        return{reason:"covered",cover:cov};
+      }):[_mkNoWindow(a,cand)]});
+    });
+    // auto_kept: an approved window's own menus / tooltips with pixels here
+    // (a zoom on a menu hanging past its window): the app is in the image,
+    // but whose it is the report does not say - image, no note.
+    if(!kept.length&&!xa.length){
+      _mkLog(be,!1,{mode:m.mode,kept:keep.length,shown:0,rows:xrows,extra:xextra});
+      throw _mkRefuse(mk,xrows);
+    }
+    if(!kept.length)xrows=[];
+    _mkNoteSet(r.base64,_mkNote(xrows,[],"output"));
+    _mkLog(be,!0,{mode:m.mode,kept:keep.length,rows:xrows,extra:xextra});
+    return{base64:r.base64,imgW:r.width||w,imgH:r.height||h,mimeType:"image/jpeg",hidden:hidden};
   }
-  globalThis.__cdbDiag("[claude-cu] screenshot: captured via "+be.name+" (mask "+m.mode+", kept "+keep.length+" window(s)"+(x11&&Array.isArray(m.ignored)&&m.ignored.length?", looked through "+m.ignored.length+" Claude overlay(s)":"")+(x11&&Array.isArray(m.kept_hidden)&&m.kept_hidden.length?", "+m.kept_hidden.length+" kept window(s) fully covered":"")+(hidden.length?", masked apps "+hidden.join(","):"")+")");
+  // wlroots-bridge ids are per-connection protocol ids that can shift
+  // between our `windows` and its capture: every kept entry (the app id and
+  // title the bridge resolved at capture time) must be a window we asked
+  // for, of an allowed app, and never Claude. A title that changed is fine
+  // (terminals, browsers); an app id that is not allowed discards the image.
+  // Per kept window the bridge says whether its pixels are in the image
+  // (shown), why not (reason) and what sits over it (coveredBy); mask.capture
+  // says how ("toplevel": each kept window on its own, "output": the
+  // composited output with the rest cut away; missing = "output"). A bridge
+  // without `shown` (older) is read from `visible` and `regions`. A field of
+  // the wrong type discards the image.
+  var listed={};cand.forEach(function(v){if(v&&v.id!=null)listed[String(v.id)]=v});
+  var kl=Array.isArray(m.kept)?m.kept:[];
+  if(kl.length!==keep.length)throw _maskErr(mk,"it reported "+kl.length+" kept window(s) for "+keep.length+" asked for","shift");
+  var reg={x:x,y:y,width:w,height:h};
+  // --mask-all (nothing approved yet): the mask over everything, as before.
+  if(!keep.length){
+    hidden=_maskHiddenIds(mk,wins.filter(function(v){return v&&v.is_minimized!==!0&&v.is_visible!==!1&&_rectsMeet(v.geometry,reg)}));
+    _mkLog(be,!0,{mode:m.mode,kept:0,extra:hidden.length?", masked apps "+hidden.join(","):""});
+    return{base64:r.base64,imgW:r.width||w,imgH:r.height||h,mimeType:"image/jpeg",hidden:hidden};
+  }
+  var capt=m.capture==null?"output":m.capture;
+  if(capt!=="toplevel"&&capt!=="output")throw _maskErr(mk,"it reported an unknown capture kind "+String(JSON.stringify(m.capture)).slice(0,40));
+  var regs=m.regions==null?null:m.regions;
+  if(regs!==null&&!Array.isArray(regs))throw _maskErr(mk,"its regions are not a list");
+  var hasShown=kl.some(function(k){return !!k&&typeof k==="object"&&k.shown!==void 0});
+  if(!hasShown&&regs===null)throw _maskErr(mk,"it reported neither shown windows nor regions");
+  var ents=[],seenK={};
+  for(var wi=0;wi<kl.length;wi++){
+    var k=kl[wi];
+    if(!k||typeof k!=="object")throw _maskErr(mk,"a kept entry is not an object");
+    var lw2=listed[String(k.id)],aid=typeof k.appId==="string"?k.appId:"";
+    // The listed window (pid included) when it still has this app id, else
+    // the app id alone.
+    var pw=lw2&&aid&&(lw2.desktop_file_name===aid||lw2.resource_class===aid)?lw2:{id:k.id,title:k.title,desktop_file_name:aid||null,resource_class:aid||null,resource_name:null,pid:null};
+    // Same app id, another process (an id that moved to a window of another
+    // app with the same class, told apart by its process): not the listed window.
+    if(pw===lw2&&typeof k.pid==="number"&&typeof lw2.pid==="number"&&k.pid!==lw2.pid)throw _maskErr(mk,"kept window "+k.id+" has pid "+k.pid+" at capture, "+lw2.pid+" in the window list","shift");
+    var owner=null;
+    if(aid&&keep.indexOf(String(k.id))>=0&&!_isHostWin(pw))for(var oi=0;oi<mk.allowed.length&&!owner;oi++)if(_aOwns(mk.allowed[oi],pw))owner=mk.allowed[oi];
+    if(!owner)throw _maskErr(mk,"kept window "+k.id+" ("+(aid||"no app id")+") is not a window of an allowed app any more - the image was discarded","shift");
+    if(seenK[String(k.id)])throw _maskErr(mk,"it reported window "+k.id+" twice");
+    seenK[String(k.id)]=1;
+    if(hasShown&&typeof k.shown!=="boolean")throw _maskErr(mk,"kept window "+k.id+" has no shown flag");
+    if(k.reason!=null&&typeof k.reason!=="string")throw _maskErr(mk,"kept window "+k.id+" has a reason that is not a string");
+    if(k.coveredBy!=null&&!(Array.isArray(k.coveredBy)&&k.coveredBy.every(function(c){return typeof c==="string"})))throw _maskErr(mk,"kept window "+k.id+" has a coveredBy that is not a list of strings");
+    if(k.pid!=null&&!(typeof k.pid==="number"&&k.pid>0))throw _maskErr(mk,"kept window "+k.id+" has a pid that is not a number");
+    var shown=hasShown?k.shown:k.visible!==!1&&regs.length>0;
+    if(shown&&k.visible===!1)throw _maskErr(mk,"it showed window "+k.id+", which it reported not visible");
+    // Not shown: the bridge's reason, else what the window list says.
+    var why=hasShown?(k.reason||""):k.visible===!1?"":"covered";
+    if(!shown&&!why&&lw2){
+      if(lw2.is_minimized===!0)why="minimized";
+      else if(lw2.is_visible===!1)why="other_workspace";
+      else if(lw2.geometry&&!_rectsMeet(lw2.geometry,reg))why=lw2.output&&mr&&mr.name&&lw2.output!==mr.name||mr&&mr.geo&&!_rectsMeet(lw2.geometry,mr.geo)?"other_output":"outside_region";
+    }
+    if(!shown&&!why&&k.visible===!1)why="other_workspace";
+    ents.push({id:String(k.id),app:owner,shown:shown,reason:why,geo:lw2&&lw2.geometry&&lw2.geometry.width>0&&lw2.geometry.height>0?lw2.geometry:null,pid:typeof k.pid==="number"?k.pid:null,cover:(k.coveredBy||[]).filter(function(c){return !!c.trim()})});
+  }
+  var nShown=ents.filter(function(e){return e.shown}).length;
+  if(nShown&&regs!==null&&!regs.length)throw _maskErr(mk,"it showed "+nShown+" window(s) but reported no region");
+  // Popups / menus the bridge drew with a kept window (toplevel capture,
+  // Hyprland): each must belong to a kept window that is shown, by the pid
+  // the compositor gave both at capture time.
+  var nCh=0,chExtra="";
+  if(m.children!=null){
+    if(!Array.isArray(m.children))throw _maskErr(mk,"its children are not a list");
+    var isN=function(v){return typeof v==="number"&&isFinite(v)};
+    m.children.forEach(function(c){
+      if(!c||typeof c!=="object"||typeof c.address!=="string"||!isN(c.pid)||(typeof c.parent!=="string"&&!isN(c.parent))||!c.rect||typeof c.rect!=="object"||!isN(c.rect.x)||!isN(c.rect.y)||!isN(c.rect.width)||!isN(c.rect.height))throw _maskErr(mk,"a child entry is malformed");
+      var pe=null;for(var ci=0;ci<ents.length;ci++)if(ents[ci].id===String(c.parent))pe=ents[ci];
+      if(!pe||!pe.shown)throw _maskErr(mk,"it drew a child of window "+c.parent+", which is not a shown kept window","shift");
+      if(pe.pid===null||pe.pid!==c.pid)throw _maskErr(mk,"it drew a child of window "+c.parent+" whose pid does not match that window's","shift");
+    });
+    nCh=m.children.length;
+  }
+  if(m.childrenSkipped!=null&&!(typeof m.childrenSkipped==="number"&&m.childrenSkipped>=0))throw _maskErr(mk,"its childrenSkipped is not a number");
+  if(nCh||m.childrenSkipped>0)chExtra=", children "+nCh+(m.childrenSkipped>0?" ("+m.childrenSkipped+" skipped)":"");
+  // A zoom that meets none of the shown windows: the bridge's `shown` is per
+  // output, so the crop would be the mask colour alone. Only when every shown
+  // window has a listed rect and no child was drawn (a child may reach out).
+  var shownE=ents.filter(function(e){return e.shown});
+  if(shownE.length&&!nCh&&shownE.every(function(e){return !!e.geo})&&!shownE.some(function(e){return _rectsMeet(e.geo,reg)})){
+    shownE.forEach(function(e){e.shown=!1;e.reason="outside_region"});
+    nShown=0;
+  }
+  // Per approved app, in grant order: shown when any of its windows is.
+  var rows=[],covered=[];
+  mk.allowed.forEach(function(a){
+    var mine=ents.filter(function(e){return e.app===a});
+    var vis=mine.filter(function(e){return e.shown});
+    vis.forEach(function(e){if(e.cover.length)covered.push({app:a,cover:e.cover})});
+    if(vis.length)return;
+    rows.push({app:a,why:mine.length?mine.map(function(e){return{reason:e.reason,cover:e.cover}}):[_mkNoWindow(a,cand)]});
+  });
+  if(!nShown){
+    _mkLog(be,!1,{mode:m.mode,capt:capt,kept:keep.length,shown:0,rows:rows});
+    throw _mkRefuse(mk,rows);
+  }
+  hidden=_maskHiddenIds(mk,wins.filter(function(v){return v&&keep.indexOf(String(v.id))<0&&v.is_minimized!==!0&&v.is_visible!==!1&&_rectsMeet(v.geometry,reg)}));
+  _mkNoteSet(r.base64,_mkNote(rows,covered,capt));
+  _mkLog(be,!0,{mode:m.mode,capt:capt,kept:keep.length,shown:nShown,rows:rows,covered:covered,extra:chExtra+(hidden.length?", masked apps "+hidden.join(","):"")});
   return{base64:r.base64,imgW:r.width||w,imgH:r.height||h,mimeType:"image/jpeg",hidden:hidden};
 }
 // wlroots-bridge with window geometry: the app whose window is topmost

@@ -790,6 +790,17 @@ elif command -v cargo &>/dev/null && [ -d "$WLROOTS_BRIDGE_SRC_DIR" ]; then
 else
     log_warn "wlroots-bridge not available — skipping (wlroots Wayland Computer Use will require manual install)"
 fi
+# The bundled wlroots-bridge must report how it masks (issue #329): doctor
+# screenshot_mask_mode / screenshot_mask_protocol and the per-window
+# shown / reason / coveredBy report. An older bridge passes everything else,
+# but on Hyprland its masked screenshots cut the approved window away under a
+# full-output layer. Same check as CI's bridge contract step.
+if [ -f "$TREE_DIR/resources/wlroots-bridge" ]; then
+    if ! bash "$SCRIPT_DIR/check-bridge-contract.sh" --wlroots-caps "$TREE_DIR/resources/wlroots-bridge"; then
+        log_error "the bundled wlroots-bridge is older than this app needs - rebuild it from the current wlroots-bridge source"
+        exit 1
+    fi
+fi
 
 # Bundle gnome-portal-bridge into resources/ (= process.resourcesPath) for GNOME
 # Wayland Computer Use. First-party replacement for ydotool + the portal-python/

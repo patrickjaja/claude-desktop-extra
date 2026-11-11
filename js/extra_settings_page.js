@@ -1607,6 +1607,8 @@
   // What the wlroots-bridge mask does not cover (doctor screenshot_mask_gaps).
   var CUS_GAP_NAMES = { popups: "popup menus", layer_shell_top_overlay: "panels and overlays", xwayland_unmanaged: "XWayland menus and tooltips" };
   function cusGapName(g) { return CUS_GAP_NAMES[g] || String(g).replace(/_/g, " "); }
+  var CUS_CUT_NAMES = { popups_outside_window: "an approved app's own menus where they reach past its window", xwayland_unmanaged: "XWayland menus and tooltips that cannot be matched to an approved window" };
+  function cusCutName(g) { return CUS_CUT_NAMES[g] || String(g).replace(/_/g, " "); }
 
   // The status line under "This desktop": what screenshots show here. Facts
   // from main (cdb-cu-status:read `screenshots`); null draws nothing.
@@ -1621,7 +1623,12 @@
     if (s.ask === false) return "Screenshots show the whole screen and every app can be controlled: Ask before Computer Use controls an app is off.";
     if (s.filtering === "filtered") {
       var gaps = Array.isArray(s.gaps) ? s.gaps.filter(function (g) { return typeof g === "string" && g; }) : [];
-      return "Screenshots show only approved apps." + (gaps.length ? " Not covered on this desktop: " + gaps.map(cusGapName).join(", ") + "." : "");
+      // Per-window capture (popups_outside_window reported): its gaps leave
+      // something out of the image, they do not show more.
+      var top = gaps.indexOf("popups_outside_window") >= 0;
+      var cut = gaps.filter(function (g) { return g === "popups_outside_window" || (top && g === "xwayland_unmanaged"); });
+      var leak = gaps.filter(function (g) { return cut.indexOf(g) < 0; });
+      return "Screenshots show only approved apps." + (leak.length ? " Not covered on this desktop: " + leak.map(cusGapName).join(", ") + "." : "") + (cut.length ? " Left out of screenshots here: " + cut.map(cusCutName).join("; ") + "." : "");
     }
     if (s.filtering === "whole") return "On this session (" + where + ") screenshots show the whole screen, including apps you did not approve.";
     return "Screenshots: unknown - Computer Use did not start in this run.";

@@ -13,7 +13,7 @@ cat ~/.config/Claude/logs/claude-patches.log
 
 In 3P mode the log is under `~/.config/Claude-3p/logs/`, for a named profile under `~/.config/Claude-<profile>/logs/` (3P: `~/.config/Claude-<profile>-3p/logs/`).
 
-`--diagnose` prints the session type, portal and hotkey state, a **Host capabilities** section (each host tool the app runs, whether it is found, and what stops working without it), a **Cloud Cowork device key** section (TPM access, the opt-in rule and the last remote-device connect), a **Local Cowork VM** section (the app's own probe: QEMU, firmware, virtiofsd, `/dev/kvm`, `/dev/vhost-vsock`), a **Computer Use** section (package version, a run check of every bundled bridge, and on KDE Wayland the KWin 6.6 check plus a portal-free self-test; window titles are never printed) and a closing **Problems found** list. Together with `claude-patches.log` this makes most reports diagnosable without follow-up questions.
+`--diagnose` prints the session type, portal and hotkey state, a **Host capabilities** section (each host tool the app runs, whether it is found, and what stops working without it), a **Cloud Cowork device key** section (TPM access, the opt-in rule and the last remote-device connect), a **Local Cowork VM** section (the app's own probe: QEMU, firmware, virtiofsd, `/dev/kvm`, `/dev/vhost-vsock`), a **Computer Use** section (package version, a run check of every bundled bridge with its screenshot filter, and on KDE Wayland the KWin 6.6 check plus a portal-free self-test; window titles are never printed) and a closing **Problems found** list. It does not start KWallet on desktops that do not use it (outside KDE, with no running kwalletd and no KWallet password store requested, the credential store line says it was not asked). Together with `claude-patches.log` this makes most reports diagnosable without follow-up questions.
 
 ## Logs
 
@@ -169,6 +169,13 @@ Since 4.23118 the app narrows its own `PATH` at startup to the system folders (`
 3. Links, "Open in ..." and sign-in run `xdg-open` from the system folders. Where `xdg-open` is not installed in a system folder but is available in one of the root-managed folders above (as with the Nix package's wrapper, which carries its own `xdg-utils`), the link opens with those folders on `PATH` for that call; where `xdg-open` is in a system folder (on NixOS: the system profile), nothing changes.
 
 Programs you name yourself (an MCP server command, a Code session's tools, `CLAUDE_QEMU_PATH`, `COWORK_SCREENSHOT_CMD`, an app Computer Use opens) keep the `PATH` you started the app with. So does `git` for Diff views, the one tool of ours looked up the way the app itself looks up git for Code sessions: the `PATH` you started the app with comes first, so a `git` in `~/.local/bin` or a standalone home-manager profile is used.
+
+## Computer Use screenshots refused on Hyprland with a capture error
+
+On Hyprland the bundled wlroots-bridge captures each approved window on its own. When that capture fails on your system, every screenshot is refused (it is never taken unfiltered instead).
+
+1. Check: `claude-desktop --diagnose` (Computer Use section, `screenshot filter:`) and the `[claude-cu] screenshot:` lines in `claude-patches.log`; attach both when you report it.
+2. Workaround: start the app with `WLROOTS_BRIDGE_MASK_CAPTURE=output` in its environment. The bridge then captures the whole screen and paints over everything but the approved windows; notifications and other overlays then hide the approved app again where they cover it.
 
 ## Known limitations
 

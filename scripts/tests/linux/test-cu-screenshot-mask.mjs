@@ -197,6 +197,9 @@ function makeRig({ session = "x11", displays = MAINT, screens = MAINT_SCREENS, w
   reset();
   return { ex, calls, diag, dc, spawned, reset, boot };
 }
+// Issue #329: the model reads a plain text; the detail is in the log line.
+const said = (rig, t) => String(t || "") + " || " + rig.diag.join(" | ");
+const plain = (t) => !/bridge|\d{5,}|--keep-window|Command failed/.test(String(t || ""));
 const zoomArgs = (rig) => rig.calls.filter((c) => c.args[0] === "zoom").map((c) => c.b + " " + c.args.join(" "));
 const doctorCalls = (rig) => rig.calls.filter((c) => c.args[0] === "doctor").length;
 const exitErr = (code, msg) => { const e = new Error("Command failed\n" + msg); e.code = code; return e; };
@@ -258,8 +261,9 @@ console.log("\n[B] x11-bridge: flags, Claude never kept, hidden list, legacy pat
   const r = await rig.ex.resolvePrepareCapture({ allowedBundleIds: [], preferredDisplayId: 1 });
   ok(zoomArgs(rig)[0] === "x11-bridge zoom --x 0 --y 0 --w 1920 --h 1080 --display DP-3-1 --mask-all" && r.base64 === "MASKED", "empty allowlist -> --mask-all", JSON.stringify(zoomArgs(rig)));
   rig.reset();
-  await rig.ex.resolvePrepareCapture({ allowedBundleIds: ["org.example.NotRunning"], preferredDisplayId: 1 });
-  ok(/--mask-all$/.test(zoomArgs(rig)[0] || ""), "allowed app with no window -> --mask-all", JSON.stringify(zoomArgs(rig)));
+  const nr = await rig.ex.resolvePrepareCapture({ allowedBundleIds: ["org.example.NotRunning"], preferredDisplayId: 1 });
+  // Issue #329: --mask-all here was the mask colour alone, returned as a success.
+  ok(zoomArgs(rig).length === 0 && nr.base64 === "" && /^Screenshot not taken: no window of the approved apps can be shown/.test(nr.captureError || ""), "allowed app with no window -> nothing captured, the reason as captureError (test-cu-mask-report.mjs covers the text)", JSON.stringify([zoomArgs(rig), nr.captureError]));
   rig.reset();
   await rig.ex.resolvePrepareCapture({ allowedBundleIds: ["com.anthropic.Claude", "Google-chrome"], preferredDisplayId: 2 });
   ok(!(zoomArgs(rig)[0] || "").includes("37748740") && (zoomArgs(rig)[0] || "").includes("--keep-window 79691779"), "Claude's own window is never kept, even when granted", JSON.stringify(zoomArgs(rig)));
@@ -299,18 +303,18 @@ console.log("\n[B] x11-bridge: flags, Claude never kept, hidden list, legacy pat
 // ── [C] fail closed ────────────────────────────────────────────────────────
 console.log("\n[C] mask mode fails closed");
 for (const [label, z, re] of [
-  ["bridge exit 1", (b, a) => (a.includes("--keep-window") || a.includes("--mask-all") ? exitErr(1, "Error: virtual-root window manager refused") : { base64: "PLAIN", width: 1, height: 1 }), /could not hide the apps that are not allowed \(Command failed\nError: virtual-root/],
-  ["old bridge: unsupported flag exit 2", (b, a) => (a.includes("--keep-window") || a.includes("--mask-all") ? exitErr(2, "error: unexpected argument '--keep-window' found") : { base64: "PLAIN", width: 1, height: 1 }), /does not take --keep-window \/ --mask-all; update the package/],
-  ["result without the mask report", () => ({ base64: "UNMASKED", width: 1, height: 1 }), /carries no mask report/]
+  ["bridge exit 1", (b, a) => (a.includes("--keep-window") || a.includes("--mask-all") ? exitErr(1, "Error: virtual-root window manager refused") : { base64: "PLAIN", width: 1, height: 1 }), /^Screenshot not taken: the screen capture could not hide the apps that are not allowed, so nothing was captured\. [^|]*\|\|.*not taken via x11-bridge \(mask: Command failed\nError: virtual-root/s],
+  ["old bridge: unsupported flag exit 2", (b, a) => (a.includes("--keep-window") || a.includes("--mask-all") ? exitErr(2, "error: unexpected argument '--keep-window' found") : { base64: "PLAIN", width: 1, height: 1 }), /^Screenshot not taken: this Claude Desktop's screen capture helper cannot hide the apps that are not allowed, so nothing was captured\. Ask the user to update Claude Desktop\. \|\|.*does not take --keep-window \/ --mask-all; update the package/s],
+  ["result without the mask report", () => ({ base64: "UNMASKED", width: 1, height: 1 }), /^Screenshot not taken: the screen capture could not hide[^|]*\|\|.*carries no mask report/s]
 ]) {
   const rig = makeRig({ session: "kde-x11", zoom: z });
   const r = await rig.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
-  ok(r.base64 === "" && re.test(r.captureError || ""), label + ": resolvePrepareCapture -> captureError", r.captureError);
+  ok(r.base64 === "" && re.test(said(rig, r.captureError)) && plain(r.captureError), label + ": resolvePrepareCapture -> captureError (plain text; the detail in the log)", said(rig, r.captureError));
   ok(zoomArgs(rig).length === 1 && rig.dc.length === 0 && !rig.spawned.some((s) => /^spectacle|^convert/.test(s)), label + ": one masked zoom only - no spectacle, no desktopCapturer, no unmasked retry", JSON.stringify(rig.spawned));
   const s = await settle(rig.ex.screenshot({ displayId: 1, allowedBundleIds: ["google-chrome"] }));
-  ok(s.e && re.test(s.e.message), label + ": screenshot throws", s.e && s.e.message);
+  ok(s.e && re.test(said(rig, s.e.message)), label + ": screenshot throws", s.e && s.e.message);
   const zz = await settle(rig.ex.zoom({ x: 0, y: 0, w: 10, h: 10 }, ["google-chrome"], 1));
-  ok(zz.e && re.test(zz.e.message) && rig.dc.length === 0, label + ": zoom throws, no fallback", zz.e && zz.e.message);
+  ok(zz.e && re.test(said(rig, zz.e.message)) && rig.dc.length === 0, label + ": zoom throws, no fallback", zz.e && zz.e.message);
 }
 {
   const rig = makeRig({ session: "kde-x11", zoom: () => exitErr(2, "error: unexpected argument") });
@@ -322,7 +326,7 @@ for (const [label, z, re] of [
 {
   const rig = makeRig({ doctor: () => exitErr(1, "Error: cannot open display") });
   const r = await rig.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
-  ok(/could not check whether x11-bridge can hide/.test(r.captureError || "") && zoomArgs(rig).length === 0 && rig.dc.length === 0, "doctor failure + allowlist: captureError, nothing captured", r.captureError);
+  ok(/^Screenshot not taken: could not check whether the apps that are not allowed can be hidden/.test(r.captureError || "") && plain(r.captureError) && /not taken via x11-bridge \(mask: could not check whether it can mask: x11-bridge doctor failed/.test(said(rig)) && zoomArgs(rig).length === 0 && rig.dc.length === 0, "doctor failure + allowlist: captureError, nothing captured", r.captureError);
   ok(rig.ex.capabilitiesNow().screenshotFiltering === "none", "doctor failure: capabilitiesNow says none");
   // O4: the supported-features path reads the capabilities getter on every
   // build; a doctor that keeps failing must not be re-spawned per read.
@@ -334,12 +338,12 @@ for (const [label, z, re] of [
 {
   const rig = makeRig({ windows: () => { throw exitErr(1, "windows failed"); } });
   const r = await rig.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
-  ok(/window list failed/.test(r.captureError || "") && zoomArgs(rig).length === 0, "window list failure: captureError, no capture", r.captureError);
+  ok(/window list failed/.test(said(rig, r.captureError)) && plain(r.captureError) && zoomArgs(rig).length === 0, "window list failure: captureError, no capture", r.captureError);
 }
 {
   const rig = makeRig({ screens: [] });
   const r = await rig.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
-  ok(/no monitor list/.test(r.captureError || "") && zoomArgs(rig).length === 0, "no monitor list: never a zoom without --display", r.captureError);
+  ok(/no monitor list/.test(said(rig, r.captureError)) && plain(r.captureError) && zoomArgs(rig).length === 0, "no monitor list: never a zoom without --display", r.captureError);
 }
 {
   // Legacy path keeps its fallback chain: zoom fails -> desktopCapturer is tried.
@@ -379,12 +383,12 @@ for (const [label, tweak, good] of [
   const rig = makeRig({ session: "sway", displays: SWAY_DISPLAYS, screens: SWAY_SCREENS, windows: SWAY_WINS, doctor: SWAY_DOCTOR, zoom: (b, a) => wlMaskReply(a, SWAY_WINS, tweak) });
   const r = await rig.ex.resolvePrepareCapture({ allowedBundleIds: ["firefox"], preferredDisplayId: 0 });
   if (good) ok(r.captureError === undefined && r.base64 === "WLMASKED", label, r.captureError);
-  else ok(r.base64 === "" && /could not hide/.test(r.captureError || "") && rig.dc.length === 0, label, r.captureError);
+  else ok(r.base64 === "" && /^Screenshot not taken: (the screen capture could not hide|the windows on the screen changed)/.test(r.captureError || "") && plain(r.captureError) && rig.dc.length === 0, label, said(rig, r.captureError));
 }
 {
   const rig = makeRig({ session: "sway", displays: SWAY_DISPLAYS, screens: SWAY_SCREENS, windows: SWAY_WINS, doctor: SWAY_DOCTOR, zoom: (b, a) => (a.includes("--keep-window") ? exitErr(1, "Error: window `11` shares its app id and title with a window that is not kept") : { base64: "PLAIN", width: 1, height: 1 }) });
   const r = await rig.ex.resolvePrepareCapture({ allowedBundleIds: ["firefox"], preferredDisplayId: 0 });
-  ok(/shares its app id and title/.test(r.captureError || "") && zoomArgs(rig).length === 1 && rig.dc.length === 0, "sway: bridge refusal (exit 1) -> captureError, no fallback", r.captureError);
+  ok(/shares its app id and title/.test(said(rig, r.captureError)) && plain(r.captureError) && zoomArgs(rig).length === 1 && rig.dc.length === 0, "sway: bridge refusal (exit 1) -> captureError, no fallback", r.captureError);
   const rn = makeRig({ session: "niri", displays: SWAY_DISPLAYS, screens: SWAY_SCREENS, windows: SWAY_WINS.map((w) => ({ ...w, geometry: R(0, 0, 0, 0), output: null })), doctor: NIRI_DOCTOR });
   const r3 = await rn.ex.resolvePrepareCapture({ allowedBundleIds: ["firefox"], preferredDisplayId: 0 });
   ok(r3.base64 === "PLAIN" && JSON.stringify(r3.hidden) === "[]" && !/--keep-window|--mask-all/.test(zoomArgs(rn)[0] || ""), "niri: cannot mask -> unmasked capture", JSON.stringify(zoomArgs(rn)));
@@ -444,7 +448,7 @@ console.log("\n[G] background Xvfb display (x11 target on a sway desktop)");
   ok(JSON.stringify(r.hidden) === JSON.stringify(["Gedit"]), "target: hidden lists the target's other app", JSON.stringify(r.hidden));
   const bad = makeRig({ session: "sway", displays: SWAY_DISPLAYS, screens: TS, windows: tw, target: { kind: "x11", display: ":99" }, zoom: (b, a) => (a.includes("--keep-window") ? exitErr(1, "Error: BadMatch") : { base64: "PLAIN", width: 1, height: 1 }) });
   const r2 = await bad.ex.resolvePrepareCapture({ allowedBundleIds: ["xterm"], preferredDisplayId: 0 });
-  ok(r2.base64 === "" && /BadMatch/.test(r2.captureError || "") && bad.dc.length === 0 && !bad.calls.some((x) => x.b === "wlroots-bridge" && x.args[0] === "zoom"), "target: mask failure -> captureError, never the desktop's bridge or desktopCapturer", r2.captureError);
+  ok(r2.base64 === "" && /BadMatch/.test(said(bad, r2.captureError)) && plain(r2.captureError) && bad.dc.length === 0 && !bad.calls.some((x) => x.b === "wlroots-bridge" && x.args[0] === "zoom"), "target: mask failure -> captureError, never the desktop's bridge or desktopCapturer", r2.captureError);
 }
 
 // ── [H] what each capture did; frontmost errors; lock release ─────────────
@@ -475,7 +479,7 @@ console.log("\n[H] capture results say what was done; frontmost errors; lock rel
   const rig = makeRig({ doctor: () => exitErr(1, "Error: cannot open display") });
   const s = await settle(rig.ex.screenshot({ displayId: 1, allowedBundleIds: ["google-chrome"] }));
   const z = await settle(rig.ex.zoom({ x: 0, y: 0, w: 10, h: 10 }, ["google-chrome"], 1));
-  ok(s.e && /could not check whether x11-bridge can hide/.test(s.e.message) && z.e && /could not check/.test(z.e.message) && zoomArgs(rig).length === 0 && rig.dc.length === 0,
+  ok(s.e && /^Screenshot not taken: could not check whether the apps that are not allowed can be hidden/.test(s.e.message) && z.e && /could not check/.test(z.e.message) && zoomArgs(rig).length === 0 && rig.dc.length === 0,
     "R2: doctor failure: screenshot and zoom throw, nothing captured", (s.e && s.e.message) + " | " + (z.e && z.e.message));
 }
 {
@@ -570,16 +574,17 @@ console.log("\n[I] Claude's glow / teach overlay: --ignore-window");
   // The report is checked: an id that was not asked for discards the image.
   const liar = makeRig({ doctor: X11_DOCTOR_IGN, overlays: ov, zoom: (b, a) => { const z = x11MaskReply(a, X11_WINS); z.mask.ignored = ["18874372"]; return z; } });
   const rl = await liar.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
-  ok(rl.base64 === "" && /looked through window 18874372, which was not asked for/.test(rl.captureError || ""), "a bridge that ignored an id we did not pass: image discarded", rl.captureError);
+  ok(rl.base64 === "" && /looked through window 18874372, which was not asked for/.test(said(liar, rl.captureError)) && plain(rl.captureError), "a bridge that ignored an id we did not pass: image discarded", rl.captureError);
   const mute = makeRig({ doctor: X11_DOCTOR_IGN, overlays: ov, zoom: (b, a) => { const z = x11MaskReply(a, X11_WINS); delete z.mask.ignored; return z; } });
   const rm = await mute.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
-  ok(rm.base64 === "" && /did not report the --ignore-window outcome/.test(rm.captureError || ""), "no `ignored` key after --ignore-window: image discarded", rm.captureError);
-  // A refused overlay keeps the (masked) image and says why.
+  ok(rm.base64 === "" && /did not report the --ignore-window outcome/.test(said(mute, rm.captureError)) && plain(rm.captureError), "no `ignored` key after --ignore-window: image discarded", rm.captureError);
+  // A refused overlay over the only kept window: issue #329 turned the grey
+  // image this returned into the reason as text (it was "image kept (masked)").
   const ref = makeRig({ doctor: X11_DOCTOR_IGN, overlays: ov, zoom: (b, a) => { const z = x11MaskReply(a, X11_WINS); z.mask.ignored = []; z.mask.ignored_refused = [{ id: "37748800", reason: "foreign_pid", pid: 1, caller_pid: 2 }]; z.mask.kept_hidden = ["79691779"]; z.mask.kept = []; return z; } });
   const rr = await ref.ex.resolvePrepareCapture({ allowedBundleIds: ["google-chrome"], preferredDisplayId: 1 });
-  ok(rr.base64 === "MASKED" && ref.diag.some((m) => /did not look through Claude's own overlay 37748800 \(foreign_pid\)/.test(m)) && ref.diag.some((m) => /1 kept window\(s\) fully covered/.test(m)), "refused overlay: image kept (masked), diag names the reason and the covered window", JSON.stringify(ref.diag));
-  // Hidden list unchanged: the glow is not in `windows`, so it never shows as a masked app.
-  ok(JSON.stringify(rr.hidden) === JSON.stringify(["com.mitchellh.ghostty"]), "hidden list still built from `windows` only (the glow is not a masked app)", JSON.stringify(rr.hidden));
+  ok(rr.base64 === "" && /"google-chrome" is covered by one of Claude's own windows - /.test(rr.captureError || "") && ref.diag.some((m) => /did not look through Claude's own overlay 37748800 \(foreign_pid\)/.test(m)) && ref.diag.some((m) => /1 kept window\(s\) fully covered/.test(m)), "refused overlay over the only kept window: refused with the reason (was the grey image), diag names the overlay and the covered window", JSON.stringify([rr.captureError, ref.diag]));
+  // The masked apps still come from `windows` only (the glow is not a masked app).
+  ok(ref.diag.some((m) => /not taken via x11-bridge .*masked apps com\.mitchellh\.ghostty\)$/.test(m)), "masked apps still built from `windows` only (the glow is not a masked app)", JSON.stringify(ref.diag));
 }
 {
   // The lookup keys on upstream's page names: both must still be in the bundle.

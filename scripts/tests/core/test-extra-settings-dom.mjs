@@ -1751,7 +1751,9 @@ async function cusPanel(cuItem) {
       [{ ask: true, kwin: true, filtering: "filtered", session: "KDE Wayland" }, /^Screenshots show only approved apps \(on this KDE session Claude always asks/, "filtered"],
       [{ ask: true, kwin: false, filtering: "unknown", session: "" }, /^Screenshots: unknown/, "unknown"],
       // O3: what the wlroots mask does not cover is named
-      [{ ask: true, kwin: false, filtering: "filtered", gaps: ["popups", "layer_shell_top_overlay"], session: "sway" }, /^Screenshots show only approved apps\. Not covered on this desktop: popup menus, panels and overlays\.$/, "filtered"]
+      [{ ask: true, kwin: false, filtering: "filtered", gaps: ["popups", "layer_shell_top_overlay"], session: "sway" }, /^Screenshots show only approved apps\. Not covered on this desktop: popup menus, panels and overlays\.$/, "filtered"],
+      // Issue #329: Hyprland's per-window capture gaps leave something out of the image
+      [{ ask: true, kwin: false, filtering: "filtered", gaps: ["popups_outside_window", "xwayland_unmanaged"], session: "Hyprland" }, /^Screenshots show only approved apps\. Left out of screenshots here: an approved app's own menus where they reach past its window; XWayland menus and tooltips that cannot be matched to an approved window\.$/, "filtered"]
     ];
     for (const [facts, re, attr] of cases) {
       window.__cusState = { ok: true, rows: window.__cusRows(), actions: { tpmEnable: PK_EN }, screenshots: facts };

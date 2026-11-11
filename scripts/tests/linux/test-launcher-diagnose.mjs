@@ -363,6 +363,122 @@ safe("D5b", () => {
   check("helper: empty entries are skipped, real dir still found", globRun(`::${join(gl, "real")}:`), "usable");
 });
 
+// ---------------------------------------------------------------- D5d
+// --diagnose shows how each bridge filters screenshots, from its doctor JSON
+// alone (nothing is captured): `  screenshot filter: ...`.
+console.log("D5d: screenshot filter line per bridge, from doctor");
+safe("D5d", () => {
+  const root = join(scratch, "d5d");
+  const home = join(root, "home");
+  mkdirSync(home, { recursive: true });
+  const stub = (name, doc) => doc === null
+    ? `#!/bin/sh\ncase "$1" in --version) echo '${name} 1';; doctor) exit 1;; *) exit 2;; esac\n`
+    : `#!/bin/sh\ncase "$1" in --version) echo '${name} 1';; doctor) cat <<'JSON'\n${JSON.stringify(doc, null, 2)}\nJSON\n;; *) exit 2;; esac\n`;
+  const base = (backend) => ({ contract: 1, backend, session_match: false, backend_reachable: true, backend_error: null,
+    session_supported: false, restore_token_present: false, restore_token_path: null, daemon_running: false, session_socket: null });
+  const trees = {
+    toplevel: { "wlroots-bridge": { ...base("wlroots"), screenshot_mask: true, screenshot_mask_mode: "toplevel",
+      screenshot_mask_protocol: "ext-image-copy-capture-v1", screenshot_mask_gaps: ["popups_outside_window"] } },
+    output: { "wlroots-bridge": { ...base("wlroots"), screenshot_mask: true, screenshot_mask_mode: "output",
+      screenshot_mask_protocol: null, screenshot_mask_gaps: ["popups", "layer_shell_top_overlay"] } },
+    old: { "wlroots-bridge": { ...base("wlroots"), screenshot_mask: true, screenshot_mask_gaps: ["popups"] } },
+    x11: { "x11-bridge": { ...base("x11"), capabilities: { screenshot_mask: true, screenshot_mask_ignore: true } } },
+    none: { "kwin-portal-bridge": base("kwin-portal") },
+    niri: { "wlroots-bridge": { ...base("wlroots"), screenshot_mask: false, screenshot_mask_mode: null, screenshot_mask_protocol: null, screenshot_mask_gaps: [] } },
+    failed: { "wlroots-bridge": null },
+  };
+  const lineOf = (key) => {
+    const bridges = {};
+    for (const [n, d] of Object.entries(trees[key])) bridges[n] = stub(n, d);
+    const electron = fakeTree(join(root, key), bridges);
+    const r = spawnSync(BASH, [launcherPath, "--diagnose"], {
+      env: { PATH: "/usr/bin:/bin", HOME: home, CLAUDE_ELECTRON: electron, XDG_RUNTIME_DIR: join(root, "run"),
+             XDG_SESSION_TYPE: "wayland", WAYLAND_DISPLAY: "wayland-9", XDG_CURRENT_DESKTOP: "sway" },
+      encoding: "utf8", timeout: 90000 });
+    return (r.stdout || "").split("\n").filter((l) => l.startsWith("  screenshot filter:"));
+  };
+  const one = (l) => JSON.stringify(l);
+  check("wlroots toplevel: per window, protocol, gaps", one(lineOf("toplevel")),
+    one(["  screenshot filter: per window (ext-image-copy-capture-v1); cannot cover: popups_outside_window"]));
+  check("wlroots output: whole screen, gaps", one(lineOf("output")),
+    one(["  screenshot filter: whole screen, only approved windows kept; cannot cover: popups, layer_shell_top_overlay"]));
+  check("old wlroots without a mode: whole screen", one(lineOf("old")),
+    one(["  screenshot filter: whole screen, only approved windows kept; cannot cover: popups"]));
+  check("x11 with mask and ignore", one(lineOf("x11")),
+    one(["  screenshot filter: whole screen, only approved windows kept; can ignore Claude's own overlay windows"]));
+  check("bridge without mask keys (kwin-portal-bridge: KDE filters through upstream's own handling): no filter line", one(lineOf("none")), "[]");
+  check("wlroots-bridge that cannot mask here (niri): does not filter", one(lineOf("niri")),
+    one(["  screenshot filter: none (this bridge does not filter)"]));
+  check("failed doctor: no filter line", one(lineOf("failed")), "[]");
+});
+
+// ---------------------------------------------------------------- D5c
+// --diagnose must not start an activatable kwalletd on a desktop that does not
+// use KWallet (#330): the `wallets` method call is only made on KDE, when
+// kwalletd already has an owner, or when a kwallet store was asked for. The
+// stubs log their full argv; NameHasOwner goes to org.freedesktop.DBus and is
+// always allowed, anything else addressed to org.kde.kwalletd* is a real call.
+console.log("D5c: --diagnose does not wake kwalletd on a non-KDE desktop");
+safe("D5c", () => {
+  const root = join(scratch, "d5c");
+  const home = join(root, "home");
+  mkdirSync(home, { recursive: true });
+  const electron = fakeTree(join(root, "tree"), {});
+  const bin = join(root, "bin");
+  const sh = (body) => `#!/bin/sh\nprintf '%s\\n' "$*" >> "$STUB_LOG"\n${body}\n`;
+  const owned = `[ "$last" = "$STUB_OWNED" ]`;
+  const stubs = {
+    busctl: sh(`for last; do :; done\ncase "$*" in\n  *NameHasOwner*) if ${owned}; then echo 'b true'; else echo 'b false'; fi; exit 0;;\n  *ListActivatableNames*) echo 'as 0'; exit 0;;\nesac\nexit 1`),
+    "dbus-send": sh(`for last; do :; done\ncase "$*" in\n  *NameHasOwner*) if [ "\${last#string:}" = "$STUB_OWNED" ]; then echo '   boolean true'; else echo '   boolean false'; fi; exit 0;;\nesac\nexit 1`),
+    gdbus: sh(`for last; do :; done\ncase "$*" in\n  *NameHasOwner*) if ${owned}; then echo '(true,)'; else echo '(false,)'; fi; exit 0;;\nesac\nexit 1`),
+  };
+  const NOT_ASKED = "kwalletd answers on session bus = not asked (not a KDE session and kwalletd is not running)";
+  // Tools in `only` answer; the others are shadowed by a stub that cannot.
+  const run = (name, { de, owned = "", args = [], only, store }) => {
+    const dir = join(bin, name);
+    const log = join(root, `${name}.log`);
+    for (const t of Object.keys(stubs))
+      writeExe(join(dir, t), !only || only === t ? stubs[t] : "#!/bin/sh\nexit 1\n");
+    writeFileSync(log, "");
+    const env = { PATH: `${dir}:/usr/bin:/bin`, HOME: home, CLAUDE_ELECTRON: electron,
+                  XDG_RUNTIME_DIR: join(root, "run"), XDG_SESSION_TYPE: "wayland",
+                  WAYLAND_DISPLAY: "wayland-9", XDG_CURRENT_DESKTOP: de,
+                  STUB_LOG: log, STUB_OWNED: owned };
+    if (store) env.CLAUDE_PASSWORD_STORE = store;
+    const r = spawnSync(BASH, [launcherPath, "--diagnose", ...args], { env, encoding: "utf8", timeout: 90000 });
+    const calls = readFileSync(log, "utf8").split("\n").filter(Boolean);
+    return {
+      line: ((r.stdout || "").match(/^kwalletd answers on session bus = .*$/m) || [""])[0],
+      wallets: calls.some((c) => /\bwallets\b/.test(c)),
+      kwalletCalls: calls.filter((c) => c.includes("org.kde.kwalletd") && !c.includes("NameHasOwner")),
+    };
+  };
+  const none = (a) => JSON.stringify(a);
+  const c1 = run("c1", { de: "Hyprland" });
+  check("non-KDE, not owned: the line says not asked", c1.line, NOT_ASKED);
+  check("non-KDE, not owned: no call addressed to kwalletd", none(c1.kwalletCalls), "[]");
+  check("non-KDE, not owned: no wallets call", c1.wallets, false);
+  for (const t of ["busctl", "dbus-send", "gdbus"]) {
+    const c = run(`c1-${t}`, { de: "Hyprland", only: t });
+    check(`non-KDE, only ${t} answers: not asked`, c.line, NOT_ASKED);
+    check(`non-KDE, only ${t} answers: no call addressed to kwalletd`, none(c.kwalletCalls), "[]");
+  }
+  const c2 = run("c2", { de: "KDE" });
+  check("KDE: the real probe answers yes or no", /= (yes|no)$/.test(c2.line), true);
+  check("KDE: wallets call made", c2.wallets, true);
+  const c2b = run("c2b", { de: "ubuntu:KDE" });
+  check("KDE as one component of the list: wallets call made", c2b.wallets, true);
+  const c3 = run("c3", { de: "Hyprland", owned: "org.kde.kwalletd6" });
+  check("non-KDE, kwalletd6 owned: wallets call made", c3.wallets, true);
+  check("non-KDE, kwalletd6 owned: the real probe answers", /= (yes|no)$/.test(c3.line), true);
+  const c4 = run("c4", { de: "Hyprland", args: ["--password-store=kwallet6"] });
+  check("non-KDE, --password-store=kwallet6: wallets call made", c4.wallets, true);
+  const c4b = run("c4b", { de: "Hyprland", store: "kwallet5" });
+  check("non-KDE, CLAUDE_PASSWORD_STORE=kwallet5: wallets call made", c4b.wallets, true);
+  const c4c = run("c4c", { de: "Hyprland", args: ["--password-store=gnome-libsecret"] });
+  check("non-KDE, another forced store: not asked", c4c.line, NOT_ASKED);
+});
+
 // ---------------------------------------------------------------- D6
 console.log("D6: --diagnose and --help change nothing on disk");
 // Both are read-only reports. They used to run the per-profile binary refresh

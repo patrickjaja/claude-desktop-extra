@@ -485,5 +485,110 @@ console.log("\n[12] named profile: CHROME_DESKTOP=com.anthropic.Claude-work.desk
   }
 }
 
+// ── [13] Omarchy web apps and terminal apps (issue #329) ──────────────────
+// Entry text as Omarchy 3.x ships it (~/.local/share/applications on the
+// Omarchy VM, Hyprland 0.56.2), the web-app launcher script verbatim. Window
+// classes as Hyprland reported them: a Chromium --app window is
+// chrome-<host>_<path, "/" as "_">-<profile>; an Omarchy TUI is the terminal
+// with --app-id=TUI.float / TUI.tile (shared by every TUI of that style).
+// The rig runs as a sway session: the identity does not depend on the
+// compositor, only on the window list (app id, pid) and /proc.
+console.log("\n[13] Omarchy: web apps own their --app windows, terminal apps never own one");
+{
+  const LAUNCH_WEBAPP = `#!/bin/bash
+
+# omarchy:summary=Launch a URL as a web app in the default supported browser
+# omarchy:args=<url>
+
+browser=$(omarchy-cmd-default-browser)
+
+case $browser in
+google-chrome* | brave* | microsoft-edge* | opera* | vivaldi* | helium*) ;;
+*) browser="chromium.desktop" ;;
+esac
+
+browser_exec=$(sed -n 's/^Exec=\\([^ ]*\\).*/\\1/p' {~/.local,~/.nix-profile,/usr}/share/applications/$browser 2>/dev/null | head -1)
+
+if ! omarchy-cmd-browser-handoff "$browser_exec" --app="$1" "\${@:2}"; then
+  exec setsid uwsm-app -- $browser_exec --app="$1" "\${@:2}"
+fi
+`;
+  for (const n of ["chromium", "foot", "xdg-terminal-exec", "dua", "btop"]) exe(path.join(BIN, n));
+  writeFileSync(path.join(BIN, "omarchy-launch-webapp"), LAUNCH_WEBAPP); chmodSync(path.join(BIN, "omarchy-launch-webapp"), 0o755);
+  // A launcher that opens its URL some other way: not a web app.
+  writeFileSync(path.join(BIN, "open-in-browser"), "#!/bin/sh\nexec xdg-open \"$1\"\n"); chmodSync(path.join(BIN, "open-in-browser"), 0o755);
+  const V = "Version=1.0\n";
+  const OMA = {
+    YouTube: V + "Name=YouTube\nExec=omarchy-launch-webapp https://youtube.com/\nTerminal=false\nIcon=youtube\nStartupNotify=true\n",
+    WhatsApp: V + "Name=WhatsApp\nExec=omarchy-launch-webapp https://web.whatsapp.com/\nTerminal=false\nIcon=whatsapp\nStartupNotify=true\n",
+    "Google Messages": V + "Name=Google Messages\nExec=omarchy-launch-webapp https://messages.google.com/web/conversations\nTerminal=false\nIcon=google-messages\nStartupNotify=true\n",
+    "Disk Usage": V + "Name=Disk Usage\nExec=xdg-terminal-exec --app-id=TUI.float -e bash -c \"dua i /\"\nTerminal=false\nIcon=disk-usage\nStartupNotify=true\n",
+    Docker: V + "Name=Docker\nExec=xdg-terminal-exec --app-id=TUI.tile -e omarchy-launch-docker-tui\nTerminal=false\nIcon=docker\nStartupNotify=true\n",
+    foot: "Name=Foot\nTryExec=foot\nExec=foot\nIcon=foot\nTerminal=false\nCategories=System;TerminalEmulator;\nGenericName=Terminal\nStartupWMClass=foot\nX-TerminalArgExec=-e\nX-TerminalArgAppId=--app-id=\n",
+    chromium: "Name=Chromium\nExec=chromium %U\nStartupWMClass=chromium\nIcon=chromium\n",
+    "Opener": "Name=Opener\nExec=open-in-browser https://example.org/\n",
+  };
+  const OMA_DIR = dataDir("omarchy", OMA);
+  const FOOT = path.join(BIN, "foot"), CHR = path.join(BIN, "chromium");
+  Object.assign(PROC, {
+    5101: { exe: FOOT, cmdline: [FOOT, "--app-id=TUI.float", "-e", "bash", "-c", "dua i /"] },
+    5102: { exe: FOOT, cmdline: [FOOT] },
+    5103: { exe: FOOT, cmdline: [FOOT, "--app-id=TUI.tile", "-e", "omarchy-launch-docker-tui"] },
+    5104: { exe: CHR, cmdline: [CHR, "--ozone-platform=wayland", "--app=https://youtube.com/"] },
+    5105: { exe: FOOT, cmdline: [FOOT, "--app-id=TUI.float", "-e", "btop"] },
+    5106: { exe: FOOT, cmdline: [FOOT, "--server"] },
+    5107: { exe: FOOT, cmdline: [FOOT, "-e", "bash", "-c", "dua i /"] },
+  });
+  const hw = (appId, pid, extra = {}) => wlrWin(appId, { pid, geometry: R(0, 0, 800, 600), ...extra });
+  const ytW = hw("chrome-youtube.com__-Default", 5104), waW = hw("chrome-web.whatsapp.com__-Default", 5104), msgW = hw("chrome-messages.google.com__web_conversations-Default", 5104);
+  const braveYt = hw("brave-youtube.com__-Profile_1", 5104), xW = hw("chrome-x.com__-Default", 5104), chrW = hw("chromium", 5104), openerW = hw("chrome-example.org__-Default", 5104);
+  const duaW = hw("TUI.float", 5101), footW = hw("foot", 5102), dockW = hw("TUI.tile", 5103), btopW = hw("TUI.float", 5105);
+  const rig = makeRig({ session: "wayland", desktop: "sway", bridges: { wlroots: true }, data: [OMA_DIR], br: { windows: () => list } });
+  let list = [ytW, waW, msgW, braveYt, xW, chrW, openerW, duaW, footW, dockW, btopW];
+  const id = (w) => (rig.ids.resolveWindow(w) || {}).bundleId;
+  const running = (await rig.ex.listRunningApps()).map((a) => a.bundleId);
+  ok(id(ytW) === "YouTube" && id(waW) === "WhatsApp" && id(msgW) === "Google Messages", "web apps: chrome-<host>_<path>-<profile> -> the entry that launches that URL", J([id(ytW), id(waW), id(msgW)]));
+  ok(id(braveYt) === "YouTube", "web apps: the brave- form of the same app", id(braveYt));
+  ok(id(chrW) === "chromium" && id(xW) === "chromium" && id(openerW) === "chromium", "the browser's own window, another site's app window and a launcher without --app=\"$1\" keep today's id (the browser, by its process)", J([id(chrW), id(xW), id(openerW)]));
+  ok(rig.ids.owns("YouTube", ytW) && !rig.ids.owns("YouTube", chrW) && !rig.ids.owns("YouTube", xW) && !rig.ids.owns("YouTube", waW), "a YouTube grant owns the YouTube window only - never the browser's own or another site's", J([rig.ids.owns("YouTube", chrW), rig.ids.owns("YouTube", xW)]));
+  ok(!rig.ids.owns("chromium", ytW) && rig.ids.owns("chromium", chrW), "a Chromium grant no longer owns the YouTube app window (it was counted as Chromium's by its process)");
+  // Terminal apps never own a window (review B1 / finding 8): the class is
+  // shared, a terminal process's command line is its first window's, and
+  // `bash -c "dua i /"` execs dua, so nothing at capture time proves which
+  // terminal window is the entry's. Every case keeps the terminal's id.
+  ok(id(duaW) === "foot" && id(dockW) === "foot" && !rig.ids.owns("Disk Usage", duaW) && !rig.ids.owns("Docker", dockW), "terminal apps (TUI.float / TUI.tile, even with the matching command line): the terminal (foot), the entry owns nothing", J([id(duaW), id(dockW)]));
+  ok(id(btopW) === "foot" && id(footW) === "foot", "a TUI.float window running another command, and a plain terminal: the terminal (foot)", J([id(btopW), id(footW)]));
+  ok(running.includes("YouTube") && !running.includes("Disk Usage") && !running.includes("Docker") && running.includes("chromium") && running.includes("foot"), "listRunningApps names them the same way", J(running));
+  // One process serving two TUI.float windows: which is which is unknown.
+  list = [hw("TUI.float", 5101), hw("TUI.float", 5101, { id: "shared-2" })];
+  await rig.ex.listRunningApps();
+  ok(id(list[0]) === "foot" && id(list[1]) === "foot", "two windows of one terminal process: neither is Disk Usage", J([id(list[0]), id(list[1])]));
+  list = [hw("TUI.float", 5106)];
+  await rig.ex.listRunningApps();
+  ok(id(list[0]) === "foot", "foot --server (no class, no command on its command line): not Disk Usage", id(list[0]));
+  list = [hw("TUI.float", 5107)];
+  await rig.ex.listRunningApps();
+  ok(id(list[0]) === "foot", "the command matches but the terminal was not started for TUI.float: not Disk Usage", id(list[0]));
+  list = [hw("TUI.float", null)];
+  await rig.ex.listRunningApps();
+  ok(id(list[0]) === "TUI.float", "no pid (ext-foreign-toplevel only): not Disk Usage, the raw id", id(list[0]));
+  // Cold: no window list seen yet.
+  const cold = makeRig({ session: "wayland", desktop: "sway", bridges: { wlroots: true }, data: [OMA_DIR], br: { windows: [] } });
+  ok((cold.ids.resolveWindow(hw("TUI.float", 5101)) || {}).bundleId === "foot", "no window list seen yet: not Disk Usage");
+  // Two TUI.float entries: the command tells them apart; a duplicate does not.
+  const TWO = dataDir("omarchy2", { ...OMA, Btop: V + "Name=Btop\nExec=xdg-terminal-exec --app-id=TUI.float -e btop\nIcon=btop\n" });
+  const r2 = makeRig({ session: "wayland", desktop: "sway", bridges: { wlroots: true }, data: [TWO], br: { windows: [duaW, btopW] } });
+  await r2.ex.listRunningApps();
+  ok((r2.ids.resolveWindow(duaW) || {}).bundleId === "foot" && (r2.ids.resolveWindow(btopW) || {}).bundleId === "foot", "two TUI.float entries with different commands: still the terminal for both", J([r2.ids.resolveWindow(duaW), r2.ids.resolveWindow(btopW)]));
+  const DUP = dataDir("omarchy3", { ...OMA, "Disk Usage 2": V + "Name=Disk Usage Copy\nExec=xdg-terminal-exec --app-id=TUI.float -e bash -c \"dua i /\"\n", "YouTube 2": V + "Name=YouTube Copy\nExec=omarchy-launch-webapp https://youtube.com/\n" });
+  const r3 = makeRig({ session: "wayland", desktop: "sway", bridges: { wlroots: true }, data: [DUP], br: { windows: [duaW, ytW] } });
+  await r3.ex.listRunningApps();
+  ok((r3.ids.resolveWindow(duaW) || {}).bundleId === "foot" && (r3.ids.resolveWindow(ytW) || {}).bundleId === "chromium", "two entries for the same command / the same URL: ambiguous, nothing owned", J([r3.ids.resolveWindow(duaW), r3.ids.resolveWindow(ytW)]));
+  // request_access names still resolve through upstream's resolver.
+  ok(J(upstreamResolve(["YouTube", "Disk Usage", "Docker"], await rig.ex.listInstalledApps())) === J(["YouTube", "Disk Usage", "Docker"]), "request_access YouTube / Disk Usage / Docker -> their entries");
+  const inst = (await rig.ex.listInstalledApps()).map((a) => a.displayName);
+  ok(!inst.includes("TUI.float") && !inst.some((n) => /^chrome-/.test(n)), "the derived classes are not request_access names", J(inst));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

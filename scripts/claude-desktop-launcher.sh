@@ -1786,6 +1786,26 @@ _diag_bus_owner() {
     echo unknown
 }
 
+# Whether --diagnose may make the real kwalletd method call. That call starts
+# an activatable kwalletd (and ksecretd behind it), so it is only made where
+# KWallet is expected: a KDE session (same XDG_CURRENT_DESKTOP test as
+# _pw_store_detect), a kwalletd already on the bus, or a kwallet store asked
+# for ($1 = the --password-store= argument, if any). "unknown" counts as not running.
+_diag_kwallet_may_ask() {
+    local _de _v
+    local -a _de_parts
+    IFS=':' read -ra _de_parts <<< "${XDG_CURRENT_DESKTOP:-}"
+    for _de in "${_de_parts[@]}"; do
+        [[ "${_de,,}" == kde ]] && return 0
+    done
+    [[ "${1:-}" == --password-store=kwallet* ]] && return 0
+    [[ "${CLAUDE_PASSWORD_STORE:-}" == kwallet* ]] && return 0
+    for _v in 6 5; do
+        [[ "$(_diag_bus_owner session "org.kde.kwalletd${_v}")" == present ]] && return 0
+    done
+    return 1
+}
+
 # The app's GlobalShortcuts portal probe, argument for argument: upstream
 # (2.19675.1, the function behind "[globalShortcut] GlobalShortcuts portal
 # availability") runs `busctl --user --timeout=2 get-property
@@ -2187,6 +2207,41 @@ else:
 PY
 }
 
+# --diagnose: how a bridge filters screenshots, from its doctor JSON ($1) only.
+# wlroots-bridge: top-level screenshot_mask / _mode / _protocol / _gaps (a mask
+# without a mode is the older whole-screen kind); x11-bridge: capabilities.
+# screenshot_mask / screenshot_mask_ignore. No such key: the bridge does not filter.
+_diag_screenshot_filter() {
+    local doc="$1" mask mode proto gaps ign how re
+    # Only the bridges that filter themselves carry the key (x11-bridge,
+    # wlroots-bridge); KDE filters through upstream's own handling and GNOME
+    # shows the whole screen, said elsewhere in this report.
+    [[ "$doc" == *'"screenshot_mask"'* ]] || return 0
+    mask="$(_bridge_json_field "$doc" screenshot_mask || true)"
+    if [[ "$mask" != true ]]; then
+        echo '  screenshot filter: none (this bridge does not filter)'
+        return 0
+    fi
+    mode="$(_bridge_json_field "$doc" screenshot_mask_mode || true)"
+    proto="$(_bridge_json_field "$doc" screenshot_mask_protocol || true)"
+    if [[ "$mode" == toplevel ]]; then
+        how='per window'
+        [[ -n "$proto" && "$proto" != null ]] && how+=" ($proto)"
+    else
+        how='whole screen, only approved windows kept'
+    fi
+    re='"screenshot_mask_gaps"[[:space:]]*:[[:space:]]*\[([^]]*)\]'
+    if [[ "$doc" =~ $re ]]; then
+        gaps="${BASH_REMATCH[1]//\"/}"
+        gaps="${gaps//[[:space:]]/}"
+        gaps="${gaps//,/, }"
+        [[ -n "$gaps" ]] && how+="; cannot cover: $gaps"
+    fi
+    ign="$(_bridge_json_field "$doc" screenshot_mask_ignore || true)"
+    [[ "$ign" == true ]] && how+='; can ignore Claude'"'"'s own overlay windows'
+    echo "  screenshot filter: $how"
+}
+
 # --diagnose: the `abortWatch` doctor object of a bridge as tab-separated
 # fields: has available mechanism reason consumes stale skipped. has=0: the
 # bridge has no such key (older bridge). Needs python3; without it only
@@ -2318,6 +2373,7 @@ _diag_bridges() {
                 line+=" $k=$v"
             done
             echo "  doctor:$line"
+            _diag_screenshot_filter "$doc"
             # Optional key: the user clicked "Stop sharing" in the desktop's
             # screen-sharing indicator; the bridge refuses input and capture
             # until the next session-start.
@@ -2686,7 +2742,11 @@ _diagnose() {
     done
     echo "CLAUDE_PASSWORD_STORE = ${CLAUDE_PASSWORD_STORE:-(unset)}"
     echo "org.freedesktop.secrets on session bus = $(_secret_service_available && echo yes || echo no)"
-    echo "kwalletd answers on session bus = $(_kwallet_available && echo yes || echo no)"
+    if _diag_kwallet_may_ask "$_pw_forced"; then
+        echo "kwalletd answers on session bus = $(_kwallet_available && echo yes || echo no)"
+    else
+        echo "kwalletd answers on session bus = not asked (not a KDE session and kwalletd is not running)"
+    fi
     if [[ -n "$_pw_forced" ]]; then
         echo "Detection = SKIPPED (explicit $_pw_forced on the command line wins)"
     elif [[ "${CLAUDE_PASSWORD_STORE:-}" == 'auto' ]]; then

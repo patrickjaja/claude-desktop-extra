@@ -59,7 +59,17 @@ function key(){var m=mode();return m.consent?"cu-ask:"+m.filtering+":"+m.hitTest
 // What the mask does not cover (wlroots-bridge doctor screenshot_mask_gaps).
 var GAP_NAMES={popups:"popup menus",layer_shell_top_overlay:"panels and overlays",xwayland_unmanaged:"XWayland menus and tooltips"};
 function gapText(g){return g.map(function(x){return GAP_NAMES[x]||x.replace(/_/g," ")}).join(", ")}
-function gapSentence(m){return m.gaps.length?"The covering is approximate here: "+gapText(m.gaps)+" can still show over or next to the approved windows. ":""}
+// Gaps that leave something OUT of the image (wlroots-bridge per-window
+// capture: an approved app's own menus past its window edge; XWayland menus
+// that cannot be matched to an approved window) are not leaks: they are said
+// apart. xwayland_unmanaged is such a gap where popups_outside_window is
+// reported too (per-window capture), a leak otherwise (sway's output capture).
+function gapCut(g,all){return g==="popups_outside_window"||g==="xwayland_unmanaged"&&all.indexOf("popups_outside_window")>=0}
+var CUT_NAMES={popups_outside_window:"an approved app's own menus and popups are cut off where they reach past its window",xwayland_unmanaged:"XWayland menus and tooltips that cannot be matched to an approved window are left out"};
+function gapSentence(m){
+  var leak=m.gaps.filter(function(g){return !gapCut(g,m.gaps)}),cut=m.gaps.filter(function(g){return gapCut(g,m.gaps)});
+  return(leak.length?"The covering is approximate here: "+gapText(leak)+" can still show over or next to the approved windows. ":"")+(cut.length?"In screenshots here, "+cut.map(function(g){return CUT_NAMES[g]}).join("; ")+". ":"");
+}
 function shotSentence(m){
   return m.filtering==="mask"
     ?"Screenshots show only the approved apps' windows: everything else is covered by solid rectangles. "+gapSentence(m)
