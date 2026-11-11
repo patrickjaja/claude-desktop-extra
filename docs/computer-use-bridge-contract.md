@@ -143,6 +143,18 @@ x11-bridge, wlroots-bridge and kwin-portal-bridge add a long-running `abort-watc
 - Nothing is left bound on exit; binds shared by several profiles are healed by the next first holder.
 - `doctor.abortWatch` says whether and how this bridge can watch on the current session.
 
+## Optional: glow overlay (`overlay`)
+
+A bridge may draw Claude's "Claude is using your computer" glow and drawn cursor on its compositor. Additive and optional: contract v1 does not change. wlroots-bridge implements it with the shared crate [`cu-overlay`](https://github.com/patrickjaja/cu-overlay) (wlr-layer-shell), which also documents the protocol in full.
+
+- `doctor` advertises it with `capabilities.overlay: true` (wlroots-bridge adds `overlay_alpha_modifier` and `overlay_fractional_scale`). claude-desktop-extra starts the overlay only when this key is `true`, read from its cached `doctor` answer; a missing key means no overlay.
+- `<bridge> overlay` is long-running: one JSON object per line on stdin and stdout, nothing else on stdout. Protocol 1, all coordinates global logical compositor coordinates (the space of `screens`):
+  - stdout: `{"event":"ready","protocol":1,"backend","alphaModifier","fractionalScale","badge":false,"captureScopes":["all","cursor"],"outputs":[{name,x,y,width,height,scale}]}` once; `{"event":"outputs","outputs":[...]}` whenever the layout changes; `{"event":"shown","output","scale"}`; `{"event":"hidden"}`; `{"event":"ack","id"}`; `{"event":"error","message","fatal"}`.
+  - stdin: `{"cmd":"show","output","look":"glow"|"rim","badge","reducedMotion","arrow":{x,y}|null}` (a show while shown updates in place or moves; an unknown output is fatal), `{"cmd":"move","output"}` (an unknown output is a non-fatal error), `{"cmd":"glide","frames":[[x,y,deg,lift],...],"frameMs"}` (frameMs 1..1000, default 16; up to 4096 frames), `{"cmd":"jump","x","y"}`, `{"cmd":"press","x","y"}`, `{"cmd":"look","look"}`, `{"cmd":"hide"}`, `{"cmd":"capture","phase":"hide"|"restore","id","scope":"all"|"cursor"}` (scope `all`, the default, makes everything transparent; `cursor` only the arrow and its press ring, the rim and glow stay; the overlay advertises the scopes it has in `ready.captureScopes`; each command is acked with its `id` once the compositor processed it; a hide restores itself after 3 s).
+  - Exit codes: 0 on stdin EOF or the parent's death (`CLAUDE_CU_PARENT_PID`); 2 when it cannot run (no display, no layer-shell, an unknown output in `show`), after a fatal `error`; 1 when the compositor connection or stdout is lost.
+- The surfaces are click-through (empty input region, no keyboard focus) and belong to the overlay process, so any exit removes them.
+- claude-desktop-extra spawns it directly from the app's main process (no shell or wrapper), the process that also runs the bridge's screenshot commands: wlroots-bridge's screenshot mask looks through the overlay's layer only when the surface belongs to its parent or to a direct child of it. Around each screenshot or zoom it sends `capture` `hide` with scope `cursor` (only when `captureScopes` lists it; never a hide of everything), waits for the ack at most 50 ms, captures, then sends `restore`, also when the capture fails or is cancelled. One overlay per Computer Use lock, started at the first glow show of that lock: `hide` and a closed stdin at lock release, SIGTERM 1 s later, SIGKILL 1 s after that; one re-spawn per lock, then none until the next lock.
+
 ## Older bridges
 
 A bridge whose `doctor` exits 2 or has no `contract` key is contract 0: consumers fall back to their per-bridge behaviour. A `forget-session` that exits 2 means the bridge cannot reset its grant; the launcher says so and tells the user to update.
