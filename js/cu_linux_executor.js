@@ -2177,6 +2177,45 @@ function _glowOffNote(why){
   if(why)globalThis.__cdbDiag("[claude-cu] \"Claude is using your computer\" glow off: "+why+" - without one Electron draws the transparent glow as an opaque black screen");
   else globalThis.__cdbDiag("[claude-cu] \"Claude is using your computer\" glow on: a compositing manager runs");
 }
+// ── Upstream's drawn pointer in the glow (sub-patch 10d) ──
+// With its GrowthBook flag 1916550538 on, upstream's glow shows a thin rim
+// and its own arrow, which upstream's executors move through the object
+// sub-patch 10d exposes as globalThis.__cdbCuDrawnPointer (upstream's factory
+// with an identity mapper: points are Electron DIP, as ours are):
+//   glideTo(p)            animate the arrow to p; ms until it arrives (0 = none)
+//   jumpTo(p)             place it at p (while a button is held)
+//   press()               press ring; first snaps the arrow to the real pointer
+//                         when that is more than 2 px away
+//   realPointerGoesTo(p)  the real pointer is about to move to p
+//   live()                (ours) the arrow is shown right now
+// Every method is a no-op unless the glow window shows the arrow. It is fed
+// the way upstream's input mixin feeds it, method for method and in the same
+// order relative to the real pointer move. Only the user's own X11 desktop
+// shows that glow: Wayland sessions have none upstream (XWayland and the
+// exotic fallback included), kwin mode skips it (8a), a background display
+// and X11 without a compositing manager turn it off (10c); there nothing is
+// called. Cosmetic only: a throwing method is logged once and input goes on.
+var CU_DP_GLIDE_MAX_MS=2000;
+var _dpHeld=!1,_dpSaid=!1;
+function _dpObj(){
+  if(_wayland||_tgt||globalThis.__cuKwinMode)return null;
+  var d=globalThis.__cdbCuDrawnPointer;
+  return d&&typeof d==="object"?d:null;
+}
+function _dpFail(m,e){
+  if(_dpSaid)return;_dpSaid=!0;
+  try{globalThis.__cdbDiag("[claude-cu] drawn pointer: "+m+" failed ("+(e&&e.message||e)+") - input goes on without it")}catch(de){}
+}
+// The live drawn pointer, or null.
+function _dpLive(){
+  var d=_dpObj();if(!d||typeof d.live!=="function")return null;
+  try{return d.live()===!0?d:null}catch(e){_dpFail("live",e);return null}
+}
+function _dpCall(d,m,x,y){
+  if(!d||typeof d[m]!=="function")return void 0;
+  try{return x===void 0?d[m]():d[m]({x:x,y:y})}catch(e){_dpFail(m,e);return void 0}
+}
+function _dpAborted(f){try{return typeof f==="function"&&!!f()}catch(e){return !0}}
 // X11 HiDPI: Electron reports displays in DIP, but x11-bridge (XTest motion,
 // GetImage crop) works in X root PIXELS. Chromium does not lay DIP origins out
 // as px/scale: ConvertDisplayBoundsToDips (ui/base/x/x11_display_util.cc)
@@ -3519,11 +3558,45 @@ var _ex=globalThis.__linuxExecutor={
     // emits the original "Opened app" text byte-for-byte.
     return{action:"opened",app:name};
   },
-  async moveMouse(x,y){_escAct();await _tgtPrime();_moveMouse(x,y)},
+  // Upstream's mixin: moveMouse `held?jumpTo(p):glideTo(p)`, then the real
+  // move announced by realPointerGoesTo(p).
+  async moveMouse(x,y){
+    _escAct();await _tgtPrime();
+    var dp=_dpLive();if(dp){_dpCall(dp,_dpHeld?"jumpTo":"glideTo",x,y);_dpCall(dp,"realPointerGoesTo",x,y)}
+    _moveMouse(x,y);
+  },
+  // Upstream's click handler glides the drawn pointer to the target first
+  // (await executor.showPointerTravel?.(x,y,isAborted), skipped for batched
+  // and unattended actions); true = it animated, then the handler checks the
+  // abort. Mirrors upstream's mixin: glideTo returns the ms until arrival,
+  // re-asked at most every 50 ms until it arrives or the turn is aborted
+  // (Escape stop key). false when nothing is animated: no live arrow, already
+  // there, reduced motion, a target off the glow's display. Never throws.
+  async showPointerTravel(x,y,isAborted){
+    var dp=_dpLive();if(!dp)return !1;
+    var p={x:x,y:y};
+    try{
+      var r=dp.glideTo(p);
+      if(!(typeof r==="number"&&r>0))return !1;
+      r=Math.min(r,CU_DP_GLIDE_MAX_MS);
+      var end=performance.now()+r;
+      for(var i=r;i>0&&!_dpAborted(isAborted);){
+        await new Promise(function(res){setTimeout(res,Math.min(i,50))});
+        var g=dp.glideTo(p);
+        i=Math.min(end-performance.now(),typeof g==="number"?g:0);
+      }
+      return !0;
+    }catch(e){_dpFail("glideTo",e);return !1}
+  },
+  // Upstream: the real move (realPointerGoesTo first), then press(), then the
+  // click; the glide itself came from showPointerTravel.
   async click(x,y,button,count,holdKeys){
     _escAct();
     await _tgtPrime();
+    var dp=_dpLive();
+    if(dp)_dpCall(dp,"realPointerGoesTo",x,y);
     _moveMouse(x,y);
+    if(dp)_dpCall(dp,"press");
     var rep=count||1;
     return _escAround(_escKeys(holdKeys),function(){
     if(_useWlBridge()){
@@ -3554,16 +3627,21 @@ var _ex=globalThis.__linuxExecutor={
     }
     });
   },
+  // Upstream: press(), the button, then "held" (moves jump the drawn pointer
+  // instead of gliding it until mouseUp).
   async mouseDown(){
     _escAct();
     await _tgtPrime();
+    var dp=_dpLive();if(dp)_dpCall(dp,"press");
     if(_useWlBridge()){_logFirstUse("drag",_wlBridge().name);_wlBridgeCall(["left-mouse-down"])}
     else if(_wayland&&_checkYdotool()){_logFirstUse("drag","ydotool");_ydotool(["click","0x40"])}
     else{_logFirstUse("drag","x11-bridge");_x11Bridge(["left-mouse-down"])}
+    _dpHeld=!0;
   },
   async mouseUp(){
     _escAct();
     await _tgtPrime();
+    _dpHeld=!1;
     if(_useWlBridge()){_wlBridgeCall(["left-mouse-up"])}
     else if(_wayland&&_checkYdotool()){_ydotool(["click","0x80"])}
     else{_x11Bridge(["left-mouse-up"])}
@@ -3597,15 +3675,27 @@ var _ex=globalThis.__linuxExecutor={
       _ydotool(["click","0x80"]);
     }else{
       _logFirstUse("drag","x11-bridge");
+      // Upstream's mixin with its drawn pointer live: a given start is reached
+      // first (realPointerGoesTo, the real move), press() rings it there, the
+      // arrow jumps to the end while the button is held (realPointerGoesTo),
+      // then the button goes up. pointer-drag does start -> end -> release in
+      // one call (its first step is the same move to the start), so the start
+      // move is made beforehand only while the arrow is live, for press() to
+      // find the real pointer on it.
+      var dp=_dpLive();
+      if(dp&&start){_dpCall(dp,"realPointerGoesTo",start.x,start.y);_moveMouse(start.x,start.y)}
       // Both endpoints are DIP (the cursor too: getCursorScreenPoint is DIP on X11).
       var _cur=start||(_tgt?_tgtCursor():_electron.screen.getCursorScreenPoint()),_from=_x11Px(_cur.x,_cur.y),_to=_x11Px(end.x,end.y);
       _tgtCursorSet(end.x,end.y);
+      if(dp){_dpCall(dp,"press");_dpCall(dp,"jumpTo",end.x,end.y);_dpCall(dp,"realPointerGoesTo",end.x,end.y)}
       _x11Bridge(["pointer-drag","--from-x",String(_from[0]),"--from-y",String(_from[1]),"--to-x",String(_to[0]),"--to-y",String(_to[1])]);
     }
   },
+  // Upstream: glideTo(p) (always a glide), the real move, the wheel.
   async scroll(x,y,horizontal,vertical){
     _escAct();
     await _tgtPrime();
+    var dp=_dpLive();if(dp){_dpCall(dp,"glideTo",x,y);_dpCall(dp,"realPointerGoesTo",x,y)}
     _moveMouse(x,y);
     if(_useWlBridge()){
       _logFirstUse("scroll",_wlBridge().name);

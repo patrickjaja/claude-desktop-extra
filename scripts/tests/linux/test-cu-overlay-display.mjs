@@ -42,7 +42,20 @@
 //       misaligned layout, selected-id AND main-window-fallback paths; the same
 //       flows on the pristine bundle and with the old force-primary 10b show
 //       the bug. The glow show (10c) on X11, background display, Wayland.
-// Sections [2]-[4] SKIP (exit 3) when the binary or the extract is missing.
+//   [3b] 10d: upstream's drawn-pointer factory exposed as
+//       globalThis.__cdbCuDrawnPointer (one assignment, in the factory's own
+//       chunk), the flag decision byte-unchanged, Rule 6 (half-patched, the
+//       old "drawn cursor off" output refused, moved shapes fail loud).
+//   [5] the REAL drawn-pointer module of the patched chunk in vm, fed by the
+//       REAL executor on a stub x11-bridge: flag on (the glow shows the
+//       arrow) -> upstream's mixin order per action (move, click after
+//       showPointerTravel, mouseDown, held move, mouseUp, drag with and
+//       without a start, scroll), the press ring on the real pointer, HiDPI
+//       on a second monitor; flag off -> nothing animated, the bridge
+//       commands of an executor without a drawn pointer; abort cuts the
+//       glide; a throwing drawn pointer never breaks input; no call at all on
+//       Wayland rows, kwin mode and a background display.
+// Sections [2]-[5] SKIP (exit 3) when the binary or the extract is missing.
 // Exit codes follow the repo convention: 0 = PASS, 3 = SKIP, other = FAIL.
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdtempSync, rmSync, accessSync, constants } from "node:fs";
 import { spawnSync, execFileSync } from "node:child_process";
@@ -123,13 +136,18 @@ function fakeGlow({ url = "file:///tmp/cu-glow.html", visible = false, loading =
   (appListeners["browser-window-created"] || []).forEach((f) => f({}, w));
   return w;
 }
-function loadExecutor({ displays, session = "x11", desktop = "XFCE", target = null, doctor = X11_DOCTOR(true) }) {
+// `bridge(args)`: the stub x11-bridge's synchronous answer (input commands);
+// without it every synchronous tool call fails as "not found".
+function loadExecutor({ displays, session = "x11", desktop = "XFCE", target = null, doctor = X11_DOCTOR(true), bridge = null }) {
   fakeWins.length = 0;
   for (const k of Object.keys(appListeners)) delete appListeners[k];
   const screen = makeScreen(displays);
   doctorCalls = 0;
   const cp = {
-    execFileSync() { throw new Error("not found"); },
+    execFileSync(bin, args) {
+      if (bridge && path.basename(String(bin)) === "x11-bridge") return bridge(args);
+      throw new Error("not found");
+    },
     execSync() { throw new Error("nope"); },
     spawnSync() { return { status: 1 }; },
     execFile(bin, args, opts, cb) {
@@ -169,7 +187,7 @@ function loadExecutor({ displays, session = "x11", desktop = "XFCE", target = nu
   process.env.XDG_SESSION_TYPE = session;
   if (session === "wayland") process.env.WAYLAND_DISPLAY = "wayland-0"; else delete process.env.WAYLAND_DISPLAY;
   for (const k of ["SWAYSOCK", "HYPRLAND_INSTANCE_SIGNATURE", "NIRI_SOCKET", "COWORK_SCREENSHOT_CMD", "X11_BRIDGE_BIN", "YDOTOOL_SOCKET", "WLROOTS_BRIDGE_BIN"]) delete process.env[k];
-  delete globalThis.__cdbCuElectronDisplayId; delete globalThis.__cdbCuGlowOff;
+  delete globalThis.__cdbCuElectronDisplayId; delete globalThis.__cdbCuGlowOff; delete globalThis.__linuxExecutor;
   new Function("require", "process", readFileSync(EXECUTOR, "utf8"))(requireStub, process);
   return screen;
 }
@@ -354,6 +372,10 @@ const GLOW_SET_RE = /function ([\w$]+)\(([\w$]+)\)\{([\w$]+)=\2\?\?null,([\w$]+)
 const TEACH_SET_RE = /function ([\w$]+)\(([\w$]+)\)\{([\w$]+)=\2\?\?null;let ([\w$]+)=([\w$]+)\(\);\4&&\4\.setBounds\(([\w$]+)\(\)\.workArea\)\}/;
 const GLOW_RE = /function ([\w$]+)\(([\w$]+)\)\{if\(!([\w$]+)\)return Promise\.resolve\(\);([\w$]+)&&=\(clearTimeout\(\4\),null\);let [\w$]+=\+\+[\w$]+;([\w$]+)\(!0\);/;
 const GLOW_PATCHED_RE = /function ([\w$]+)\(([\w$]+)\)\{if\(!([\w$]+)\|\|process\.platform==="linux"&&globalThis\.__cdbCuGlowOff\?\.\(\)===!0\)return Promise\.resolve\(\);([\w$]+)&&=\(clearTimeout\(\4\),null\);let [\w$]+=\+\+[\w$]+;([\w$]+)\(!0\);/;
+// Sub-patch 10d: upstream's drawn-pointer factory, and our assignment in
+// front of it (captures: factory, wrapper).
+const DP_FACTORY_RE = /(?<![\w$.])function ([\w$]+)\(([\w$]+)\)\{return\{glideTo:([\w$]+)\(0,\(\(([\w$]+),([\w$]+)\)=>\{let [\w$]+=\2\(\5\);/;
+const DP_PATCHED_RE = /process\.platform==="linux"&&\(globalThis\.__cdbCuDrawnPointer=Object\.assign\(([\w$]+)\(e=>e\),\{live:([\w$]+)\(!1,\(\)=>!0\)\}\)\);function \1\([\w$]+\)\{return\{glideTo:\2\(0,/;
 // The five entry sites, pristine and patched.
 const SITES = [
   ["10b1 glow display switch", /function ([\w$]+)\(([\w$]+),([\w$]+)\)\{\2===[\w$]+\.currentHolder&&([\w$]+)\(\3\)\}/, new RegExp("function ([\\w$]+)\\(([\\w$]+),([\\w$]+)\\)\\{\\2===[\\w$]+\\.currentHolder&&([\\w$]+)\\(" + D + "\\3\\)\\)\\}")],
@@ -483,42 +505,68 @@ if (!haveBin || !existsSync(path.join(BUILD_DIR, "index.js"))) {
       check(`${label}: names the sub-patch and fails`, r.status !== 0 && want.test(r.out) && !/\[PASS\]/.test(r.out), true);
     }
 
-    console.log("\n[3b] 10d: no drawn cursor in the glow on Linux (flag 1916550538)");
+    console.log("\n[3b] 10d: upstream's drawn pointer exposed to the Linux executor (flag 1916550538)");
+    // The flag decision the glow show reads stays upstream's:
+    // `r=(e?.claudeHasThePointer??!0)&&T()`.
+    const CURSOR_RE = /function ([\w$]+)\(\)\{try\{let ([\w$]+)=([\w$]+)\(\);return \2==="default"\?([\w$]+)\(([\w$]+)\):\2==="on"\}catch\(([\w$]+)\)\{return [\w$]+\.warn\("\[cu-glow\] flag unreadable, staying off"/;
+    const OLD_10D = 'if(process.platform==="linux")return!1;try{';
+    const [, curFn, , , , flagVar] = CURSOR_RE.exec(blob) || [];
     {
-      // The decision the glow show reads: `r=(e?.claudeHasThePointer??!0)&&T()`.
-      const CURSOR_RE = /function ([\w$]+)\(\)\{try\{let ([\w$]+)=([\w$]+)\(\);return \2==="default"\?([\w$]+)\(([\w$]+)\):\2==="on"\}catch\(([\w$]+)\)\{return [\w$]+\.warn\("\[cu-glow\] flag unreadable, staying off"/;
-      const CURSOR_PATCHED_RE = /function ([\w$]+)\(\)\{if\(process\.platform==="linux"\)return!1;try\{let ([\w$]+)=([\w$]+)\(\);return \2==="default"\?([\w$]+)\(([\w$]+)\):\2==="on"\}catch/;
-      check("drawn-cursor decision: pristine once", countRe(blob, CURSOR_RE), 1);
-      const cm = CURSOR_RE.exec(blob) || [];
-      const [, curFn, , overrideFn, flagFn, flagVar] = cm;
+      check("drawn-pointer flag decision: pristine once", countRe(blob, CURSOR_RE), 1);
       check(`${flagVar} is flag 1916550538`, countRe(blob, new RegExp("(?<![\\w$.])" + esc(flagVar || "\u0000") + '="1916550538"')), 1);
-      check(`${curFn}(): its definition plus one call, the glow show`, countRe(blob, new RegExp("(?<![\\w$.])" + esc(curFn || "\u0000") + "\\(\\)", "g")), 2);
       check(`glow show reads ${curFn}() for claudeHasThePointer`, countRe(blob, new RegExp("\\(([\\w$]+)\\?\\.claudeHasThePointer\\?\\?!0\\)&&" + esc(curFn || "\u0000") + "\\(\\)")), 1);
-      check("drawn-cursor decision: patched once", countRe(patched, CURSOR_PATCHED_RE), 1);
-      check("drawn-cursor decision: pristine shape gone", countRe(patched, CURSOR_RE), 0);
-      check("10d reported [OK]", r1.out.includes(`[OK] 10d drawn cursor ${curFn} (flag 1916550538): off on Linux`), true);
-      // Run both versions with the flag ON and the debug override "default".
-      const evalFn = (src, platform) => {
-        const fn = new Function("__scope", "with(__scope){return (" + src + ")}")(
-          scopeFor(new Set([curFn]), { [overrideFn]: () => "default", [flagFn]: (id) => id === "1916550538", [flagVar]: "1916550538",
-            process: { platform } }));
-        return fn();
-      };
-      const pSrc = fnSource(patched, curFn), oSrc = fnSource(blob, curFn);
-      check("flag on, pristine upstream on Linux: drawn cursor shown (the frozen-cursor case)", oSrc && evalFn(oSrc, "linux"), true);
-      check("flag on, patched on Linux: drawn cursor off", pSrc && evalFn(pSrc, "linux"), false);
-      check("flag on, patched on darwin: upstream (drawn cursor shown)", pSrc && evalFn(pSrc, "darwin"), true);
+      check(`flag decision ${curFn}() byte-unchanged by the patch`, !!curFn && fnSource(patched, curFn) === fnSource(blob, curFn), true);
+      check("no Linux override of the flag decision", patched.includes(OLD_10D), false);
+      check("factory: pristine once", countRe(blob, DP_FACTORY_RE), 1);
+      check("factory: exposed once (patched)", countRe(patched, DP_PATCHED_RE), 1);
+      check("factory: pristine shape only behind our assignment", countRe(patched, DP_FACTORY_RE), 1);
+      const [, fac, wrap] = DP_PATCHED_RE.exec(patched) || [];
+      check(`factory ${fac}: one darwin consumer (drawnPointer:${fac}(e=>e))`, countRe(blob, new RegExp("drawnPointer:" + esc(fac || "\u0000") + "\\(\\(?\\(?[\\w$]+\\)?=>[\\w$]+\\)?\\)")), 1);
+      check("10d reported [OK]", r1.out.includes(`[OK] 10d drawn pointer factory ${fac} (wrapper ${wrap}): exposed to the Linux executor`), true);
+      const after3b = splitParts(patched);
+      const dIdx = after3b.bodies.findIndex((b) => DP_PATCHED_RE.test(b));
+      check("the assignment sits in the factory's own chunk", dIdx >= 0 && after3b.names[dIdx] === pristine.names[pristine.bodies.findIndex((b) => DP_FACTORY_RE.test(b))], true);
+      if (dIdx >= 0) {
+        const f = path.join(scratch, "dp-" + after3b.names[dIdx]);
+        writeFileSync(f, after3b.bodies[dIdx]);
+        let okc = true;
+        try { execFileSync("node", ["--check", f], { stdio: "pipe" }); } catch { okc = false; }
+        check(`node --check ${after3b.names[dIdx]} (with the assignment)`, okc, true);
+      }
       // Rule 6: a bundle missing only 10d is refused as half-patched.
+      const pm3 = DP_PATCHED_RE.exec(patched);
+      const assign = pm3 ? pm3[0].slice(0, pm3[0].indexOf("function ")) : "";
       const half = path.join(scratch, "half10d.js");
-      const pcm = CURSOR_PATCHED_RE.exec(patched);
-      writeFileSync(half, pcm ? patched.replace(pcm[0], pcm[0].replace('if(process.platform==="linux")return!1;', "")) : patched);
-      const r = run(half);
-      check("bundle without 10d: refused as half-patched", r.status !== 0 && /half-patched input: .*missing: .*10d drawn cursor off/.test(r.out), true);
-      // A moved flag id fails loud.
-      const moved = path.join(scratch, "moved10d.js");
-      writeFileSync(moved, blob.replace('="1916550538"', '="1916550539"'));
-      const rm = run(moved);
-      check("moved drawn-cursor flag: names the sub-patch and fails", rm.status !== 0 && /\[FAIL\] 10d drawn cursor [\w$]+: [\w$]+ is not flag 1916550538/.test(rm.out) && !/\[PASS\]/.test(rm.out), true);
+      writeFileSync(half, assign ? patched.replace(assign, "") : patched);
+      let r = run(half);
+      check("bundle without 10d: refused as half-patched", r.status !== 0 && /half-patched input: .*missing: .*10d drawn pointer for the Linux executor/.test(r.out), true);
+      // The old 10d (flag decision forced off on Linux) is never "already patched".
+      const oldShape = (b) => b.replace(CURSOR_RE, (m0) => m0.replace("{try{", "{" + OLD_10D));
+      const oldBuild = path.join(scratch, "old10d.js");
+      writeFileSync(oldBuild, oldShape(assign ? patched.replace(assign, "") : patched));
+      r = run(oldBuild);
+      check("output of the old 10d: refused", r.status !== 0 && /\[FAIL\] 10d: input carries the old "drawn cursor off on Linux" edit/.test(r.out) && !/already present/.test(r.out), true);
+      writeFileSync(oldBuild, oldShape(patched));
+      r = run(oldBuild);
+      check("new 10d plus the old edit: refused, not idempotent", r.status !== 0 && /\[FAIL\] 10d: input carries the old/.test(r.out), true);
+      writeFileSync(oldBuild, oldShape(blob));
+      r = run(oldBuild);
+      check("pristine plus the old edit: refused", r.status !== 0 && !/\[PASS\]/.test(r.out), true);
+      // Moved factory shapes fail loud, naming the sub-patch.
+      const movedDp = [
+        ["factory without realPointerGoesTo", (b) => b.replace(/realPointerGoesTo:([\w$]+)\(void 0,/, "realPointerMoves:$1(void 0,"), /\[FAIL\] 10d drawn pointer factory [\w$]+: methods not found exactly once .*realPointerGoesTo\(0 in the factory/],
+        ["factory renamed glideTo", (b) => b.replace(/\{return\{glideTo:([\w$]+)\(0,/, "{return{slideTo:$1(0,"), /\[FAIL\] 10d drawn pointer factory \(`function F\(e\)\{return\{glideTo:W\(0,.*: 0 matches, expected 1/],
+        ["wrapper changed shape", (b) => b.replace(/(function [\w$]+\([\w$]+,[\w$]+\)\{return\(\.\.\.[\w$]+\)=>\{let [\w$]+=[\w$]+;try\{return )([\w$]+\(\)&&)/, "$1!0&&$2"), /\[FAIL\] 10d drawn pointer factory [\w$]+: wrapper [\w$]+ is not/],
+        ["no darwin consumer", (b) => b.replace(/drawnPointer:([\w$]+)\(\(e=>e\)\)/, "drawnPointer:void 0"), /\[FAIL\] 10d drawn pointer factory [\w$]+: not the darwin executor's drawnPointer/],
+      ];
+      for (const [label, mut, want] of movedDp) {
+        const f = path.join(scratch, "moved10d.js");
+        const mb = mut(blob);
+        writeFileSync(f, mb);
+        r = run(f);
+        check(`${label}: mutation applied`, mb !== blob, true);
+        check(`${label}: names the sub-patch and fails`, r.status !== 0 && want.test(r.out) && !/\[PASS\]/.test(r.out), true);
+      }
     }
 
     console.log("\n[4] the REAL upstream overlay code in vm");
@@ -643,6 +691,241 @@ if (!haveBin || !existsSync(path.join(BUILD_DIR, "index.js"))) {
     check("glow: X11 background display -> not shown", runGlow({ off: true }), false);
     check("glow: Wayland session -> not shown (upstream)", runGlow({ wayland: true }), false);
     check("glow: non-Linux with the flag set -> shown (unchanged)", runGlow({ platform: "darwin", off: true }), true);
+
+    console.log("\n[5] upstream's drawn pointer in vm, fed by the real executor (10d, flag 1916550538)");
+    {
+      // The drawn-pointer module of the patched chunk, from its config object
+      // to the end of the factory: our assignment runs inside it, as at module
+      // load. Its free names come from the bundle itself.
+      const dpChunk = splitParts(patched).bodies.find((b) => DP_PATCHED_RE.test(b)) || "";
+      const cfg = /var ([\w$]+)=\{baseMs:[\d.]+,perBitMs:[\d.]+,targetPx:[\d.]+,minMs:[\d.]+,maxMs:[\d.]+,curve:/.exec(dpChunk);
+      const [, facName, wrapName] = DP_PATCHED_RE.exec(dpChunk) || [];
+      const facSrc = facName ? fnSource(dpChunk, facName) : null;
+      const slice = cfg && facSrc ? dpChunk.slice(cfg.index, dpChunk.indexOf(facSrc) + facSrc.length) : "";
+      check("drawn-pointer module located (config .. factory, with our assignment)", !!slice && DP_PATCHED_RE.test(slice), true);
+      const name = (re) => (re.exec(slice) || [])[1];
+      const clampN = name(/Math\.round\(([\w$]+)\([\w$]+\.baseMs\+/);
+      const elbowN = name(/\{elbow:[\w$]+\}=([\w$]+)/);
+      const electronN = (/let [\w$]+=([\w$]+)\.screen\.getCursorScreenPoint\(\)/.exec(slice) || [])[1];
+      const motionN = name(/let [\w$]+=!([\w$]+)\(\)&&/);
+      const logN = name(/([\w$]+)\.warn\(["`]\[cu-glow\] drawing/);
+      const nativeN = name(/try\{[\w$]+=([\w$]+)\(\)\?\.cuSetSystemPointerHidden/);
+      const wrapSrc = fnSource(slice, wrapName) || "";
+      const stateN = (/let [\w$]+=([\w$]+);try/.exec(wrapSrc) || [])[1];
+      const activateN = stateN && (new RegExp("function ([\\w$]+)\\(([\\w$]+),([\\w$]+)\\)\\{" + esc(stateN) + "=\\2,[\\w$]+\\(\\3\\)\\}").exec(slice) || [])[1];
+      const elbowSrc = elbowN && new RegExp("(?<![\\w$.])" + esc(elbowN) + "=\\{[^}]*elbow:\\{x:([\\d.]+),y:([\\d.]+)\\}").exec(dpChunk);
+      check("module free names derived from the bundle", [clampN, elbowN, electronN, motionN, logN, nativeN, stateN, activateN].every(Boolean) && !!elbowSrc, true);
+      // Load it; returns the glow show's arrow switch (NQa: the arrow on in a glow window).
+      const loadDp = (screen, platform = "linux") => {
+        delete globalThis.__cdbCuDrawnPointer;
+        const clampSrc = fnSource(dpChunk, clampN) || fnSource(blob, clampN);
+        const clamp = new Function(clampSrc + "\nreturn " + clampN + ";")();
+        return new Function("process", clampN, elbowN, electronN, motionN, logN, nativeN, slice + "\nreturn " + activateN + ";")(
+          { platform }, clamp, { elbow: { x: +elbowSrc[1], y: +elbowSrc[2] } }, { screen }, () => false, { warn() {}, info() {}, debug() {}, error() {} }, () => null);
+      };
+      const glowWin = (bounds) => {
+        const w = { destroyed: false, scripts: [], isDestroyed: () => w.destroyed, isVisible: () => true, getBounds: () => bounds,
+          webContents: { isCrashed: () => false, executeJavaScript: (js) => { w.scripts.push(js); return Promise.resolve(); } } };
+        return w;
+      };
+      const lastAt = (w, id) => { let m = null; for (const js of w.scripts) for (const x of js.matchAll(new RegExp('\\["' + id + '","([-\\d.]+)px ([-\\d.]+)px"\\]', "g"))) m = [+x[1], +x[2]]; return m; };
+      check("darwin: the module sets no global", (loadDp(makeScreen(HOST), "darwin"), globalThis.__cdbCuDrawnPointer), undefined);
+      // One rig: real executor on a stub x11-bridge that moves the real
+      // pointer (root px -> DIP, as Electron reports it), real drawn pointer
+      // with every call recorded in the same log as the bridge commands.
+      const log = [];
+      let liveCalls = 0;
+      const pxToDip = (displays, px, py) => {
+        for (const d of displays) {
+          const sf = d.scaleFactor || 1, no = d.nativeOrigin || { x: d.bounds.x * sf, y: d.bounds.y * sf };
+          if (px >= no.x && px < no.x + d.bounds.width * sf && py >= no.y && py < no.y + d.bounds.height * sf) return { x: d.bounds.x + (px - no.x) / sf, y: d.bounds.y + (py - no.y) / sf };
+        }
+        return { x: px, y: py };
+      };
+      const rig = ({ displays, session = "x11", desktop = "XFCE", target = null, glowBounds, arrow = true, kwin = false, cursor = { x: 10, y: 10 } }) => {
+        let cur = { ...cursor };
+        const bridge = (args) => {
+          log.push("bridge " + args.join(" "));
+          const a = (k) => +args[args.indexOf(k) + 1];
+          if (["pointer-move", "pointer-click", "pointer-scroll"].includes(args[0])) cur = pxToDip(displays, a("--x"), a("--y"));
+          if (args[0] === "pointer-drag") cur = pxToDip(displays, a("--to-x"), a("--to-y"));
+          return "{}";
+        };
+        const screen = loadExecutor({ displays, session, desktop, target, bridge });
+        globalThis.__cuKwinMode = kwin;
+        screen.getCursorScreenPoint = () => ({ ...cur });
+        const ex = globalThis.__linuxExecutor;
+        const activate = loadDp(screen);
+        const win = glowWin(glowBounds || displays[0].bounds);
+        if (arrow) activate(win, 0);
+        const d = globalThis.__cdbCuDrawnPointer;
+        for (const k of ["glideTo", "jumpTo", "press", "realPointerGoesTo"]) {
+          const f = d[k];
+          d[k] = (...a) => { log.push(a[0] ? `${k}(${a[0].x},${a[0].y})` : `${k}()`); return f(...a); };
+        }
+        const lv = d.live; d.live = () => { liveCalls++; return lv(); };
+        log.length = 0; liveCalls = 0;
+        return { ex, win, screen, cur: () => cur };
+      };
+      const take = () => log.splice(0);
+      const bridgeOnly = (l) => l.filter((x) => x.startsWith("bridge "));
+      // The action script every row runs (a glide before the click, as the
+      // handler does for an unbatched, attended click).
+      const script = async (ex) => {
+        const out = [];
+        const step = async (label, fn) => { try { await fn(); } catch (e) { log.push("threw " + (e && e.message)); } out.push([label, take()]); };
+        await step("move", () => ex.moveMouse(100, 200));
+        let spt;
+        await step("travel", async () => { spt = await ex.showPointerTravel(300, 400, () => false); });
+        await step("click", () => ex.click(300, 400, "left", 1));
+        await step("down", () => ex.mouseDown());
+        await step("held move", () => ex.moveMouse(500, 600));
+        await step("up", () => ex.mouseUp());
+        await step("move after up", () => ex.moveMouse(10, 10));
+        await step("drag from start", () => ex.drag({ x: 20, y: 30 }, { x: 40, y: 50 }));
+        await step("drag from pointer", () => ex.drag(void 0, { x: 70, y: 80 }));
+        await step("scroll", () => ex.scroll(90, 95, 0, 3));
+        return { steps: Object.fromEntries(out), spt };
+      };
+      const J = (x) => JSON.stringify(x);
+      // Flag ON: X11 with a compositing manager, the glow shows the arrow.
+      {
+        const r = rig({ displays: HOST, glowBounds: HOST[2].bounds });
+        check("flag on: live() true while the glow shows the arrow", globalThis.__cdbCuDrawnPointer.live(), true);
+        liveCalls = 0;
+        const { steps, spt } = await script(r.ex);
+        check("flag on: move = glideTo, realPointerGoesTo, real move", J(steps.move), J(["glideTo(100,200)", "realPointerGoesTo(100,200)", "bridge pointer-move --x 100 --y 200"]));
+        check("flag on: showPointerTravel animated (true)", spt, true);
+        check("flag on: showPointerTravel only re-asks glideTo(target), no input", steps.travel.length >= 2 && steps.travel.every((x) => x === "glideTo(300,400)"), true);
+        check("flag on: click = realPointerGoesTo, real move, press, click", J(steps.click), J(["realPointerGoesTo(300,400)", "bridge pointer-move --x 300 --y 400", "press()", "bridge pointer-click --x 300 --y 400 --button left --count 1"]));
+        check("flag on: mouseDown = press, button down", J(steps.down), J(["press()", "bridge left-mouse-down"]));
+        check("flag on: move while held = jumpTo (no glide)", J(steps["held move"]), J(["jumpTo(500,600)", "realPointerGoesTo(500,600)", "bridge pointer-move --x 500 --y 600"]));
+        check("flag on: mouseUp = button up only", J(steps.up), J(["bridge left-mouse-up"]));
+        check("flag on: after mouseUp moves glide again", steps["move after up"][0], "glideTo(10,10)");
+        check("flag on: drag with a start = real pointer to start, press there, jump to end while held, drag",
+          J(steps["drag from start"]), J(["realPointerGoesTo(20,30)", "bridge pointer-move --x 20 --y 30", "press()", "jumpTo(40,50)", "realPointerGoesTo(40,50)", "bridge pointer-drag --from-x 20 --from-y 30 --to-x 40 --to-y 50"]));
+        check("flag on: drag from the pointer = press, jump to end, drag (no extra move)",
+          J(steps["drag from pointer"]), J(["press()", "jumpTo(70,80)", "realPointerGoesTo(70,80)", "bridge pointer-drag --from-x 40 --from-y 50 --to-x 70 --to-y 80"]));
+        check("flag on: scroll = glideTo, realPointerGoesTo, real move, wheel", J(steps.scroll), J(["glideTo(90,95)", "realPointerGoesTo(90,95)", "bridge pointer-move --x 90 --y 95", "bridge pointer-scroll --x 90 --y 95 --dx 0 --dy 3"]));
+        check("flag on: one live() per action that feeds it (mouseUp feeds nothing)", liveCalls, 9);
+        const ring = lastAt(r.win, "cursor-press"), arrowAt = lastAt(r.win, "cursor");
+        check("flag on: last press ring at the drag start of the last press (real pointer)", J(ring), J([40, 50]));
+        check("flag on: arrow rests on the scroll target", J(arrowAt), J([90, 95]));
+      }
+      // The drag-with-start press ring sits on the start (the real pointer was moved there first).
+      {
+        const r = rig({ displays: HOST, glowBounds: HOST[2].bounds });
+        await r.ex.moveMouse(600, 600); // arrow gliding elsewhere
+        await r.ex.drag({ x: 20, y: 30 }, { x: 40, y: 50 });
+        check("flag on: drag with a start rings the start, not where the arrow was", J(lastAt(r.win, "cursor-press")), J([20, 30]));
+        check("flag on: then the arrow is at the end", J(lastAt(r.win, "cursor")), J([40, 50]));
+      }
+      // Flag OFF (the default): the glow shows no arrow. Same bridge commands as
+      // without any drawn pointer, nothing but live() called, nothing animated.
+      let baseline;
+      {
+        rig({ displays: HOST, glowBounds: HOST[2].bounds, arrow: false });
+        const keep = globalThis.__cdbCuDrawnPointer; delete globalThis.__cdbCuDrawnPointer;
+        const { steps, spt } = await script(globalThis.__linuxExecutor);
+        baseline = steps;
+        check("no drawn pointer object: showPointerTravel false", spt, false);
+        globalThis.__cdbCuDrawnPointer = keep;
+        const r = rig({ displays: HOST, glowBounds: HOST[2].bounds, arrow: false });
+        check("flag off: live() false", globalThis.__cdbCuDrawnPointer.live(), false);
+        liveCalls = 0;
+        const off = await script(r.ex);
+        check("flag off: showPointerTravel reports nothing to animate", off.spt, false);
+        check("flag off: no drawn-pointer method called", Object.values(off.steps).flat().filter((x) => !x.startsWith("bridge ")).length, 0);
+        check("flag off: bridge commands identical to no drawn pointer at all", J(off.steps), J(baseline));
+        check("flag off: no arrow drawn in the glow", r.win.scripts.length, 0);
+        // The flag on adds input only for a drag with a start (the move to the start, which pointer-drag makes first anyway).
+        const on = rig({ displays: HOST, glowBounds: HOST[2].bounds });
+        const onRun = await script(on.ex);
+        const onBridge = Object.fromEntries(Object.entries(onRun.steps).map(([k, v]) => [k, bridgeOnly(v)]));
+        const want = { ...baseline, "drag from start": ["bridge pointer-move --x 20 --y 30", ...baseline["drag from start"]] };
+        check("flag on: bridge commands = flag off + the start move of a drag", J(onBridge), J(want));
+      }
+      // HiDPI second monitor: the arrow lands where the real pointer lands.
+      {
+        const two = [disp(1, "A", R(0, 0, 1920, 1080), 1, { x: 0, y: 0 }), disp(2, "B", R(1920, 0, 1280, 720), 1.5, { x: 1920, y: 0 })];
+        two.primaryIdx = 0;
+        const r = rig({ displays: two, glowBounds: two[1].bounds, cursor: { x: 2000, y: 100 } });
+        const spt = await r.ex.showPointerTravel(2500.4, 300.6, () => false);
+        await r.ex.click(2500.4, 300.6, "left", 1);
+        const lg = take();
+        const click = lg.find((x) => x.startsWith("bridge pointer-click"));
+        check("HiDPI 1.5 on the second monitor: glide animated", spt, true);
+        check("HiDPI 1.5: real click in root pixels (x11-bridge)", click, "bridge pointer-click --x 2790 --y 451 --button left --count 1");
+        const ring = lastAt(r.win, "cursor-press") || [NaN, NaN], real = r.cur();
+        check("HiDPI 1.5: press ring within 1 DIP of the real pointer (glow-relative)", Math.hypot(ring[0] + 1920 - real.x, ring[1] - real.y) <= 1, true);
+        check("HiDPI 1.5: no snap needed (arrow already on the real pointer)", J(ring), J([580.4, 300.6]));
+      }
+      // Abort (Escape stop key -> upstream's turn abort) cuts the glide short.
+      {
+        let r = rig({ displays: HOST, glowBounds: HOST[2].bounds });
+        let t0 = performance.now();
+        const full = await r.ex.showPointerTravel(4000, 1200, () => false);
+        const fullMs = performance.now() - t0;
+        r = rig({ displays: HOST, glowBounds: HOST[2].bounds });
+        t0 = performance.now();
+        const cut = await r.ex.showPointerTravel(4000, 1200, () => performance.now() - t0 > 60);
+        const cutMs = performance.now() - t0;
+        r = rig({ displays: HOST, glowBounds: HOST[2].bounds });
+        t0 = performance.now();
+        const now = await r.ex.showPointerTravel(4000, 1200, () => true);
+        const nowMs = performance.now() - t0;
+        check(`no abort: waits for the glide (${Math.round(fullMs)} ms, upstream 420-900)`, full === true && fullMs >= 200 && fullMs < 1100, true);
+        check(`abort after 60 ms: returns within the next 50 ms poll (${Math.round(cutMs)} ms)`, cut === true && cutMs >= 60 && cutMs < 160, true);
+        check(`aborted already: returns at once (${Math.round(nowMs)} ms)`, now === true && nowMs < 40, true);
+        r = rig({ displays: HOST, glowBounds: HOST[2].bounds });
+        t0 = performance.now();
+        const thr = await r.ex.showPointerTravel(4000, 1200, () => { throw new Error("abort check failed"); });
+        check("an abort check that throws ends the wait, never throws", thr === true && performance.now() - t0 < 40, true);
+      }
+      // A failing cosmetic layer never breaks or delays input.
+      {
+        rig({ displays: HOST, glowBounds: HOST[2].bounds });
+        const boom = () => { throw new Error("boom"); };
+        globalThis.__cdbCuDrawnPointer = { live: () => true, glideTo: boom, jumpTo: boom, press: boom, realPointerGoesTo: boom };
+        diagLines.length = 0;
+        const t0 = performance.now();
+        const { steps, spt } = await script(globalThis.__linuxExecutor);
+        check("throwing drawn pointer: showPointerTravel false, no throw", spt, false);
+        check("throwing drawn pointer: nothing threw out of an action", Object.values(steps).flat().some((x) => x.startsWith("threw")), false);
+        const want = { ...baseline, "drag from start": ["bridge pointer-move --x 20 --y 30", ...baseline["drag from start"]] };
+        check("throwing drawn pointer: every bridge command still sent", J(Object.fromEntries(Object.entries(steps).map(([k, v]) => [k, bridgeOnly(v)]))), J(want));
+        check("throwing drawn pointer: no delay", performance.now() - t0 < 300, true);
+        check("throwing drawn pointer: logged once with [claude-cu]", diagLines.filter((m) => /^\[claude-cu\] drawn pointer: .* failed \(boom\) - input goes on without it$/.test(m)).length, 1);
+        globalThis.__cdbCuDrawnPointer = { live: boom, glideTo: boom };
+        log.length = 0;
+        check("live() throws: showPointerTravel false", await globalThis.__linuxExecutor.showPointerTravel(1, 1, () => false), false);
+        globalThis.__cdbCuDrawnPointer = { live: () => true };
+        check("methods missing: showPointerTravel false", await globalThis.__linuxExecutor.showPointerTravel(1, 1, () => false), false);
+        await globalThis.__linuxExecutor.click(5, 6, "left", 1);
+        check("methods missing: click still sent", bridgeOnly(take()).includes("bridge pointer-click --x 5 --y 6 --button left --count 1"), true);
+        globalThis.__cdbCuDrawnPointer = 42;
+        check("not an object: showPointerTravel false", await globalThis.__linuxExecutor.showPointerTravel(1, 1, () => false), false);
+      }
+      // Every other session row: nothing called at all (the arrow is even forced live).
+      for (const row of [
+        { label: "XWayland / exotic Wayland", session: "wayland", desktop: "sway" },
+        { label: "wlroots Wayland (Hyprland)", session: "wayland", desktop: "Hyprland" },
+        { label: "GNOME Wayland", session: "wayland", desktop: "GNOME" },
+        { label: "KDE kwin mode", session: "x11", desktop: "KDE", kwin: true },
+        { label: "background display", target: { kind: "x11", display: ":99", env: {} } },
+      ]) {
+        rig({ displays: HOST, glowBounds: HOST[2].bounds, ...row });
+        const { steps, spt } = await script(globalThis.__linuxExecutor);
+        const dpCalls = Object.values(steps).flat().filter((x) => !x.startsWith("bridge ") && !x.startsWith("threw "));
+        check(`${row.label}: no drawn-pointer call (live() included)`, dpCalls.length + liveCalls, 0);
+        check(`${row.label}: showPointerTravel false`, spt, false);
+      }
+      globalThis.__cuKwinMode = false;
+      delete globalThis.__cdbCuDrawnPointer;
+      // The KWin executor has no showPointerTravel: upstream's handler skips the glide.
+      const kwinSrc = readFileSync(path.join(repo, "js", "executor_linux.js"), "utf8");
+      check("KWin executor: no showPointerTravel, no drawn-pointer use (8a: no glow in kwin mode)", /showPointerTravel|__cdbCuDrawnPointer/.test(kwinSrc), false);
+    }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

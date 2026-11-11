@@ -9,7 +9,7 @@
 # embeds them via staticRead at compile time; Python reads them at runtime.
 # No codegen — the .js files are the single source of truth.
 #
-# All 62 sub-patches use std/nre (PCRE) because many require backreferences.
+# All 63 sub-patches use std/nre (PCRE) because many require backreferences.
 # "Ask before Computer Use controls an app" (js/cu_consent.js, injected by
 # Patch 1 after the executors): sub-patch 6b makes upstream's grants full level
 # in the regular executor mode, 6c lets upstream's terminal / file-manager
@@ -52,7 +52,10 @@
 # list index) to the Electron display id where it enters upstream's glow, teach
 # overlay and target label, so those follow the monitor Computer Use works on;
 # upstream's resolver and its main-window fallback stay unchanged. 10c keeps the
-# glow off while Computer Use runs on a background display.
+# glow off while Computer Use runs on a background display. 10d exposes
+# upstream's drawn-pointer object (globalThis.__cdbCuDrawnPointer), which the
+# X11 executor feeds as upstream's input mixin does when upstream shows its
+# drawn pointer in the glow.
 # Sub-patch 17c exposes upstream's "user stopped sharing" abort as
 # globalThis.__cdbCuShareEnded, so the executors stop the running turn the
 # moment the user clicks Stop sharing (issue #323; js/cu_share_stop.js,
@@ -537,8 +540,9 @@ proc endStateMarkers(): seq[EndStateMarker] =
       """function [\w$]+\((?:[\w$]+=\{\})?\)\{if\(process\.platform==="linux"\)return (?:[\w$]+\([\w$]*\)|!0);return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?(?:![\w$]+\(\)&&)?(?:[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)|[\w$]+\(\)&&[\w$]+\([\w$]+\)|[\w$]+\(\)\|\|![\w$]+\(\)\?!1:[\w$]+\(\)&&[\w$]+\([\w$]+\))""",
     ),
     rx(
-      "10d drawn cursor off",
-      """function [\w$]+\(\)\{if\(process\.platform==="linux"\)return!1;try\{let ([\w$]+)=[\w$]+\(\);return \1==="default"\?[\w$]+\([\w$]+\):\1==="on"\}catch""",
+      # Our assignment, right before the factory it calls.
+      "10d drawn pointer for the Linux executor",
+      """process\.platform==="linux"&&\(globalThis\.__cdbCuDrawnPointer=Object\.assign\(([\w$]+)\(e=>e\),\{live:([\w$]+)\(!1,\(\)=>!0\)\}\)\);function \1\([\w$]+\)\{return\{glideTo:\2\(0,""",
     ),
     rx(
       "13a allowlist gate",
@@ -712,6 +716,18 @@ proc apply*(input: string): string =
     raise newException(
       ValueError,
       "  [FAIL] CU platform gate (`return SET.has(process.platform)&&!(wayland()&&!portal())`, SET with linux) not found exactly once - re-audit",
+    )
+  # An older build of this patch turned upstream's drawn-pointer decision off
+  # on Linux (`function T(){if(process.platform==="linux")return!1;try{...`).
+  # That output is never accepted as patched: 10d now leaves the decision to
+  # upstream.
+  if countMatches(
+    content,
+    re"""function [\w$]+\(\)\{if\(process\.platform==="linux"\)return!1;try\{let ([\w$]+)=[\w$]+\(\);return \1==="default"\?[\w$]+\([\w$]+\):\1==="on"\}catch""",
+  ) != 0:
+    raise newException(
+      ValueError,
+      "  [FAIL] 10d: input carries the old \"drawn cursor off on Linux\" edit - use a fresh extract",
     )
   let markers = endStateMarkers()
   var present: seq[string] = @[]
@@ -1773,7 +1789,7 @@ proc apply*(input: string): string =
   # The glow setter (Wvo) and teach setter (Oyo) have no other callers.
   # v5.1231.0 added a drawn-cursor redraw after the glow setter's setBounds:
   #   function UUo(e){VUo=e??null,M7&&!M7.isDestroyed()&&(M7.setBounds(HUo().bounds),FQa())}
-  # (FQa repaints the cursor upstream draws in the glow, see 10d). Either
+  # (FQa repaints the pointer upstream draws in the glow, see 10d). Either
   # shape is accepted; the selected id still enters through the same callers.
   block:
     let glowSetterRe =
@@ -1921,57 +1937,84 @@ proc apply*(input: string): string =
         else:
           echo "  [FAIL] 10c glow show: replacement did not apply"
 
-  # ── Patch 10d: no drawn cursor in the glow on Linux ───────────────────
-  # v5.1231.0 can draw its own cursor in the glow window (GrowthBook flag
-  # 1916550538, getChicagoTakeoverCursorEnabled):
-  #   function toi(){try{let e=voi();return e==="default"?X(eoi):e==="on"}catch(e){...[cu-glow] flag unreadable, staying off...}}
-  # and its one caller, the glow show,
+  # ── Patch 10d: upstream's drawn pointer for the Linux executor ─────────
+  # v5.1231.0 can draw its own pointer in the glow window (GrowthBook flag
+  # 1916550538): with the flag on the glow show swaps the pulsing glow for a
+  # thin rim and places an arrow at screen.getCursorScreenPoint()
   #   r=(e?.claudeHasThePointer??!0)&&toi(); ... r?NQa(e,NUo):PQa()
-  # places it at screen.getCursorScreenPoint() and swaps the pulsing glow for
-  # a 2px rim. Only the macOS executor moves it afterwards (createDarwinExecutor
-  # hands drawnPointer:IQa(...) its glideTo/press). The Linux executors move the
-  # real pointer and never feed it, so with the flag on Linux would show a
-  # second, frozen cursor where the pointer was at lock time (on Wayland
-  # getCursorScreenPoint() is only known over Electron's own windows). The
-  # decision is off on Linux; the glow keeps upstream's classic look.
+  # Upstream's executors move that arrow through the object its factory
+  # returns (5.1231.2 names):
+  #   function IQa(e){return{glideTo:L4(0,((t,n)=>{let r=e(n);...})),
+  #     jumpTo:L4(void 0,...),press:L4(void 0,...),realPointerGoesTo:L4(void 0,...)}}
+  # (createDarwinExecutor: drawnPointer:IQa((e=>e)); upstream's own Linux and
+  # win32 executors: drawnPointer:t.Qm(e=>r.screen.screenToDipPoint(e))). L4
+  # makes every method a no-op returning its first argument unless the glow
+  # window shows the arrow. Our Linux executor replaces upstream's, so nothing
+  # fed the arrow. On Linux the factory's result is exposed as
+  # globalThis.__cdbCuDrawnPointer for js/cu_linux_executor.js, which feeds it
+  # on X11 exactly as upstream's input mixin does. The mapper is the identity:
+  # our executor receives Electron DIP points (the handler maps image pixels to
+  # DIP, x11-bridge gets them through _x11Px), the space the glow window bounds
+  # and getCursorScreenPoint() use; upstream's own Linux executor works in
+  # screen pixels, hence its screenToDipPoint. `live` (L4(!1,()=>!0)) answers
+  # whether the arrow is shown right now, with upstream's own test. Wayland
+  # sessions show no glow upstream, kwin mode skips it (8a), a background
+  # display and X11 without a compositing manager turn it off (10c): the
+  # arrow is never live there and the executor does not call it. The flag
+  # decision (toi) stays upstream's.
+  # Anchor: the factory exactly once, its four methods once each through the
+  # same wrapper, the wrapper's shape (default unless the arrow is shown), and
+  # one darwin executor consumer.
   block:
     let pat =
-      re"""(function ([\w$]+)\(\)\{)(try\{let ([\w$]+)=[\w$]+\(\);return \4==="default"\?[\w$]+\(([\w$]+)\):\4==="on"\}catch\(([\w$]+)\)\{return [\w$]+\.warn\(["'`]\[cu-glow\] flag unreadable, staying off)"""
+      re"""(?<![\w$.])function ([\w$]+)\(([\w$]+)\)\{return\{glideTo:([\w$]+)\(0,\(\(([\w$]+),([\w$]+)\)=>\{let [\w$]+=\2\(\5\);"""
     var hits: seq[RegexMatch] = @[]
     for m in content.findIter(pat):
       hits.add m
     if hits.len != 1:
-      echo &"  [FAIL] 10d drawn cursor decision (`function T(){{try{{let e=O();return e===\"default\"?X(F):e===\"on\"}}catch(e){{...[cu-glow] flag unreadable, staying off`): {hits.len} matches, expected 1 - re-audit"
+      echo &"  [FAIL] 10d drawn pointer factory (`function F(e){{return{{glideTo:W(0,((t,n)=>{{let r=e(n);`): {hits.len} matches, expected 1 - re-audit"
     else:
-      let fnName = hits[0].captures[1]
-      let flagVar = hits[0].captures[4]
-      let flagHits = countMatches(
-        content, re("(?<![\\w$.])" & escapeRe(flagVar) & """=["'`]1916550538["'`]""")
-      )
-      let callHits = countMatches(
+      let at = hits[0].matchBounds.a
+      let fnName = hits[0].captures[0]
+      let wrap = hits[0].captures[2]
+      let w = escapeRe(wrap)
+      let body = content[at ..< min(content.len, at + 3000)]
+      var methodsOk = true
+      var missing = ""
+      for meth in ["jumpTo", "press", "realPointerGoesTo"]:
+        let inFn = countMatches(body, re(meth & ":" & w & """\(void 0,"""))
+        let all = countMatches(content, re("[{,]" & meth & ":" & w & """\(void 0,"""))
+        if inFn != 1 or all != 1:
+          methodsOk = false
+          missing.add &" {meth}({inFn} in the factory, {all} in the bundle)"
+      let wrapHits = countMatches(
         content,
         re(
-          """\(([\w$]+)\?\.claudeHasThePointer\?\?!0\)&&""" & escapeRe(fnName) &
-            """\(\)"""
+          "function " & w &
+            """\(([\w$]+),([\w$]+)\)\{return\(\.\.\.([\w$]+)\)=>\{let ([\w$]+)=[\w$]+;try\{return [\w$]+\(\)&&\4\?\2\(\4,\.\.\.\3\):\1\}"""
         ),
       )
-      if flagHits != 1:
-        echo &"  [FAIL] 10d drawn cursor {fnName}: {flagVar} is not flag 1916550538 ({flagHits} definitions) - re-audit"
-      elif callHits != 1:
-        echo &"  [FAIL] 10d drawn cursor {fnName}: not the glow show's claudeHasThePointer decision ({callHits} call sites, expected 1) - re-audit"
+      let darwinHits = countMatches(
+        content,
+        re("drawnPointer:" & escapeRe(fnName) & """\(\(?\(?[\w$]+\)?=>[\w$]+\)?\)"""),
+      )
+      let prev = (if at > 0: content[at - 1] else: ';')
+      if not methodsOk:
+        echo &"  [FAIL] 10d drawn pointer factory {fnName}: methods not found exactly once through {wrap}:{missing} - re-audit"
+      elif wrapHits != 1:
+        echo &"  [FAIL] 10d drawn pointer factory {fnName}: wrapper {wrap} is not `function W(e,t){{return(...n)=>{{let r=N;try{{return G()&&r?t(r,...n):e}}` ({wrapHits} definitions, expected 1) - re-audit"
+      elif darwinHits != 1:
+        echo &"  [FAIL] 10d drawn pointer factory {fnName}: not the darwin executor's drawnPointer ({darwinHits} `drawnPointer:{fnName}(e=>e)` sites, expected 1) - re-audit"
+      elif prev notin {';', '}', '\n'}:
+        echo &"  [FAIL] 10d drawn pointer factory {fnName}: not at a statement boundary (preceded by '{prev}') - re-audit"
       else:
-        let n = replaceFirst(
-          content,
-          pat,
-          proc(m: RegexMatch): string =
-            m.captures[0] & "if(process.platform===\"linux\")return!1;" & m.captures[2],
-        )
-        if n == 1:
-          echo &"  [OK] 10d drawn cursor {fnName} (flag 1916550538): off on Linux, no executor moves it (1 match)"
-          inc changes
-          inc patchesApplied
-        else:
-          echo "  [FAIL] 10d drawn cursor: replacement did not apply"
+        let inject =
+          "process.platform===\"linux\"&&(globalThis.__cdbCuDrawnPointer=Object.assign(" &
+          fnName & "(e=>e),{live:" & wrap & "(!1,()=>!0)}));"
+        content = content[0 ..< at] & inject & content[at .. ^1]
+        echo &"  [OK] 10d drawn pointer factory {fnName} (wrapper {wrap}): exposed to the Linux executor, DIP mapper (1 match)"
+        inc changes
+        inc patchesApplied
 
   # ── Patch 11: force the primary CU enable gate → true on Linux ──────────
   block:
