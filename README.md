@@ -257,7 +257,7 @@ Override Anthropic's server-side feature flags in `~/.config/Claude/claude-deskt
 
 ## Patches
 
-We patch the official `app.asar` at repackage time: [`patches/community/`](docs/patches.md#community-features) (24 patches, opt-in features), [`patches/core/`](docs/patches.md#core-infrastructure) (9, infrastructure) and [`patches/linux/`](docs/patches.md#linux-compatibility) (39, Linux fixes). A patch that stops matching fails the build, and a patch is removed once upstream ships the behavior. Catalog: [docs/patches.md](docs/patches.md).
+We patch the official `app.asar` at repackage time: [`patches/community/`](docs/patches.md#community-features) (24 patches, opt-in features), [`patches/core/`](docs/patches.md#core-infrastructure) (10, infrastructure) and [`patches/linux/`](docs/patches.md#linux-compatibility) (39, Linux fixes). A patch that stops matching fails the build, and a patch is removed once upstream ships the behavior. Catalog: [docs/patches.md](docs/patches.md).
 
 ## Command-line flags
 

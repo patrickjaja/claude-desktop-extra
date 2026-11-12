@@ -26,6 +26,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 - **Code sessions and local Cowork on X11, sway, Hyprland, niri and GNOME Wayland:** two monitors with the same name (both "Unknown Display" in a VM, two identical monitors) are told apart as "Unknown Display" and "Unknown Display (2)", as Anthropic's own code names them; the second one was unreachable by name with `switch_display`. With two or more monitors each screenshot now names the monitor it shows and the others, the note the `switch_display` description tells Claude to read. Monitors with unique names read as before.
 
+### Profiles: a named profile no longer overwrites the default profile's OS entry points state
+
+- **Multiple profiles:** each profile keeps its own `os-entry-points.json` (whether the OS entry points are on, and the account and organization the GNOME search provider shows). Upstream wrote it to `~/.config/Claude` from every profile, so a named profile replaced the default profile's account and organization, or switched its search results off. The default profile and 3P mode write where they did. See [Profiles](docs/profiles.md).
+
 ## 2026-11-11
 
 ### Transparent window: no empty strip in the header

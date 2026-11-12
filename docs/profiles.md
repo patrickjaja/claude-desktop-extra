@@ -37,8 +37,11 @@ Three equivalent ways to select a profile at launch: `claude-desktop --profile=N
 | systemd user scope (cgroup, portal identity) | `app-com.anthropic.Claude-PID.scope` | `app-com.anthropic.Claude-work-PID.scope` |
 | WM_CLASS / Wayland app_id (taskbar grouping, Alt-Tab) | `com.anthropic.Claude` | `com.anthropic.Claude-work` when `com.anthropic.Claude-work.desktop` exists (written by `--create-profile`, or on the AppImage by its desktop integration when the profile starts with `--profile=NAME`), else `com.anthropic.Claude` |
 | XDG autostart entry ("Start at login") | `~/.config/autostart/claude.desktop` | `…/claude-work.desktop` |
+| `os-entry-points.json` (OS entry points on/off, the account and organization they show) | `~/.config/Claude` | `~/.config/Claude-work` |
 
 Plugins, MCP servers, login state, and chat history from one profile are **not** visible in another - profiles are independent installs, not shared views.
+
+The desktop's own entry points stay single: the GNOME search provider reads only `~/.config/Claude`, so it shows the default profile's Claude Code sessions; the "Open in Claude Code" / "Send to Claude" file manager scripts (`~/.local/share/nautilus/scripts`, the KIO service menus) and the user copy of `com.anthropic.Claude.desktop` are one set per user, written by whichever profile last rebuilt them.
 
 ### Removing a profile
 
