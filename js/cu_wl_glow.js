@@ -95,11 +95,24 @@
 // uses scope "all" instead, since "cursor" leaves the badge in the picture
 // (it is centred then and could cover what Claude looks at); in that window
 // the rim blanks for the capture too.
+// A capture requested while the overlay is not on screen yet but may appear
+// (the child is spawning, ready but not yet shown, or the show has not been
+// requested yet) gets a hold, an already-resolved token: the capture waits for
+// nothing, and sendShow defers the show until captureRestore, so the overlay
+// is never in that image; the restore (or a 30 s timer, or a lock edge) then
+// sends it. With no overlay to expect (glow off, a row without overlay,
+// failed, lock not held) both return null and nothing changes.
+// Show held back by a capture: while any captureCursor token is outstanding
+// (hide or hold), sendShow only records that a show is wanted; the token's
+// captureRestore (or the 30 s timer, or a lock edge dropping every hold) then
+// sends it with the badge flag still pending. A capture between a sent show
+// and its `shown` answer sends its hide at once (the overlay handles stdin in
+// order, so the hide lands after the show).
 // kwin mode never calls them: kwin-portal-bridge sets KWin's excludeFromCapture
 // on the overlay's surfaces, so none of it is ever in a screenshot.
 var _cp=require("child_process"),_el=require("electron");
 var PROTOCOL=1,BADGE_MS=6500,READY_MS=3000,TERM_MS=1000,KILL_MS=1000,ERR_TAIL=300;
-var st={trace:!1,held:!1,want:null,dfn:null,child:null,ready:!1,outputs:[],shown:!1,out:null,geo:null,respawns:0,off:!1,reshown:0,arrow:null,glide:null,arriveAt:0,real:null,readySaid:!1,noMatchSaid:!1,capId:0,scopeCursor:!1,badgeOk:!1,badgePending:!1,badgeAt:0,acks:{}};
+var st={trace:!1,held:!1,want:null,dfn:null,child:null,ready:!1,outputs:[],shown:!1,out:null,geo:null,respawns:0,off:!1,reshown:0,arrow:null,glide:null,arriveAt:0,real:null,readySaid:!1,noMatchSaid:!1,capId:0,scopeCursor:!1,badgeOk:!1,badgePending:!1,badgeAt:0,acks:{},gen:0,holds:0,deferred:!1,sent:!1};
 function traceOn(){try{return process.env.CDB_CU_DEBUG==="1"}catch(e){return !1}}
 function diag(m){try{(globalThis.__cdbDiag||function(){})("[claude-cu] wl-glow: "+m)}catch(e){}}
 function now(){return typeof performance!=="undefined"&&performance.now?performance.now():Date.now()}
@@ -170,7 +183,7 @@ function spawnChild(r){
     // closed and masked screenshots go dark under the overlay.
     c=_cp.spawn(r.bin,["overlay"],{stdio:["pipe","pipe","pipe"],env:env});
   }catch(e){fail(r.name,"could not start ("+msg(e)+")");return}
-  st.child=c;st.ready=!1;st.shown=!1;st.out=null;st.geo=null;st.badgeOk=!1;st.badgeAt=0;endGlide();
+  st.child=c;st.ready=!1;st.shown=!1;st.sent=!1;st.out=null;st.geo=null;st.badgeOk=!1;st.badgeAt=0;endGlide();
   c.__name=r.name;c.__buf="";c.__err="";
   try{if(c.stdin&&typeof c.stdin.on==="function")c.stdin.on("error",function(){})}catch(e){}
   try{
@@ -211,7 +224,7 @@ function onLine(c,line){
   }else if(m.event==="hidden"){
     // The compositor took the surfaces away (an unplugged output): show it
     // once more, on whatever output the display maps to now.
-    var was=st.shown;st.shown=!1;st.badgeAt=0;endGlide();
+    var was=st.shown;st.shown=!1;st.sent=!1;st.badgeAt=0;endGlide();
     if(was&&st.want&&st.held&&!st.off&&st.reshown<1){st.reshown++;st.out=null;sendShow()}
   }else if(m.event==="ack"){
     var f=c===st.child&&st.acks[m.id];if(typeof f==="function")f();
@@ -223,7 +236,7 @@ function gone(c,code,sig,err){
   if(c.__done)return;
   c.__done=!0;clearTimeout(c.__rt);clearTimeout(c.__t1);clearTimeout(c.__t2);
   if(c!==st.child)return;
-  st.child=null;st.ready=!1;st.shown=!1;st.out=null;st.badgeOk=!1;st.badgeAt=0;endGlide();
+  st.child=null;st.ready=!1;st.shown=!1;st.sent=!1;st.out=null;st.badgeOk=!1;st.badgeAt=0;endGlide();
   if(!st.held||!st.want||st.off)return;
   var why=c.__fatal||c.__why||err||(code!=null?"exit "+code:"signal "+sig);
   var tail=String(c.__err||"").trim().split("\n").pop();
@@ -239,6 +252,10 @@ function fail(name,why){
 }
 function sendShow(){
   var w=st.want;if(!w||!st.child||!st.ready)return;
+  // A screenshot is in flight (captureCursor handed out a hold that its
+  // captureRestore has not released): the overlay does not appear until it is
+  // done, so it can never be in that image. captureRestore sends the show.
+  if(st.holds>0){st.deferred=!0;return}
   var d=display(),o=outputFor(d&&d.bounds);
   if(!o){
     if(!st.noMatchSaid){st.noMatchSaid=!0;diag("no compositor output matches Claude's display"+(d?" "+JSON.stringify(d.bounds):"")+" (outputs: "+st.outputs.map(function(x){return x.name+" "+x.x+","+x.y+" "+x.width+"x"+x.height}).join(", ")+") - no glow")}
@@ -256,12 +273,13 @@ function sendShow(){
     bd=w.badge&&!w.rm&&st.badgePending;
     st.badgePending=!1;st.badgeAt=bd?now():0;
   }
+  st.sent=!0;
   send({cmd:"show",output:o.name,look:w.look,badge:bd,reducedMotion:w.rm,arrow:st.arrow});
 }
 // Hide + stdin EOF; SIGTERM after TERM_MS, SIGKILL KILL_MS later.
 function stop(){
   var c=st.child;
-  st.child=null;st.ready=!1;st.shown=!1;st.out=null;st.geo=null;st.arrow=null;st.badgeOk=!1;st.badgeAt=0;endGlide();
+  st.child=null;st.ready=!1;st.shown=!1;st.sent=!1;st.out=null;st.geo=null;st.arrow=null;st.badgeOk=!1;st.badgeAt=0;endGlide();
   if(!c)return;
   c.__ours=!0;
   write(c,{cmd:"hide"});
@@ -285,6 +303,31 @@ function followDisplay(){
   st.out=o.name;endGlide();
   if(st.arrow&&!inside(st.geo,st.arrow))st.arrow=null;
   send({cmd:"move",output:o.name});
+}
+// Screenshot holds: while one is out, sendShow defers. A hold is released by
+// its captureRestore, or by a 30 s timer (the executor always restores; the
+// timer only keeps a lost restore from muting the glow for the lock). A lock
+// edge drops every hold (generation), so a late restore never touches a
+// newer lock's count.
+function takeHold(){
+  var h={gen:st.gen,done:!1,t:null};
+  st.holds++;
+  h.t=setTimeout(function(){releaseHold(h)},30000);
+  if(h.t&&h.t.unref)h.t.unref();
+  return h;
+}
+function releaseHold(h){
+  if(!h||h.done)return;
+  h.done=!0;clearTimeout(h.t);
+  if(h.gen!==st.gen)return;
+  if(st.holds>0)st.holds--;
+  if(st.holds===0&&st.deferred){st.deferred=!1;if(st.held&&!st.off)sendShow()}
+}
+// An overlay may appear while the lock is held: an overlay row (doctor not
+// known counts) with the glow switch on and the module not failed.
+function mayAppear(){
+  if(!st.held||st.off||glowOff())return !1;
+  var r=row();return !!r&&r.overlay!==!1;
 }
 function live(){return !!(st.child&&st.ready&&st.shown&&st.want&&st.want.look==="rim"&&!st.off)}
 function remaining(){return Math.max(0,st.arriveAt-now())}
@@ -363,6 +406,7 @@ globalThis.__cdbCuWlGlow={
   // event reaches its glow handler).
   lock:function(held){
     if(held)st.trace=traceOn();
+    st.gen++;st.holds=0;st.deferred=!1;
     st.held=!!held;st.badgePending=!1;st.respawns=0;st.off=!1;st.reshown=0;st.noMatchSaid=!1;st.want=null;
     stop();
     if(held&&row())probe();
@@ -383,10 +427,22 @@ globalThis.__cdbCuWlGlow={
   // included) whatever the look, since "cursor" would leave the pill in the
   // picture; after its 6 s it is the cursor hide again.
   captureCursor:function(boundMs){
-    if(!st.child||!st.ready||!st.shown||st.off||!st.want)return null;
-    var all=st.badgeAt>0&&now()-st.badgeAt<BADGE_MS;
-    if(!all&&(st.want.look!=="rim"||!st.arrow||!st.scopeCursor))return null;
-    var c=st.child,id=++st.capId,t0=now();
+    if(st.off||!st.held)return null;
+    // A show on its way (sent, not yet answered `shown`) counts: the overlay
+    // processes the hide after it, in order.
+    var up=!!(st.child&&st.ready&&(st.shown||st.sent)&&st.want);
+    var all=up&&st.badgeAt>0&&now()-st.badgeAt<BADGE_MS;
+    if(!up||(!all&&(st.want.look!=="rim"||!st.arrow||!st.scopeCursor))){
+      // Nothing to hide now. When an overlay can still appear during this
+      // capture (the child is spawning, ready but not yet shown, or the show
+      // has not been requested yet), hold the show back until the restore:
+      // an already-resolved token, so the capture waits for nothing.
+      if(!mayAppear())return null;
+      var h0=takeHold();
+      if(st.trace)trace("capture hold (overlay not up yet: show deferred until the restore)");
+      return Promise.resolve({id:0,child:null,hold:h0});
+    }
+    var c=st.child,id=++st.capId,t0=now(),hd=takeHold();
     write(c,{cmd:"capture",phase:"hide",id:id,scope:all?"all":"cursor"});
     return new Promise(function(res){
       var done=!1,tm=setTimeout(function(){fin("none within "+boundMs+" ms")},boundMs);
@@ -394,7 +450,7 @@ globalThis.__cdbCuWlGlow={
       function fin(why){
         if(done)return;done=!0;clearTimeout(tm);delete st.acks[id];
         if(st.trace)trace("capture hide id="+id+" "+why+" after "+(now()-t0).toFixed(1)+" ms");
-        res({id:id,child:c});
+        res({id:id,child:c,hold:hd});
       }
     });
   },
@@ -402,7 +458,9 @@ globalThis.__cdbCuWlGlow={
   // (a re-spawned one never hid anything; the overlay itself also restores
   // after 3 s).
   captureRestore:function(tok){
-    if(!tok||!tok.child||tok.child!==st.child||!alive(tok.child))return;
+    if(!tok)return;
+    releaseHold(tok.hold);
+    if(!tok.child||tok.child!==st.child||!alive(tok.child))return;
     write(tok.child,{cmd:"capture",phase:"restore",id:++st.capId});
   },
   state:function(){return{held:st.held,running:!!st.child,ready:st.ready,shown:st.shown,look:st.want?st.want.look:null,output:st.out,off:st.off}}

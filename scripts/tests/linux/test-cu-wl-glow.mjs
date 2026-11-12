@@ -135,7 +135,7 @@ process.stdin.on("data", (d) => {
     let m; try { m = JSON.parse(line); } catch { continue; }
     log({ pid: process.pid, cmd: m, t: Date.now() });
     if (m.cmd === "capture" && process.env.FAKE_OVL_NOACK !== "1") out({ event: "ack", id: m.id });
-    if (m.cmd === "show" || m.cmd === "move") out({ event: "shown", output: m.output, scale: 1 });
+    if (m.cmd === "show" || m.cmd === "move") { const ev = { event: "shown", output: m.output, scale: 1 }; if (process.env.FAKE_OVL_SHOWN_DELAY) setTimeout(() => out(ev), +process.env.FAKE_OVL_SHOWN_DELAY); else out(ev); }
     if (m.cmd === "hide") out({ event: "hidden" });
     if (m.cmd === "glide" && mode === "die-on-glide") { log({ pid: process.pid, died: true }); process.exit(1); }
   }
@@ -177,7 +177,7 @@ const DOCTOR_WL = (overlay) => ({ contract: 1, bridge: "wlroots-bridge", version
 const DOCTOR_X11 = { contract: 1, bridge: "x11-bridge", version: "0.1.0", backend: "x11", session_match: true, backend_reachable: true, capabilities: { screenshot_mask: true, compositing: true } };
 const asyncLog = [];
 const zoomLog = [];
-function load({ session = "wayland", desktop = "sway", wlroots = true, overlay = true, kwin = false, target = null, glow = true, displays = TWO, doctorDelay = 0, screens = null, zoom = null } = {}) {
+function load({ session = "wayland", desktop = "sway", wlroots = true, overlay = true, kwin = false, target = null, glow = true, displays = TWO, doctorDelay = 0, screens = null, zoom = null, zoomDelay = 0 } = {}) {
   zoomLog.length = 0;
   asyncLog.length = 0;
   let screensCalls = 0;
@@ -200,7 +200,7 @@ function load({ session = "wayland", desktop = "sway", wlroots = true, overlay =
         zoomLog.push({ t: Date.now(), p: performance.now() });
         const z = zoom(args);
         if (z === "hang") { let dead = false; return { on() {}, kill() { if (dead) return; dead = true; const e = new Error("Command failed: zoom"); e.killed = true; e.signal = "SIGTERM"; setTimeout(() => c(e, "", ""), 0); } }; }
-        setTimeout(() => (z instanceof Error ? c(z, "", String(z.message)) : c(null, z, "")), 0);
+        setTimeout(() => (z instanceof Error ? c(z, "", String(z.message)) : c(null, z, "")), zoomDelay);
         return { on() {}, kill() {} };
       }
       setTimeout(() => c && c(new Error("not found"), "", ""), 0); return { on() {} };
@@ -773,6 +773,103 @@ try {
     check("glow switch off: no child, no capture command, the capture runs", spawnCalls.length === 0 && capCmds().length === 0 && z.err === null && zoomLog.length === 1, true);
     r.release();
     delete process.env.CDB_CU_DEBUG;
+  }
+
+  // ── Capture before the overlay is up: the show waits for the restore ──
+  console.log("\n[2e2] capture requested while a show is pending: the overlay never appears during it");
+  {
+    const scr = (o, i) => ({ id: i, name: o.name, geometry: { x: o.x, y: o.y, width: o.width, height: o.height }, scale: o.scale, refresh_millihz: 60000, is_active: true, is_primary: i === 0 });
+    const ZOK = () => J({ base64: "AA==", width: 10, height: 10 });
+    const capCmds = () => readLog().filter((x) => x.cmd && x.cmd.cmd === "capture");
+    const showsAt = () => readLog().filter((x) => x.cmd && x.cmd.cmd === "show").map((x) => x.t);
+    const zoomAt = async (r) => { let err = null; const t0 = performance.now(); try { await r.ex.zoom({ x: 2000, y: 100, w: 50, h: 50 }, undefined, null, 1, { globalCoords: true }); } catch (e) { err = e; } return { err, ms: performance.now() - t0, end: Date.now() }; };
+    const base = { flag: true, screens: () => OUTPUTS.map(scr), zoom: ZOK, zoomDelay: 700 };
+    // 1. The capture before the child has answered ready (slow fake: 250 ms).
+    process.env.FAKE_OVL_MODE = "delay"; process.env.FAKE_OVL_DELAY = "250";
+    let r = await rig(base);
+    r.acquire();
+    let z = await zoomAt(r);
+    check("capture before ready: no show reached the overlay during the capture", showsAt().filter((t) => t <= z.end).length, 0);
+    check("capture before ready: the capture was not delayed (zoomDelay 700 only)", z.ms < 900, true);
+    check("capture before ready: the show follows the restore", await waitFor(() => showsAt().length === 1) && await shown(r.glow), true);
+    check("capture before ready: the badge flag survived the deferral", readLog().filter((x) => x.cmd && x.cmd.cmd === "show")[0].cmd.badge, true);
+    r.release(); await waitFor(() => readLog().some((x) => x.eof));
+    // 2. The show is sent, the overlay has not answered `shown` yet: the hide goes out after it.
+    process.env.FAKE_OVL_MODE = "normal"; delete process.env.FAKE_OVL_DELAY; process.env.FAKE_OVL_SHOWN_DELAY = "400"; process.env.FAKE_OVL_BADGE = "true";
+    r = await rig({ flag: true, screens: () => OUTPUTS.map(scr) });
+    r.acquire();
+    await waitFor(() => showsAt().length === 1);
+    check("show sent, not yet shown", !r.glow.state().shown, true);
+    const tk = await r.glow.captureCursor(50);
+    await sleep(20);
+    check("capture between show and shown: a hide (scope all, the badge is up) goes out after the show", J(capCmds().map((x) => [x.cmd.phase, x.cmd.scope || null])), J([["hide", "all"]]));
+    r.glow.captureRestore(tk);
+    check("... and the restore follows", await waitFor(() => capCmds().length === 2), true);
+    delete process.env.FAKE_OVL_SHOWN_DELAY; delete process.env.FAKE_OVL_BADGE;
+    r.release(); await waitFor(() => readLog().some((x) => x.eof));
+    // 3. Direct API: a hold is an already-resolved token (zero wait), the restore sends the show.
+    r = await rig({ flag: true, screens: () => OUTPUTS.map(scr) });
+    r.acquire();
+    let t0 = performance.now();
+    const tok = await r.glow.captureCursor(50);
+    check("hold token returned without waiting", !!tok && performance.now() - t0 < 20, true);
+    await waitFor(() => r.glow.state().ready); await sleep(60);
+    check("held: ready, nothing shown", r.glow.state().ready && !r.glow.state().shown && showsAt().length === 0, true);
+    r.glow.captureRestore(tok);
+    check("restore: the show goes out", await shown(r.glow) && showsAt().length === 1, true);
+    r.glow.captureRestore(tok);
+    await sleep(40);
+    check("a second restore of the same token is a no-op", showsAt().length, 1);
+    r.release(); await waitFor(() => readLog().some((x) => x.eof));
+    // 4. Hold, then lock release: the late restore does nothing, the next lock is not held back.
+    r = await rig({ flag: true, screens: () => OUTPUTS.map(scr) });
+    r.acquire();
+    const old = await r.glow.captureCursor(50);
+    r.release(); await sleep(30);
+    resetLog();
+    r.acquire();
+    await shown(r.glow);
+    r.glow.captureRestore(old);
+    check("next lock shows although the old token never restored first", showsAt().length === 1, true);
+    r.release(); await waitFor(() => readLog().some((x) => x.eof));
+    // 5. Lock released while the show is deferred: no show is ever sent.
+    r = await rig(base);
+    r.acquire();
+    const zp = zoomAt(r);
+    await waitFor(() => zoomLog.length === 1);
+    await waitFor(() => r.glow.state().ready);
+    r.release();
+    await zp.catch(() => {});
+    await sleep(80);
+    check("release while a show is deferred: nothing shown", showsAt().length, 0);
+    // 6. No overlay expected: zero added delay, no token, nothing deferred.
+    r = await rig({ flag: true, glow: false, screens: () => OUTPUTS.map(scr), zoom: ZOK });
+    r.acquire(); await sleep(30);
+    t0 = performance.now();
+    check("glow switch off: captureCursor null", r.glow.captureCursor(50), null);
+    check("glow switch off: no wait", performance.now() - t0 < 10, true);
+    r.release();
+    r = await rig({ flag: true, overlay: false, screens: () => OUTPUTS.map(scr), zoom: ZOK });
+    r.acquire(); await sleep(60);
+    check("row without overlay: captureCursor null", r.glow.captureCursor(50), null);
+    r.release();
+    r = await rig({ flag: true, screens: () => OUTPUTS.map(scr), zoom: ZOK });
+    check("lock not held: captureCursor null", r.glow.captureCursor(50), null);
+    process.env.FAKE_OVL_MODE = "fatal";
+    r = await rig({ flag: true, screens: () => OUTPUTS.map(scr) });
+    r.acquire(); await waitFor(() => r.glow.state().off);
+    check("overlay failed: captureCursor null", r.glow.captureCursor(50), null);
+    r.release();
+    process.env.FAKE_OVL_MODE = "normal";
+    // 7. Respawn mid-capture: the new child's show waits for the restore as well.
+    process.env.FAKE_OVL_MODE = "die-on-glide";
+    r = await rig({ flag: true, screens: () => OUTPUTS.map(scr) });
+    r.acquire(); await shown(r.glow);
+    const c1 = await r.glow.captureCursor(50);
+    check("shown overlay, glow look, nothing to hide: still a hold (a re-show during the capture is deferred)", !!c1, true);
+    r.glow.captureRestore(c1);
+    r.release(); await waitFor(() => readLog().some((x) => x.eof));
+    process.env.FAKE_OVL_MODE = "normal";
   }
 
   // ── The badge: once per run, never repeated or cut short on our paths ───

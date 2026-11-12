@@ -10,6 +10,7 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - **The "Claude is using your computer" badge** is drawn on the sway, Hyprland, niri and KDE Wayland overlay like on Anthropic's glow: it flashes in the centre of the screen and slides to the top-right corner over 6 seconds each time Claude takes Computer Use (not with reduced motion), when the bridge build draws it. A screenshot taken while it is up is captured with the whole overlay hidden, so the badge is never in what Claude receives.
 - **Show the glow while Claude uses the computer** now also turns the glow off on KDE Plasma Wayland with that bridge. See [Computer Use](docs/computer-use.md).
 - **Screenshots from a `COWORK_SCREENSHOT_CMD`, from spectacle (KDE) or from Electron's screen capture no longer contain the drawn arrow or its press ring** (they are hidden for the capture like for the bundled bridges). On X11 the monitor list the captures use is refreshed when a monitor is plugged in, removed or changed, instead of staying stale for the session.
+- **The first screenshot of a Computer Use lock no longer shows the glow or the badge on the sway, Hyprland and niri overlay.** A screenshot taken before the overlay had come up now holds its appearance back until the capture is done (no added wait), and a screenshot taken between the overlay's show and its answer hides it as usual.
 
 ## 2026-11-11
 
