@@ -3814,6 +3814,48 @@ async function _x11DockWait(what){var p=_x11DockWaiter;_x11DockWaiter=null;if(p)
 // ── X11 dock: input shape and first capture (end)
 // The latest __setLockHeld run (see __lockSettled).
 var _lockHookTail=Promise.resolve();
+// Text with a character beyond the BMP (a surrogate pair in JS).
+function _nonBmp(t){return typeof t==="string"&&/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(t)}
+// The wlroots bridge types through its own virtual keyboard (the only row known
+// to cut such characters in Chromium); a background x11 target is not it.
+function _wlrootsNative(){return _useWlBridge()&&_wlBridge().name==="wlroots-bridge"&&!(_tgt&&_tgt.kind==="x11")}
+// Terminals take the characters intact from the bridge's typing, and Ctrl+V is
+// no paste there: the clipboard route is only for a window known to be a
+// non-terminal app. An unknown front app keeps typing key by key.
+var WL_TERMINAL_RX=/^(foot|footclient|kitty|alacritty|st|st-256color|xterm|urxvt|rxvt.*|konsole|yakuake|wezterm|ghostty|terminal|gnome-terminal.*|console|kgx|ptyxis|xfce4-terminal|terminator|tilix|lxterminal|qterminal|sakura|termite|contour|blackbox|cool-retro-term)$/i;
+// The id is the canonical desktop id (foot, org.codeberg.dnkl.foot,
+// org.gnome.Terminal, org.kde.konsole): test the whole id and its last segment.
+function _wlTerminalId(id){var b=String(id).replace(/\.desktop$/i,"");return WL_TERMINAL_RX.test(b)||WL_TERMINAL_RX.test(b.slice(b.lastIndexOf(".")+1))}
+async function _wlPasteTarget(){
+  var f;try{f=await _ex.getFrontmostApp()}catch(e){return!1}
+  var id=f&&f.bundleId;
+  return typeof id==="string"&&id!==""&&id!==CU_SCREEN_APP&&id.indexOf(CU_DIALOG_SUFFIX)<0&&!_wlTerminalId(id);
+}
+// Type the BMP runs through the bridge, paste the runs beyond the BMP. The
+// clipboard (the target's own one in target mode) is saved once, restored in
+// finally, after a short wait: a Wayland client asks for the selection's data
+// after Ctrl+V, and replacing the selection first would lose the paste.
+async function _typeWlMixed(text){
+  var saved,have=!1;
+  try{saved=_tgt?await _tgtClipRead():await _electron.clipboard.readText("clipboard");have=typeof saved==="string"}catch(e){}
+  var parts=text.split(/((?:[\uD800-\uDBFF][\uDC00-\uDFFF])+)/).filter(function(p){return p!==""});
+  var pasted=!1;
+  try{
+    for(var i=0;i<parts.length;i++){
+      var p=parts[i];
+      if(_nonBmp(p)){
+        if(_tgt)await _tgtClipWrite(p);else await _electron.clipboard.writeText(p,"clipboard");
+        pasted=!0;
+        _wlBridgeCall(["key-sequence","--keys","ctrl+v"]);
+        await new Promise(function(r){setTimeout(r,150)});
+      }else{
+        await _escAround(_escText(p),function(){_wlBridgeCall(["type","--text",p])},p.length*12);
+      }
+    }
+  }finally{
+    if(pasted&&have){try{if(_tgt)await _tgtClipWrite(saved);else await _electron.clipboard.writeText(saved,"clipboard")}catch(e){}}
+  }
+}
 var _ex=globalThis.__linuxExecutor={
   // Read by upstream's dispatch on every call (platform, hostBundleId,
   // screenshotFiltering, hitTest): request_access's result and the session
@@ -4720,6 +4762,14 @@ var _ex=globalThis.__linuxExecutor={
       await _tgtClipWrite(text);
       if(_useWlBridge())_wlBridgeCall(["key-sequence","--keys","ctrl+v"]);else _x11Bridge(["key-sequence","--keys","ctrl+v"]);
       return;
+    }
+    if(!(opts&&opts.viaClipboard)&&_wlrootsNative()&&_nonBmp(text)&&await _wlPasteTarget()){
+      // wlroots, text outside the Basic Multilingual Plane (emoji, U+1D11E):
+      // Chromium/Electron on native Wayland keeps a key's character in 16 bits,
+      // so typing it key by key arrives cut (U+1F600 as U+F600). Those runs go
+      // through the clipboard; the rest of the text is typed as always.
+      _logFirstUse("type","wlroots-bridge (clipboard for characters beyond the BMP)");
+      return _typeWlMixed(text);
     }
     if(_useWlBridge()){
       _logFirstUse("type",_wlBridge().name+(opts&&opts.viaClipboard?" (clipboard)":""));

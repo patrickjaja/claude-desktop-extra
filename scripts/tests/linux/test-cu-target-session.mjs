@@ -103,6 +103,7 @@ function makeRig(host, files = {}, opts = {}) {
     if (/^(xclip|xsel|wl-paste)$/.test(b)) { if (state.clipErr) { const e = new Error("Command failed: " + b); e.code = 1; e.stderr = state.clipErr; throw e; } if (state.clipLag > 0) { state.clipLag--; return "old"; } return state.clipVal !== undefined ? state.clipVal : "clip:" + b; }
     // A target that went away: every bridge call fails the way a dead X server / compositor does.
     if (state.dead && /-bridge$/.test(b)) { const e = new Error("Command failed: " + b + " " + args.join(" ") + "\nError: cannot connect to the display"); e.code = 1; throw e; }
+    if (state.failSub && sub === state.failSub && /-bridge$/.test(b)) { const e = new Error("Command failed: " + b + " " + sub); e.code = 1; throw e; }
     if (sub === "cursor-position") return JSON.stringify({ x: 11, y: 22 });
     if (sub === "screens") { const s = state.screens(b); if (s instanceof Error) throw s; return JSON.stringify(s); }
     if (sub === "zoom") { if (state.zoomFail) { const e = new Error("Command failed: zoom\nError: capture failed"); e.code = 1; throw e; } return JSON.stringify({ base64: "AA:" + b, width: 100, height: 50 }); }
@@ -1386,6 +1387,54 @@ for (const target of [{ kind: "x11", display: ":99", screens: [{ name: "SCREEN",
   check(f && f.imgW === target.want[0] && f.imgH === target.want[1] && f.dispW === target.screens[0].geometry.width, "the target monitor's frame (" + target.want.join("x") + ")", JSON.stringify(f));
   check(r.screenCalls.length === 0, "the user's screen is not read", JSON.stringify(r.screenCalls));
   r.state.throwScreen = false;
+}
+
+// ------------------------------------- type: characters beyond the BMP
+// Chromium on native Wayland keeps a key's character in 16 bits, so the
+// wlroots bridge's virtual keyboard cannot deliver an emoji to it. On the
+// wlroots row such a run is pasted (non-terminal front window only), the
+// rest typed; every other row and BMP-only text keep the plain typing call.
+{
+  const win = (app_id) => ({ id: "w1", title: "t", resource_class: app_id, desktop_file_name: null, geometry: { x: 0, y: 0, width: 800, height: 600 }, pid: 77, is_active: true, is_visible: true, is_minimized: false, stacking_order: 1 });
+  const tspawns = (r) => r.spawns.filter((x) => /-bridge$|^ydotool$/.test(x.bin) && /^(type|key-sequence)\b|^key /.test(x.args)).map((x) => x.bin + " " + x.args);
+  const EMOJI = "\u{1F600}";
+  const mk = (host, front, files, o = {}) => makeRig(host, files || {}, { windows: () => front ? [win(front)] : [], ...o });
+
+  console.log("\n[type beyond the BMP: wlroots, BMP-only text is unchanged]");
+  {
+    const r = mk("wlroots", "org.chromium.Chromium"); r.reset();
+    const t = await settle(r.ex.type("héllo €", { viaClipboard: false }));
+    check(!t.e && JSON.stringify(tspawns(r)) === JSON.stringify(["wlroots-bridge type --text héllo €"]) && r.clip.length === 0, "one bridge type call, clipboard untouched", JSON.stringify({ e: t.e && t.e.message, s: tspawns(r), c: r.clip }));
+  }
+  console.log("\n[type beyond the BMP: wlroots, emoji in a non-terminal window]");
+  {
+    const r = mk("wlroots", "org.chromium.Chromium"); r.reset();
+    const t = await settle(r.ex.type("a" + EMOJI + "b", { viaClipboard: false }));
+    check(!t.e && JSON.stringify(tspawns(r)) === JSON.stringify(["wlroots-bridge type --text a", "wlroots-bridge key-sequence --keys ctrl+v", "wlroots-bridge type --text b"]), "BMP runs typed, the emoji run pasted between them", JSON.stringify({ e: t.e && t.e.message, s: tspawns(r) }));
+    check(JSON.stringify(r.clip) === JSON.stringify(["read", "write:" + EMOJI, "write:host"]), "clipboard saved, written with the emoji, restored", JSON.stringify(r.clip));
+    r.reset();
+    const u = await settle(r.ex.type(EMOJI + "\u{1D11E}", { viaClipboard: false }));
+    check(!u.e && JSON.stringify(tspawns(r)) === JSON.stringify(["wlroots-bridge key-sequence --keys ctrl+v"]) && r.clip.join() === ["read", "write:" + EMOJI + "\u{1D11E}", "write:host"].join(), "only non-BMP text: one paste of the whole run, no type call", JSON.stringify({ s: tspawns(r), c: r.clip }));
+  }
+  console.log("\n[type beyond the BMP: an error in the middle restores the clipboard]");
+  {
+    const r = mk("wlroots", "org.chromium.Chromium"); r.reset();
+    r.state.failSub = "key-sequence";
+    const t = await settle(r.ex.type("a" + EMOJI, { viaClipboard: false }));
+    check(t.e && JSON.stringify(r.clip) === JSON.stringify(["read", "write:" + EMOJI, "write:host"]), "the paste fails: the error reaches the caller, the clipboard is restored", JSON.stringify({ e: t.e && t.e.message, c: r.clip }));
+  }
+  console.log("\n[type beyond the BMP: wlroots, terminal or unknown front window keeps typing]");
+  for (const [label, front] of [["foot", "foot"], ["kitty", "kitty"], ["org.gnome.Terminal", "org.gnome.Terminal"], ["org.codeberg.dnkl.foot", "org.codeberg.dnkl.foot"], ["no window", null]]) {
+    const r = mk("wlroots", front); r.reset();
+    const t = await settle(r.ex.type("a" + EMOJI, { viaClipboard: false }));
+    check(!t.e && JSON.stringify(tspawns(r)) === JSON.stringify(["wlroots-bridge type --text a" + EMOJI]) && r.clip.length === 0, label + ": one type call, clipboard untouched", JSON.stringify({ e: t.e && t.e.message, s: tspawns(r), c: r.clip }));
+  }
+  console.log("\n[type beyond the BMP: other rows are unchanged]");
+  for (const [host, bin] of [["x11", "x11-bridge"], ["gnome", "gnome-portal-bridge"]]) {
+    const r = mk(host, "org.chromium.Chromium"); r.reset();
+    const t = await settle(r.ex.type("a" + EMOJI, { viaClipboard: false }));
+    check(!t.e && JSON.stringify(tspawns(r)) === JSON.stringify([bin + " type --text a" + EMOJI]) && r.clip.length === 0, host + ": one type call, clipboard untouched", JSON.stringify({ e: t.e && t.e.message, s: tspawns(r), c: r.clip }));
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
