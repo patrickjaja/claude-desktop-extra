@@ -185,6 +185,8 @@ function restore(why){
   });
 }
 function sessKey(v){return String(v).toLowerCase().replace(/^(?:session_|cse_)/,"")}
+// Lock acquires seen by the executor's lock hook (4b passes the new holder).
+var _lockSeq=0,_lockHolder=null;
 // The lock hooks of both executors (Patches 4b.2 and 4e call them on every
 // Linux session type) also end our accessibility use.
 function hook(){
@@ -192,7 +194,7 @@ function hook(){
   if(!ex||ex.__cdbAxHooked)return;
   ex.__cdbAxHooked=!0;
   var sl=ex.__setLockHeld,tb=ex.__cuTaskBoundary;
-  if(typeof sl==="function")ex.__setLockHeld=function(held){var p=sl.apply(ex,arguments);if(!held)clearTables("lock release");if(!held&&(_st||_pending>0))restore("lock release");return p};
+  if(typeof sl==="function")ex.__setLockHeld=function(held,holder){if(held){_lockSeq++;_lockHolder=typeof holder==="string"?holder:null}var p=sl.apply(ex,arguments);if(!held)clearTables("lock release");if(!held&&(_st||_pending>0))restore("lock release");return p};
   if(typeof tb==="function")ex.__cuTaskBoundary=function(id,source,holder){var p=tb.apply(ex,arguments);if((_st||_pending>0)&&(id==null||holder==null||sessKey(id)===sessKey(holder)))restore("task boundary ("+source+")");return p};
 }
 hook();
@@ -298,7 +300,10 @@ function mainWin(wins){
 var WIN_CAP=64,EL_CAP=4000,ALIAS_CAP=256;
 var _wins=new Map(),_alias=new Map(),_lastWin=new Map();
 function remember(m,k,v,cap){m.delete(k);m.set(k,v);if(m.size>(cap||64))m.delete(m.keys().next().value)}
-function clearTables(why){if(_wins.size)log("element numbers cleared ("+why+")");_wins.clear();_alias.clear()}
+// _gen counts restores and lock releases: a wait_for that sees it change stops
+// (its numbers and the accessibility service may be gone).
+var _gen=0;
+function clearTables(why){_gen++;if(_wins.size)log("element numbers cleared ("+why+")");_wins.clear();_alias.clear()}
 function wkeyOf(r,w){return r&&r.window&&typeof r.window.ref==="string"&&r.window.ref?"ref:"+r.window.ref:"id:"+String(w.id)}
 function tableOf(sid,w){var wk=_alias.get(sid+"\n"+String(w.id));return wk!=null?_wins.get(sid+"\n"+wk)||null:null}
 function str(x){return typeof x==="string"?x:""}
@@ -481,6 +486,10 @@ async function find(br,w,input,feat,sid){
   // so a title change (GNOME) or a shifted id (wlroots) keeps it. The bridge
   // still matches the app as always and ignores a ref that no longer fits.
   if(feat.has("find.window_ref")&&sid!=null){var kt=tableOf(sid,w);if(kt&&kt.windowRef)a.push("--window-ref",kt.windowRef)}
+  // find.deadline: a wait_for poll ends its walk early (the bridge clamps
+  // 100..5000 and needs n + 2000 ms at most for the whole command).
+  var ms=15000;
+  if(input.__deadline&&feat.has("find.deadline")){var dl=Math.max(100,Math.min(5000,Math.round(input.__deadline)));a.push("--deadline-ms",String(dl));ms=dl+3000}
   // wlroots: toplevel ids are per bridge connection, so `windows` and
   // `ax-find` (two processes) may mean different windows. The bridge checks the
   // window it resolves against what we picked and answers window_changed.
@@ -489,12 +498,12 @@ async function find(br,w,input,feat,sid){
     if(wid)a.push("--expect-app-id",wid.replace(/\.desktop$/i,""));
     a.push("--expect-title",String(w.title||""));
   }
-  var r=await run(br,a,null,15000),fresh=_fresh;
+  var r=await run(br,a,null,ms),fresh=_fresh;
   _fresh=!1;
   if(fresh&&r&&r.unavailable==="app_not_found"){
     log("find: app_not_found right after enable - retrying once");
     await new Promise(function(res){setTimeout(res,500)});
-    r=await run(br,a,null,15000);
+    r=await run(br,a,null,ms);
   }
   // kwin mode enforces upstream's grants: when KWin named the window's pid,
   // a tree found by name alone may belong to another app.
@@ -665,7 +674,7 @@ function actResult(r,t,el,c,ri){
   return ok(what+" "+N+" "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+")"+(ps.length?"; now "+ps.join(", "):"")+"."+rid+" Check the result with app_ax_find or a screenshot.");
 }
 var TEXT_AX={AXTextField:1,AXTextArea:1,AXSearchField:1,AXComboBox:1,AXSecureTextField:1};
-async function call(name,input,opts){
+async function call(name,input,opts,obs){
   input=input&&typeof input==="object"?input:{};
   var app=input.app,sid=String(opts&&opts.sid!=null?opts.sid:"(no-session)");
   if(typeof app!=="string"||!app.trim())return err("app is required.");
@@ -709,6 +718,7 @@ async function call(name,input,opts){
     // GNOME: the window is known by the title the bridge matched.
     if(w.gnome&&r.window&&typeof r.window.title==="string"&&r.window.title)w={id:r.window.title,title:r.window.title,appId:appId,gnome:!0};
     var got=store(sid,w,app,r),list=got.map(function(x){return x.e}),coords=r.coords;
+    if(obs){obs.got=got;obs.truncated=r.truncated===!0;obs.t=tableOf(sid,w)}
     log("find: window="+String(w.id)+" elements="+list.length+" coords="+coords+(r.truncated?" truncated="+(r.truncated_reason||"yes"):""));
     var head=list.length+" element(s) in window "+JSON.stringify(String(w.title||""))+" (window_id "+String(w.id)+")"+(r.truncated?"; walk truncated ("+(r.truncated_reason||"limit")+"): narrow with role or title_contains":"")+".";
     if(coords!=="screen")head+=" This desktop does not report element positions; app_click and app_type work by element_index.";
@@ -747,11 +757,118 @@ async function call(name,input,opts){
   }
   return err("Unknown tool: "+name);
 }
+// ── wait_for on app_ax_find ──────────────────────────────────────────────────
+// Polls one-shot finds until a condition holds, at most 15 s. Each poll is its
+// own serial-queue item (enable + find stay together, a restore or another
+// call runs between two polls), the sleep is outside the queue. Between polls
+// the wait ends on a turn abort (regular mode: the handler's abort test as
+// opts.aborted; kwin mode: upstream's context isAborted), on the Computer Use
+// lock going to another session (opts.lock from the handler; the executor's
+// lock hook in both modes), on a restore or lock release (_gen), and when the
+// user stopped screen sharing.
+var UNTIL={appears:1,gone:1,enabled:1,checked:1,unchecked:1,expanded:1,collapsed:1,focused:1,value_contains:1};
+var WAIT_MAX=15000,WAIT_DEFAULT=5000;
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function waitSpec(input){
+  var wf=input.wait_for;
+  if(!wf||typeof wf!=="object"||Array.isArray(wf))return{e:err("wait_for must be an object: {until, element_index?, value?, timeout_ms?}.")};
+  if(typeof wf.until!=="string"||!UNTIL[wf.until])return{e:err("wait_for.until must be one of: "+Object.keys(UNTIL).join(", ")+".")};
+  var hasIdx=typeof wf.element_index==="number";
+  if((wf.until==="appears"||wf.until==="gone")&&!hasIdx&&!(typeof input.role==="string"&&input.role.trim())&&!(typeof input.title_contains==="string"&&input.title_contains!==""))return{e:err("wait_for "+wf.until+" needs role or title_contains (the controls to wait for), or element_index.")};
+  if(wf.until!=="appears"&&wf.until!=="gone"&&!hasIdx)return{e:err("wait_for "+wf.until+" needs element_index (from app_ax_find).")};
+  if(wf.until==="value_contains"&&!(typeof wf.value==="string"&&wf.value!==""))return{e:err("wait_for value_contains needs value (the text to wait for).")};
+  var to=typeof wf.timeout_ms==="number"&&isFinite(wf.timeout_ms)?Math.max(0,Math.min(WAIT_MAX,Math.round(wf.timeout_ms))):WAIT_DEFAULT;
+  return{until:wf.until,idx:hasIdx?wf.element_index:null,value:wf.value,timeout:to};
+}
+var NOT_LIVE=" not in the window now";
+// -> {met, note}; note never quotes a value.
+function judge(sp,obs){
+  var got=obs.got||[],N=sp.idx!=null?"["+sp.idx+"]":"";
+  var hit=null;if(sp.idx!=null){for(var i=0;i<got.length;i++){if(got[i].n===sp.idx){hit=got[i].e;break}}}
+  if(sp.until==="appears")return sp.idx!=null?{met:!!hit,note:N+(hit?" is there":NOT_LIVE)}:{met:got.length>0,note:got.length+" matching element(s)"};
+  if(sp.until==="gone"){
+    if(sp.idx!=null)return{met:!hit&&!obs.truncated,note:N+(hit?" still there":obs.truncated?NOT_LIVE+" (walk truncated, not conclusive)":NOT_LIVE)};
+    return{met:!got.length&&!obs.truncated,note:got.length+" matching element(s)"+(obs.truncated?" (walk truncated)":"")};
+  }
+  if(!hit)return{met:!1,note:N+NOT_LIVE};
+  var st=Array.isArray(hit.states)?hit.states:[],has=function(x){return st.indexOf(x)>=0};
+  var note=N+" states: "+(st.filter(function(x){return!NOISE[x]}).join(", ")||"none");
+  switch(sp.until){
+    case"enabled":return{met:has("enabled")||has("sensitive"),note:note};
+    case"checked":return{met:has("checked"),note:note};
+    case"unchecked":return{met:!has("checked"),note:note};
+    case"expanded":return{met:has("expanded"),note:note};
+    case"collapsed":return{met:has("collapsed")||has("expandable")&&!has("expanded"),note:note};
+    case"focused":return{met:has("focused"),note:note};
+    case"value_contains":
+      // A redacted or terminal element (or one inside such) never matches.
+      var ent=obs.t&&obs.t.byN.get(sp.idx);
+      if(hit.value_redacted===!0||ent&&ent.taint)return{met:!1,note:N+" value hidden (never compared)"};
+      var v=typeof hit.value==="string"?hit.value:"";
+      return{met:v.toLowerCase().indexOf(String(sp.value).toLowerCase())>=0,note:N+(v?" value does not contain the text":" has no value")};
+  }
+  return{met:!1,note:""};
+}
+async function waitStop(opts,sid,start){
+  try{
+    if(opts&&typeof opts.aborted==="function"&&opts.aborted()===!0)return"aborted";
+    var kc=kctx(opts);if(kc&&typeof kc.isAborted==="function"&&kc.isAborted()===!0)return"aborted";
+  }catch(e){return"aborted"}
+  if(_gen!==start.gen)return"ended";
+  if(_lockSeq!==start.lockSeq){if(_lockHolder==null||sessKey(_lockHolder)!==sessKey(sid))return"lock";start.lockSeq=_lockSeq}
+  if(opts&&typeof opts.lock==="function"){try{if(await opts.lock()===!1)return"lock"}catch(e){return"lock"}}
+  var sx=globalThis.__linuxExecutor;
+  try{if(sx&&typeof sx.__stoppedByUser==="function"&&sx.__stoppedByUser())return"sharing"}catch(e){}
+  return null;
+}
+var STOP_TEXT={
+  aborted:"app_ax_find aborted (user interrupt).",
+  lock:"Another Claude session is currently using the computer, so the wait ended. Wait for that session to finish, or find a non-computer-use approach.",
+  ended:"The wait ended: this Computer Use session's accessibility use ended (task end, lock release or idle). Call app_ax_find again.",
+  sharing:"The wait ended: the user stopped screen sharing for this Computer Use session."
+};
+async function waitFind(input,opts){
+  var sp=waitSpec(input);
+  if(sp.e)return sp.e;
+  var sid=String(opts&&opts.sid!=null?opts.sid:"(no-session)");
+  var base={};for(var k in input){if(Object.prototype.hasOwnProperty.call(input,k)&&k!=="wait_for")base[k]=input[k]}
+  // A wait on one element walks the whole window, so the element is listed
+  // whatever the interactive filter says.
+  if(sp.idx!=null&&!base.role&&!base.title_contains)base.__all=!0;
+  var start={gen:_gen,lockSeq:_lockSeq},spent=0,delay=400,polls=0,last=null;
+  log("wait: until="+sp.until+" timeout="+sp.timeout);
+  for(;;){
+    var pin={};for(var bk in base)pin[bk]=base[bk];
+    pin.__deadline=Math.max(100,Math.min(2000,sp.timeout-spent));
+    var t0=Date.now(),obs={};
+    var res=await queue(async function(){
+      if(_gen!==start.gen)return null;
+      try{return await call("app_ax_find",pin,opts,obs)}
+      catch(e){log("app_ax_find failed: "+(e&&e.axWhy||"error"));return err("app_ax_find failed: "+(e&&e.message||e))}
+      finally{if(_st)armIdle()}
+    });
+    spent+=Math.max(0,Date.now()-t0);polls++;
+    if(res===null){log("wait: ended");return err(STOP_TEXT.ended)}
+    if(res.isError)return res;
+    if(sp.idx!=null&&!(obs.t&&obs.t.byN.has(sp.idx)))return err("No element ["+sp.idx+"] from app_ax_find of this window. Call app_ax_find again.");
+    var j=judge(sp,obs),txt=res.content&&res.content[0]?res.content[0].text:"";
+    last=j.note;
+    if(j.met){log("wait: met after "+spent+" ms, "+polls+" poll(s)");return ok("wait_for "+sp.until+": met after "+spent+" ms ("+polls+" check(s)).\n"+txt)}
+    if(spent>=sp.timeout){log("wait: timed out after "+spent+" ms, "+polls+" poll(s)");return ok("wait_for "+sp.until+": timed out after "+spent+" ms ("+polls+" check(s)); last observation: "+last+".\n"+txt)}
+    var why=await waitStop(opts,sid,start);
+    if(!why){var d=Math.min(delay,sp.timeout-spent);await sleep(d);spent+=d;delay=Math.min(800,Math.round(delay*1.25));why=await waitStop(opts,sid,start)}
+    if(why){log("wait: stopped ("+why+")");return err(STOP_TEXT[why])}
+  }
+}
+function cleanInput(i){var o={};if(i&&typeof i==="object"){for(var k in i){if(Object.prototype.hasOwnProperty.call(i,k)&&k.slice(0,2)!=="__")o[k]=i[k]}}return o}
 globalThis.__cdbAxCall=function(name,input,opts){
   // An accessibility action is a Computer Use action: the Escape watcher
   // (community switch, js/cu_esc_watch.js) re-arms a watcher it parked at a
   // cloud turn end. Sync and cheap; absent or off = nothing.
   try{globalThis.__cdbCuEscWatch?.toolCall?.()}catch(ee){}
+  // Keys starting with "__" are ours (internal find options), never the model's.
+  input=cleanInput(input);
+  if(name==="app_ax_find"&&input.wait_for!==void 0)return waitFind(input,opts||{});
   return queue(async function(){
     try{return await call(name,input,opts)}
     catch(e){log(name+" failed: "+(e&&e.axWhy||"error"));return err(name+" failed: "+(e&&e.message||e))}

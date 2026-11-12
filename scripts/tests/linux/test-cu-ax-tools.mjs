@@ -148,11 +148,11 @@ process.stdin.on("end",()=>{
   let out=fx[a[0]];
   const once=process.env.CDB_FAKE_AX_ONCE;
   if(once&&a[0]==="ax-find"&&a.includes(once)&&!fs.existsSync(process.env.CDB_FAKE_AX_LOG+".once")){fs.writeFileSync(process.env.CDB_FAKE_AX_LOG+".once","1");process.stdout.write(JSON.stringify({unavailable:"app_not_found",hint:"No accessible application matched the window."}));return}
-  // A key may have variants: "<key>|root:<ref>", "<key>|skeleton", "<key>|all"
+  // A key may have variants: "<key>|root:<ref>", "<key>|skeleton", "<key>|all", "<key>|role:<role>"
   // (ax-find), "<ref>|<action>" (ax-action); the first that exists wins.
   const pick=(tab,base,vs)=>{if(!tab)return undefined;for(const v of vs){if(v&&tab[base+"|"+v]!==undefined)return[base+"|"+v,tab[base+"|"+v]]}return[base,tab[base]]};
   let key=null;
-  if(a[0]==="ax-find"){const app=arg("--app-id")!==undefined;[key,out]=pick(app?fx["ax-find-app"]:fx["ax-find"],app?arg("--app-id")+"|"+(arg("--title")||""):arg("--window"),[arg("--root-ref")&&"root:"+arg("--root-ref"),a.includes("--skeleton")&&"skeleton",a.includes("--all")&&"all"])}
+  if(a[0]==="ax-find"){const app=arg("--app-id")!==undefined;[key,out]=pick(app?fx["ax-find-app"]:fx["ax-find"],app?arg("--app-id")+"|"+(arg("--title")||""):arg("--window"),[arg("--root-ref")&&"root:"+arg("--root-ref"),a.includes("--skeleton")&&"skeleton",a.includes("--all")&&"all",arg("--role")&&"role:"+arg("--role")])}
   if(a[0]==="ax-action")[key,out]=pick(fx["ax-action"],arg("--ref"),[arg("--action")]);
   // {"__seq":[a,b,...]}: successive answers per key (the last one repeats).
   if(out&&Array.isArray(out.__seq)){const f=LOG+".seq."+Buffer.from(a[0]+"\\n"+key).toString("hex");const n=fs.existsSync(f)?Number(fs.readFileSync(f,"utf8")):0;fs.writeFileSync(f,String(n+1));out=out.__seq[Math.min(n,out.__seq.length-1)]}
@@ -1507,6 +1507,196 @@ if (patchMissing || !existsSync(stubPath)) {
       r = await lc.__cdbAxCall("app_click", { app: "org.kde.kate", element_index: 7 }, { sid: "l9" });
       check("legacy stale: gone, find again, and it may have been sent", /is gone/.test(textOf(r)) && /app_ax_find again/.test(textOf(r)) && /not confirmed/.test(textOf(r)), true);
       await releaseAx(lc);
+    }
+
+    // ---------------------------------------------------------------- [10]
+    // ax-wait: wait_for on app_ax_find polls one-shot finds, each its own
+    // serial-queue item with the sleep outside the queue. Fake timers: every
+    // wait sleep (400..800 ms) resolves at once and is recorded.
+    console.log("\n[10] wait_for on app_ax_find");
+    const KATE2_WIN = { id: "{kate-2}", title: "other - Kate", ref: ":1.42/w2", frame_class: "global_frame" };
+    const k2 = (elements, extra = {}) => ({ app: { name: "kate", pid: 1111 }, window: KATE2_WIN, coords: "window_only", scope: "sc-k2", matched_by: "pid", truncated: false, total_seen: 9, elements, ...extra });
+    const BOX = (states, extra = {}) => vEl(4, "check box", "Spell check", "r-box", { states: ["enabled", "showing", ...states], ...extra });
+    const FIX3 = {
+      ...FIX2,
+      "ax-find": {
+        ...FIX2["ax-find"],
+        "{kate-2}": { __seq: [k2([]), k2([]), k2([vEl(7, "push button", "Done", "r-done")])] },
+        "{kate-2}|all": { __seq: [k2([BOX([])]), k2([BOX([])]), k2([BOX(["checked"])])] },
+        "{kate-2}|role:check box": k2([BOX([])]),
+      },
+    };
+    const fixFile3 = join(scratch, "fixture-wait.json");
+    writeFileSync(fixFile3, JSON.stringify(FIX3));
+    const FIX_EMPTY = { ...FIX2, "ax-find": { ...FIX2["ax-find"], "{kate-2}": k2([]), "{kate-2}|all": k2([vEl(4, "text", "Notes", "r-notes", { value: "draft text", states: ["editable"] }), vEl(5, "password text", "PIN", "r-pin", { value_redacted: true, states: ["editable"] })]) } };
+    FIX_EMPTY["ax-find"]["{kate-2}|role:fields"] = FIX_EMPTY["ax-find"]["{kate-2}|all"];
+    const fixFile4 = join(scratch, "fixture-wait-empty.json");
+    writeFileSync(fixFile4, JSON.stringify(FIX_EMPTY));
+    // Fake timers: wait sleeps resolve on the next macrotask; onSleep runs first.
+    const waitCtx = (name, onSleep) => {
+      const sleeps = [];
+      const c = axCtx(name, {
+        setTimeout: (fn, ms) => {
+          if (ms >= 1 && ms <= 800 && ms !== 500) {
+            sleeps.push(ms);
+            if (onSleep) onSleep.fn?.(sleeps.length);
+            return setTimeout(fn, 0);
+          }
+          if (ms === 500) {
+            sleeps.push(ms);
+            if (onSleep) onSleep.fn?.(sleeps.length);
+            return setTimeout(fn, 0);
+          }
+          return setTimeout(fn, ms);
+        },
+      });
+      c.__sleeps = sleeps;
+      return c;
+    };
+    const finds = () => calls().filter((c) => c.argv[0] === "ax-find");
+    {
+      setFeatures(ALL_FEATURES);
+      useFix(fixFile3);
+      const hooks = {};
+      const wc = waitCtx("x11-bridge", hooks);
+      const w = (a, opts = {}) => wc.__cdbAxCall("app_ax_find", { app: "org.kde.kate", window_id: "{kate-2}", ...a }, { sid: "w1", ...opts });
+      resetLog();
+      r = await w({ title_contains: "Done", wait_for: { until: "appears", timeout_ms: 5000 } });
+      check("appears: met on the third poll", !r.isError && /^wait_for appears: met after \d+ ms/.test(textOf(r)) && textOf(r).includes('[7] AXButton (push button) "Done"'), true);
+      check("appears: three finds, 400 then 500 ms between them (backoff)", finds().length + "|" + wc.__sleeps.join(","), "3|400,500");
+      check("find.deadline: each poll passes --deadline-ms", finds().every((c) => c.argv.includes("--deadline-ms")), true);
+      useFix(fixFile3);
+      wc.__sleeps.length = 0;
+      // The window's table already numbers "Done": the box gets the next number.
+      const boxN = Number((/\[(\d+)\] AXCheckBox/.exec(textOf(await wc.__cdbAxCall("app_ax_find", { app: "org.kde.kate", window_id: "{kate-2}", role: "check box" }, { sid: "w1" }))) || [])[1]);
+      resetLog();
+      r = await w({ wait_for: { until: "checked", element_index: boxN, timeout_ms: 5000 } });
+      check("checked on the box: met after polls, list with its stable [N]", !r.isError && /^wait_for checked: met after/.test(textOf(r)) && textOf(r).includes(`[${boxN}] AXCheckBox (check box) "Spell check" (checked)`), true);
+      check("checked: element waits walk the whole window (--all)", finds().every((c) => c.argv.includes("--all")), true);
+      useFix(fixFile4);
+      wc.__sleeps.length = 0;
+      resetLog();
+      r = await w({ title_contains: "Done", wait_for: { until: "appears", timeout_ms: 2000 } });
+      check("timeout: not an error, says timed out with the last observation", !r.isError && /^wait_for appears: timed out after \d+ ms/.test(textOf(r)) && /last observation/.test(textOf(r)), true);
+      check("timeout: bounded polls, sleeps sum within the timeout", finds().length >= 3 && wc.__sleeps.reduce((a, b) => a + b, 0) <= 2000, true);
+      wc.__sleeps.length = 0;
+      resetLog();
+      r = await w({ title_contains: "Done", wait_for: { until: "appears", timeout_ms: 999999 } });
+      check("timeout capped at 15000 ms", /timed out/.test(textOf(r)) && wc.__sleeps.reduce((a, b) => a + b, 0) <= 15000 && wc.__sleeps.reduce((a, b) => a + b, 0) >= 10000, true);
+      resetLog();
+      r = await w({ title_contains: "Done", wait_for: { until: "gone", timeout_ms: 2000 } });
+      check("gone: met at once when nothing matches", !r.isError && /^wait_for gone: met after/.test(textOf(r)) && finds().length === 1, true);
+      const ft = textOf(await wc.__cdbAxCall("app_ax_find", { app: "org.kde.kate", window_id: "{kate-2}", role: "fields" }, { sid: "w1" }));
+      const notesN = Number((/\[(\d+)\] AXTextField \(text\) "Notes"/.exec(ft) || [])[1]);
+      const pinN = Number((/\[(\d+)\] [\w]+ \(password text\) "PIN"/.exec(ft) || [])[1]);
+      r = await w({ wait_for: { until: "value_contains", element_index: notesN, value: "draft", timeout_ms: 1000 } });
+      check("value_contains on a plain field: met", !r.isError && /met after/.test(textOf(r)), true);
+      r = await w({ wait_for: { until: "value_contains", element_index: pinN, value: "", timeout_ms: 1000 } });
+      check("value_contains needs a value", r.isError === true && /value/.test(textOf(r)), true);
+      r = await w({ wait_for: { until: "value_contains", element_index: pinN, value: "1234", timeout_ms: 1000 } });
+      check("value_contains on a redacted field: never met, never revealed", !r.isError && /timed out/.test(textOf(r)) && /hidden/.test(textOf(r)) && !textOf(r).includes("1234"), true);
+      for (const [label, wf, re] of [
+        ["unknown until", { until: "sideways" }, /until/],
+        ["appears without role, title_contains or element_index", { until: "appears" }, /role or title_contains/],
+        ["checked without element_index", { until: "checked" }, /element_index/],
+        ["not an object", "soon", /wait_for/],
+      ]) {
+        resetLog();
+        r = await w({ wait_for: wf });
+        check(`wait_for refused: ${label} (nothing spawned)`, r.isError === true && re.test(textOf(r)) && calls().length === 0, true);
+      }
+      // Stops between polls.
+      useFix(fixFile4);
+      let ab = false;
+      hooks.fn = () => (ab = true);
+      resetLog();
+      r = await w({ title_contains: "Done", wait_for: { until: "appears", timeout_ms: 5000 } }, { aborted: () => ab });
+      check("regular: turn aborted mid-wait ends it (one poll)", r.isError === true && /aborted \(user interrupt\)/.test(textOf(r)) && finds().length === 1, true);
+      let mine = true;
+      hooks.fn = () => (mine = false);
+      resetLog();
+      r = await w({ title_contains: "Done", wait_for: { until: "appears", timeout_ms: 5000 } }, { lock: async () => mine });
+      check("lock taken by another session (handler callback) ends it", r.isError === true && /Another Claude session/.test(textOf(r)) && finds().length === 1, true);
+      hooks.fn = () => wc.__linuxExecutor.__setLockHeld(true, "session_other");
+      resetLog();
+      r = await w({ title_contains: "Done", wait_for: { until: "appears", timeout_ms: 5000 } });
+      check("lock acquired by another holder (executor hook) ends it", r.isError === true && /Another Claude session/.test(textOf(r)) && finds().length === 1, true);
+      hooks.fn = () => wc.__linuxExecutor.__setLockHeld(true, "session_w1");
+      let n0 = 0;
+      resetLog();
+      r = await w({ title_contains: "Done", wait_for: { until: "appears", timeout_ms: 1200 } });
+      check("lock acquired by this session: the wait goes on", !r.isError && /timed out/.test(textOf(r)) && finds().length >= 2, true);
+      hooks.fn = (n) => {
+        if (n === 1) wc.__linuxExecutor.__cuTaskBoundary(null, "stop_click", null);
+      };
+      wc.__sleeps.length = 0;
+      resetLog();
+      r = await w({ title_contains: "Done", wait_for: { until: "appears", timeout_ms: 5000 } });
+      for (let i = 0; i < 100 && !calls().some((c) => c.argv[0] === "ax-restore"); i++) await tick();
+      check("restore between polls ends the wait", r.isError === true && /ended/.test(textOf(r)), true);
+      check("restore ran between the polls (no find after it)", calls().map((c) => c.argv[0]).filter((x) => x !== "windows").join(","), "ax-find,ax-restore");
+      hooks.fn = () => (wc.__linuxExecutor.__stoppedByUser = () => true);
+      resetLog();
+      r = await w({ title_contains: "Done", wait_for: { until: "appears", timeout_ms: 5000 } });
+      check("stop sharing ends a wait", r.isError === true && /stopped screen sharing/.test(textOf(r)) && finds().length === 1, true);
+      wc.__linuxExecutor.__stoppedByUser = () => false;
+      hooks.fn = null;
+      // Each poll is its own queue item: a call made during the wait runs
+      // between two polls, not after the whole wait.
+      let side = null;
+      hooks.fn = (n) => {
+        if (n === 1 && !side) side = wc.__cdbAxCall("app_list_windows", { app: "org.kde.kate" }, { sid: "w1" }).then(() => calls().length);
+      };
+      wc.__sleeps.length = 0;
+      resetLog();
+      r = await w({ title_contains: "Done", wait_for: { until: "appears", timeout_ms: 1200 } });
+      const sideAt = await side;
+      check("another call runs between polls (queue split)", sideAt < calls().length, true);
+      hooks.fn = null;
+      await releaseAx(wc);
+      // Legacy bridge: the same wait, no --deadline-ms.
+      setFeatures(undefined);
+      useFix(fixFile3);
+      const lw = waitCtx("x11-bridge", {});
+      resetLog();
+      r = await lw.__cdbAxCall("app_ax_find", { app: "org.kde.kate", window_id: "{kate-2}", title_contains: "Done", wait_for: { until: "appears", timeout_ms: 5000 } }, { sid: "lw" });
+      check("legacy bridge: wait works, no new flags", !r.isError && /met after/.test(textOf(r)) && finds().every((c) => !c.argv.includes("--deadline-ms")), true);
+      await releaseAx(lw);
+      useFix(fixFile);
+    }
+    // kwin mode: upstream's dispatcher, its context's isAborted.
+    {
+      setFeatures(undefined);
+      useFix(fixFile4);
+      kctx2.__cdbCuAxElements = () => true;
+      let ab = false;
+      const realST = kctx2.setTimeout;
+      kctx2.setTimeout = (fn, ms) => (ms >= 400 && ms <= 800 ? ((ab = true), setTimeout(fn, 0)) : realST(fn, ms));
+      const da = kexp[DKEY](serverCtx(kctx2.__linuxExecutor), "pixels", { ...sessionCtx("sess-W"), isAborted: () => ab });
+      resetLog();
+      r = await da("app_ax_find", { app: "org.kde.kate", window_id: "{kate-2}", title_contains: "Done", wait_for: { until: "appears", timeout_ms: 5000 } });
+      check("kwin: upstream's context isAborted ends the wait", r.isError === true && /aborted \(user interrupt\)/.test(textOf(r)) && finds().length === 1, true);
+      kctx2.setTimeout = realST;
+      kctx2.__cdbCuAxElements = () => false;
+      await kctx2.__linuxExecutor.__setLockHeld(false);
+      for (let i = 0; i < 100 && existsSync(statePath); i++) await tick();
+      useFix(fixFile);
+    }
+    // Regular mode: the handler passes its abort test and lock check.
+    check("handler passes aborted + lock to the accessibility call", /aborted:__abortedNow/.test(readFileSync(HANDLER_JS, "utf8")) && /lock:async function/.test(readFileSync(HANDLER_JS, "utf8")), true);
+    if (injected) {
+      const [, sP, nP, iP, seP] = mQ;
+      setFeatures(undefined);
+      useFix(fixFile4);
+      const hc = axCtx("x11-bridge");
+      let ab = false;
+      hc.setTimeout = (fn, ms) => (ms >= 400 && ms <= 800 ? ((ab = true), setTimeout(fn, 0)) : setTimeout(fn, ms));
+      const h = vm.runInContext(`(async function(${sP},${nP},${iP},${seP}){${injected}return{content:[{type:"text",text:"UPSTREAM"}]}})`, hc);
+      resetLog();
+      r = await h({}, "app_ax_find", { app: "org.kde.kate", window_id: "{kate-2}", title_contains: "Done", wait_for: { until: "appears", timeout_ms: 5000 } }, { sessionId: "hw", isAborted: () => ab });
+      check("regular (patched handler): session isAborted ends the wait", r.isError === true && /aborted \(user interrupt\)/.test(textOf(r)) && finds().length === 1, true);
+      await releaseAx(hc);
+      useFix(fixFile);
     }
 
     // Every legacy-bridge call in every section above stayed within today's
