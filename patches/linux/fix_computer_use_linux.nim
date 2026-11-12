@@ -46,7 +46,8 @@
 # (issue #326).
 # Sub-patch 5e reads a coordinate that arrives before any screenshot (an app
 # restart mid-session) in the frame the Linux executor's next screenshot will
-# have (__coldFrame) instead of upstream's division by the scale factor.
+# have (__coldFrame) instead of upstream's division by the scale factor, and
+# refuses it when that executor cannot tell the frame.
 # Sub-patch 4h routes the Linux arm of upstream's unhideComputerUseApps (turn-end
 # auto-unhide) to the active Linux executor's __unhideApps when it has one, so
 # the KWin executor lifts the capture exclusions it set (upstream's own Linux
@@ -746,7 +747,7 @@ proc endStateMarkers(): seq[EndStateMarker] =
     ),
     rx(
       "5e no-screenshot coordinate frame",
-      """let __cdbCf=process\.platform==="linux"\?globalThis\.__linuxExecutor\?\.__coldFrame\?\.\(([\w$]+),!0\):null,[\w$]+=__cdbCf\?Math\.round\([\w$]+\*\(\1\.width/__cdbCf\.imgW\)\)\+\1\.originX:Math\.round\([\w$]+/\1\.scaleFactor\)\+\1\.originX,""",
+      """let __cdbCx=process\.platform==="linux"\?globalThis\.__linuxExecutor:null,__cdbCf=typeof __cdbCx\?\.__coldFrame==="function"\?\(__cdbF=>__cdbF&&__cdbF\.imgW>0&&__cdbF\.imgH>0\?__cdbF:!1\)\(__cdbCx\.__coldFrame\(([\w$]+),!0\)\):null,[\w$]+=__cdbCf\?Math\.round\([\w$]+\*\(\1\.width/__cdbCf\.imgW\)\)\+\1\.originX:__cdbCf===!1\?1/0:Math\.round\([\w$]+/\1\.scaleFactor\)\+\1\.originX,""",
     ),
     rx(
       "5d teach-step refusal text",
@@ -4121,8 +4122,15 @@ proc apply*(input: string): string =
   # instead of x*1920/1430). On Linux the active executor's __coldFrame(r, true)
   # names the frame the next screenshot of r will have, and the point is read
   # in it; upstream's own bounds test then refuses a point outside that frame
-  # with its own text. No frame (another platform, an executor without it, or
-  # a capture size not known yet): upstream's division, unchanged.
+  # with its own text. asked = true is the real state here: every capture of
+  # upstream's dispatch passes an allowlist (screenshot, zoom and
+  # resolvePrepareCapture all take grants.captureAllowedBundleIds, an array),
+  # so its screenshots are masked wherever the bridge can mask. An executor
+  # whose __coldFrame cannot tell the frame (null: a mask answer not known
+  # yet) yields an infinite point, so the same bounds test refuses it with
+  # "... Take a screenshot first." instead of guessing, as our handler does.
+  # No __coldFrame at all (another platform, an executor without it):
+  # upstream's division, unchanged.
   block:
     let pat =
       re"""(\.warn\((["`])\[computer-use\] pixels-mode coordinate received with no prior screenshot; falling back to /scaleFactor\. Click may be off if downsample is active\.\2\);)let ([\w$]+)=Math\.round\(([\w$]+)/([\w$]+)\.scaleFactor\)\+\5\.originX,([\w$]+)=Math\.round\(([\w$]+)/\5\.scaleFactor\)\+\5\.originY;return \3>\5\.originX\+\5\.width\|\|\6>\5\.originY\+\5\.height\?"""
@@ -4135,18 +4143,24 @@ proc apply*(input: string): string =
         pat,
         proc(m: RegexMatch): string =
           let r = m.captures[4]
+          # __cdbCf: a frame, !1 (__coldFrame said it cannot tell: refused
+          # through an infinite point) or null (no __coldFrame: upstream's
+          # division).
           m.captures[0] &
-            "let __cdbCf=process.platform===\"linux\"?globalThis.__linuxExecutor?.__coldFrame?.(" &
-            r & ",!0):null," & m.captures[2] & "=__cdbCf?Math.round(" & m.captures[3] &
-            "*(" & r & ".width/__cdbCf.imgW))+" & r & ".originX:Math.round(" &
-            m.captures[3] & "/" & r & ".scaleFactor)+" & r & ".originX," & m.captures[5] &
-            "=__cdbCf?Math.round(" & m.captures[6] & "*(" & r & ".height/__cdbCf.imgH))+" &
-            r & ".originY:Math.round(" & m.captures[6] & "/" & r & ".scaleFactor)+" & r &
-            ".originY;return " & m.captures[2] & ">" & r & ".originX+" & r & ".width||" &
-            m.captures[5] & ">" & r & ".originY+" & r & ".height?",
+            "let __cdbCx=process.platform===\"linux\"?globalThis.__linuxExecutor:null," &
+            "__cdbCf=typeof __cdbCx?.__coldFrame===\"function\"?(__cdbF=>__cdbF&&__cdbF.imgW>0&&__cdbF.imgH>0?__cdbF:!1)(__cdbCx.__coldFrame(" &
+            r & ",!0)):null," & m.captures[2] & "=__cdbCf?Math.round(" & m.captures[3] &
+            "*(" & r & ".width/__cdbCf.imgW))+" & r &
+            ".originX:__cdbCf===!1?1/0:Math.round(" & m.captures[3] & "/" & r &
+            ".scaleFactor)+" & r & ".originX," & m.captures[5] & "=__cdbCf?Math.round(" &
+            m.captures[6] & "*(" & r & ".height/__cdbCf.imgH))+" & r &
+            ".originY:__cdbCf===!1?1/0:Math.round(" & m.captures[6] & "/" & r &
+            ".scaleFactor)+" & r & ".originY;return " & m.captures[2] & ">" & r &
+            ".originX+" & r & ".width||" & m.captures[5] & ">" & r & ".originY+" & r &
+            ".height?",
       )
       if n == 1:
-        echo "  [OK] 5e no-screenshot coordinate: read in the Linux executor's capture frame (__coldFrame) on Linux, upstream's /scaleFactor elsewhere (1 match)"
+        echo "  [OK] 5e no-screenshot coordinate: read in the Linux executor's capture frame (__coldFrame) on Linux, refused when it cannot tell the frame, upstream's /scaleFactor elsewhere (1 match)"
         inc changes
         inc patchesApplied
       else:

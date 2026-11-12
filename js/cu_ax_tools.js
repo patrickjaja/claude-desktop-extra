@@ -304,6 +304,10 @@ function frameOf(opts){
   var ex=globalThis.__linuxExecutor,dip=ex&&typeof ex.__axToDip==="function"?ex.__axToDip:null;
   return{w:s.imgW,h:s.imgH,map:function(x,y){if(dip){var d=dip.call(ex,x,y);x=d[0];y=d[1]}return[Math.round((x-s.originX)*s.imgW/s.dispW),Math.round((y-s.originY)*s.imgH/s.dispH)]}};
 }
+// Regular mode: whether the handler's screenshot passes an allowlist (its
+// __ask, which also hands us the grants as opts.allowedApps), the input of the
+// executor's capture tier choice (masked captures are the bridge's).
+function shotAsked(opts){return !!(opts&&Array.isArray(opts.allowedApps))}
 // No screenshot yet: the frame the click path will use. Regular mode: the next
 // screenshot's frame of the monitor holding the point (executor), installed as
 // the handler's __cuLastShot so a left_click before any screenshot maps
@@ -321,7 +325,7 @@ function predict(opts,x,y){
     }
     var ex=globalThis.__linuxExecutor;
     if(globalThis.__cuLastShot||!ex||typeof ex.__axFrameFor!=="function")return frameOf(opts);
-    var p=typeof ex.__axToDip==="function"?ex.__axToDip(x,y):[x,y],f=ex.__axFrameFor(p[0],p[1]);
+    var p=typeof ex.__axToDip==="function"?ex.__axToDip(x,y):[x,y],f=ex.__axFrameFor(p[0],p[1],shotAsked(opts));
     if(!f)return null;
     globalThis.__cuLastShot={imgW:f.imgW,imgH:f.imgH,dispW:f.dispW,dispH:f.dispH,originX:f.originX,originY:f.originY};
     globalThis.__cuActiveOrigin={x:f.originX,y:f.originY};
@@ -357,7 +361,7 @@ async function place(opts,x,y,fr){
       note:" Positions are in the frame of display "+D.displayId+" ("+(D.label||"display "+D.displayId)+"), now the current display"+(ls?"; the last screenshot showed another display":"")+": take a screenshot before clicking by position."};
   }
   if(!ex||typeof ex.__axFrameFor!=="function")return{fr:fr,note:""};
-  var p=typeof ex.__axToDip==="function"?ex.__axToDip(x,y):[x,y],f=ex.__axFrameFor(p[0],p[1]);
+  var p=typeof ex.__axToDip==="function"?ex.__axToDip(x,y):[x,y],f=ex.__axFrameFor(p[0],p[1],shotAsked(opts));
   if(!f)return{fr:fr,note:""};
   var multi=f.count>1&&typeof opts.pin==="function",had=globalThis.__cuLastShot;
   if(multi&&globalThis.__cuPinnedDisplay!==f.displayId){

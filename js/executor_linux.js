@@ -2469,7 +2469,7 @@ export function createLinuxExecutor(opts = {}) {
         originX: display.originX || 0,
         originY: display.originY || 0,
       }
-      globalThis.__cdbDiag(`[linux-executor] no screenshot yet in this app run: coordinates read in the ${f.imgW}x${f.imgH} frame of the ${w}x${h} display at ${f.originX},${f.originY}`)
+      if (typeof globalThis.__cdbDiag === 'function') globalThis.__cdbDiag(`[linux-executor] no screenshot yet in this app run: coordinates read in the ${f.imgW}x${f.imgH} frame of the ${w}x${h} display at ${f.originX},${f.originY}`)
       return f
     },
 

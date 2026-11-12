@@ -633,6 +633,8 @@ try {
     // No screenshot since switch_display: the point is read in DP-1's frame
     // (the handler's cold frame), so the target is the mapped click point.
     check("handler click: the arrow glides to the target first", !!lastGlide && !!lastClick() && J(lastGlide.frames.at(-1).slice(0, 2)) === J(lastClick().slice(0, 2)), true);
+    // DP-1 is 1920x1080 at scale 1: its frame is 1430x804, so 400,300 is 537,403.
+    check("handler click: the point mapped through DP-1's 1430x804 frame", J(lastClick()), J([537, 403]));
     check(`handler click: the click waited for the glide (${Math.round(clickMs)} ms)`, clickMs >= 300, true);
     agree("handler click after the glide");
     // The accessibility tools make a window's display current through the

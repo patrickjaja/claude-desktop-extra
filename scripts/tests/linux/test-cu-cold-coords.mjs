@@ -28,12 +28,20 @@
 //       point outside the frame and a frame that cannot be told are refused;
 //       cursor_position reads back in the frame; a warm cache is unchanged;
 //       the guard runs before every action tool, zoom and cursor_position;
+//       the handler passes its real "asked" state (KDE X11 with spectacle and a
+//       masking x11-bridge: native size unmasked, the bridge's frame masked);
+//       with no pin, the executor's default display (GNOME: the monitor
+//       shared in the portal dialog) before the primary;
 //   [3] the kwin executor's __coldFrame (kwin-portal-bridge's rule);
 //   [4] sub-patch 5e on upstream's own mapping, cut from the patched bundle:
-//       Linux reads through __coldFrame, out-of-frame gets upstream's text,
+//       Linux reads through __coldFrame, out-of-frame gets upstream's text, a
+//       __coldFrame that cannot tell the frame is refused with the same text,
 //       no __coldFrame / another platform / a prior screenshot = upstream's
-//       own result. Needs the extract and the compiled patch, else those
-//       cases are skipped (the rest still runs).
+//       own result; every capture of upstream's dispatch passes an allowlist
+//       (why 5e asks with asked = true). Needs the extract and the compiled
+//       patch, else those cases are skipped (the rest still runs);
+//   [5] __axFrameFor (app_ax_find before any screenshot) uses the same tier
+//       rule as __coldFrame, and cu_ax_tools.js passes the asked state.
 //
 // CDB_BUNDLE_DIR points at another extract, CDB_CU_PATCH_BIN at another
 // compiled patch. The temp dir is removed on exit.
@@ -281,6 +289,22 @@ console.log("\n[2] handler: cold clicks");
   globalThis.__cuPinnedDisplay = void 0;
   const s3 = await call(r.ex, "left_click", { coordinate: [155, 626] });
   ok(s3.pt && s3.pt[0] === 208 && s3.pt[1] === 841, "auto: the primary display's frame", J(s3.pt || s3.refused));
+  // No pin: the executor's default display (GNOME: the monitor shared in the
+  // portal dialog, _gnomeSharedDefaultDisplayId) before the primary, as the
+  // screenshot case picks it.
+  const gx = Object.create(r.ex);
+  gx.__defaultDisplayId = async () => 1;
+  const g1 = await call(gx, "left_click", { coordinate: [640, 400] });
+  ok(g1.pt && g1.pt[0] === 2560 && g1.pt[1] === 400, "no pin, default display 1 (GNOME shared monitor): its 1280x800 frame at 1920,0", J(g1.pt || g1.refused));
+  const g2 = await call(gx, "left_click", { coordinate: [1400, 400] });
+  ok(g2.refused && /outside the display bounds/.test(g2.refused), "no pin, default display 1: a point of the primary's 1430-wide frame is refused", g2.refused);
+  gx.__defaultDisplayId = async () => null;
+  const g3 = await call(gx, "left_click", { coordinate: [155, 626] });
+  ok(g3.pt && g3.pt[0] === 208 && g3.pt[1] === 841, "no default display (not GNOME, nothing shared): the primary", J(g3.pt || g3.refused));
+  globalThis.__cuPinnedDisplay = 0;
+  gx.__defaultDisplayId = async () => 1;
+  const g4 = await call(gx, "left_click", { coordinate: [155, 626] });
+  ok(g4.pt && g4.pt[0] === 208 && g4.pt[1] === 841, "a pin beats the default display", J(g4.pt || g4.refused));
   globalThis.__cuPinnedDisplay = 7;
   const s4 = await call(r.ex, "left_click", { coordinate: [10, 10] });
   ok(s4.refused === "There is no prior screenshot to interpret coordinate against. Take a screenshot first.", "a pinned display that is gone: refused", s4.refused);
@@ -292,6 +316,17 @@ console.log("\n[2] handler: cold clicks");
   ok(ku.refused === "There is no prior screenshot to interpret coordinate against. Take a screenshot first.", "no frame known: refused, never guessed", ku.refused);
   const kc = handler(k.ex, "cursor_position", {}, true);
   ok((await kc.__coldGuard(kc.__coldPts())) === null && kc.cold() === null, "cursor_position is never refused (no frame: as before)");
+  // The handler's asked state reaches the executor: the same KDE display is
+  // native size unmasked ("Ask before..." off: no allowlist, spectacle) and
+  // the bridge's frame masked (on: an allowlist, the bridge masks).
+  await new Promise((res) => setTimeout(res, 20));
+  const kOff = await call(k.ex, "left_click", { coordinate: [1500, 300] }, false);
+  ok(kOff.pt && kOff.pt[0] === 1500 && kOff.pt[1] === 300, "KDE + spectacle, ask off: the native 1920x1080 frame (spectacle capture)", J(kOff.pt || kOff.refused));
+  const kOn = await call(k.ex, "left_click", { coordinate: [715, 402] }, true);
+  ok(kOn.pt && kOn.pt[0] === 960 && kOn.pt[1] === 540, "KDE + spectacle, ask on, the bridge masks: its 1430x804 frame", J(kOn.pt || kOn.refused));
+  const kOn2 = await call(k.ex, "left_click", { coordinate: [1500, 300] }, true);
+  ok(kOn2.refused && /outside the display bounds/.test(kOn2.refused), "KDE + spectacle, ask on: a point of the native frame is outside the masked frame", kOn2.refused);
+  ok(/var f=ex\.__coldFrame\(m,__ask\);/.test(cutFn(HANDLER, "__coldShot")), "the handler asks __coldFrame with its own __ask (the screenshot's allowlist condition)");
   const bare = await call({ listDisplays: async () => [] }, "left_click", { coordinate: [10, 20] });
   ok(bare.pt && bare.pt[0] === 10 && bare.pt[1] === 20, "an executor without __coldFrame: the old origin-only fallback, no refusal", J(bare.pt || bare.refused));
   const kt = handler(k.ex, "key", { text: "a" });
@@ -354,7 +389,7 @@ if (!haveBundle) {
     return new Function(fn + "\n" + hfn + "\nreturn " + name + ";")();
   }
   const up = mapper(pristine), ours = mapper(patched);
-  ok(/let __cdbCf=process\.platform==="linux"\?globalThis\.__linuxExecutor\?\.__coldFrame\?\.\(/.test(ours.toString()), "the patched mapping asks the Linux executor");
+  ok(/let __cdbCx=process\.platform==="linux"\?globalThis\.__linuxExecutor:null,__cdbCf=typeof __cdbCx\?\.__coldFrame==="function"\?/.test(ours.toString()), "the patched mapping asks the Linux executor");
   const log = { warn() {} };
   const disp16 = { width: 1920, height: 1080, scaleFactor: 1.6, originX: 0, originY: 0 };
   const saved = globalThis.__linuxExecutor;
@@ -377,8 +412,24 @@ if (!haveBundle) {
   ok(J(ours(10, 20, "normalized_0_100", disp16, void 0, log)) === J(up(10, 20, "normalized_0_100", disp16, void 0, log)), "normalized mode: unchanged");
   globalThis.__linuxExecutor = {};
   ok(J(ours(155, 626, "pixels", disp16, void 0, log)) === J(b), "an executor without __coldFrame: upstream's division");
+  const REFUSE = "coordinate is outside the display bounds, and there is no prior screenshot to interpret it against. Take a screenshot first.";
   globalThis.__linuxExecutor = { __coldFrame: () => null };
-  ok(J(ours(155, 626, "pixels", disp16, void 0, log)) === J(b), "no frame known: upstream's division");
+  const nf = ours(155, 626, "pixels", disp16, void 0, log);
+  ok(nf instanceof Error && nf.message === REFUSE, "no frame known (__coldFrame null): upstream's own refusal, never its division", nf && (nf.message || J(nf)));
+  const nf0 = ours(0, 0, "pixels", disp16, void 0, log);
+  ok(nf0 instanceof Error && nf0.message === REFUSE, "no frame known, point 0,0: refused too", nf0 && (nf0.message || J(nf0)));
+  globalThis.__linuxExecutor = { __coldFrame: () => ({ imgW: 0, imgH: 0, dispW: 1920, dispH: 1080, originX: 0, originY: 0 }) };
+  const nz = ours(155, 626, "pixels", disp16, void 0, log);
+  ok(nz instanceof Error && nz.message === REFUSE, "an empty frame: refused", nz && (nz.message || J(nz)));
+  const asks = [];
+  globalThis.__linuxExecutor = { __coldFrame: (d, asked) => (asks.push(asked), kwinLike.__coldFrame(d)) };
+  ours(155, 626, "pixels", disp16, void 0, log);
+  ok(J(asks) === J([true]), "5e asks with asked = true (upstream's captures always pass an allowlist)", J(asks));
+  // Why asked = true is the real state: every capture of upstream's dispatch
+  // passes its allowlist (grants.captureAllowedBundleIds, an array).
+  const caps = pristine.match(/\.(?:screenshot|resolvePrepareCapture)\(\{/g) || [];
+  const capsAl = pristine.match(/\.(?:screenshot|resolvePrepareCapture)\(\{allowedBundleIds:/g) || [];
+  ok(caps.length > 0 && caps.length === capsAl.length, "upstream: every executor screenshot / resolvePrepareCapture call passes allowedBundleIds", capsAl.length + "/" + caps.length);
   globalThis.__linuxExecutor = kwinLike;
   const plat = Object.getOwnPropertyDescriptor(process, "platform");
   Object.defineProperty(process, "platform", { value: "darwin" });
@@ -386,6 +437,32 @@ if (!haveBundle) {
   Object.defineProperty(process, "platform", plat);
   ok(J(dm) === J(b), "another platform: upstream's division", J(dm));
   globalThis.__linuxExecutor = saved;
+}
+
+// ── [5] __axFrameFor: app_ax_find before any screenshot ────────────────────
+console.log("\n[5] __axFrameFor = __coldFrame (app_ax_find before any screenshot)");
+{
+  const one = [disp(1, R(0, 0, 1920, 1080), 1.6, { x: 0, y: 0 })];
+  const r = makeRig({ displays: one, screens: [scr("A", 0, 0, 3072, 1728, 1, true)], env: { COWORK_SCREENSHOT_CMD: "true {FILE}" } });
+  const a = r.ex.__axFrameFor(10, 10, true);
+  ok(a && a.imgW === 3072 && a.imgH === 1728 && a.displayId === 0 && a.count === 1, "COWORK_SCREENSHOT_CMD: the native frame, as __coldFrame and the capture", J(a));
+  const one1 = [disp(1, R(0, 0, 1920, 1080), 1, { x: 0, y: 0 })];
+  const k = makeRig({ host: "kde", displays: one1, screens: [scr("A", 0, 0, 1920, 1080, 1, true)], mask: true });
+  const kn = k.ex.__axFrameFor(10, 10, false);
+  ok(kn && kn.imgW === 1920 && kn.imgH === 1080, "KDE + spectacle, no allowlist: native size", J(kn));
+  const ku = k.ex.__axFrameFor(10, 10, true);
+  ok(ku === null, "KDE + spectacle, allowlist, mask answer not known yet: no frame", J(ku));
+  await new Promise((res) => setTimeout(res, 20));
+  const km = k.ex.__axFrameFor(10, 10, true);
+  const kc = k.ex.__coldFrame((await k.ex.listDisplays())[0], true);
+  ok(km && kc && km.imgW === 1430 && km.imgW === kc.imgW && km.imgH === kc.imgH, "... once the bridge masks: the bridge's frame, = __coldFrame", J({ km, kc }));
+  const two = [disp(1, R(0, 0, 1920, 1080), 1), disp(2, R(1920, 0, 2560, 1440), 1)];
+  const h = makeRig({ host: "hyprland", displays: two, screens: [scr("DP-1", 0, 0, 1920, 1080, 1, true), scr("DP-2", 1920, 0, 2560, 1440, 1)] });
+  const hf = h.ex.__axFrameFor(2000, 100, false), t2 = bridgeDims(2560, 1440);
+  ok(hf && hf.displayId === 1 && hf.originX === 1920 && hf.imgW === t2.width && hf.count === 2, "the monitor holding the point, its own frame", J(hf));
+  const AX = readFileSync(path.join(ROOT, "js", "cu_ax_tools.js"), "utf8");
+  ok((AX.match(/ex\.__axFrameFor\(p\[0\],p\[1\],shotAsked\(opts\)\)/g) || []).length === 2 && /function shotAsked\(opts\)\{return !!\(opts&&Array\.isArray\(opts\.allowedApps\)\)\}/.test(AX),
+    "cu_ax_tools.js passes the asked state (grants handed over = the handler's __ask) at both call sites");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

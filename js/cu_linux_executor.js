@@ -4024,16 +4024,19 @@ var _ex=globalThis.__linuxExecutor={
     return x?{bin:x,name:"x11-bridge",env:_spo({},x).env}:null;
   },
   // The frame the next full screenshot of the monitor holding DIP point (x, y)
-  // will have (same monitor list and _cuTargetDims rule the capture uses), so
-  // app_ax_find can report positions before any screenshot was taken.
-  __axFrameFor(x,y){
+  // will have (same monitor list and capture tier rule as __coldFrame:
+  // _cuShotFrame), so app_ax_find can report positions before any screenshot
+  // was taken. asked = the handler's screenshot would pass an allowlist ("Ask
+  // before Computer Use controls an app" on: cu_ax_tools.js gets the grants).
+  // Null when the frame cannot be told (a mask answer not known yet).
+  __axFrameFor(x,y,asked){
     var mons=_getMonitors();if(!mons||!mons.length)return null;
     var m=null;
     for(var i=0;i<mons.length;i++){var c=mons[i];if(x>=c.originX&&x<c.originX+c.width&&y>=c.originY&&y<c.originY+c.height){m=c;break}}
     if(!m){for(var j=0;j<mons.length;j++){if(mons[j].isPrimary){m=mons[j];break}}m=m||mons[0]}
-    var sf=m.scaleFactor||1,xr=_x11PxRect(m.originX,m.originY,m.width,m.height,m.displayId);
-    var d=_cuTargetDims(xr?xr.w:Math.round(m.width*sf),xr?xr.h:Math.round(m.height*sf));
-    return{imgW:d.width,imgH:d.height,dispW:m.width,dispH:m.height,originX:m.originX||0,originY:m.originY||0,displayId:m.displayId,label:m.label,count:mons.length};
+    var f=_cuShotFrame(m,asked===!0);if(!f)return null;
+    f.displayId=m.displayId;f.label=m.label;f.count=mons.length;
+    return f;
   },
   // No screenshot in this app run (a restart, switch_display): the frame the
   // model's coordinates are read in - the one the next full screenshot of
@@ -4043,10 +4046,16 @@ var _ex=globalThis.__linuxExecutor={
   // (sub-patch 5e of fix_computer_use_linux.nim, d = its getDisplaySize
   // result, asked = true: upstream always passes an allowlist). Sync, from
   // cached answers only, the way a click maps its point (_x11PxRect).
+  // Residual: the frame assumes the first tier _captureRegion would try
+  // succeeds. A COWORK_SCREENSHOT_CMD or spectacle capture that fails falls
+  // through to a downscaling tier, so the model's last image may have been
+  // smaller than this native-size frame; which tier produced it is not known
+  // after a restart (nothing is kept across app runs), so a point beyond the
+  // downscaled image is still read in the native frame.
   // -> {imgW, imgH, dispW, dispH, originX, originY} | null.
   __coldFrame(d,asked){
     var f=null;try{f=_cuShotFrame(d,asked===!0)}catch(e){f=null}
-    globalThis.__cdbDiag("[claude-cu] no screenshot yet in this app run: coordinates read in "+(f?"the "+f.imgW+"x"+f.imgH+" frame of the "+f.dispW+"x"+f.dispH+" display at "+f.originX+","+f.originY:"no frame (the capture size is not known yet)"));
+    if(typeof globalThis.__cdbDiag==="function")globalThis.__cdbDiag("[claude-cu] no screenshot yet in this app run: coordinates read in "+(f?"the "+f.imgW+"x"+f.imgH+" frame of the "+f.dispW+"x"+f.dispH+" display at "+f.originX+","+f.originY:"no frame (the capture size is not known yet)"));
     return f;
   },
   // x11-bridge root pixel -> Electron DIP (inverse of _x11Px), so an element's
