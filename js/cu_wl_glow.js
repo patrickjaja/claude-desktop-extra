@@ -61,29 +61,45 @@
 // the last point the executor moved it to.
 //
 // Protocol v1 (cu-overlay crate), kept in this file only:
-//   stdin   {"cmd":"show","output","look":"glow"|"rim","badge","reducedMotion","arrow":{x,y}|null}
+//   stdin   {"cmd":"show","output","look":"glow"|"rim","badge","badgeText","reducedMotion","arrow":{x,y}|null}
 //           {"cmd":"move","output"} {"cmd":"glide","frames":[[x,y,deg,lift],...],"frameMs"}
 //           {"cmd":"jump","x","y"} {"cmd":"press","x","y"} {"cmd":"look","look"}
 //           {"cmd":"hide"} {"cmd":"capture","phase":"hide"|"restore","id","scope":"all"|"cursor"}
-//   stdout  {"event":"ready","protocol":1,"backend","alphaModifier","fractionalScale","badge":false,"captureScopes":["all","cursor"],"outputs":[{name,x,y,width,height,scale}]}
+//   stdout  {"event":"ready","protocol":1,"backend","alphaModifier","fractionalScale","badge":true|false,"captureScopes":["all","cursor"],"outputs":[{name,x,y,width,height,scale}]}
 //           {"event":"outputs","outputs":[...]} (layout changed; the output map is
 //           kept from ready + outputs only, never queried separately)
 //           {"event":"shown","output","scale"} {"event":"hidden"} {"event":"ack","id"}
 //           {"event":"error","message","fatal"}
 // `show` naming an unknown output is fatal (exit 2, counted as a failure
-// here), `move` to one is not (the overlay stays). `badge` is accepted and not
-// drawn. Exit 0 = stdin EOF / parent death, 2 = cannot run here (no display,
+// here), `move` to one is not (the overlay stays). Exit 0 = stdin EOF / parent death, 2 = cannot run here (no display,
 // no layer-shell, unknown output), 1 = lost connection.
+// Badge ("Claude is using your computer" pill: flashes in the centre, slides
+// to the top-right corner over 6 s, ends invisible; never under reduced
+// motion). An overlay that draws it reports `ready.badge: true`; against one
+// that reports false or nothing, `show` carries `badge` as upstream passed it
+// and nothing else changes. Upstream's glow page flashes it on every show that
+// asks for it (showBadge, default true; only watch-record, outside a lock,
+// asks for none), and the lock handler shows once per lock acquire, so: the
+// run's first `show` (each upstream show call, in fact) carries badge:true,
+// and every `show` this module sends for its own reasons (the re-show after a
+// respawn or after the compositor took the surfaces away) carries none -
+// the overlay restarts the flash at a badge:true show and clears it at a show
+// without, so the badge is neither repeated nor cut short on a path of ours.
+// `move`, `look`, `glide`, `jump` and `press` leave it alone.
 // Captures: the drawn arrow and press ring are kept out of the screenshots
 // Claude receives (captureCursor / captureRestore, called by
 // js/cu_linux_executor.js around each bridge capture): `capture` with scope
 // "cursor", only when `ready.captureScopes` lists it. A scope-less hide is
 // never sent (it would blank the rim at every screenshot); the rim stays up.
+// While the badge is still up (6 s after the show that started it) the hide
+// uses scope "all" instead, since "cursor" leaves the badge in the picture
+// (it is centred then and could cover what Claude looks at); in that window
+// the rim blanks for the capture too.
 // kwin mode never calls them: kwin-portal-bridge sets KWin's excludeFromCapture
 // on the overlay's surfaces, so none of it is ever in a screenshot.
 var _cp=require("child_process"),_el=require("electron");
-var PROTOCOL=1,READY_MS=3000,TERM_MS=1000,KILL_MS=1000,ERR_TAIL=300;
-var st={trace:!1,held:!1,want:null,dfn:null,child:null,ready:!1,outputs:[],shown:!1,out:null,geo:null,respawns:0,off:!1,reshown:0,arrow:null,glide:null,arriveAt:0,real:null,readySaid:!1,noMatchSaid:!1,capId:0,scopeCursor:!1,acks:{}};
+var PROTOCOL=1,BADGE_MS=6500,READY_MS=3000,TERM_MS=1000,KILL_MS=1000,ERR_TAIL=300;
+var st={trace:!1,held:!1,want:null,dfn:null,child:null,ready:!1,outputs:[],shown:!1,out:null,geo:null,respawns:0,off:!1,reshown:0,arrow:null,glide:null,arriveAt:0,real:null,readySaid:!1,noMatchSaid:!1,capId:0,scopeCursor:!1,badgeOk:!1,badgePending:!1,badgeAt:0,acks:{}};
 function traceOn(){try{return process.env.CDB_CU_DEBUG==="1"}catch(e){return !1}}
 function diag(m){try{(globalThis.__cdbDiag||function(){})("[claude-cu] wl-glow: "+m)}catch(e){}}
 function now(){return typeof performance!=="undefined"&&performance.now?performance.now():Date.now()}
@@ -135,7 +151,7 @@ function write(c,obj){
 function trace(m){diag("trace: t="+now().toFixed(1)+" "+m)}
 function traceCmd(o){
   if(o.cmd==="glide"){var f=o.frames,l=f[f.length-1]||[];return"glide frames="+f.length+" arrive="+Math.round(st.arriveAt-st.glide.at)+" to="+l[0]+","+l[1]}
-  if(o.cmd==="show")return"show output="+o.output+" look="+o.look+(o.arrow?" arrow="+o.arrow.x+","+o.arrow.y:"");
+  if(o.cmd==="show")return"show output="+o.output+" look="+o.look+(o.arrow?" arrow="+o.arrow.x+","+o.arrow.y:"")+(st.badgeOk&&o.badge?" badge":"");
   if(o.cmd==="move")return"move output="+o.output;
   if(o.cmd==="jump"||o.cmd==="press")return o.cmd+" "+o.x+","+o.y;
   if(o.cmd==="capture")return"capture "+o.phase+" id="+o.id+(o.scope?" scope="+o.scope:"");
@@ -154,7 +170,7 @@ function spawnChild(r){
     // closed and masked screenshots go dark under the overlay.
     c=_cp.spawn(r.bin,["overlay"],{stdio:["pipe","pipe","pipe"],env:env});
   }catch(e){fail(r.name,"could not start ("+msg(e)+")");return}
-  st.child=c;st.ready=!1;st.shown=!1;st.out=null;st.geo=null;endGlide();
+  st.child=c;st.ready=!1;st.shown=!1;st.out=null;st.geo=null;st.badgeOk=!1;st.badgeAt=0;endGlide();
   c.__name=r.name;c.__buf="";c.__err="";
   try{if(c.stdin&&typeof c.stdin.on==="function")c.stdin.on("error",function(){})}catch(e){}
   try{
@@ -182,6 +198,7 @@ function onLine(c,line){
     st.ready=!0;
     st.outputs=outputsOf(m);
     st.scopeCursor=Array.isArray(m.captureScopes)&&m.captureScopes.indexOf("cursor")>=0;
+    st.badgeOk=m.badge===!0;
     if(!st.readySaid){st.readySaid=!0;diag(c.__name+" overlay ready ("+String(m.backend||"?")+", "+st.outputs.length+" output"+(st.outputs.length===1?"":"s")+")")}
     if(st.want)sendShow();
   }else if(m.event==="outputs"){
@@ -194,7 +211,7 @@ function onLine(c,line){
   }else if(m.event==="hidden"){
     // The compositor took the surfaces away (an unplugged output): show it
     // once more, on whatever output the display maps to now.
-    var was=st.shown;st.shown=!1;endGlide();
+    var was=st.shown;st.shown=!1;st.badgeAt=0;endGlide();
     if(was&&st.want&&st.held&&!st.off&&st.reshown<1){st.reshown++;st.out=null;sendShow()}
   }else if(m.event==="ack"){
     var f=c===st.child&&st.acks[m.id];if(typeof f==="function")f();
@@ -206,7 +223,7 @@ function gone(c,code,sig,err){
   if(c.__done)return;
   c.__done=!0;clearTimeout(c.__rt);clearTimeout(c.__t1);clearTimeout(c.__t2);
   if(c!==st.child)return;
-  st.child=null;st.ready=!1;st.shown=!1;st.out=null;endGlide();
+  st.child=null;st.ready=!1;st.shown=!1;st.out=null;st.badgeOk=!1;st.badgeAt=0;endGlide();
   if(!st.held||!st.want||st.off)return;
   var why=c.__fatal||c.__why||err||(code!=null?"exit "+code:"signal "+sig);
   var tail=String(c.__err||"").trim().split("\n").pop();
@@ -231,12 +248,20 @@ function sendShow(){
   st.arrow=w.look==="rim"&&inside(st.geo,st.real)?{x:st.real.x,y:st.real.y}:null;
   endGlide();
   st.out=o.name;
-  send({cmd:"show",output:o.name,look:w.look,badge:w.badge,reducedMotion:w.rm,arrow:st.arrow});
+  // An overlay that draws the badge gets badge:true once per upstream show
+  // (never under reduced motion); a show of ours without it clears a running
+  // flash, which only follows surfaces the compositor took away anyway.
+  var bd=w.badge;
+  if(st.badgeOk){
+    bd=w.badge&&!w.rm&&st.badgePending;
+    st.badgePending=!1;st.badgeAt=bd?now():0;
+  }
+  send({cmd:"show",output:o.name,look:w.look,badge:bd,reducedMotion:w.rm,arrow:st.arrow});
 }
 // Hide + stdin EOF; SIGTERM after TERM_MS, SIGKILL KILL_MS later.
 function stop(){
   var c=st.child;
-  st.child=null;st.ready=!1;st.shown=!1;st.out=null;st.geo=null;st.arrow=null;endGlide();
+  st.child=null;st.ready=!1;st.shown=!1;st.out=null;st.geo=null;st.arrow=null;st.badgeOk=!1;st.badgeAt=0;endGlide();
   if(!c)return;
   c.__ours=!0;
   write(c,{cmd:"hide"});
@@ -315,6 +340,7 @@ globalThis.__cdbCuWlGlow={
     var has=opts==null||opts.claudeHasThePointer==null?!0:opts.claudeHasThePointer,rim=!1;
     try{rim=!!has&&typeof flagFn==="function"&&flagFn()===!0}catch(e){rim=!1}
     st.want={look:rim?"rim":"glow",badge:opts==null||opts.showBadge==null?!0:!!opts.showBadge,rm:reducedMotion()};
+    st.badgePending=st.want.badge;
     if(st.off)return !0;
     if(r.overlay===!0){if(!st.child)spawnChild(r);else sendShow();return !0}
     // Not known yet: ask the bridge (cached async doctor) and start on a yes.
@@ -337,7 +363,7 @@ globalThis.__cdbCuWlGlow={
   // event reaches its glow handler).
   lock:function(held){
     if(held)st.trace=traceOn();
-    st.held=!!held;st.respawns=0;st.off=!1;st.reshown=0;st.noMatchSaid=!1;st.want=null;
+    st.held=!!held;st.badgePending=!1;st.respawns=0;st.off=!1;st.reshown=0;st.noMatchSaid=!1;st.want=null;
     stop();
     if(held&&row())probe();
   },
@@ -353,10 +379,15 @@ globalThis.__cdbCuWlGlow={
   // ack comes (the capture is never held up beyond the bound). null at once
   // when there is nothing to hide: no overlay shown, the classic glow look
   // (no arrow), no arrow placed yet, an overlay without the "cursor" scope.
+  // While the badge is up the hide is scope "all" (everything, the badge
+  // included) whatever the look, since "cursor" would leave the pill in the
+  // picture; after its 6 s it is the cursor hide again.
   captureCursor:function(boundMs){
-    if(!st.child||!st.ready||!st.shown||st.off||!st.want||st.want.look!=="rim"||!st.arrow||!st.scopeCursor)return null;
+    if(!st.child||!st.ready||!st.shown||st.off||!st.want)return null;
+    var all=st.badgeAt>0&&now()-st.badgeAt<BADGE_MS;
+    if(!all&&(st.want.look!=="rim"||!st.arrow||!st.scopeCursor))return null;
     var c=st.child,id=++st.capId,t0=now();
-    write(c,{cmd:"capture",phase:"hide",id:id,scope:"cursor"});
+    write(c,{cmd:"capture",phase:"hide",id:id,scope:all?"all":"cursor"});
     return new Promise(function(res){
       var done=!1,tm=setTimeout(function(){fin("none within "+boundMs+" ms")},boundMs);
       st.acks[id]=function(){fin("ack")};

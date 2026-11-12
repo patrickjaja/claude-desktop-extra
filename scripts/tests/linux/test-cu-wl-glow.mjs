@@ -122,7 +122,7 @@ log({ start: true, argv: process.argv.slice(2), ppid: process.ppid, parentEnv: p
 const out = (o) => process.stdout.write(JSON.stringify(o) + "\\n");
 if (process.argv[2] !== "overlay") { process.stderr.write("usage\\n"); process.exit(2); }
 const scopes = JSON.parse(process.env.FAKE_OVL_SCOPES || '["all","cursor"]');
-const ready = () => out({ event: "ready", protocol: 1, backend: "layer-shell", alphaModifier: true, fractionalScale: true, badge: false, captureScopes: scopes, outputs });
+const ready = () => out({ event: "ready", protocol: 1, backend: "layer-shell", alphaModifier: true, fractionalScale: true, badge: process.env.FAKE_OVL_BADGE === "true", captureScopes: scopes, outputs });
 if (mode === "fatal") { out({ event: "error", message: "no wlr-layer-shell on this compositor", fatal: true }); process.exit(2); }
 if (mode === "delay") setTimeout(ready, +process.env.FAKE_OVL_DELAY || 300);
 else if (mode !== "silent") ready();
@@ -214,7 +214,7 @@ function load({ session = "wayland", desktop = "sway", wlroots = true, overlay =
     desktopCapturer: { getSources: async () => [] },
     clipboard: { readText: () => "", writeText: () => {} },
     nativeImage: {},
-    systemPreferences: { getAnimationSettings: () => ({ prefersReducedMotion: false }) },
+    systemPreferences: { getAnimationSettings: () => ({ prefersReducedMotion: globalThis.__testRM === true }) },
   };
   const fsStub = { readFileSync: () => Buffer.alloc(0), writeFileSync() {}, unlinkSync() {}, existsSync: () => false, renameSync() {}, accessSync() { throw new Error("no"); }, readdirSync: () => [], statSync: () => ({ isDirectory: () => false }), constants: { X_OK: 1 } };
   const reqEx = (id) => ({ child_process: cp, electron, path, os, fs: fsStub })[id] || (() => { throw new Error("unexpected require " + id); })();
@@ -775,6 +775,87 @@ try {
     delete process.env.CDB_CU_DEBUG;
   }
 
+  // ── The badge: once per run, never repeated or cut short on our paths ───
+  console.log("\n[2f] badge: sent once per run to an overlay that draws it, capture scope while it is up");
+  {
+    const shows = () => cmds().filter((x) => x.cmd === "show");
+    const bshows = () => shows().map((x) => x.badge);
+    const capCmds = () => readLog().filter((x) => x.cmd && x.cmd.cmd === "capture");
+    const scr = (o, i) => ({ id: i, name: o.name, geometry: { x: o.x, y: o.y, width: o.width, height: o.height }, scale: o.scale, refresh_millihz: 60000, is_active: true, is_primary: i === 0 });
+    const ZOK = () => J({ base64: "AA==", width: 10, height: 10 });
+    const zoomAt = async (r) => { try { await r.ex.zoom({ x: 2000, y: 100, w: 50, h: 50 }, undefined, null, 1, { globalCoords: true }); } catch { /* the scope is what is under test */ } };
+    process.env.FAKE_OVL_BADGE = "true";
+    // Plain run: badge on the first show; a display switch is a move, no show.
+    let r = await rig();
+    r.acquire(); await shown(r.glow);
+    check("badge overlay: the run's show carries badge:true", J(bshows()), J([true]));
+    r.w.api[switchFn[1]]("s1", 0);
+    await waitFor(() => kinds().includes("move"));
+    check("badge overlay: a display switch sends a move only (the flash runs on)", J([kinds().filter((k) => k === "show").length, J(cmds().at(-1))]), J([1, J({ cmd: "move", output: "DP-1" })]));
+    // Another upstream show (it restarts the flash on its own page too).
+    await r.w.api[showFn]({ showBadge: true, claudeHasThePointer: true });
+    await waitFor(() => shows().length === 2);
+    check("badge overlay: a second upstream show with showBadge asks for the flash again, as upstream", J(bshows()), J([true, true]));
+    await r.w.api[showFn]({ showBadge: false, claudeHasThePointer: true });
+    await waitFor(() => shows().length === 3);
+    check("badge overlay: an upstream show without showBadge sends none", J(bshows()), J([true, true, false]));
+    r.release(); await waitFor(() => readLog().some((x) => x.eof));
+    // The next lock is a new run.
+    r = await rig(); r.acquire(); await shown(r.glow);
+    check("badge overlay: the next lock flashes again", J(bshows()), J([true]));
+    r.release(); await waitFor(() => readLog().some((x) => x.eof));
+    // Respawn mid-lock: the new overlay gets no badge.
+    process.env.FAKE_OVL_MODE = "die-on-glide";
+    r = await rig({ flag: true });
+    r.acquire(); await shown(r.glow);
+    await r.ex.moveMouse(2100, 100);
+    await r.ex.showPointerTravel(2600, 500, () => false);
+    check("respawn: a second overlay", await waitFor(() => starts().length === 2), true);
+    await waitFor(() => shows().length === 2);
+    check("respawn: the re-show carries no badge (not flashed twice)", J(bshows()), J([true, false]));
+    await waitFor(() => r.glow.state().off || true);
+    r.release(); await sleep(100);
+    delete process.env.FAKE_OVL_MODE;
+    // Reduced motion: none.
+    globalThis.__testRM = true;
+    r = await rig(); r.acquire(); await shown(r.glow);
+    check("reduced motion: show without badge, reducedMotion true", J(shows().map((x) => [x.badge, x.reducedMotion])), J([[false, true]]));
+    globalThis.__testRM = false;
+    r.release(); await waitFor(() => readLog().some((x) => x.eof));
+    // An overlay that reports badge:false: show as before (badge as upstream asked), no scope change.
+    process.env.FAKE_OVL_BADGE = "false";
+    r = await rig({ flag: true, screens: () => OUTPUTS.map(scr), zoom: ZOK }); r.acquire(); await shown(r.glow);
+    await r.ex.moveMouse(2100, 100); await sleep(30);
+    await r.w.api[showFn]({ showBadge: true, claudeHasThePointer: true });
+    await waitFor(() => shows().length === 2);
+    check("ready.badge false: every show unchanged (badge as upstream asked)", J(bshows()), J([true, true]));
+    await zoomAt(r); await waitFor(() => capCmds().length >= 2);
+    check("ready.badge false: the capture hide stays scope cursor", J(capCmds().map((x) => x.cmd.scope || null)), J(["cursor", null]));
+    r.release(); await waitFor(() => readLog().some((x) => x.eof));
+    process.env.FAKE_OVL_BADGE = "true";
+    // Capture while the badge is up: scope all, also with the classic glow look.
+    r = await rig({ flag: false, screens: () => OUTPUTS.map(scr), zoom: ZOK }); r.acquire(); await shown(r.glow);
+    await r.ex.moveMouse(2100, 100); await sleep(30);
+    await zoomAt(r); await waitFor(() => capCmds().length >= 2);
+    check("badge up, glow look: capture hide with scope all, then restore", J(capCmds().map((x) => [x.cmd.phase, x.cmd.scope || null])), J([["hide", "all"], ["restore", null]]));
+    r.release(); await waitFor(() => readLog().some((x) => x.eof));
+    // After its 6 s the hide is the cursor one again (or none for the glow look).
+    r = await rig({ flag: true, screens: () => OUTPUTS.map(scr), zoom: ZOK }); r.acquire(); await shown(r.glow);
+    await r.ex.moveMouse(2100, 100);
+    await sleep(6700);
+    resetLog();
+    await zoomAt(r); await waitFor(() => capCmds().length >= 2);
+    check("badge over (6.5 s): capture hide with scope cursor", J(capCmds().map((x) => [x.cmd.phase, x.cmd.scope || null])), J([["hide", "cursor"], ["restore", null]]));
+    r.release(); await waitFor(() => readLog().some((x) => x.eof));
+    r = await rig({ flag: false, screens: () => OUTPUTS.map(scr), zoom: ZOK }); r.acquire(); await shown(r.glow);
+    await sleep(6700);
+    resetLog();
+    await zoomAt(r); await sleep(50);
+    check("badge over, glow look: no capture command", capCmds().length, 0);
+    r.release(); await waitFor(() => readLog().some((x) => x.eof));
+    delete process.env.FAKE_OVL_BADGE;
+  }
+
   // No child at all.
   for (const [label, opts] of [
     ["no overlay capability (doctor false)", { overlay: false }],
@@ -1050,7 +1131,7 @@ try {
     check("module: one spawn site, no shell, no exec", (src.match(/_cp\.spawn\(/g) || []).length === 1 && !/shell\s*:/.test(src) && !/exec(File)?(Sync)?\(/.test(src), true);
   }
 } finally {
-  for (const k of ["FAKE_OVL_MODE", "FAKE_OVL_DELAY"]) delete process.env[k];
+  for (const k of ["FAKE_OVL_MODE", "FAKE_OVL_DELAY", "FAKE_OVL_BADGE"]) delete process.env[k];
   rmSync(scratch, { recursive: true, force: true });
 }
 
