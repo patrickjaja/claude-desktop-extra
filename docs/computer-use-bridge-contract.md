@@ -126,12 +126,154 @@ Bridges may add four commands that read and act on a window's accessibility tree
 
 - `ax-enable --holder-pid <pid>` turns the desktop accessibility service (`IsEnabled`) on for a long-lived holder process (Claude's main process, not the short-lived bridge) and remembers the previous value. A screen reader that is running is never touched. Output carries `previous`, `changed`, `screen_reader`, `holders`, and a `reason` when nothing changed.
 - `ax-restore --holder-pid <pid>` drops the holder and turns the service back off only when it was ours and no other holder is left. Always safe to call; a no-op when there is nothing of ours.
-- `ax-find --window <id> [--role R] [--title-contains T] [--all] [--include-hidden] [--max-nodes N] [--max-depth N]` lists a window's elements (role, name, states, value, position) and returns an opaque `scope` plus a `ref` per element. `<id>` is an id from `windows`. The gnome bridge, whose window list carries no ids on stock GNOME, takes `--app-id <id> [--title <t>]` instead of (or with) `--window`.
+- `ax-find --window <id> [--role R] [--title-contains T] [--all] [--include-hidden] [--max-nodes N] [--max-depth N]` lists a window's elements (role, name, states, value, position) and returns an opaque `scope` plus a `ref` per element. `<id>` is an id from `windows`. The gnome bridge, whose window list carries no ids on stock GNOME, takes `--app-id <id> [--title <t>]` instead of (or with) `--window`. wlroots-bridge also takes `--expect-app-id <id>` and `--expect-title <t>` (what the caller listed for the window; a mismatch answers unavailable `window_changed`).
 - `ax-action --scope <scope> --ref <ref> --action click|focus|set-text` acts on an element from `ax-find`. For `set-text` the text is read from stdin (whole, UTF-8, untrimmed) and never from argv.
 
-Exit codes: a missing a11y bus, a screen reader, an unknown or ambiguous window, a stale element or an unsupported action is an **unavailable result** (a JSON object with an `unavailable` reason, exit 0), not an error. Bad usage, including invalid UTF-8 on the `set-text` stdin, exits 2. Other runtime errors exit 1.
+Exit codes: a missing a11y bus, a screen reader, an unknown or ambiguous window, a stale element or an unsupported action is an **unavailable result** (a JSON object with an `unavailable` reason and a `hint`, exit 0), not an error. Bad usage, including invalid UTF-8 on the `set-text` stdin, exits 2. Other runtime errors exit 1.
 
 `doctor` may add the optional key `atspi`: `{"bus": <bool>, "is_enabled": <bool>, "screen_reader": <bool>}`, plus `error` when the session bus is unreachable. It never activates the accessibility bus and never fails the command; on a hung bus it can take up to 5 seconds, so callers use a timeout above that.
+
+The unavailable reasons of the four commands are `no_atspi_bus`, `no_tree_exposed`, `app_not_found`, `ambiguous_window` (with `candidates`: window titles of the matched app), `out_of_scope`, `stale_element`, `no_action` (with `candidates`: the element's action names, when it has some), `not_editable` and, wlroots-bridge only, `window_changed`. `screen_reader_active` is a `reason` of `ax-enable` / `ax-restore`. The additions below keep every one of them with its meaning.
+
+### Accessibility feature negotiation (`ax-features`)
+
+Everything in the rest of this section is additive inside contract v1 and gated by a feature name. A bridge with only the four baseline features behaves exactly as described above.
+
+- `<bridge> ax-features` prints `{"ax_features": [<string>, ...]}` and exits 0. It opens no D-Bus connection, starts no session, reads no file and takes no flags. The list is static per build; order carries no meaning.
+- A bridge without the subcommand exits 2 (clap usage error). The caller treats exit 2, and any other failure of the probe (exit 1, timeout, output that is not this shape), as the empty list. An empty list means: only the baseline commands and flags above, used exactly as today.
+- `doctor.atspi.features` carries the same list (also when `doctor.atspi` reports `error`). `ax-features` is authoritative; `doctor` is for diagnostics. A caller may cache the list per bridge binary path for the life of its process.
+- **Rule:** the caller never passes a flag, an `--action` value or a stdin shape whose feature is not in the list, and never relies on an output field whose feature is not in the list. The caller ignores feature names it does not know. A feature name never changes meaning; a changed shape gets a new name.
+
+```json
+{"ax_features":["find.v1","action.click","action.focus","action.set_text","find.identity","action.expect","find.window_ref","find.deadline","find.root","find.skeleton","action.ensure","action.scroll_to","action.set_value"]}
+```
+
+| feature | gates |
+|---|---|
+| `find.v1` | `ax-find` with the baseline flags above (including gnome `--app-id` / `--title` and wlroots `--expect-app-id` / `--expect-title`) and the baseline output |
+| `action.click` | `ax-action --action click` |
+| `action.focus` | `ax-action --action focus` |
+| `action.set_text` | `ax-action --action set-text`, text on stdin |
+| `find.identity` | element fields `accessible_id`, `depth`, `parent_index`, `path`, `unique` in every `ax-find` result |
+| `action.expect` | `ax-action --expect-json` (stdin JSON object); `delivery` on every `ax-action` output, result or unavailable; reason `element_changed`. Listed only together with `find.identity` |
+| `find.window_ref` | `ax-find --window-ref <ref>`; result key `window_ref_used` |
+| `find.deadline` | `ax-find --deadline-ms <n>` |
+| `find.root` | `ax-find --root-ref <ref> --scope <scope>`; result key `root_ref` |
+| `find.skeleton` | `ax-find --skeleton`; element field `child_count` |
+| `action.ensure` | `--action` `ensure-checked`, `ensure-unchecked`, `ensure-expanded`, `ensure-collapsed`, `ensure-selected`; result key `already`; `post.expanded`, `post.selected`; reasons `unsupported_action`, `requires_input` |
+| `action.scroll_to` | `--action scroll-to`; reason `unsupported_action` |
+| `action.set_value` | `--action set-value` (number in the `--expect-json` object); reasons `unsupported_action`, `value_out_of_range` |
+
+`action.ensure`, `action.scroll_to` and `action.set_value` are listed only together with `action.expect`.
+
+### `ax-find` additions
+
+**`find.identity`: element fields.** Every element carries all five keys:
+
+| key | type | meaning |
+|---|---|---|
+| `accessible_id` | string or null | AT-SPI `Accessible.AccessibleId` (the toolkit's developer id). null when the property is missing or empty, and for elements whose `name` is blanked by terminal taint (see Redaction) |
+| `depth` | number | levels below the walk root: a direct child of the window frame is 1 |
+| `parent_index` | number or null | the `index` of the nearest ancestor that is also in this `elements` list; null when no ancestor is listed (the walk root is never listed) |
+| `path` | array of numbers | child positions from the walk root down to the element, one per level (`path.length == depth`), each the element's position among its parent's children as the walk read them. A hint for layout and diagnostics only, never identity: a sibling inserted above shifts it |
+| `unique` | bool or null | no other walked node has the same `role`, `name` and `accessible_id` (each compared exactly as printed, after redaction). Counted over every node the walk read, listed or not, including nodes the visibility clip dropped; non-`showing` subtrees count only with `--include-hidden`. null when the result is `truncated` (any `truncated_reason`) or the walk was rooted with `--root-ref`, because then the rest of the window was not seen |
+
+`index` keeps its meaning (BFS visit order, walk root = 0).
+
+**`find.window_ref`: `--window-ref <ref>`.** `<ref>` is the `window.ref` of an earlier `ax-find` of the same window. The bridge matches the app exactly as without the flag (pid, then app id / WM_CLASS) and then uses `<ref>` as the window instead of its own title-based window choice when, and only when, `<ref>` is on that app's bus, its parent is that app's root, it is not `defunct` and it is `showing`. Otherwise the flag is ignored and the window is resolved as without it (which may answer `app_not_found` or `ambiguous_window`). Every other check is unchanged: the app match, the result's `app.pid` and `matched_by` (and the caller's own pid and `matched_by` checks), the frame classification against the bridge's window rect. The result adds `window_ref_used` (bool, present only when the flag was passed). wlroots-bridge: when `window_ref_used` is true, a title that differs from `--expect-title` is not `window_changed` as long as the app id matches `--expect-app-id`; without `--expect-app-id` the title check applies as before. gnome-portal-bridge: when `window_ref_used` is true, `--title` does not have to match.
+
+**`find.deadline`: `--deadline-ms <n>`.** Shortens one find for polling. `n` is clamped to 100..=5000. The walk stops `n` ms after the command started (instead of after 5 s) and the whole command ends within `n + 2000` ms (instead of 10 s); the remaining time is for the detail reads. A walk stopped by it answers `truncated: true`, `truncated_reason: "deadline"` with what it read so far (and `unique: null`). Exceeding the whole-command limit is a runtime error (exit 1), as the 10 s limit is today. Callers use a process timeout above `n + 2000`.
+
+**`find.root`: `--root-ref <ref> --scope <scope>`** (each requires the other; exit 2 otherwise). Walks only below one element of the window. `<scope>` is the `scope` of an earlier `ax-find` of this window, `<ref>` an element `ref` of that result. The window arguments (`--window`, gnome `--app-id` / `--title`) are still required and are resolved as always; then:
+
+1. the resolved window must be the window `<scope>` names (same unique bus, same window path, same app pid), else unavailable `out_of_scope`;
+2. `<ref>` gets the same checks `ax-action` applies before acting: same bus, unchanged peer pid, not gone or `defunct` (else `stale_element`), a Parent chain of at most 64 steps that reaches the scoped window (else `out_of_scope`).
+
+The walk then starts at `<ref>` (`index` 0, `depth` 0, `path` [], never listed itself) with the usual budgets and filters. Taint is inherited from the root's ancestors exactly as `ax-action` computes it, so redaction is the same as in a whole-window walk. `scope` and `window` in the result are those of the window; the result adds `root_ref` (the `<ref>` walked). A rooted walk never answers `no_tree_exposed` (an empty list is a valid answer). `unique` is always null.
+
+**`find.skeleton`: `--skeleton`.** Lists containers only: every walked node with at least one child, whatever its role, instead of the interactive filter. It conflicts with `--role`, `--title-contains` and `--all` (exit 2). Every element of a skeleton result carries `child_count` (number, the AT-SPI `ChildCount`; the walk may have read fewer). Combines with `--root-ref`, `--max-depth` and `--max-nodes`. `child_count` is absent without `--skeleton`.
+
+Budgets are unchanged by every addition: `--max-nodes` default 300, clamped to 1..=2000; `--max-depth` default 32, clamped to 1..=64; without `--deadline-ms` a 5 s walk and a 10 s command.
+
+An element with `find.identity` (bridge-specific `rect_*` keys as before):
+
+```json
+{"index": 7, "ref": ":1.42/org/a11y/atspi/accessible/12", "role": "check box", "ax_role": "AXCheckBox",
+ "name": "Word wrap", "states": ["checked"], "actions": ["click"],
+ "accessible_id": "wrap-toggle", "depth": 3, "parent_index": 4, "path": [0, 2, 1], "unique": true,
+ "rect_window": {"x": 12, "y": 80, "width": 120, "height": 24}}
+```
+
+### `ax-action` additions
+
+**`action.expect`: `--expect-json`.** With the flag, stdin is exactly one UTF-8 JSON object (whitespace around it allowed) and nothing else; it replaces the raw `set-text` stdin. Without the flag, stdin is handled exactly as today (`set-text` reads the raw text, other actions ignore stdin).
+
+```json
+{"expect": {"role": "check box", "name": "Word wrap", "accessible_id": "wrap-toggle"}, "text": "only for set-text", "value": 42.5}
+```
+
+- `expect` is required, with all three keys: `role` (string, the AT-SPI `role` as `ax-find` printed it), `name` (string, as printed; `""` for none), `accessible_id` (string or null, as printed).
+- `text` (string) is required for `set-text` and not allowed for any other action. `value` (finite number) is required for `set-value` and not allowed for any other action.
+- An unknown key, a missing required key, a wrong type, invalid UTF-8 or JSON, or trailing data exits 2 before any D-Bus call. The bridge never echoes or logs `text`, `value` or `expect`.
+- The check runs after the existing checks (same bus, unchanged pid, not gone or `defunct`, Parent chain into the scoped window) and before anything is planned or sent. The bridge reads the element's role, name and accessible id, applies the same taint as `ax-find` (a descendant of a terminal compares as `name: ""` and `accessible_id: null`), and compares each key exactly. Any difference answers unavailable `element_changed`, `delivery: "not_sent"`.
+
+`--action set-value` requires `--expect-json` (exit 2 without). The caller sends `--expect-json` on every action once `action.expect` is listed.
+
+**New `--action` values.** Result `action` names are the snake_case form (`ensure_checked`, ..., `scroll_to`, `set_value`), like `set_text` today.
+
+| `--action` | feature | goal | how |
+|---|---|---|---|
+| `ensure-checked` / `ensure-unchecked` | `action.ensure` | `checked` state set / not set (`indeterminate` counts as not checked) | the element must be checkable (`checkable` state or a check box, radio button, toggle button, check or radio menu item role). One click-like `DoAction` (method `action:<name>`). `ensure-unchecked` on a checked radio button or radio menu item is `unsupported_action` |
+| `ensure-expanded` / `ensure-collapsed` | `action.ensure` | `expanded` state set / `collapsed` (or no `expanded`) | the element must be `expandable` or report `expanded` / `collapsed`. An `expand` / `collapse` / `toggle` action, else a click-like one (method `action:<name>`) |
+| `ensure-selected` | `action.ensure` | `selected` state set | the element must be `selectable`. `Selection.SelectChild` on the parent when the parent has the Selection interface (method `select_child`), else a click-like `DoAction` |
+| `scroll-to` | `action.scroll_to` | the element scrolled into view | `Component.ScrollTo` with `ANYWHERE` (method `scroll_to`). Always sent, also when already in view |
+| `set-value` | `action.set_value` | `Value.CurrentValue` = the requested `value` | the element must have the Value interface and not be `read_only`. A requested value below `MinimumValue` or above `MaximumValue` is refused with `value_out_of_range`, never clamped (a clamped value is not what the caller asked for; the caller can choose an in-range value). When the element reports `MinimumValue >= MaximumValue` the range is unknown and the value is sent as is. Method `set_current_value` |
+
+- **Idempotent ensure.** The bridge reads the current state first. Already in the goal state: nothing is sent, the result is `{"ok": true, "already": true, "method": "none", "delivery": "not_sent", "post": {...}}`. Every ensure result carries `already` (bool); other actions never do.
+- **Planner refusals.** No supported way to reach the goal (wrong kind of element, no fitting action or interface): unavailable `unsupported_action`, nothing sent. A Qt combo box whose popup is a native window on a Wayland session (`ensure-expanded` / `ensure-collapsed` on a Qt `combo box` outside X11): unavailable `requires_input`, nothing sent; the caller falls back to pointer input. `click` keeps its baseline behavior on every element.
+- **Read-back.** After a sent `ensure-*` or `set-value`, the bridge reads the state back. The goal is verified when the read-back shows it; for `set-value` when `|read - requested| <= max(MinimumIncrement / 2, 1e-9 * max(1, |requested|))`. Verified: `ok: true`, `delivery: "sent"`. The toolkit answered but the read-back does not show the goal or could not be read: `ok: null`, `delivery: "sent_unverified"`, the real `method`, and `error` saying what the read-back showed (never a value of a redacted or terminal element). The verification read is internal; Redaction governs only what is printed.
+
+**`post` additions.** `post` keeps `focused`, `checked`, `value` (string, the same preview `ax-find` prints; for a Value-interface element the number as a decimal string) and `value_redacted`, and gains `expanded` (bool, present when the element is `expandable` or reports `expanded` / `collapsed`) and `selected` (bool, present when the element is `selectable`). Both come with `action.ensure` and appear on the `post` of every action of such a bridge.
+
+### Delivery (`action.expect`)
+
+Every `ax-action` output of a bridge that lists `action.expect` carries `delivery`, with or without `--expect-json`, on results and on unavailable answers:
+
+| `delivery` | meaning |
+|---|---|
+| `not_sent` | no call that can change the app was made (`DoAction`, `GrabFocus`, `SetTextContents`, `DeleteText`, `InsertText`, `SelectChild`, `ScrollTo`, a `CurrentValue` write). Safe to retry |
+| `sent_unverified` | such a call was made, and the bridge cannot tell whether the app carried it out: no reply in time, the element disappeared during or after the call, or (`ensure-*`, `set-value`) the read-back does not confirm the goal. Do not repeat blindly |
+| `sent` | such a call was made and the toolkit replied; for `ensure-*` and `set-value` the read-back also confirms the goal. The reply may still be a refusal (`ok: false`) |
+
+Relation to `ok`:
+
+- `ok: true` comes with `sent`, or with `not_sent` when `already` is true.
+- `ok: false` (the toolkit answered false, or `set_text` failed and was rolled back) comes with `sent`.
+- `ok: null` comes with `sent_unverified`: `method: "dispatched"` when no reply came in time (as today), the real method when an `ensure-*` / `set-value` read-back did not confirm.
+- Every unavailable answer of `ax-action` comes with `not_sent`, except `stale_element` raised because the element vanished after a call was made, which comes with `sent_unverified`.
+- Exit 2 means nothing was sent. Exit 1 (runtime error, including the 8 s command limit) carries no JSON; the caller treats it as `sent_unverified`.
+
+A caller talking to a bridge without `action.expect` derives it: unavailable `stale_element` -> `sent_unverified`, any other unavailable -> `not_sent`, `ok: null` -> `sent_unverified`, otherwise `sent`.
+
+### New unavailable reasons
+
+| reason | command | meaning | `delivery` |
+|---|---|---|---|
+| `element_changed` | `ax-action` | the element at the ref no longer has the `role`, `name` or `accessible_id` of `--expect-json` | `not_sent` |
+| `unsupported_action` | `ax-action` | `ensure-*`, `scroll-to` or `set-value` has no supported way on this element | `not_sent` |
+| `requires_input` | `ax-action` | the goal needs pointer or keyboard input (Qt native combo popup on Wayland) | `not_sent` |
+| `value_out_of_range` | `ax-action` | the `set-value` value lies outside the element's range; adds `range: {"min": <number>, "max": <number>}` | `not_sent` |
+
+`--root-ref` reuses `out_of_scope` and `stale_element` on `ax-find`. All of them carry `hint`.
+
+```json
+{"ok": true, "action": "ensure_checked", "method": "action:toggle", "already": false, "delivery": "sent", "post": {"focused": false, "checked": true}}
+{"unavailable": "element_changed", "hint": "The element at this ref is no longer the one that was listed; list the window again.", "delivery": "not_sent"}
+```
+
+### Redaction
+
+The redaction rules of `ax-find` cover every new field and command. A `password text` element, an editable field labelled like a secret, and every descendant of one never expose a value: no `value` in `ax-find`, no `post.value` after any action (`set-text`, `set-value` and `ensure-*` included), `value_redacted: true` instead. A `terminal` element exposes its name only (no value); its descendants expose no value, `name` as `""` and `accessible_id` as null, in `ax-find`, in the `--expect-json` comparison and in `unique`. `error` texts never quote a value, and the text, value and expectation from stdin are never echoed or logged.
 
 ## Optional: abort watcher (`abort-watch`)
 
