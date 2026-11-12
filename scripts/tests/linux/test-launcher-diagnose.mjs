@@ -791,10 +791,13 @@ safe("D10", () => {
   const checker = join(repo, "scripts", "check-bridge-contract.sh");
   // x11-bridge's doctor must also carry the #327 capabilities.
   const X11_CAPS = '{"screenshot_mask": true, "screenshot_mask_ignore": true, "compositing": null, "compositing_error": "no display"}';
-  const stub = (name, supported, forgetRm = "rm -f \"$f\"", caps = X11_CAPS) => `#!/bin/sh
+  // Every bridge must answer ax-features with the set the bundled JS relies on.
+  const AX = '{"ax_features":["find.v1","action.click","action.focus","action.set_text","find.identity","action.expect","find.window_ref","find.deadline","find.root","find.skeleton","action.ensure","action.scroll_to","action.set_value"]}';
+  const stub = (name, supported, forgetRm = "rm -f \"$f\"", caps = X11_CAPS, ax = AX) => `#!/bin/sh
 NAME=${name}
 case "$1" in
-  --version) echo "$NAME 1.0.0" ;;
+  --version) echo "$NAME 1.0.0" ;;${ax === null ? "" : `
+  ax-features) echo '${ax}' ;;`}
   doctor)
     if [ ${supported} = true ]; then tp="\\"$XDG_STATE_HOME/$NAME/restore-token.json\\""; sk="\\"$XDG_RUNTIME_DIR/$NAME/session.sock\\""; else tp=null; sk=null; fi
     printf '{\\n  "contract": 1,\\n  "bridge": "%s",\\n  "version": "1.0.0",\\n  "backend": "x",\\n  "session_match": false,\\n  "backend_reachable": false,\\n  "backend_error": "no display",\\n  "session_supported": ${supported},\\n  "restore_token_present": false,\\n  "restore_token_path": %s,\\n  "daemon_running": false,\\n  "session_socket": %s,\\n  "capabilities": ${caps}\\n}\\n' "$NAME" "$tp" "$sk" ;;
@@ -814,7 +817,20 @@ esac
   let r = spawnSync(BASH, [checker, good], { encoding: "utf8", timeout: 120000 });
   check("compliant bridges: exit 0", r.status, 0);
   check("compliant bridges: 2 checked, no FAIL",
-    (r.stdout || "").includes("2 bridge(s): 21 passed, 0 failed") && !/^FAIL/m.test(r.stdout || ""), true);
+    (r.stdout || "").includes("2 bridge(s): 23 passed, 0 failed") && !/^FAIL/m.test(r.stdout || ""), true);
+  // A bridge older than ax-features (exit 2) or one listing too little fails.
+  const noax = join(scratch, "d10", "noax");
+  writeExe(join(noax, "gnome-portal-bridge"), stub("gnome-portal-bridge", "true", undefined, X11_CAPS, null));
+  r = spawnSync(BASH, [checker, noax], { encoding: "utf8", timeout: 120000 });
+  check("a bridge without ax-features: exit 1", r.status, 1);
+  check("...named in a FAIL line", /^FAIL gnome-portal-bridge: ax-features - exit 2 /m.test(r.stdout || ""), true);
+  const fewax = join(scratch, "d10", "fewax");
+  writeExe(join(fewax, "gnome-portal-bridge"), stub("gnome-portal-bridge", "true", undefined, X11_CAPS,
+    '{"ax_features":["find.v1","action.click","action.focus","action.set_text","action.ensure"]}'));
+  r = spawnSync(BASH, [checker, fewax], { encoding: "utf8", timeout: 120000 });
+  check("a bridge listing too few ax features, action.ensure without action.expect: exit 1", r.status, 1);
+  check("...missing features and the coupling rule named",
+    /^FAIL gnome-portal-bridge: ax-features - .*missing feature 'find\.identity'.*action\.ensure is listed without action\.expect/m.test(r.stdout || ""), true);
   // An x11-bridge older than the #327 capabilities passes the contract but
   // fails here (the app would keep the glow off on every X11 session).
   const old = join(scratch, "d10", "old");

@@ -817,6 +817,7 @@ console.log("\n[C] the bridge contract check fails on a wlroots-bridge without t
 # ${report}
 case "$1" in
   --version) echo "wlroots-bridge 0.3.0" ;;
+  ax-features) echo '{"ax_features":["find.v1","action.click","action.focus","action.set_text","find.identity","action.expect","find.window_ref","find.deadline","find.root","find.skeleton","action.ensure","action.scroll_to","action.set_value"]}' ;;
   doctor) printf '%s\\n' '{"contract":1,"bridge":"wlroots-bridge","version":"0.3.0","backend":"wlroots","session_match":false,"backend_reachable":false,"backend_error":"WAYLAND_DISPLAY is not set","session_supported":false,"restore_token_present":false,"restore_token_path":null,"daemon_running":false,"session_socket":null,"window_geometry":false,"screenshot_mask":false,"screenshot_mask_gaps":[]${extra}}' ;;
   session-end) echo '{"ok":true,"ended":false,"daemon":"none"}' ;;
   forget-session) echo '{"ok":true,"ended":false,"daemon":"none","token_removed":false,"token_path":null}' ;;
