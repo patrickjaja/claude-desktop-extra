@@ -851,7 +851,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
       </div>
       <h3>Computer Use</h3>
-      <p>Desktop automation (screenshot, click, type, scroll, teach mode), on for every account and every session type, with bundled bridges for X11, Wayland, GNOME and KDE. <a href="#computer-use">More &rarr;</a></p>
+      <p>Claude sees your screen and works in your apps, on every account and every session type. Bundled bridges for X11, Wayland, GNOME and KDE, a glow that shows what Claude does, a second display for Claude, and controls by name instead of by pixel. <a href="#computer-use">More &rarr;</a></p>
     </div>
 
     <div class="feature-card">
@@ -1096,7 +1096,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
 <section id="computer-use" class="fade-in">
   <div class="section-label">Computer Use</div>
   <h2>Desktop automation on every session type</h2>
-  <p>Screenshot, click, type, scroll and teach mode, on for every account and every session type. The official build's own Linux Computer Use is a staged rollout that needs a RemoteDesktop portal (GNOME 46+, current Plasma) and skips wlroots; our bundled bridges take precedence and need nothing installed.</p>
+  <p>Claude sees your screen, clicks, types and scrolls in your apps, on for every account and every session type. Anthropic's own Linux Computer Use is a staged rollout that needs a RemoteDesktop portal (GNOME 46+, current Plasma) and skips wlroots. Our four bundled bridges close that gap, with nothing to install.</p>
 
   <div class="compat-grid">
     <table>
@@ -1135,14 +1135,25 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
 
   <div class="cowork-box" style="margin-top: 1.5rem;">
     <div class="cowork-mode">
+      <h3>You see what Claude does</h3>
+      <p>A glow frames the screen while Claude works, and Anthropic's drawn cursor glides to each click target before the real pointer follows. Both stay out of Claude's own screenshots. On X11, Sway, Hyprland, Niri, KDE Plasma and GNOME.</p>
+    </div>
+    <div class="cowork-mode">
+      <h3>You stay in charge</h3>
+      <p>Claude asks which apps it may control, screenshots show only the approved ones where the desktop can filter them, and Escape stops it at once (opt-in). <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/cu-escape-abort.md">Details</a></p>
+    </div>
+  </div>
+
+  <div class="cowork-box" style="margin-top: 1.5rem;">
+    <div class="cowork-mode">
       <div class="badge badge-exp">Experimental</div>
-      <h3>Background display</h3>
-      <p>Point Computer Use at a second display you start yourself (Xvfb, Xephyr or a headless sway), so Claude works there while you keep your desktop. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md#computer-use-on-a-background-display-experimental">Details</a></p>
+      <h3>Claude works on its own screen</h3>
+      <p>Point Computer Use at a second display you start yourself (Xvfb, Xephyr or a headless sway), so Claude works there while you keep your mouse, keyboard and desktop. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md#computer-use-on-a-background-display-experimental">Details</a></p>
     </div>
     <div class="cowork-mode">
       <div class="badge badge-exp">Experimental</div>
-      <h3>Read app controls</h3>
-      <p>Claude reads and presses app controls by name through the accessibility bus instead of by screenshot. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md#read-app-controls-through-accessibility-experimental">Details</a></p>
+      <h3>Controls by name, not by pixel</h3>
+      <p>Claude reads an app's buttons and fields through the accessibility bus and presses them directly: more precise, and fewer tokens than screenshots. <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md#read-app-controls-through-accessibility-experimental">Details</a></p>
     </div>
   </div>
   <div class="more-link">Settings &rarr; Extra &rarr; <strong>Cowork (Linux)</strong> shows whether it works here and holds its switches. Cloud Cowork and Dispatch reach it only with TPM access for the device key (one click on that page): <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md#computer-use-in-cloud-cowork-and-dispatch">details</a>. Full guide: <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md">docs/computer-use.md</a>.</div>
