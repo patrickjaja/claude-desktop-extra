@@ -148,8 +148,14 @@ process.stdin.on("end",()=>{
   let out=fx[a[0]];
   const once=process.env.CDB_FAKE_AX_ONCE;
   if(once&&a[0]==="ax-find"&&a.includes(once)&&!fs.existsSync(process.env.CDB_FAKE_AX_LOG+".once")){fs.writeFileSync(process.env.CDB_FAKE_AX_LOG+".once","1");process.stdout.write(JSON.stringify({unavailable:"app_not_found",hint:"No accessible application matched the window."}));return}
-  if(a[0]==="ax-find")out=arg("--app-id")!==undefined?fx["ax-find-app"][arg("--app-id")+"|"+(arg("--title")||"")]:fx["ax-find"][arg("--window")];
-  if(a[0]==="ax-action")out=fx["ax-action"][arg("--ref")];
+  // A key may have variants: "<key>|root:<ref>", "<key>|skeleton", "<key>|all"
+  // (ax-find), "<ref>|<action>" (ax-action); the first that exists wins.
+  const pick=(tab,base,vs)=>{if(!tab)return undefined;for(const v of vs){if(v&&tab[base+"|"+v]!==undefined)return[base+"|"+v,tab[base+"|"+v]]}return[base,tab[base]]};
+  let key=null;
+  if(a[0]==="ax-find"){const app=arg("--app-id")!==undefined;[key,out]=pick(app?fx["ax-find-app"]:fx["ax-find"],app?arg("--app-id")+"|"+(arg("--title")||""):arg("--window"),[arg("--root-ref")&&"root:"+arg("--root-ref"),a.includes("--skeleton")&&"skeleton",a.includes("--all")&&"all"])}
+  if(a[0]==="ax-action")[key,out]=pick(fx["ax-action"],arg("--ref"),[arg("--action")]);
+  // {"__seq":[a,b,...]}: successive answers per key (the last one repeats).
+  if(out&&Array.isArray(out.__seq)){const f=LOG+".seq."+Buffer.from(a[0]+"\\n"+key).toString("hex");const n=fs.existsSync(f)?Number(fs.readFileSync(f,"utf8")):0;fs.writeFileSync(f,String(n+1));out=out.__seq[Math.min(n,out.__seq.length-1)]}
   if(out&&out.__exit){process.stderr.write(out.stderr||"");process.exit(out.__exit)}
   if(out===undefined){process.stderr.write("no fixture for "+a.join(" ")+"\\n");process.exit(1)}
   process.stdout.write(JSON.stringify(out));
@@ -1298,6 +1304,209 @@ if (patchMissing || !existsSync(stubPath)) {
       const offKey = oc.__cdbAxKey();
       check("switch off: no tools, no key, nothing spawned (no probe either)", JSON.stringify(offTools) + "|" + offKey + "|" + calls().length + "|" + featCalls().length, "[]||0|0");
       setFeatures(undefined);
+    }
+
+    // ---------------------------------------------------------------- [9]
+    // ax-refs: [N] is allocated once per accessible object and reused; actions
+    // carry the element's identity (--expect-json); a re-created element is
+    // re-identified only under the strict rule; delivery decides the wording.
+    console.log("\n[9] stable [N], identity check, delivery, re-identification");
+    const fixFile2 = join(scratch, "fixture-v2.json");
+    const resetSeq = () => {
+      for (const f of readdirSync(scratch)) if (f.startsWith("bridge.log.seq.")) rmSync(join(scratch, f));
+    };
+    const AXR = { "push button": "AXButton", text: "AXTextField", "check box": "AXCheckBox", slider: "AXSlider", "spin button": "AXIncrementor", panel: "AXGroup", filler: "AXGroup", "page tab": "AXRadioButton" };
+    const vEl = (index, role, name, ref, extra = {}) => ({
+      index, ax_role: AXR[role] || "AXUnknown", role, name, ref,
+      states: ["enabled", "sensitive", "showing", "visible"], actions: ["click"],
+      accessible_id: null, depth: 2, parent_index: null, path: [0, index], unique: true,
+      rect_screen: { x: 100 + index * 10, y: 200, width: 20, height: 20 },
+      ...extra,
+    });
+    const KATE_WIN = { id: "{kate-1}", title: "notes.txt - Kate", ref: ":1.42/w", frame_class: "global_frame" };
+    const kateFind = (elements, extra = {}) => ({ app: { name: "kate", pid: 1111 }, window: KATE_WIN, coords: "screen", scope: "sc-kate2", matched_by: "pid", truncated: false, total_seen: 60, elements, ...extra });
+    const V_A = [
+      vEl(3, "push button", "Save", "r-save", { accessible_id: "save-btn" }),
+      vEl(5, "text", "Search", "r-search", { states: ["enabled", "editable"] }),
+      vEl(12, "check box", "Word wrap", "r-wrap"),
+      vEl(13, "push button", "OK", "ok-1", { unique: false }),
+      vEl(14, "push button", "OK", "ok-2", { unique: false }),
+      vEl(15, "password text", "Password", "pw2", { ax_role: "AXSecureTextField", states: ["editable"], value_redacted: true }),
+      vEl(16, "terminal", "Terminal", "term"),
+      vEl(17, "push button", "", "term-child", { parent_index: 16 }),
+      vEl(18, "push button", "Apply", "apply-1", { accessible_id: "apply" }),
+      vEl(19, "push button", "Close", "close-1"),
+      vEl(20, "push button", "Twin", "twin-1"),
+      vEl(21, "push button", "", "nameless-1"),
+      vEl(22, "push button", "Gone", "gone-1"),
+      vEl(23, "push button", "Sent", "sentu-1"),
+      vEl(24, "push button", "Boom", "boom-1"),
+      vEl(25, "push button", "Nope", "nope-1"),
+      vEl(26, "push button", "NoAct", "noact-1"),
+    ];
+    // The tree changed: a new control in front shifts every BFS index.
+    const V_A2 = [vEl(3, "push button", "New", "r-new"), ...V_A.map((e) => ({ ...e, index: e.index + 1 }))];
+    // The full re-find after a re-creation.
+    const V_B = [
+      ...V_A.filter((e) => !["apply-1", "close-1", "twin-1", "gone-1", "nameless-1"].includes(e.ref)),
+      vEl(40, "push button", "Apply now", "apply-2", { accessible_id: "apply" }),
+      vEl(41, "push button", "Close", "close-2"),
+      vEl(42, "push button", "Twin", "twin-2", { unique: false }),
+      vEl(43, "push button", "Twin", "twin-3", { unique: false }),
+    ];
+    const ST = (delivery) => ({ unavailable: "stale_element", hint: "The element is gone.", delivery });
+    const OKA = (action) => ({ ok: true, action, method: "action:click", delivery: "sent", post: { focused: false } });
+    const FIX2 = {
+      ...FIXTURE,
+      "ax-find": {
+        ...FIXTURE["ax-find"],
+        "{kate-1}": { __seq: [kateFind(V_A), kateFind(V_A2)] },
+        "{kate-1}|all": kateFind(V_B),
+        "{dolphin-1}": { app: { name: "dolphin", pid: 2222 }, window: { id: "{dolphin-1}", title: "Home - Dolphin", ref: ":1.50/w" }, coords: "window_only", scope: "sc-dol2", matched_by: "pid", truncated: false, total_seen: 3, elements: [vEl(2, "push button", "Up", "up-1", { accessible_id: "up" })] },
+        "{dolphin-1}|all": { app: { name: "dolphin", pid: 9999 }, window: { id: "{dolphin-1}", title: "Home - Dolphin", ref: ":1.50/w" }, coords: "window_only", scope: "sc-dol3", matched_by: "pid", truncated: false, total_seen: 3, elements: [vEl(2, "push button", "Up", "up-2", { accessible_id: "up" })] },
+        "{gedit-1}": { app: { name: "gedit" }, window: { id: "{gedit-1}", title: "gedit", ref: ":1.77/w" }, coords: "window_only", scope: "sc-big", matched_by: "app_id", truncated: false, total_seen: 4100, elements: Array.from({ length: 4100 }, (_, i) => vEl(i, "push button", "b" + i, "big-" + i)) },
+      },
+      "ax-action": {
+        ...FIXTURE["ax-action"],
+        "r-save": OKA("click"),
+        "r-search": { ok: true, action: "set_text", method: "set_text_contents", delivery: "sent" },
+        "apply-1": ST("not_sent"),
+        "apply-2": OKA("click"),
+        "close-1": { unavailable: "element_changed", hint: "The element at this ref is no longer the one that was listed.", delivery: "not_sent" },
+        "close-2": OKA("click"),
+        "twin-1": ST("not_sent"),
+        "nameless-1": ST("not_sent"),
+        "gone-1": ST("not_sent"),
+        "sentu-1": ST("sent_unverified"),
+        "boom-1": { __exit: 1, stderr: "error: ax-action timed out\n" },
+        "nope-1": { ok: false, action: "click", method: "action:click", delivery: "sent" },
+        "noact-1": { unavailable: "no_action", hint: "No click-like action.", delivery: "not_sent" },
+        "ok-1": { unavailable: "element_changed", hint: "changed", delivery: "not_sent" },
+        "pw2": { unavailable: "element_changed", hint: "changed", delivery: "not_sent" },
+        "term-child": ST("not_sent"),
+        "up-1": ST("not_sent"),
+      },
+    };
+    writeFileSync(fixFile2, JSON.stringify(FIX2));
+    const useFix = (f) => {
+      process.env.CDB_FAKE_AX_FIX = f;
+      resetSeq();
+    };
+    const argvs = () => calls().map((c) => c.argv.join(" "));
+    const acts = () => calls().filter((c) => c.argv[0] === "ax-action");
+    {
+      useFix(fixFile2);
+      setFeatures(ALL_FEATURES);
+      const vc = axCtx("x11-bridge");
+      const v = (n, a, sid = "v1") => vc.__cdbAxCall(n, a, { sid });
+      vc.__cuLastShot = { imgW: 1000, imgH: 1000, dispW: 1000, dispH: 1000, originX: 0, originY: 0 };
+      check("key: :cdb-ax2", vc.__cdbAxKey(), ":cdb-ax2");
+      resetLog();
+      r = await v("app_ax_find", { app: "org.kde.kate" });
+      check("v2 find: first find has no --window-ref", argvs().filter((x) => x.startsWith("ax-find")).join("|"), "ax-find --window {kate-1}");
+      check("v2 find: [N] = the bridge's index on a fresh window", textOf(r).includes('[3] AXButton (push button) "Save"') && textOf(r).includes('[26] AXButton (push button) "NoAct"'), true);
+      resetLog();
+      r = await v("app_ax_find", { app: "org.kde.kate" });
+      check("later find of a known window: --window-ref <window.ref>", argvs().filter((x) => x.startsWith("ax-find")).join("|"), "ax-find --window {kate-1} --window-ref :1.42/w");
+      check("stable [N]: Save keeps [3] although its index moved to 4", textOf(r).includes('[3] AXButton (push button) "Save"') && !textOf(r).includes('[4] AXButton (push button) "Save"'), true);
+      check("stable [N]: Search keeps [5]", textOf(r).includes('[5] AXTextField (text) "Search"'), true);
+      check("stable [N]: a new control gets a number never used before ([27])", textOf(r).includes('[27] AXButton (push button) "New"'), true);
+      resetLog();
+      r = await v("app_click", { app: "org.kde.kate", element_index: 3 });
+      check("click: --expect-json on the action", acts().map((c) => c.argv.join(" ")).join("|"), "ax-action --scope sc-kate2 --ref r-save --action click --expect-json");
+      check("click: stdin is the identity of the listed element", acts()[0]?.stdin, JSON.stringify({ expect: { role: "push button", name: "Save", accessible_id: "save-btn" } }));
+      check("click: pressed [3]", textOf(r).startsWith("Pressed [3] AXButton (push button)"), true);
+      resetLog();
+      r = await v("app_type", { app: "org.kde.kate", element_index: 5, text: "hello there" });
+      check("type: text inside the JSON on stdin, never argv", acts()[0]?.stdin + "|" + acts()[0]?.argv.includes("hello there"), JSON.stringify({ expect: { role: "text", name: "Search", accessible_id: null }, text: "hello there" }) + "|false");
+      check("type: done", textOf(r).startsWith("Set the text of [5]"), true);
+      resetLog();
+      r = await v("app_click", { app: "org.kde.kate", element_index: 18 });
+      check("stale (not sent) + accessible id: one re-find, then the new element", argvs().join("|"), "windows|ax-action --scope sc-kate2 --ref apply-1 --action click --expect-json|ax-find --window {kate-1} --all --max-nodes 2000 --window-ref :1.42/w|ax-action --scope sc-kate2 --ref apply-2 --action click --expect-json");
+      check("re-identified: second action carries the live identity", acts()[1]?.stdin, JSON.stringify({ expect: { role: "push button", name: "Apply now", accessible_id: "apply" } }));
+      check("re-identified: the result says so, same [N]", !r.isError && textOf(r).startsWith("Pressed [18]") && /re-identified/.test(textOf(r)), true);
+      resetLog();
+      r = await v("app_click", { app: "org.kde.kate", element_index: 18 });
+      check("re-identified [18] now names the new element", acts().map((c) => c.argv[4]).join(), "apply-2");
+      resetLog();
+      r = await v("app_click", { app: "org.kde.kate", element_index: 19 });
+      check("element_changed + unique role and name: re-identified", acts().map((c) => c.argv[4]).join() + "|" + /re-identified/.test(textOf(r)) + "|" + !r.isError, "close-1,close-2|true|true");
+      resetLog();
+      r = await v("app_click", { app: "org.kde.kate", element_index: 20 });
+      check("unique at capture but two live matches: refused as ambiguous, nothing sent", r.isError === true && /ambiguous/i.test(textOf(r)) && /nothing was sent/i.test(textOf(r)) && acts().length === 1 && calls().filter((c) => c.argv[0] === "ax-find").length === 1, true);
+      resetLog();
+      r = await v("app_click", { app: "org.kde.kate", element_index: 21 });
+      check("unnamed without an id: refused as gone, no re-find", r.isError === true && /gone/.test(textOf(r)) && calls().filter((c) => c.argv[0] === "ax-find").length === 0, true);
+      resetLog();
+      r = await v("app_click", { app: "org.kde.kate", element_index: 22 });
+      check("no live match: gone, nothing sent, one re-find", r.isError === true && /gone/.test(textOf(r)) && /nothing was sent/i.test(textOf(r)) && calls().filter((c) => c.argv[0] === "ax-find").length === 1, true);
+      r = await v("app_click", { app: "org.kde.kate", element_index: 22 });
+      check("gone [22] is retired", textOf(r).includes("No element [22]"), true);
+      resetLog();
+      r = await v("app_click", { app: "org.kde.kate", element_index: 23 });
+      check("stale after sending (sent_unverified): never retried", acts().length + "|" + calls().filter((c) => c.argv[0] === "ax-find").length, "1|0");
+      check("sent_unverified: 'not confirmed, do not repeat blindly'", /not confirmed/.test(textOf(r)) && /do not repeat it blindly/i.test(textOf(r)), true);
+      resetLog();
+      r = await v("app_click", { app: "org.kde.kate", element_index: 24 });
+      check("exit 1: sent_unverified wording, not retried", r.isError === true && /not confirmed/.test(textOf(r)) && /do not repeat it blindly/i.test(textOf(r)) && acts().length === 1, true);
+      r = await v("app_click", { app: "org.kde.kate", element_index: 25 });
+      check("ok:false (sent): the app did not accept", r.isError === true && /did not accept/.test(textOf(r)), true);
+      r = await v("app_click", { app: "org.kde.kate", element_index: 26 });
+      check("unavailable not_sent: 'nothing was sent, safe to retry' + left_click fallback", r.isError === true && /nothing was sent, safe to retry/i.test(textOf(r)) && /left_click there instead/.test(textOf(r)), true);
+      resetLog();
+      r = await v("app_click", { app: "org.kde.kate", element_index: 13 });
+      check("not unique at capture: no re-identification, no re-find", r.isError === true && calls().filter((c) => c.argv[0] === "ax-find").length === 0, true);
+      resetLog();
+      r = await v("app_type", { app: "org.kde.kate", element_index: 15, text: "pw", overwrite_existing: true });
+      check("redacted element: never re-identified", r.isError === true && calls().filter((c) => c.argv[0] === "ax-find").length === 0, true);
+      resetLog();
+      r = await v("app_click", { app: "org.kde.kate", element_index: 17 });
+      check("terminal-tainted element: never re-identified", r.isError === true && calls().filter((c) => c.argv[0] === "ax-find").length === 0, true);
+      check("terminal-tainted: identity sent as printed (no name, no id)", acts()[0]?.stdin, JSON.stringify({ expect: { role: "push button", name: "", accessible_id: null } }));
+      await v("app_ax_find", { app: "org.kde.dolphin" });
+      resetLog();
+      r = await v("app_click", { app: "org.kde.dolphin", element_index: 2 });
+      check("re-find sees another process: refused, nothing re-sent", r.isError === true && acts().length === 1 && /app_not_confirmed|another process/.test(textOf(r)), true);
+      r = await v("app_click", { app: "org.kde.kate", element_index: 3 }, "v-other");
+      check("another session's [N] is unknown", textOf(r).includes("No element [3]"), true);
+      // Window LRU: 64 windows across sessions; the 65th evicts the oldest.
+      await v("app_ax_find", { app: "org.kde.kate" }, "lru-0");
+      for (let i = 1; i <= 64; i++) await v("app_ax_find", { app: "org.kde.kate" }, "lru-" + i);
+      r = await v("app_click", { app: "org.kde.kate", element_index: 3 }, "lru-0");
+      check("window LRU (64): the oldest window's numbers are dropped", textOf(r).includes("No element [3]"), true);
+      r = await v("app_click", { app: "org.kde.kate", element_index: 3 }, "lru-64");
+      check("window LRU: a recent window keeps its numbers", textOf(r).includes("No element [3]"), false);
+      // Element LRU: 4000 per window.
+      await v("app_ax_find", { app: "org.gnome.gedit" });
+      r = await v("app_click", { app: "org.gnome.gedit", element_index: 99 });
+      const r100 = await v("app_click", { app: "org.gnome.gedit", element_index: 100 });
+      check("element LRU (4000): the oldest elements are dropped", textOf(r).includes("No element [99]") + "|" + textOf(r100).includes("No element [100]"), "true|false");
+      // Restore (task boundary of the lock's session) and lock release clear.
+      await v("app_ax_find", { app: "org.kde.kate" });
+      vc.__linuxExecutor.__cuTaskBoundary(null, "stop_click", null);
+      for (let i = 0; i < 100 && existsSync(statePath); i++) await tick();
+      r = await v("app_click", { app: "org.kde.kate", element_index: 3 });
+      check("restore clears the numbers", textOf(r).includes("No element [3]"), true);
+      await v("app_ax_find", { app: "org.kde.kate" });
+      await vc.__linuxExecutor.__setLockHeld(false);
+      r = await v("app_click", { app: "org.kde.kate", element_index: 3 });
+      check("lock release clears the numbers", textOf(r).includes("No element [3]"), true);
+      const tools = vc.__cdbAxTools({ platform: "linux" });
+      check("app_ax_find text: [N] stays the same for the same control", /stays the same/.test(tools.find((t) => t.name === "app_ax_find")?.description || ""), true);
+      const vsecrets = ["Save", "Search", "hello there", "Word wrap", "Password", "Apply", "Close", "Twin", "Gone", "save-btn"];
+      const vleak = vc.__diag.filter((l) => vsecrets.some((x) => l.includes(x)));
+      check("v2 diag lines carry no element names, ids or typed text", vleak.length + (vleak[0] ? " " + vleak[0] : ""), "0");
+      await releaseAx(vc);
+      setFeatures(undefined);
+      useFix(fixFile);
+    }
+    // Legacy: a stale element may have been acted on (derived sent_unverified).
+    {
+      const lc = axCtx("x11-bridge");
+      await lc.__cdbAxCall("app_ax_find", { app: "org.kde.kate" }, { sid: "l9" });
+      r = await lc.__cdbAxCall("app_click", { app: "org.kde.kate", element_index: 7 }, { sid: "l9" });
+      check("legacy stale: gone, find again, and it may have been sent", /is gone/.test(textOf(r)) && /app_ax_find again/.test(textOf(r)) && /not confirmed/.test(textOf(r)), true);
+      await releaseAx(lc);
     }
 
     // Every legacy-bridge call in every section above stayed within today's

@@ -49,12 +49,12 @@ function S(d){return{type:"string",description:d}}
 function defs(){
   var app=S("The granted app name (WM_CLASS or desktop id).");
   var win=S("window_id from app_list_windows; default: the window last searched, else the active one.");
-  var idx={type:"number",description:"[N] from this window's last app_ax_find."};
+  var idx={type:"number",description:"[N] from app_ax_find of this window."};
   var tgt={type:"string",enum:["focused"],description:"The element with keyboard focus, instead of element_index."};
   var live=" Acts on the live desktop (no background control).";
   return[
     {name:"app_list_windows",description:"List the windows of one application: [{window_id, title, is_main, is_minimized, bounds}] (bounds in desktop coordinates, not screenshot pixels).",inputSchema:{type:"object",properties:{app:app},required:["app"]}},
-    {name:"app_ax_find",description:"List the controls of one application window from the desktop accessibility tree (AT-SPI), one per line: [N] AXButton (push button) \"name\" (states) at (x, y). (x, y) is the center in the last screenshot's coordinates (for left_click), or \"position unknown\" where the desktop reports none. Pass N as element_index to app_click / app_type; each call replaces the window's [N] list. Prefer this over a screenshot to find controls by name in GTK, Qt, Firefox and LibreOffice apps; Electron/Chromium apps usually expose nothing, use screenshots there.",inputSchema:{type:"object",properties:{app:app,window_id:win,role:S("AX or AT-SPI role, e.g. \"AXButton\", \"push button\", \"AXTextField\"."),title_contains:S("Case-insensitive substring of the name.")},required:["app"]}},
+    {name:"app_ax_find",description:"List the controls of one application window from the desktop accessibility tree (AT-SPI), one per line: [N] AXButton (push button) \"name\" (states) at (x, y). (x, y) is the center in the last screenshot's coordinates (for left_click), or \"position unknown\" where the desktop reports none. Pass N as element_index to app_click / app_type; [N] stays the same for the same control across calls. Prefer this over a screenshot to find controls by name in GTK, Qt, Firefox and LibreOffice apps; Electron/Chromium apps usually expose nothing, use screenshots there.",inputSchema:{type:"object",properties:{app:app,window_id:win,role:S("AX or AT-SPI role, e.g. \"AXButton\", \"push button\", \"AXTextField\"."),title_contains:S("Case-insensitive substring of the name.")},required:["app"]}},
     {name:"app_click",description:"Press one element through accessibility (its press/activate/toggle action), by element_index or target: \"focused\". No coordinates: for a point use left_click. If the element has no action, the result gives its position for left_click."+live,inputSchema:{type:"object",properties:{app:app,window_id:win,element_index:idx,target:tgt},required:["app"]}},
     {name:"app_type",description:"Set the whole text of one TEXT field through accessibility (no key events), by element_index or target: \"focused\". Refused for non-text controls, and for a field that has text unless overwrite_existing is true. No coordinates; for key presses use key."+live,inputSchema:{type:"object",properties:{app:app,window_id:win,element_index:idx,target:tgt,text:{type:"string"},overwrite_existing:{type:"boolean",description:"Allow replacing the field's text."}},required:["app","text"]}}
   ];
@@ -64,7 +64,7 @@ function defs(){
 // with the same builder and saveToDisk:false: our tools stay out of that list,
 // since a cloud server is not known to accept tool names it did not bind.
 globalThis.__cdbAxTools=function(t){if(!t||t.platform!=="linux"||t.saveToDisk===!1||!on())return[];return defs()};
-globalThis.__cdbAxKey=function(){return on()?":cdb-ax":""};
+globalThis.__cdbAxKey=function(){return on()?":cdb-ax2":""};
 globalThis.__cdbAxHandles=function(n){return typeof n==="string"&&Object.prototype.hasOwnProperty.call(TIER,n)&&on()};
 
 // ── bridge ───────────────────────────────────────────────────────────────────
@@ -170,7 +170,9 @@ function armIdle(){
 }
 function restore(why){
   if(_idle){clearTimeout(_idle);_idle=null}
+  clearTables(why);
   return queue(async function(){
+    clearTables(why);
     var s=_st||readState();_st=null;_fresh=!1;
     if(!s)return;
     var br=bridge();
@@ -190,7 +192,7 @@ function hook(){
   if(!ex||ex.__cdbAxHooked)return;
   ex.__cdbAxHooked=!0;
   var sl=ex.__setLockHeld,tb=ex.__cuTaskBoundary;
-  if(typeof sl==="function")ex.__setLockHeld=function(held){var p=sl.apply(ex,arguments);if(!held&&(_st||_pending>0))restore("lock release");return p};
+  if(typeof sl==="function")ex.__setLockHeld=function(held){var p=sl.apply(ex,arguments);if(!held)clearTables("lock release");if(!held&&(_st||_pending>0))restore("lock release");return p};
   if(typeof tb==="function")ex.__cuTaskBoundary=function(id,source,holder){var p=tb.apply(ex,arguments);if((_st||_pending>0)&&(id==null||holder==null||sessKey(id)===sessKey(holder)))restore("task boundary ("+source+")");return p};
 }
 hook();
@@ -281,8 +283,52 @@ function mainWin(wins){
   v.sort(function(a,b){return(b.stacking_order||0)-(a.stacking_order||0)});
   return v[0]||wins[0]||null;
 }
-var _cache=new Map(),_lastWin=new Map();
-function remember(m,k,v){m.delete(k);m.set(k,v);if(m.size>64)m.delete(m.keys().next().value)}
+// ── element handles: stable [N] per window and session ───────────────────────
+// [N] is allocated once per accessible object (its ref: bus + object path) in
+// a table per (session, AT-SPI window); later finds reuse it, so the same
+// control keeps its number while the tree changes around it. A window's first
+// find numbers its elements by the bridge's index (as before); an object seen
+// later gets a number above every number the table ever gave, so a retired
+// number never comes back for another control. The bridge window id (a title
+// on GNOME) is an alias of the AT-SPI window. Kept in memory only: per element
+// its role, name, accessible id, uniqueness and path as evidence, plus states,
+// position and whether it has text (never the text itself); nothing but the
+// role of a redacted (password) or terminal element or a descendant of one is
+// usable as evidence. Cleared on restore (lock release, task boundary, idle).
+var WIN_CAP=64,EL_CAP=4000,ALIAS_CAP=256;
+var _wins=new Map(),_alias=new Map(),_lastWin=new Map();
+function remember(m,k,v,cap){m.delete(k);m.set(k,v);if(m.size>(cap||64))m.delete(m.keys().next().value)}
+function clearTables(why){if(_wins.size)log("element numbers cleared ("+why+")");_wins.clear();_alias.clear()}
+function wkeyOf(r,w){return r&&r.window&&typeof r.window.ref==="string"&&r.window.ref?"ref:"+r.window.ref:"id:"+String(w.id)}
+function tableOf(sid,w){var wk=_alias.get(sid+"\n"+String(w.id));return wk!=null?_wins.get(sid+"\n"+wk)||null:null}
+function str(x){return typeof x==="string"?x:""}
+// Redacted or terminal: the element itself, or a listed ancestor (parent_index
+// chain, find.identity). -> "redacted" | "terminal" | null
+function taintOf(e,byIdx){
+  for(var i=0,c=e;c&&i<65;i++){
+    if(c.value_redacted===!0||c.role==="password text")return"redacted";
+    if(c.role==="terminal")return"terminal";
+    c=typeof c.parent_index==="number"?byIdx.get(c.parent_index):null;
+  }
+  return null;
+}
+function entryFill(ent,e,byIdx){
+  var tt=taintOf(e,byIdx);
+  ent.ref=e.ref;ent.role=str(e.role);ent.ax_role=typeof e.ax_role==="string"?e.ax_role:null;ent.taint=tt;
+  ent.name=tt?null:str(e.name);
+  ent.accessible_id=tt||typeof e.accessible_id!=="string"||!e.accessible_id?null:e.accessible_id;
+  ent.unique=tt?null:e.unique===!0?!0:e.unique===!1?!1:null;
+  ent.path=tt||!Array.isArray(e.path)?null:e.path.slice(0,64);
+  // The identity the bridge printed, for --expect-json only (a tainted
+  // element's name and id print as "" and null).
+  ent.expect={role:str(e.role),name:str(e.name),accessible_id:typeof e.accessible_id==="string"?e.accessible_id:null};
+  ent.states=Array.isArray(e.states)?e.states.filter(function(x){return typeof x==="string"}):[];
+  ent.actions=Array.isArray(e.actions)?e.actions.length:0;
+  var rs=e.rect_screen;ent.rect_screen=rs&&typeof rs==="object"?{x:rs.x,y:rs.y,width:rs.width,height:rs.height}:null;
+  ent.redacted=e.value_redacted===!0;
+  ent.hasText=ent.redacted||typeof e.value==="string"&&e.value!=="";
+  return ent;
+}
 function err(t){return{content:[{type:"text",text:t}],isError:!0}}
 function bytes(t){return Buffer.byteLength(t,"utf8")}
 function ok(t){if(bytes(t)>CAP){while(bytes(t)>CAP-100)t=t.slice(0,Math.floor(t.length*0.9));t+="\n... (result cut at 24 KB; narrow with role or title_contains)"}return{content:[{type:"text",text:t}]}}
@@ -413,22 +459,28 @@ function pos(el,coords,fr){
   return"at ("+p[0]+", "+p[1]+")";
 }
 var NOISE={enabled:1,sensitive:1,showing:1,visible:1,opaque:1};
-function line(el,coords,fr){
+function line(el,coords,fr,n){
   var st=(Array.isArray(el.states)?el.states:[]).filter(function(s){return!NOISE[s]});
   var name=String(el.name||el.description||"").replace(/\s+/g," ").trim();if(name.length>100)name=name.slice(0,100)+"...";
   var v="";
   if(el.value_redacted)v=" value hidden";
   else if(typeof el.value==="string"&&el.value!==""){var vv=el.value.replace(/\s+/g," ");v=" value "+JSON.stringify(vv.length>80?vv.slice(0,80)+"...":vv)}
-  return"["+el.index+"] "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+") "+JSON.stringify(name)+(st.length?" ("+st.join(", ")+")":"")+v+" "+pos(el,coords,fr);
+  return"["+(n!=null?n:el.index)+"] "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+") "+JSON.stringify(name)+(st.length?" ("+st.join(", ")+")":"")+v+" "+pos(el,coords,fr);
 }
 function unavail(r){return err("unavailable: "+r.unavailable+(r.hint?" - "+r.hint:"")+(Array.isArray(r.candidates)&&r.candidates.length?" Candidates: "+r.candidates.slice(0,10).map(function(c){return JSON.stringify(String(c))}).join(", "):""))}
 
 // ── tools ────────────────────────────────────────────────────────────────────
-async function find(br,w,input){
+async function find(br,w,input,feat,sid){
+  feat=feat||NOFEAT;
   var a=w.gnome?["ax-find","--app-id",w.appId].concat(w.id!=null?["--title",String(w.id)]:[]):["ax-find","--window",String(w.id)];
   if(typeof input.role==="string"&&input.role.trim())a.push("--role",input.role.trim());
   if(typeof input.title_contains==="string"&&input.title_contains!=="")a.push("--title-contains",input.title_contains);
   if(input.__all)a.push("--all");
+  if(input.__maxNodes&&feat.has("find.v1"))a.push("--max-nodes",String(input.__maxNodes));
+  // find.window_ref: a window we found before is named by its AT-SPI object,
+  // so a title change (GNOME) or a shifted id (wlroots) keeps it. The bridge
+  // still matches the app as always and ignores a ref that no longer fits.
+  if(feat.has("find.window_ref")&&sid!=null){var kt=tableOf(sid,w);if(kt&&kt.windowRef)a.push("--window-ref",kt.windowRef)}
   // wlroots: toplevel ids are per bridge connection, so `windows` and
   // `ax-find` (two processes) may mean different windows. The bridge checks the
   // window it resolves against what we picked and answers window_changed.
@@ -459,46 +511,158 @@ async function find(br,w,input){
   }
   return r;
 }
+// Records a find in the session's table of its window. -> [{e, n}] in list
+// order (n = the element's [N]).
 function store(sid,w,app,r){
-  var els=new Map(),list=Array.isArray(r.elements)?r.elements:[];
-  for(var i=0;i<list.length;i++){var e=list[i];if(e&&typeof e.index==="number"&&typeof e.ref==="string")els.set(e.index,e)}
-  remember(_cache,sid+"\n"+String(w.id),{els:els,coords:r.coords,scope:r.scope});
+  var list=Array.isArray(r.elements)?r.elements.filter(function(e){return e&&typeof e.index==="number"&&typeof e.ref==="string"&&e.ref}):[];
+  var byIdx=new Map();for(var i=0;i<list.length;i++)byIdx.set(list[i].index,list[i]);
+  var wk=wkeyOf(r,w),tk=sid+"\n"+wk,t=_wins.get(tk)||null;
+  var pid=r.app&&typeof r.app.pid==="number"?r.app.pid:null;
+  if(t&&t.pid!==pid){log("element numbers of a window restarted (its process changed)");t=null}
+  if(!t)t={key:tk,wk:wk,byRef:new Map(),byN:new Map(),maxN:-1,pid:pid};
+  var fresh=t.byRef.size===0&&t.maxN<0,ns=new Array(list.length),j;
+  for(j=0;j<list.length;j++){var k=t.byRef.get(list[j].ref);if(k)ns[j]=k.n}
+  if(fresh){for(j=0;j<list.length;j++){var ix=list[j].index;if(ns[j]==null&&Number.isInteger(ix)&&ix>=0&&!t.byN.has(ix)){ns[j]=ix;t.byN.set(ix,null)}}}
+  for(j=0;j<list.length;j++){var nn=ns[j];if(nn!=null&&nn>t.maxN)t.maxN=nn}
+  var out=[];
+  for(j=0;j<list.length;j++){
+    var e=list[j],ent=t.byRef.get(e.ref);
+    if(!ent){ent={n:ns[j]!=null?ns[j]:++t.maxN};t.byN.set(ent.n,ent)}
+    entryFill(ent,e,byIdx);
+    t.byRef.delete(e.ref);t.byRef.set(e.ref,ent);
+    out.push({e:e,n:ent.n});
+  }
+  while(t.byRef.size>EL_CAP){var old=t.byRef.keys().next().value,oe=t.byRef.get(old);t.byRef.delete(old);if(oe)t.byN.delete(oe.n)}
+  t.scope=r.scope;t.coords=r.coords;t.pid=pid;
+  t.windowRef=r.window&&typeof r.window.ref==="string"&&r.window.ref?r.window.ref:null;
+  remember(_wins,tk,t,WIN_CAP);
+  remember(_alias,sid+"\n"+String(w.id),wk,ALIAS_CAP);
   remember(_lastWin,sid+"\n"+gk(app),String(w.id));
-  return list;
+  return out;
 }
-// The element a click/type targets: element_index from this window's last
-// find, or the focused element of a fresh full walk.
-async function target(br,w,input,sid,label){
+function retire(t,ent){if(t.byRef.get(ent.ref)===ent)t.byRef.delete(ent.ref);if(t.byN.get(ent.n)===ent)t.byN.delete(ent.n)}
+// The element a click/type targets: element_index from this window's table,
+// or the focused element of a fresh full walk. -> {t, ent} | {e}
+async function target(br,w,input,sid,label,feat,app){
   if(input.coordinate!==void 0)return{e:err(label+" takes no coordinates. Pass element_index from app_ax_find or target: \"focused\"; for a point use left_click.")};
-  var key=sid+"\n"+String(w.id);
   if(input.target==="focused"){
-    var r=await find(br,w,{__all:!0});
+    var r=await find(br,w,{__all:!0},feat,sid);
     if(r&&r.unavailable)return{e:unavail(r)};
-    var list=Array.isArray(r&&r.elements)?r.elements:[],hit=null;
-    for(var i=0;i<list.length;i++){if(list[i]&&Array.isArray(list[i].states)&&list[i].states.indexOf("focused")>=0&&typeof list[i].ref==="string")hit=list[i]}
+    if(!r||typeof r!=="object")return{e:err(label+": no answer from the bridge.")};
+    var got=store(sid,w,app,r),hit=null;
+    for(var i=0;i<got.length;i++){if(Array.isArray(got[i].e.states)&&got[i].e.states.indexOf("focused")>=0)hit=got[i]}
     if(!hit)return{e:err("No element reports keyboard focus in this window. Use element_index from app_ax_find.")};
-    return{el:hit,coords:r.coords,scope:r.scope,key:key};
+    var ft=tableOf(sid,w);
+    return{t:ft,ent:ft.byN.get(hit.n)};
   }
   if(typeof input.element_index!=="number")return{e:err("Pass element_index (from app_ax_find) or target: \"focused\".")};
-  var c=_cache.get(key),el=c&&c.els.get(input.element_index);
-  if(!el)return{e:err("No element ["+input.element_index+"] from the last app_ax_find of this window. Call app_ax_find again.")};
-  return{el:el,coords:c.coords,scope:c.scope,key:key};
+  var t=tableOf(sid,w),ent=t&&t.byN.get(input.element_index);
+  if(!ent)return{e:err("No element ["+input.element_index+"] from app_ax_find of this window. Call app_ax_find again.")};
+  remember(_wins,t.key,t,WIN_CAP);
+  return{t:t,ent:ent};
 }
-function actResult(r,t,label,fr,what){
-  var el=t.el;
-  if(!r||typeof r!=="object")return err(label+": no answer from the bridge.");
-  var u=r.unavailable||r.error;
-  if(u==="stale_element"||u==="out_of_scope"){_cache.delete(t.key);return err("Element ["+el.index+"] is gone (the window changed). Call app_ax_find again.")}
-  if(u){
-    var m=label+" refused: "+u+(r.hint?" - "+r.hint:"");
-    if(label==="app_click"){var p=pos(el,t.coords,fr);if(p.indexOf("at (")===0)m+=". Its center is "+p+" in the last screenshot: left_click there instead."}
-    return err(m);
+// ── actions: identity check, delivery, re-identification ─────────────────────
+// Delivery (contract "Delivery"): not_sent = safe to retry, sent_unverified =
+// do not repeat blindly, sent = the toolkit answered. A bridge without
+// action.expect: derived from the answer.
+function deliveryOf(r,feat){
+  if(!r||typeof r!=="object")return"sent_unverified";
+  if(r.__failed)return"sent_unverified";
+  if(feat.has("action.expect")&&(r.delivery==="not_sent"||r.delivery==="sent_unverified"||r.delivery==="sent"))return r.delivery;
+  if(r.unavailable)return r.unavailable==="stale_element"?"sent_unverified":"not_sent";
+  if(r.error)return"not_sent";
+  return r.ok===null?"sent_unverified":"sent";
+}
+// One ax-action. action.expect: --expect-json and the JSON object on stdin
+// (the element's printed identity plus text / value), else today's stdin.
+// Exit 2 (usage: nothing sent) throws as before; any other failure is
+// {__failed}: the action may have been sent.
+async function act(br,feat,t,ent,action,extra){
+  var a=["ax-action","--scope",String(t.scope||""),"--ref",ent.ref,"--action",action],stdin=null;
+  if(feat.has("action.expect")){
+    a.push("--expect-json");
+    var o={expect:{role:ent.expect.role,name:ent.expect.name,accessible_id:ent.expect.accessible_id}};
+    if(extra&&typeof extra.text==="string")o.text=extra.text;
+    if(extra&&typeof extra.value==="number")o.value=extra.value;
+    stdin=JSON.stringify(o);
+  }else if(extra&&typeof extra.text==="string")stdin=extra.text;
+  try{return await run(br,a,stdin,10000)}
+  catch(e){if(e&&e.axWhy==="exit 2")throw e;return{__failed:e&&e.axWhy||"error"}}
+}
+// After stale_element (nothing sent) or element_changed: one re-find of the
+// same window (same ownership and pid checks as any find), then the element by
+// its accessible id, else by role + name when it was unique at capture and
+// exactly one live element matches. Never across a process change, never for
+// an unnamed element without an id, never from redacted or terminal evidence.
+// -> {ent, how} | {e}
+async function reidentify(br,feat,w,sid,app,t,ent,label){
+  var N="["+ent.n+"]";
+  function gone(why){retire(t,ent);return{e:err("Element "+N+" is gone"+(why?" ("+why+")":"")+". Nothing was sent, safe to retry: call app_ax_find again.")}}
+  if(ent.taint)return gone("its details are not kept, so it cannot be identified again");
+  if(!ent.accessible_id&&!(ent.unique===!0&&ent.name))return gone(ent.unique===!0?"it has no name or id to identify it by":"it was not the only control with its role and name");
+  var r=await find(br,w,{__all:!0,__maxNodes:2000},feat,sid);
+  if(!r||typeof r!=="object")return gone("the window gave no answer");
+  if(r.unavailable){retire(t,ent);log("re-identify: window="+String(w.id)+" refused ("+r.unavailable+")");return{e:err("Element "+N+" is gone, and the window could not be searched again: "+r.unavailable+(r.hint?" - "+r.hint:"")+" Nothing was sent.")}}
+  var rp=r.app&&typeof r.app.pid==="number"?r.app.pid:null;
+  if(wkeyOf(r,w)!==t.wk||rp!==t.pid){log("re-identify: window="+String(w.id)+" refused (another window or process)");return gone("the window or its process changed")}
+  if(r.truncated===!0)return gone("the window is too large to confirm it");
+  var list=Array.isArray(r.elements)?r.elements.filter(function(e){return e&&typeof e.ref==="string"&&e.ref&&typeof e.index==="number"}):[];
+  var byIdx=new Map();for(var i=0;i<list.length;i++)byIdx.set(list[i].index,list[i]);
+  var byId=!!ent.accessible_id,hits=list.filter(function(e){
+    if(taintOf(e,byIdx)||str(e.role)!==ent.role)return!1;
+    return byId?e.accessible_id===ent.accessible_id:str(e.name)===ent.name;
+  });
+  // By role + name, a live twin the list does not show (clipped) also counts.
+  if(!byId&&hits.length===1&&hits[0].unique===!1)hits.push(null);
+  if(hits.length>1){retire(t,ent);log("re-identify: window="+String(w.id)+" ambiguous ("+hits.length+" matches)");return{e:err("Element "+N+" was re-created and "+hits.length+" controls now match it, so it is ambiguous. Nothing was sent: call app_ax_find again and pick one.")}}
+  if(!hits.length){log("re-identify: window="+String(w.id)+" no match");return gone("no control in the window matches it any more")}
+  var e=hits[0],ex=t.byRef.get(e.ref);
+  t.scope=r.scope;
+  if(ex&&ex!==ent){retire(t,ent);entryFill(ex,e,byIdx);log("re-identify: window="+String(w.id)+" matched an element listed as another number");return{ent:ex,how:byId?"accessible id":"role and name",was:ent.n}}
+  t.byRef.delete(ent.ref);entryFill(ent,e,byIdx);t.byRef.set(e.ref,ent);
+  log("re-identify: window="+String(w.id)+" by "+(byId?"accessible id":"role and name"));
+  return{ent:ent,how:byId?"accessible id":"role and name"};
+}
+// Runs one action on ent, with one re-identification where the rule allows.
+// -> tool result
+async function perform(c){
+  var res=await act(c.br,c.feat,c.t,c.ent,c.action,c.extra),ent=c.ent,ri=null;
+  var u=res&&(res.unavailable||res.error),dv=deliveryOf(res,c.feat);
+  if(c.feat.has("find.identity")&&c.feat.has("action.expect")&&(u==="element_changed"||u==="stale_element"&&dv==="not_sent")){
+    ri=await reidentify(c.br,c.feat,c.w,c.sid,c.app,c.t,ent,c.label);
+    if(ri.e)return ri.e;
+    ent=ri.ent;
+    res=await act(c.br,c.feat,c.t,ent,c.action,c.extra);
   }
-  if(r.ok===null)return ok((what==="Pressed"?"Click":"Text")+" sent to ["+el.index+"] "+(el.ax_role||"AXUnknown")+", result unknown: take a screenshot or app_ax_find to check. Do not repeat it blindly.");
-  if(r.ok!==!0)return err(label+": the app did not accept the "+(r.action||"action")+(r.method?" ("+r.method+")":"")+".");
+  log(c.action+": window="+String(c.w.id)+" "+(res&&res.ok===!0?"ok":res&&res.__failed?"failed ("+res.__failed+")":res&&res.ok===null?"dispatched":"refused ("+(res&&(res.unavailable||res.error)||"not ok")+")")+(ri?" re-identified":""));
+  return actResult(res,c.t,ent,c,ri);
+}
+function actResult(r,t,el,c,ri){
+  var label=c.label,feat=c.feat,N="["+el.n+"]",what=c.what;
+  if(!r||typeof r!=="object")return err(label+": no answer from the bridge.");
+  var rid=ri?" ("+N+" was re-created and re-identified by its "+ri.how+(ri.was!=null?"; it was ["+ri.was+"]":"")+")":"";
+  if(r.__failed)return err(label+": the bridge failed ("+r.__failed+") after the action may have been sent: result not confirmed. Check with app_ax_find or a screenshot; do not repeat it blindly."+rid);
+  var u=r.unavailable||r.error,dv=deliveryOf(r,feat);
+  if(u==="stale_element"||u==="out_of_scope"||u==="element_changed"){
+    if(!feat.has("find.identity")){
+      // As before: the window's numbers are dropped.
+      _wins.delete(t.key);
+      return err("Element "+N+" is gone (the window changed). Call app_ax_find again."+(dv==="sent_unverified"?" The action may have reached it before it went away: result not confirmed, check before repeating it (do not repeat it blindly).":" Nothing was sent."));
+    }
+    retire(t,el);
+    if(dv==="sent_unverified")return err("Element "+N+" went away while the action was sent: result not confirmed. Check with app_ax_find or a screenshot; do not repeat it blindly."+rid);
+    return err("Element "+N+" is gone"+(u==="element_changed"?" (it is no longer the control that was listed)":"")+". Nothing was sent, safe to retry: call app_ax_find again."+rid);
+  }
+  if(u){
+    var m=label+" refused: "+u+(r.hint?" - "+r.hint:"")+(dv==="not_sent"?" Nothing was sent, safe to retry.":"");
+    if(label==="app_click"){var p=pos(el,t.coords,c.fr);if(p.indexOf("at (")===0)m+=" Its center is "+p+" in the last screenshot: left_click there instead."}
+    return err(m+rid);
+  }
+  if(r.ok===null)return ok(c.unknown+" sent to "+N+" "+(el.ax_role||"AXUnknown")+", result unknown (not confirmed): take a screenshot or app_ax_find to check. Do not repeat it blindly."+rid);
+  if(r.ok!==!0)return err(label+": the app did not accept the "+(r.action||"action")+(r.method?" ("+r.method+")":"")+"."+rid);
   var post=r.post&&typeof r.post==="object"?r.post:null,ps=[];
   if(post){if(post.focused===!0)ps.push("focused");if(post.checked===!0)ps.push("checked");else if(post.checked===!1)ps.push("not checked")}
-  return ok(what+" ["+el.index+"] "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+")"+(ps.length?"; now "+ps.join(", "):"")+". Check the result with app_ax_find or a screenshot.");
+  return ok(what+" "+N+" "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+")"+(ps.length?"; now "+ps.join(", "):"")+"."+rid+" Check the result with app_ax_find or a screenshot.");
 }
 var TEXT_AX={AXTextField:1,AXTextArea:1,AXSearchField:1,AXComboBox:1,AXSecureTextField:1};
 async function call(name,input,opts){
@@ -517,7 +681,7 @@ async function call(name,input,opts){
   if(name==="app_list_windows"&&isGnome(br)){
     var ge=await ensureEnabled(br);
     if(ge&&ge.unavailable)return unavail(ge);
-    var gr=await find(br,{gnome:!0,appId:appId,id:null},{});
+    var gr=await find(br,{gnome:!0,appId:appId,id:null},{},feat,null);
     var note=" GNOME lists windows by title only: pass a title as window_id.";
     if(gr&&gr.unavailable==="ambiguous_window"&&Array.isArray(gr.candidates))return ok(JSON.stringify(gr.candidates.map(function(c){return{window_id:String(c),title:String(c),is_main:!1,is_minimized:!1}}))+note);
     if(!gr||typeof gr!=="object")return err("app_list_windows: no answer from the bridge.");
@@ -539,12 +703,12 @@ async function call(name,input,opts){
   if(en&&en.unavailable)return unavail(en);
   var fr=frameOf(opts);
   if(name==="app_ax_find"){
-    var r=await find(br,w,input);
+    var r=await find(br,w,input,feat,sid);
     if(!r||typeof r!=="object")return err("app_ax_find: no answer from the bridge.");
     if(r.unavailable)return unavail(r);
     // GNOME: the window is known by the title the bridge matched.
     if(w.gnome&&r.window&&typeof r.window.title==="string"&&r.window.title)w={id:r.window.title,title:r.window.title,appId:appId,gnome:!0};
-    var list=store(sid,w,app,r),coords=r.coords;
+    var got=store(sid,w,app,r),list=got.map(function(x){return x.e}),coords=r.coords;
     log("find: window="+String(w.id)+" elements="+list.length+" coords="+coords+(r.truncated?" truncated="+(r.truncated_reason||"yes"):""));
     var head=list.length+" element(s) in window "+JSON.stringify(String(w.title||""))+" (window_id "+String(w.id)+")"+(r.truncated?"; walk truncated ("+(r.truncated_reason||"limit")+"): narrow with role or title_contains":"")+".";
     if(coords!=="screen")head+=" This desktop does not report element positions; app_click and app_type work by element_index.";
@@ -555,7 +719,7 @@ async function call(name,input,opts){
     }
     if(!list.length)head+=input.role||input.title_contains?" Nothing matched the filter.":" The app exposes no controls here (Electron/Chromium apps usually do not): use screenshots.";
     var out=head,shown=0,nb=bytes(head);
-    for(var i=0;i<list.length;i++){var l="\n"+line(list[i],coords,fr),lb=bytes(l);if(nb+lb>CAP-200)break;out+=l;nb+=lb;shown++}
+    for(var i=0;i<list.length;i++){var l="\n"+line(list[i],coords,fr,got[i].n),lb=bytes(l);if(nb+lb>CAP-200)break;out+=l;nb+=lb;shown++}
     if(shown<list.length)out+="\n... "+(list.length-shown)+" more element(s) not shown (24 KB cap): narrow with role or title_contains.";
     return ok(out);
   }
@@ -564,22 +728,22 @@ async function call(name,input,opts){
   var sx=globalThis.__linuxExecutor;
   try{if(sx&&typeof sx.__stoppedByUser==="function"&&sx.__stoppedByUser())return err("The user stopped screen sharing for this Computer Use session, so app_click and app_type are off until this task ends. app_ax_find and app_list_windows still work.")}catch(se){}
   if(w.id!=null)remember(_lastWin,sid+"\n"+gk(app),String(w.id));
-  var t=await target(br,w,input,sid,name);
+  var t=await target(br,w,input,sid,name,feat,app);
   if(t.e)return t.e;
+  var pc={br:br,feat:feat,w:w,sid:sid,app:app,t:t.t,ent:t.ent,label:name,fr:fr};
   if(name==="app_click"){
-    var rc=await run(br,["ax-action","--scope",String(t.scope||""),"--ref",t.el.ref,"--action","click"],null,10000);
-    log("click: window="+String(w.id)+" "+(rc&&rc.ok===!0?"ok":rc&&rc.ok===null?"dispatched":"refused ("+(rc&&(rc.unavailable||rc.error)||"not ok")+")"));
-    if(!fr&&t.coords==="screen"){var c1=centerOf(t.el.rect_screen);if(c1)fr=predict(opts,c1[0],c1[1])}
-    return actResult(rc,t,name,fr,"Pressed");
+    if(!fr&&t.t.coords==="screen"){var c1=centerOf(t.ent.rect_screen);if(c1)pc.fr=predict(opts,c1[0],c1[1])}
+    pc.action="click";pc.what="Pressed";pc.unknown="Click";
+    return perform(pc);
   }
   if(name==="app_type"){
     if(typeof input.text!=="string")return err("text is required.");
-    var el=t.el,stt=Array.isArray(el.states)?el.states:[];
-    if(stt.indexOf("editable")<0&&!TEXT_AX[el.ax_role])return err("Only target TEXT fields: ["+el.index+"] is "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+"), not editable text.");
-    if(input.overwrite_existing!==!0&&(el.value_redacted===!0||typeof el.value==="string"&&el.value!==""))return err("["+el.index+"] already has text, and app_type replaces ALL of it. Pass overwrite_existing: true to replace it.");
-    var rt=await run(br,["ax-action","--scope",String(t.scope||""),"--ref",el.ref,"--action","set-text"],input.text,10000);
-    log("set-text: window="+String(w.id)+" chars="+input.text.length+" "+(rt&&rt.ok===!0?"ok":rt&&rt.ok===null?"dispatched":"refused ("+(rt&&(rt.unavailable||rt.error)||"not ok")+")"));
-    return actResult(rt,t,name,fr,"Set the text of");
+    var el=t.ent,stt=el.states;
+    if(stt.indexOf("editable")<0&&!TEXT_AX[el.ax_role])return err("Only target TEXT fields: ["+el.n+"] is "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+"), not editable text.");
+    if(input.overwrite_existing!==!0&&el.hasText)return err("["+el.n+"] already has text, and app_type replaces ALL of it. Pass overwrite_existing: true to replace it.");
+    log("set-text: window="+String(w.id)+" chars="+input.text.length);
+    pc.action="set-text";pc.extra={text:input.text};pc.what="Set the text of";pc.unknown="Text";
+    return perform(pc);
   }
   return err("Unknown tool: "+name);
 }
