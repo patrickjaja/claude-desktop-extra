@@ -2447,6 +2447,32 @@ export function createLinuxExecutor(opts = {}) {
       return getDisplaySize(backend, displayId)
     },
 
+    // No screenshot in this app run (a restart): the frame upstream's
+    // pixels-mode mapping reads the model's coordinates in (sub-patch 5e of
+    // fix_computer_use_linux.nim, display = its getDisplaySize result). The
+    // size kwin-portal-bridge gives every screenshot of that display:
+    // compute_target_dims(geometry, scale) - long edge <= 1568 px, at most
+    // 1.15 MP of the physical size, aspect kept, never upscaled.
+    __coldFrame(display) {
+      const w = display?.width
+      const h = display?.height
+      if (!(w > 0) || !(h > 0)) return null
+      const sf = Number.isFinite(display.scaleFactor) && display.scaleFactor > 0 ? display.scaleFactor : 1
+      const pw = Math.max(1, Math.round(w * sf))
+      const ph = Math.max(1, Math.round(h * sf))
+      const s = Math.min(1, 1568 / Math.max(pw, ph), Math.sqrt(1150000 / (pw * ph)))
+      const f = {
+        imgW: Math.max(1, Math.round(pw * s)),
+        imgH: Math.max(1, Math.round(ph * s)),
+        dispW: w,
+        dispH: h,
+        originX: display.originX || 0,
+        originY: display.originY || 0,
+      }
+      globalThis.__cdbDiag(`[linux-executor] no screenshot yet in this app run: coordinates read in the ${f.imgW}x${f.imgH} frame of the ${w}x${h} display at ${f.originX},${f.originY}`)
+      return f
+    },
+
     async listDisplays() {
       return backend.listDisplays()
     },

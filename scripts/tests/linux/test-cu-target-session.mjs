@@ -1372,5 +1372,21 @@ for (const [label, files, wantKwin] of [["off", {}, true], ["on", { "claude-desk
   check(logs() === 1, "'ydotoold not running' logged once, not on every re-check", logs());
 }
 
+// No screenshot yet on the background display (a restart, a setting change):
+// the cold frame (__coldFrame, read by the tool handler and sub-patch 5e) is
+// the target's monitor at the bridge's size rule, never the user's screen.
+for (const target of [{ kind: "x11", display: ":99", screens: [{ name: "SCREEN", id: "SCREEN", geometry: { x: 0, y: 0, width: 1920, height: 1080 }, is_primary: true }], want: [1430, 804] },
+  { kind: "wlroots", display: "wayland-9", screens: [{ name: "HEADLESS-1", id: "HEADLESS-1", geometry: { x: 0, y: 0, width: 1280, height: 800 }, scale: 2, is_primary: true }], want: [1356, 848] }]) {
+  console.log(`\n[target ${target.kind}: the frame of a coordinate before any screenshot]`);
+  const r = makeRig("x11", { "claude-desktop-extra.json": cfg({ enabled: true, kind: target.kind, display: target.display }) }, { screens: () => target.screens });
+  await r.ex.__setLockHeld(true);
+  const mons = await r.ex.listDisplays();
+  r.reset(); r.state.throwScreen = true;
+  const f = r.ex.__coldFrame(mons[0], true);
+  check(f && f.imgW === target.want[0] && f.imgH === target.want[1] && f.dispW === target.screens[0].geometry.width, "the target monitor's frame (" + target.want.join("x") + ")", JSON.stringify(f));
+  check(r.screenCalls.length === 0, "the user's screen is not read", JSON.stringify(r.screenCalls));
+  r.state.throwScreen = false;
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -13,6 +13,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - **GNOME Wayland** gets the glow, Anthropic's drawn cursor and the badge too, drawn by `gnome-portal-bridge overlay` as click-through XWayland windows (GNOME Shell has no layer-shell), on the monitor Computer Use works on. It needs the `gnome-portal-bridge` build that carries the overlay (its `doctor` reports `capabilities.overlay`) and XWayland. The glow is static there, hidden in the Activities overview and below GNOME Shell's dialogs and notifications. GNOME cannot leave the overlay out of a screen capture, so all of it is hidden for each screenshot (up to 150 ms wait, normally 50 to 65 ms) and Claude's screenshots contain none of it; the glow blinks briefly at each screenshot.
 - **The first screenshot of a Computer Use lock no longer shows the glow or the badge on the sway, Hyprland and niri overlay.** A screenshot taken before the overlay had come up now holds its appearance back until the capture is done (no added wait), and a screenshot taken between the overlay's show and its answer hides it as usual.
 
+### Computer Use: clicks after an app restart land where Claude aimed
+
+- **After the app restarts in the middle of a session**, Claude's clicks, scrolls, drags and moves before its next screenshot are read in the size its screenshots of that monitor have (for example 1430x804 for a 1920x1080 monitor at scale 1.6), on every session type and on KDE Plasma Wayland. They were taken as screen positions (Code sessions and local Cowork) or divided by the scale factor (KDE Plasma Wayland, cloud sessions, teach mode), so they landed short and towards the top left on every monitor whose screenshots are scaled down. The same applies right after `switch_display`, on the newly chosen monitor. A point outside that size is refused with "Take a screenshot first", as is a click whose screenshot size cannot be told yet; Claude then takes a screenshot and goes on. `claude-patches.log` has a `no screenshot yet in this app run` line for each such click.
+
 ## 2026-11-11
 
 ### Transparent window: no empty strip in the header

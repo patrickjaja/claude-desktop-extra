@@ -1908,6 +1908,29 @@ function _cuTargetDims(w,h){
   var pw=Math.max(1,w),ph=Math.max(1,h),s=Math.min(1,CU_MAX_LONG_EDGE/Math.max(pw,ph),Math.sqrt(CU_MAX_PIXELS/(pw*ph)));
   return{width:Math.max(1,Math.round(pw*s)),height:Math.max(1,Math.round(ph*s))};
 }
+// Whether the next full screenshot keeps the native size (the
+// COWORK_SCREENSHOT_CMD and KDE spectacle tiers of _captureRegion) instead of
+// the rule above: true / false, or null when that depends on a mask answer not
+// known yet. asked = the capture passes an allowlist (a masked capture is the
+// bridge's, downscaled). Read the way _captureRegion picks its tier.
+function _cuShotNative(asked){
+  if(process.env.COWORK_SCREENSHOT_CMD)return !0;
+  if(_tgt||_wayland&&_wlBridge())return !1;
+  if(!(_desktopId().indexOf("kde")>=0&&_hasCmd("spectacle")))return !1;
+  if(!asked)return !0;
+  var be=_bcBridge();if(!be)return !0;
+  var c=_bcNow(be);return c?!c.mask:null;
+}
+// The frame (image size) the next full screenshot of display d will have: d
+// is a _getMonitors() entry or a getDisplaySize() result (matched by its
+// origin). Null when it cannot be told (see _cuShotNative).
+function _cuShotFrame(d,asked){
+  if(!d||!(d.width>0)||!(d.height>0))return null;
+  var nat=_cuShotNative(asked);if(nat===null)return null;
+  var sf=d.scaleFactor||1,ox=d.originX||0,oy=d.originY||0,xr=_x11PxRect(ox,oy,d.width,d.height,typeof d.displayId==="number"?d.displayId:void 0);
+  var pw=xr?xr.w:Math.round(d.width*sf),ph=xr?xr.h:Math.round(d.height*sf),t=nat?{width:Math.max(1,pw),height:Math.max(1,ph)}:_cuTargetDims(pw,ph);
+  return{imgW:t.width,imgH:t.height,dispW:d.width,dispH:d.height,originX:ox,originY:oy};
+}
 // True when a thumbnail of size sz is what Chromium makes of monitor m's frame:
 // it fits the frame inside the requested box keeping the aspect ratio.
 function _dcAspectFits(sz,m){
@@ -3969,6 +3992,20 @@ var _ex=globalThis.__linuxExecutor={
     var sf=m.scaleFactor||1,xr=_x11PxRect(m.originX,m.originY,m.width,m.height,m.displayId);
     var d=_cuTargetDims(xr?xr.w:Math.round(m.width*sf),xr?xr.h:Math.round(m.height*sf));
     return{imgW:d.width,imgH:d.height,dispW:m.width,dispH:m.height,originX:m.originX||0,originY:m.originY||0,displayId:m.displayId,label:m.label,count:mons.length};
+  },
+  // No screenshot in this app run (a restart, switch_display): the frame the
+  // model's coordinates are read in - the one the next full screenshot of
+  // display d will have, the size every capture of d has had (the model's last
+  // screenshot, if it showed d whole). Called by our tool handler
+  // (js/cu_handler_injection.js) and by upstream's pixels-mode mapping
+  // (sub-patch 5e of fix_computer_use_linux.nim, d = its getDisplaySize
+  // result, asked = true: upstream always passes an allowlist). Sync, from
+  // cached answers only, the way a click maps its point (_x11PxRect).
+  // -> {imgW, imgH, dispW, dispH, originX, originY} | null.
+  __coldFrame(d,asked){
+    var f=null;try{f=_cuShotFrame(d,asked===!0)}catch(e){f=null}
+    globalThis.__cdbDiag("[claude-cu] no screenshot yet in this app run: coordinates read in "+(f?"the "+f.imgW+"x"+f.imgH+" frame of the "+f.dispW+"x"+f.dispH+" display at "+f.originX+","+f.originY:"no frame (the capture size is not known yet)"));
+    return f;
   },
   // x11-bridge root pixel -> Electron DIP (inverse of _x11Px), so an element's
   // AT-SPI screen position lands in the screenshot frame on X11 HiDPI.

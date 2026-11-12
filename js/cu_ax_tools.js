@@ -307,12 +307,16 @@ function frameOf(opts){
 // No screenshot yet: the frame the click path will use. Regular mode: the next
 // screenshot's frame of the monitor holding the point (executor), installed as
 // the handler's __cuLastShot so a left_click before any screenshot maps
-// through it too. kwin mode: upstream maps a pre-screenshot coordinate as
-// x/scaleFactor + display origin, so report in that frame.
+// through it too. kwin mode: upstream maps a pre-screenshot coordinate through
+// the executor's __coldFrame (sub-patch 5e: the frame the next screenshot of
+// that display will have), else as x/scaleFactor + display origin, so report
+// in that frame.
 function predict(opts,x,y){
   try{
     if(kctx(opts)){
       var sc=require("electron").screen,d=sc.getDisplayNearestPoint({x:Math.round(x),y:Math.round(y)}),b=d.bounds,sf=d.scaleFactor||1;
+      var kx=globalThis.__linuxExecutor,cf=kx&&typeof kx.__coldFrame==="function"?kx.__coldFrame({width:b.width,height:b.height,scaleFactor:sf,originX:b.x,originY:b.y}):null;
+      if(cf&&cf.imgW>0&&cf.imgH>0)return{w:cf.imgW,h:cf.imgH,predicted:"kwin",map:function(px,py){return[Math.round((px-b.x)*cf.imgW/b.width),Math.round((py-b.y)*cf.imgH/b.height)]}};
       return{w:Math.round(b.width*sf),h:Math.round(b.height*sf),predicted:"kwin",map:function(px,py){return[Math.round((px-b.x)*sf),Math.round((py-b.y)*sf)]}};
     }
     var ex=globalThis.__linuxExecutor;

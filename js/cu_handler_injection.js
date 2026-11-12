@@ -87,13 +87,16 @@ globalThis.__cuActiveOrigin=globalThis.__cuActiveOrigin||{x:0,y:0};
 // that screenshot) can be mapped to root/screen pixels, and cursor_position can
 // be mapped back. imgW/imgH = emitted (possibly downscaled) image size;
 // dispW/dispH = the display's native size; originX/originY = display origin.
-// Null until the first screenshot — then transforms fall back to origin-only.
+// Null until the first screenshot of this app run, and again after
+// switch_display or a background display change: then __coldGuard below
+// supplies the frame for this call (__cold).
 globalThis.__cuLastShot=globalThis.__cuLastShot||null;
+var __cold=null;
 // Model image-pixel coord -> root/screen pixel. Uses the last screenshot's
-// image:display ratio + origin. Falls back to __cuActiveOrigin (origin only,
-// 1:1 scale) when no screenshot has been taken yet.
+// image:display ratio + origin (or this call's __cold frame). Falls back to
+// __cuActiveOrigin (origin only, 1:1 scale) when neither is there.
 function __txC(c){
-  var ix=c[0]||0,iy=c[1]||0,ls=globalThis.__cuLastShot;
+  var ix=c[0]||0,iy=c[1]||0,ls=globalThis.__cuLastShot||__cold;
   if(ls&&ls.imgW>0&&ls.imgH>0){
     return[Math.round(ls.originX+ix*(ls.dispW/ls.imgW)),Math.round(ls.originY+iy*(ls.dispH/ls.imgH))];
   }
@@ -103,12 +106,56 @@ function __txC(c){
 // Root/screen pixel -> model image-pixel coord (inverse of __txC), for
 // cursor_position, which the schema says returns image-pixel coordinates.
 function __untxC(x,y){
-  var rx=x||0,ry=y||0,ls=globalThis.__cuLastShot;
+  var rx=x||0,ry=y||0,ls=globalThis.__cuLastShot||__cold;
   if(ls&&ls.dispW>0&&ls.dispH>0){
     return[Math.round((rx-ls.originX)*(ls.imgW/ls.dispW)),Math.round((ry-ls.originY)*(ls.imgH/ls.dispH))];
   }
   var o=globalThis.__cuActiveOrigin;
   return[Math.round(rx-(o?o.x:0)),Math.round(ry-(o?o.y:0))];
+}
+// No screenshot in this app run (an app restart in the middle of a session,
+// switch_display, a background display change): the model's coordinates are
+// still in the frame of the screenshot it took last, and that frame follows
+// from the display - the one a screenshot would capture now (the pinned
+// display, else the executor's default, else the primary, as the screenshot
+// case below picks it) at the size the executor's capture gives it
+// (__coldFrame). That is an assumption (the last image may have been a zoom,
+// another display, or taken before a resolution change), so a point outside
+// the frame is refused with upstream's own text for this case, as is a call
+// whose frame cannot be told; the model takes a screenshot and goes on.
+// pts: [[name, [x, y]], ...]; cursor_position passes none (never refused).
+// An executor without __coldFrame keeps the old origin-only fallback
+// (undefined); null = no frame, refused.
+async function __coldShot(){
+  if(typeof ex.__coldFrame!=="function"||typeof ex.listDisplays!=="function")return void 0;
+  var dl=await ex.listDisplays();if(!Array.isArray(dl)||!dl.length)return null;
+  var did=globalThis.__cuPinnedDisplay,m=null;
+  if(did===void 0){var sd=typeof ex.__defaultDisplayId==="function"?await ex.__defaultDisplayId():null;if(typeof sd==="number")did=sd;else{for(var i=0;i<dl.length;i++){if(dl[i].isPrimary){did=dl[i].displayId;break}}if(did===void 0)did=dl[0].displayId}}
+  for(var j=0;j<dl.length;j++){if(dl[j].displayId===did){m=dl[j];break}}
+  if(!m)return null;
+  var f=ex.__coldFrame(m,__ask);
+  return f&&f.imgW>0&&f.imgH>0&&f.dispW>0&&f.dispH>0?f:null;
+}
+async function __coldGuard(pts){
+  if(globalThis.__cuLastShot||!pts)return null;
+  var f=null;try{f=await __coldShot()}catch(e){f=null}
+  if(f===void 0)return null;
+  function no(t){(globalThis.__cdbDiag||console.log)("[claude-cu] tool call refused ("+__TOOL_NAME__+"): no screenshot yet in this app run, "+t);return{isError:!0,content:[{type:"text",text:t}]}}
+  if(!f)return pts.length?no("There is no prior screenshot to interpret "+pts[0][0]+" against. Take a screenshot first."):null;
+  for(var i=0;i<pts.length;i++){var p=pts[i][1]||[],x=+(p[0]||0),y=+(p[1]||0);if(!(x>=0&&y>=0&&x<=f.imgW&&y<=f.imgH))return no(pts[i][0]+" is outside the display bounds, and there is no prior screenshot to interpret it against. Take a screenshot first.")}
+  __cold=f;return null;
+}
+// The image-pixel points a tool reads (null: none).
+function __coldPts(){
+  var I=__INPUT__||{};
+  switch(__TOOL_NAME__){
+    case"left_click":case"right_click":case"double_click":case"triple_click":case"middle_click":case"mouse_move":return[["coordinate",I.coordinate||[I.x,I.y]]];
+    case"scroll":return[["coordinate",I.coordinate||[I.x||0,I.y||0]]];
+    case"left_click_drag":return(I.start_coordinate?[["start_coordinate",I.start_coordinate]]:[]).concat([["coordinate",I.coordinate||[]]]);
+    case"zoom":return Array.isArray(I.region)&&I.region.length===4?[["region",[I.region[0],I.region[1]]],["region",[I.region[2],I.region[3]]]]:[["coordinate",I.coordinate||[960,540]]];
+    case"cursor_position":return[];
+  }
+  return null;
 }
 // Teach mode (teach_step/teach_batch) is NOT handled here — the top-of-handler
 // __lxTeachTools branch forwards it to upstream's dispatch, which maps the
@@ -207,6 +254,7 @@ async function __hideWindows(fn){if(ex.__targetActive&&ex.__targetActive())retur
 // Accessibility tools (issue #306, js/cu_ax_tools.js): only while their switch
 // is on (__cdbAxHandles), otherwise these names fall through as before.
 if(typeof globalThis.__cdbAxHandles==="function"&&globalThis.__cdbAxHandles(__TOOL_NAME__)){try{return await globalThis.__cdbAxCall(__TOOL_NAME__,__INPUT__,Object.assign({sid:__SESSION__&&__SESSION__.sessionId,pin:function(d){__pinDisplay(d);__reportDisplay(d.displayId,!0)},sync:__syncUpstreamShotDims},__ask?__cc.axOpts(__SESSION__):{}))}catch(err){return(await __tgtErr(err))||{content:[{type:"text",text:"Error: "+(err&&err.message||err)}],isError:!0}}}
+var __cg=await __coldGuard(__coldPts());if(__cg)return __cg;
 if(__actionTools.has(__TOOL_NAME__)){try{return await __hideWindows(async function(){switch(__TOOL_NAME__){
 case"left_click":{await __relHeld();var __lc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]),__g=await __selfHit([__lc])||await __gate("pointer",[__lc]);if(__g)return __g;__g=await __travel(__lc);if(__g)return __g;await ex.click(__lc[0],__lc[1],"left",1);return{content:[{type:"text",text:"Clicked at ("+__lc[0]+","+__lc[1]+")"}]}}
 case"right_click":{await __relHeld();var __rc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]),__g=await __selfHit([__rc])||await __gate("pointer",[__rc]);if(__g)return __g;__g=await __travel(__rc);if(__g)return __g;await ex.click(__rc[0],__rc[1],"right",1);return{content:[{type:"text",text:"Right clicked"}]}}

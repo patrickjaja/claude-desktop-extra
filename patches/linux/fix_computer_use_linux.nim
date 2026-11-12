@@ -44,6 +44,9 @@
 # marker for the Wayland input guard: with them the executor
 # answers upstream's whole-screen gate as upstream's own Wayland executor does
 # (issue #326).
+# Sub-patch 5e reads a coordinate that arrives before any screenshot (an app
+# restart mid-session) in the frame the Linux executor's next screenshot will
+# have (__coldFrame) instead of upstream's division by the scale factor.
 # Sub-patch 4h routes the Linux arm of upstream's unhideComputerUseApps (turn-end
 # auto-unhide) to the active Linux executor's __unhideApps when it has one, so
 # the KWin executor lifts the capture exclusions it set (upstream's own Linux
@@ -742,6 +745,10 @@ proc endStateMarkers(): seq[EndStateMarker] =
       """\{content:\(__cdbZ=>\[\.\.\.\(process\.platform==="linux"&&globalThis\.__cdbCuShotNote\?\.\(__cdbZ\.base64\)\|\|\[\]\),\{type:"image",data:__cdbZ\.base64,mimeType:"image/jpeg"\}\]\)\(await [\w$]+\.executor\.zoom\(""",
     ),
     rx(
+      "5e no-screenshot coordinate frame",
+      """let __cdbCf=process\.platform==="linux"\?globalThis\.__linuxExecutor\?\.__coldFrame\?\.\(([\w$]+),!0\):null,[\w$]+=__cdbCf\?Math\.round\([\w$]+\*\(\1\.width/__cdbCf\.imgW\)\)\+\1\.originX:Math\.round\([\w$]+/\1\.scaleFactor\)\+\1\.originX,""",
+    ),
+    rx(
       "5d teach-step refusal text",
       """return ([\w$]+)\.isError\?process\.platform==="linux"\?\{content:\[\{type:"text",text:JSON\.stringify\(([\w$]+)\)\},\.\.\.\1\.content\]\}:[\w$]+\(\2\):\{content:""",
     ),
@@ -754,7 +761,7 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 69
+  const EXPECTED_PATCHES = 70
 
   let gateSet = cuPlatformSetName(content)
   if gateSet == "":
@@ -4096,6 +4103,54 @@ proc apply*(input: string): string =
           inc patchesApplied
         else:
           echo "  [FAIL] 5d teach-step: replacement did not apply"
+
+  # ─── Patch 5e: a coordinate before any screenshot uses the capture frame ──
+  # Upstream's pixels-mode mapping (every click, scroll, drag, move and teach
+  # anchor of its own dispatch: kwin mode, cloud sessions, teach mode) reads
+  # the model's coordinate in the session's last screenshot; with none (an
+  # app restart in the middle of a session) it divides by the display's
+  # scaleFactor (5.1231.2):
+  #   a.warn("[computer-use] pixels-mode coordinate received with no prior
+  #   screenshot; falling back to /scaleFactor. ...");let s=Math.round(e/
+  #   r.scaleFactor)+r.originX,c=Math.round(t/r.scaleFactor)+r.originY;return
+  #   s>r.originX+r.width||c>r.originY+r.height?Error(`${o} is outside the
+  #   display bounds, ... Take a screenshot first.`):ut(...)
+  # Our capture tiers downscale every screenshot (long edge <= 1568 px, at most
+  # 1.15 MP of the physical size), so that lands short of the target at every
+  # size above that (1430x804 image of a 1920x1080 display at scale 1.6: x/1.6
+  # instead of x*1920/1430). On Linux the active executor's __coldFrame(r, true)
+  # names the frame the next screenshot of r will have, and the point is read
+  # in it; upstream's own bounds test then refuses a point outside that frame
+  # with its own text. No frame (another platform, an executor without it, or
+  # a capture size not known yet): upstream's division, unchanged.
+  block:
+    let pat =
+      re"""(\.warn\((["`])\[computer-use\] pixels-mode coordinate received with no prior screenshot; falling back to /scaleFactor\. Click may be off if downsample is active\.\2\);)let ([\w$]+)=Math\.round\(([\w$]+)/([\w$]+)\.scaleFactor\)\+\5\.originX,([\w$]+)=Math\.round\(([\w$]+)/\5\.scaleFactor\)\+\5\.originY;return \3>\5\.originX\+\5\.width\|\|\6>\5\.originY\+\5\.height\?"""
+    let found = countMatches(content, pat)
+    if found != 1:
+      echo &"  [FAIL] 5e no-screenshot coordinate fallback (`a.warn(\"[computer-use] pixels-mode coordinate received with no prior screenshot; ...\");let s=Math.round(e/r.scaleFactor)+r.originX,...`): {found} matches, expected 1 - re-audit"
+    else:
+      let n = replaceFirst(
+        content,
+        pat,
+        proc(m: RegexMatch): string =
+          let r = m.captures[4]
+          m.captures[0] &
+            "let __cdbCf=process.platform===\"linux\"?globalThis.__linuxExecutor?.__coldFrame?.(" &
+            r & ",!0):null," & m.captures[2] & "=__cdbCf?Math.round(" & m.captures[3] &
+            "*(" & r & ".width/__cdbCf.imgW))+" & r & ".originX:Math.round(" &
+            m.captures[3] & "/" & r & ".scaleFactor)+" & r & ".originX," & m.captures[5] &
+            "=__cdbCf?Math.round(" & m.captures[6] & "*(" & r & ".height/__cdbCf.imgH))+" &
+            r & ".originY:Math.round(" & m.captures[6] & "/" & r & ".scaleFactor)+" & r &
+            ".originY;return " & m.captures[2] & ">" & r & ".originX+" & r & ".width||" &
+            m.captures[5] & ">" & r & ".originY+" & r & ".height?",
+      )
+      if n == 1:
+        echo "  [OK] 5e no-screenshot coordinate: read in the Linux executor's capture frame (__coldFrame) on Linux, upstream's /scaleFactor elsewhere (1 match)"
+        inc changes
+        inc patchesApplied
+      else:
+        echo "  [FAIL] 5e no-screenshot coordinate: replacement did not apply"
 
   if patchesApplied < EXPECTED_PATCHES:
     raise newException(

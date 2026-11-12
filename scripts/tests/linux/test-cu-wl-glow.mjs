@@ -630,7 +630,9 @@ try {
     const clickMs = performance.now() - t0c;
     await waitFor(() => cmds().filter((x) => x.cmd === "glide").length > glidesBefore);
     const lastGlide = cmds().filter((x) => x.cmd === "glide").pop();
-    check("handler click: the arrow glides to the target first", !!lastGlide && J(lastGlide.frames.at(-1).slice(0, 2)) === J([400, 300]), true);
+    // No screenshot since switch_display: the point is read in DP-1's frame
+    // (the handler's cold frame), so the target is the mapped click point.
+    check("handler click: the arrow glides to the target first", !!lastGlide && !!lastClick() && J(lastGlide.frames.at(-1).slice(0, 2)) === J(lastClick().slice(0, 2)), true);
     check(`handler click: the click waited for the glide (${Math.round(clickMs)} ms)`, clickMs >= 300, true);
     agree("handler click after the glide");
     // The accessibility tools make a window's display current through the
