@@ -1018,13 +1018,62 @@ function _parseBridgeJson(label,out){
     throw new Error(label+" returned non-JSON output: "+preview);
   }
 }
-function _x11Bridge(args){
+function _x11Bridge(args,timeoutMs){
   if(_tgt&&_tgt.refuse)throw _tgtErr();
   var bin=_x11BridgeBin();
   if(!bin)throw new Error(_bridgeWhy("x11-bridge","X11_BRIDGE_BIN"));
-  var res=_cp.execFileSync(bin,args,_spo({encoding:"utf-8",timeout:15000,maxBuffer:16*1024*1024},bin));
+  var res=_cp.execFileSync(bin,args,_spo({encoding:"utf-8",timeout:timeoutMs||15000,maxBuffer:16*1024*1024},bin));
   var out=res.trim();
   return out?_parseBridgeJson("x11-bridge",out):null;
+}
+// x11-bridge `type` timeout, scaled with the text instead of a flat 15 s: 5 s
+// (spawn, keymap lock, Chrome's keymap wait) + the bridge's 12 ms per
+// character plus 3 ms of X round trips, + 0.3 s per 30 non-ASCII characters
+// (characters off the layout are typed on spare keycodes bound in pages of
+// about 30, each bound and settled; non-ASCII is the upper bound we can tell
+// without the layout). Never below the old 15 s.
+function _x11TypeMs(t){
+  var cps=Array.from(String(t)),off=0;
+  for(var i=0;i<cps.length;i++)if(cps[i].codePointAt(0)>127)off++;
+  return Math.max(15000,5000+cps.length*15+Math.ceil(off/30)*300);
+}
+// An x11-bridge `type` stopped early prints {action:"type", text, charCount,
+// interrupted:true, reason:"signal"|"keymapChanged"} on stdout and exits 1
+// (charCount = code points typed from the start of text). -> that object when
+// err carries it for exactly this text, else null (an older bridge, a second
+// bridge that could not get the keymap lock: stderr only, nothing typed).
+function _x11TypeStop(err,text){
+  var o=null;try{o=JSON.parse(String(err&&err.stdout||"").trim())}catch(e){return null}
+  if(!o||o.action!=="type"||o.interrupted!==!0||typeof o.charCount!=="number"||!Number.isInteger(o.charCount)||o.charCount<0)return null;
+  if(typeof o.text==="string"&&o.text!==text)return null;
+  return o;
+}
+// Type text through x11-bridge, resuming after an interruption instead of
+// typing all of it again: our own timeout (SIGTERM from execFileSync,
+// err.code ETIMEDOUT) or a keyboard layout change mid-text (reason
+// keymapChanged; a fresh run reads the new layout). Only the rest is typed
+// (Array.from(text).slice(charCount)), at most 3 times, and only while each
+// run makes progress; otherwise the bridge's error is thrown as before. A
+// signal from anyone else (the app quitting) is never resumed. An older
+// bridge without the interrupted result behaves exactly as before.
+var X11_TYPE_RESUMES=3;
+function _x11Type(text){
+  var rest=String(text),done=0,total=Array.from(rest).length;
+  for(var tries=0;;tries++){
+    try{_x11Bridge(["type","--text",rest],_x11TypeMs(rest));return}
+    catch(err){
+      var st=_x11TypeStop(err,rest),ours=st&&(st.reason==="keymapChanged"||err&&err.code==="ETIMEDOUT");
+      var cps=Array.from(rest);
+      if(!ours||tries>=X11_TYPE_RESUMES||st.charCount<=0||st.charCount>cps.length){
+        if(st)globalThis.__cdbDiag("[claude-cu] x11-bridge type: stopped after "+(done+st.charCount)+" of "+total+" characters ("+(st.reason||"?")+(err&&err.code==="ETIMEDOUT"?", timeout":"")+") - not resumed"+(st.charCount<=0?" (no progress)":tries>=X11_TYPE_RESUMES?" (resume limit)":ours?"":" (not our stop)"));
+        throw err;
+      }
+      done+=st.charCount;
+      if(st.charCount===cps.length)return;
+      rest=cps.slice(st.charCount).join("");
+      globalThis.__cdbDiag("[claude-cu] x11-bridge type: stopped after "+done+" of "+total+" characters ("+(st.reason||"?")+(err.code==="ETIMEDOUT"?", timeout":"")+") - typing the remaining "+(total-done));
+    }
+  }
 }
 // Async twin of _x11Bridge. The SCREENSHOT path is async end to end (issue
 // #232) - a hung bridge there must never block the Electron main process.
@@ -1502,23 +1551,34 @@ function _wlBridgeCall(args){
 // ASYNC twin of _wlBridgeCall, used by the screenshot path (issue #232). Same
 // portal rules, but it AWAITS the async session ensure instead of running the
 // blocking sync backstop, so a hung portal cannot freeze the main process.
-async function _wlBridgeCallAsync(args,timeoutOverrideMs){
+// The portal session a gnome-portal-bridge portal command needs. This path can
+// await the consent dialog, so a vanished daemon is simply replaced here (one
+// dialog, full budget) instead of failing the call - unless the user stopped
+// sharing, which is never undone behind their back. A capture runs it BEFORE
+// it hides the overlay (_captureRegion), so nothing slow sits between the
+// hide's ack and the capture (gnome-portal-bridge DESIGN.md "Capture
+// freshness"); the call then only checks the state (prepped).
+async function _gnomePortalPrep(cmd){
+  _gnomeCmdSeen(cmd);
+  if(_gnomeStoppedCheck())throw _gnomeStoppedError();
+  if(_gnomeSessionActive&&_gnomeDaemonGone())_gnomeSessionLost("no session daemon");
+  if(!_gnomeSessionActive&&_gnomePortalDown())throw _gnomePortalDownError();
+  await _gnomeEnsureSession();
+  if(_gnomeStoppedByUser)throw _gnomeStoppedError();
+  if(!_gnomeSessionActive)throw _gnomePortalDownError();
+}
+// prepped: the caller ran _gnomePortalPrep just before (a capture, ahead of
+// its hide): only the cheap state checks run here, never a session start.
+async function _wlBridgeCallAsync(args,timeoutOverrideMs,prepped){
   if(_tgt&&_tgt.refuse)throw _tgtErr();
   var b=_wlBridge();if(!b)throw new Error("no covered Wayland bridge available");
   if(b.name==="gnome-portal-bridge")_gnomeCheckTouch();
   var portalCmd=b.name==="gnome-portal-bridge"&&_gnomePortalCmds[args[0]]===1;
-  if(portalCmd){
-    // This path can await the consent dialog, so a vanished daemon is simply
-    // replaced here (one dialog, full budget) instead of failing the call -
-    // unless the user stopped sharing, which is never undone behind their back.
+  if(portalCmd&&prepped===!0){
     _gnomeCmdSeen(args[0]);
     if(_gnomeStoppedCheck())throw _gnomeStoppedError();
-    if(_gnomeSessionActive&&_gnomeDaemonGone())_gnomeSessionLost("no session daemon");
-    if(!_gnomeSessionActive&&_gnomePortalDown())throw _gnomePortalDownError();
-    await _gnomeEnsureSession();
-    if(_gnomeStoppedByUser)throw _gnomeStoppedError();
     if(!_gnomeSessionActive)throw _gnomePortalDownError();
-  }
+  }else if(portalCmd)await _gnomePortalPrep(args[0]);
   var t=timeoutOverrideMs||(b.name==="gnome-portal-bridge"&&!portalCmd?15000:b.timeout);
   var ok=!1,query=b.name==="gnome-portal-bridge"&&!portalCmd;
   if(portalCmd)_gnomeCmdBegin();
@@ -2065,7 +2125,11 @@ async function _captureRegion(x,y,w,h,sf,displayIdx,mk){
         var _wmr=await _wlMonForRegion(_lx,_ly);
         var _wzargs=["zoom","--x",String(_wmr?_wmr.x:_lx),"--y",String(_wmr?_wmr.y:_ly),"--w",String(_lw),"--h",String(_lh)];
         if(_wmr&&_wmr.name){_wzargs.push("--display",_wmr.name)}
-        try{_wzr=await _withCursorHidden(function(){return _wlBridgeCallAsync(_wzargs)});break}
+        // GNOME: the portal session first (it can wait for the consent
+        // dialog), then the hide, so the capture follows the hide's ack at once.
+        var _wprep=_wlb.name==="gnome-portal-bridge";
+        if(_wprep)await _gnomePortalPrep("zoom");
+        try{_wzr=await _withCursorHidden(function(){return _wlBridgeCallAsync(_wzargs,void 0,_wprep)});break}
         catch(ze){
           if(!_wtry&&_wmr&&_wmr.name&&_cuDisplayNotFound(ze)){globalThis.__cdbDiag("[claude-cu] "+_wlb.name+" zoom: display "+_wmr.name+" not found - monitor list refreshed, retrying once");_wlScreensInvalidate();continue}
           // A frame that did not arrive in time (gnome-portal-bridge: "timed
@@ -4802,7 +4866,7 @@ var _ex=globalThis.__linuxExecutor={
         await _electron.clipboard.writeText(text,"clipboard");
         _x11Bridge(["key-sequence","--keys","ctrl+v"]);
       }else{
-        return _escAround(_escText(text),function(){_x11Bridge(["type","--text",text])},text.length*12);
+        return _escAround(_escText(text),function(){_x11Type(text)},text.length*12);
       }
     }
   },

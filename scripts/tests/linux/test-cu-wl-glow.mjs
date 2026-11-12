@@ -188,7 +188,8 @@ const DOCTOR_X11 = { contract: 1, bridge: "x11-bridge", version: "0.1.0", backen
 const asyncLog = [];
 const ORIG_XRD = process.env.XDG_RUNTIME_DIR;
 const zoomLog = [];
-function load({ session = "wayland", desktop = "sway", wlroots = true, gnome = false, overlay = true, kwin = false, target = null, glow = true, displays = TWO, doctorDelay = 0, screens = null, zoom = null, zoomDelay = 0 } = {}) {
+const sessionStarts = [];
+function load({ session = "wayland", desktop = "sway", wlroots = true, gnome = false, overlay = true, kwin = false, target = null, glow = true, displays = TWO, doctorDelay = 0, screens = null, zoom = null, zoomDelay = 0, sessionStartDelay = 0 } = {}) {
   zoomLog.length = 0;
   asyncLog.length = 0;
   let screensCalls = 0;
@@ -207,7 +208,7 @@ function load({ session = "wayland", desktop = "sway", wlroots = true, gnome = f
       }
       asyncLog.push(path.basename(String(bin)) + " " + (args || []).join(" "));
       // GNOME: the portal session daemon starts and ends at once.
-      if (gnome && args && (args[0] === "session-start" || args[0] === "session-end")) { setTimeout(() => c(null, J(args[0] === "session-start" ? { ok: true, session: "daemon" } : { ok: true, ended: true, daemon: "exited" }), ""), 0); return { on() {} }; }
+      if (gnome && args && (args[0] === "session-start" || args[0] === "session-end")) { const st = args[0] === "session-start"; setTimeout(() => { if (st) sessionStarts.push(Date.now()); c(null, J(st ? { ok: true, session: "daemon" } : { ok: true, ended: true, daemon: "exited" }), ""); }, st ? sessionStartDelay : 0); return { on() {} }; }
       if (screens && args && args[0] === "screens") { const l = screens(++screensCalls); setTimeout(() => c(null, J(l), ""), 0); return { on() {} }; }
       if (zoom && args && args[0] === "zoom") {
         zoomLog.push({ t: Date.now(), p: performance.now() });
@@ -1062,6 +1063,18 @@ try {
     check("GNOME, capture before ready: the show follows the restore", await waitFor(() => showsAt().length === 1) && await shown(r.glow), true);
     await down(r);
     process.env.FAKE_OVL_MODE = "normal"; delete process.env.FAKE_OVL_DELAY;
+    // 7b. The portal session is gone at the capture (a task boundary ended it,
+    // the lock and the overlay stay): the session is started BEFORE the hide,
+    // so nothing slow sits between the hide's ack and the capture
+    // (gnome-portal-bridge DESIGN.md "Capture freshness").
+    r = await up({ flag: false, sessionStartDelay: 600 });
+    await r.ex.__cuTaskBoundary("s1", "renderer", "s1");
+    resetLog(); sessionStarts.length = 0; zoomLog.length = 0;
+    z = await zoomAt(r);
+    await waitFor(() => capCmds().length >= 2);
+    const hideAt = capCmds()[0] ? capCmds()[0].t : 0;
+    check("GNOME, session gone: it is started again before the hide, the capture follows the ack", sessionStarts.length === 1 && hideAt >= sessionStarts[0] && !!zoomLog[0] && zoomLog[0].t - hideAt < 150 && z.err === null, true);
+    await down(r);
     // 8. No capability (an older gnome-portal-bridge): no child, no capture command.
     for (const [label, ov] of [["older gnome-portal-bridge (no capability key)", "absent"], ["doctor overlay false", false]]) {
       r = await rig({ ...G, flag: true, overlay: ov });

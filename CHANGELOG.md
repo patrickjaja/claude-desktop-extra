@@ -30,6 +30,11 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 - **Multiple profiles:** each profile keeps its own `os-entry-points.json` (whether the OS entry points are on, and the account and organization the GNOME search provider shows). Upstream wrote it to `~/.config/Claude` from every profile, so a named profile replaced the default profile's account and organization, or switched its search results off. The default profile and 3P mode write where they did. See [Profiles](docs/profiles.md).
 
+### Computer Use: long texts on X11, GNOME screenshots after a session restart
+
+- **X11:** typing allows time in proportion to the text instead of a flat 15 seconds, and when the bundled `x11-bridge` is stopped part-way (the time ran out, or the keyboard layout changed mid-text) only the rest is typed, never the whole text again. An `x11-bridge` without that report behaves as before.
+- **GNOME Wayland:** when a screenshot has to start the screen-sharing session first, it starts it before hiding the glow, so the glow is not hidden while GNOME's consent dialog is open and the capture follows the hide at once.
+
 ## 2026-11-11
 
 ### Transparent window: no empty strip in the header
