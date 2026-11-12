@@ -144,7 +144,7 @@ function fakeGlow({ url = "file:///tmp/cu-glow.html", visible = false, loading =
 // `bridge(args)`: the stub x11-bridge's synchronous answer (input commands);
 // without it every synchronous tool call fails as "not found".
 const capLog = [];
-function loadExecutor({ displays, session = "x11", desktop = "XFCE", target = null, doctor = X11_DOCTOR(true), bridge = null, asyncBridge = null }) {
+function loadExecutor({ displays, session = "x11", desktop = "XFCE", target = null, doctor = X11_DOCTOR(true), bridge = null, asyncBridge = null, execSyncHook = null, sourcesHook = null }) {
   fakeWins.length = 0;
   for (const k of Object.keys(appListeners)) delete appListeners[k];
   const screen = makeScreen(displays);
@@ -154,7 +154,7 @@ function loadExecutor({ displays, session = "x11", desktop = "XFCE", target = nu
       if (bridge && path.basename(String(bin)) === "x11-bridge") return bridge(args);
       throw new Error("not found");
     },
-    execSync() { throw new Error("nope"); },
+    execSync(c) { if (execSyncHook) return execSyncHook(c); throw new Error("nope"); },
     spawnSync() { return { status: 1 }; },
     execFile(bin, args, opts, cb) {
       const c = typeof opts === "function" ? opts : cb;
@@ -172,7 +172,7 @@ function loadExecutor({ displays, session = "x11", desktop = "XFCE", target = nu
     app: { commandLine: { getSwitchValue: () => "" }, getPath: () => os.tmpdir(), on(n, f) { (appListeners[n] = appListeners[n] || []).push(f); } },
     BrowserWindow: { getAllWindows: () => fakeWins.filter((w) => !w.destroyed) },
     screen,
-    desktopCapturer: { getSources: async () => [] },
+    desktopCapturer: { getSources: async (o) => (sourcesHook ? sourcesHook(o) : []) },
     clipboard: { readText: () => "", writeText: () => {} },
     nativeImage: {},
   };
@@ -1053,7 +1053,41 @@ document.body.setAttribute("data-r",JSON.stringify({before,hid,during,after,none
         delete globalThis.__cdbCuGlowEnabled;
         return { log: capLog.slice(), err, res, ms };
       };
-      let o = await run({});
+      // The tiers after the bridge: COWORK_SCREENSHOT_CMD (a SYNC execSync) and the
+      // Electron desktopCapturer last resort. Both run hidden; the command only
+      // after the page acknowledged the hide (execSync blocks the event loop).
+      const run2 = async ({ cmd = null, dc = false, jsAnswer = null, glow = true }) => {
+        capLog.length = 0;
+        const img = { isEmpty: () => false, getSize: () => ({ width: 5120, height: 1440 }), crop: () => img, resize: () => img, toPNG: () => Buffer.from("png") };
+        loadExecutor({ displays: HOST, execSyncHook: (c) => { capLog.push("cmd"); return ""; },
+          sourcesHook: () => { capLog.push("sources"); return [{ display_id: String(HOST[2].id), thumbnail: img }]; },
+          asyncBridge: (args) => new Error("Command failed: zoom\nx11-bridge: XGetImage failed") });
+        await tick();
+        globalThis.__cdbCuGlowEnabled = () => true;
+        if (cmd) process.env.COWORK_SCREENSHOT_CMD = cmd;
+        let g = null;
+        if (glow) { g = fakeGlow({ visible: true }); g.jsResult = true; g.jsAnswer = jsAnswer; }
+        capLog.length = 0;
+        let err = null, res = null;
+        try { res = await globalThis.__linuxExecutor.zoom({ x: 100, y: 100, w: 50, h: 50 }, undefined, null, 1, { globalCoords: true }); } catch (e) { err = e; }
+        await tick();
+        delete process.env.COWORK_SCREENSHOT_CMD; delete globalThis.__cdbCuGlowEnabled;
+        return { log: capLog.slice().filter((x) => x !== "bridge screens" && x !== "bridge zoom"), err, res };
+      };
+      let o = await run2({ cmd: "mycap {FILE}" });
+      check("COWORK_SCREENSHOT_CMD: hide, command, restore", J2(o.log), J2(["js hide", "cmd", "js show"]));
+      check("COWORK_SCREENSHOT_CMD: the capture result is unchanged", !!o.res && !o.err && o.res.mimeType === "image/png", true);
+      o = await run2({ cmd: "mycap {FILE}", jsAnswer: (js) => (/classList\.remove/.test(js) ? Promise.resolve(true) : new Promise((r) => setTimeout(() => { capLog.push("ack"); r(true); }, 30))) });
+      check("COWORK_SCREENSHOT_CMD: the hide is acknowledged before the blocking command runs", J2(o.log), J2(["js hide", "ack", "cmd", "js show"]));
+      o = await run2({ cmd: "mycap {FILE}", glow: false });
+      check("COWORK_SCREENSHOT_CMD: no glow window -> command only", J2(o.log), J2(["cmd"]));
+      o = await run2({ dc: true });
+      // The failed x11-bridge tier before it is hidden and restored on its own.
+      check("desktopCapturer last resort: hidden around getSources (after the failed bridge tier)", J2(o.log), J2(["js hide", "js show", "js hide", "sources", "js show"]));
+      check("desktopCapturer last resort: the capture result is unchanged", !!o.res && !o.err && o.res.mimeType === "image/png", true);
+      o = await run2({ dc: true, glow: false });
+      check("desktopCapturer last resort: no glow window -> getSources only", J2(o.log), J2(["sources"]));
+      o = await run({});
       check("x11: hide, then the bridge capture, then restore", J2(o.log.filter((x) => x !== "bridge screens")), J2(["js hide", "bridge zoom", "js show"]));
       check("x11: the capture result is unchanged", !!o.res && !o.err, true);
       o = await run({ bridgeAnswer: () => new Error("Command failed: zoom\nx11-bridge: XGetImage failed") });

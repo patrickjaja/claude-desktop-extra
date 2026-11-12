@@ -1043,6 +1043,19 @@ function _x11BridgeAsync(args,timeoutMs){
 // timeout once per window, not per shot, and a bridge that recovers is used.
 var _x11ScreensCache=null,_x11ScreensRetryAt=0,_x11ScreensGen=0;
 function _x11ScreensInvalidate(){_x11ScreensCache=null;_x11ScreensGen++;_x11ScreensRetryAt=0}
+// Electron knows a layout change at once; the cached list does not. Armed on
+// the first successful enumeration (a tool call, so the app is ready), once.
+// Not in target mode: the cache then holds the background display's monitors.
+var _x11HotplugArmed=!1;
+function _x11HotplugArm(){
+  if(_x11HotplugArmed)return;
+  try{
+    var sc=_electron.screen;if(!sc||typeof sc.on!=="function")return;
+    var f=function(){if(!_tgt&&_x11ScreensCache!==null)_x11ScreensInvalidate()};
+    sc.on("display-added",f);sc.on("display-removed",f);sc.on("display-metrics-changed",f);
+    _x11HotplugArmed=!0;
+  }catch(e){}
+}
 async function _x11BridgeScreens(){
   if(_x11ScreensCache!==null)return _x11ScreensCache;
   if(Date.now()<_x11ScreensRetryAt)return [];
@@ -1050,6 +1063,7 @@ async function _x11BridgeScreens(){
   try{s=await _x11BridgeAsync(["screens"],SCREENS_TIMEOUT_MS);if(!Array.isArray(s)||!s.length)why="no monitors in the answer"}catch(e){why=e.message||String(e)}
   if(gen!==_x11ScreensGen)return why?[]:s;
   if(why){globalThis.__cdbDiag("[claude-cu] x11-bridge screens failed: "+why+" - retrying in "+Math.round(SCREENS_RETRY_MS/1000)+"s");_x11ScreensRetryAt=Date.now()+SCREENS_RETRY_MS;return []}
+  _x11HotplugArm();
   return _x11ScreensCache=s;
 }
 // A zoom whose --display names a monitor the bridge no longer has: every bridge
@@ -1867,10 +1881,15 @@ function _findMonByPoint(px,py){
 async function _x11MonForRegion(x,y){
   var screens=await _x11BridgeScreens();
   if(!screens.length)return null;
-  var pick=null;
-  for(var i=0;i<screens.length;i++){
-    var g=screens[i].geometry||{};
-    if(x>=g.x&&x<g.x+g.width&&y>=g.y&&y<g.y+g.height){pick=screens[i];break}
+  var pick=_wlScreenAt(screens,x,y);
+  // A point on no monitor of the cached list: the layout changed since it was
+  // cached (same fix as _wlMonForRegion). Enumerate once more before falling
+  // back; a fresh list that still misses is a point outside every monitor.
+  if(!pick&&screens===_x11ScreensCache){
+    _x11ScreensInvalidate();
+    globalThis.__cdbDiag("[claude-cu] x11-bridge screens: "+x+","+y+" is on no known monitor - monitor list refreshed");
+    var fresh=await _x11BridgeScreens();
+    if(fresh.length){screens=fresh;pick=_wlScreenAt(screens,x,y)}
   }
   if(!pick){
     for(var j=0;j<screens.length;j++){if(screens[j].is_primary){pick=screens[j];break}}
@@ -1996,7 +2015,9 @@ async function _captureRegion(x,y,w,h,sf,displayIdx,mk){
     // contract). Only {FILE}/{X}/{Y}/{W}/{H} are substituted, all local values.
     // A command the user named: it runs with the APP PATH.
     try{var cmd=process.env.COWORK_SCREENSHOT_CMD.replace(/\{FILE\}/g,tmp).replace(/\{X\}/g,x).replace(/\{Y\}/g,y).replace(/\{W\}/g,w).replace(/\{H\}/g,h);
-    var _co={timeout:15000},_ce=_envFor("app");if(_ce)_co.env=_ce;_cp.execSync(cmd,_co);globalThis.__cdbDiag("[claude-cu] screenshot: captured via COWORK_SCREENSHOT_CMD");return _nativePng(_readClean(tmp))}catch(e){globalThis.__cdbDiag("[claude-cu] COWORK_SCREENSHOT_CMD failed: "+e.message)}
+    var _co={timeout:15000},_ce=_envFor("app");if(_ce)_co.env=_ce;// The hide is acknowledged BEFORE the command runs: _withCursorHidden awaits its hide, then
+    // calls this function, whose execSync blocks the loop only after the arrow is off screen.
+    await _withCursorHidden(function(){_cp.execSync(cmd,_co)});globalThis.__cdbDiag("[claude-cu] screenshot: captured via COWORK_SCREENSHOT_CMD");return _nativePng(_readClean(tmp))}catch(e){globalThis.__cdbDiag("[claude-cu] COWORK_SCREENSHOT_CMD failed: "+e.message)}
   }
   // Covered Wayland sessions (wlroots / GNOME): the bundled bridge is the SOLE
   // screenshot backend (no third-party fallback, per design). Like x11-bridge,
@@ -2068,7 +2089,7 @@ async function _captureRegion(x,y,w,h,sf,displayIdx,mk){
   }
   if(!_tgt&&_de.indexOf("kde")>=0&&_hasCmd("spectacle")){
     try{var stmp=_path.join(_os.tmpdir(),"claude-cu-spectacle-"+Date.now()+".png");
-    _cp.execFileSync(_toolCmd("spectacle")||"spectacle",["-b","-n","-f","-o",stmp],{timeout:10000});
+    await _withCursorHidden(function(){_cp.execFileSync(_toolCmd("spectacle")||"spectacle",["-b","-n","-f","-o",stmp],{timeout:10000})});
     if(_fs.existsSync(stmp)){try{_cp.execFileSync(_toolCmd("convert")||"convert",[stmp,"-crop",w+"x"+h+"+"+x+"+"+y,"+repage",tmp],{timeout:5000});try{_fs.unlinkSync(stmp)}catch(e){}globalThis.__cdbDiag("[claude-cu] screenshot: captured via spectacle+convert (KDE)");return _nativePng(_readClean(tmp))}catch(ce){try{_fs.renameSync(stmp,tmp)}catch(re){}globalThis.__cdbDiag("[claude-cu] screenshot: captured via spectacle (KDE, uncropped)");return _nativePng(_readClean(tmp))}}
     }catch(e){globalThis.__cdbDiag("[claude-cu] spectacle failed: "+e.message)}
   }
@@ -2108,7 +2129,7 @@ async function _captureRegion(x,y,w,h,sf,displayIdx,mk){
   if(_tgt)throw new Error("Screenshot of the background display "+_tgt.display+" failed (details in claude-patches.log).");
   // Electron desktopCapturer last resort: display-relative crop, downscaled by
   // the bridges' rule (see _desktopCapturerRegion).
-  try{var _dc=await _desktopCapturerRegion(_lx0,_ly0,_lw0,_lh0,displayIdx,_xr);if(_capGen!==_capLockGen){globalThis.__cdbDiag("[claude-cu] desktopCapturer answered after the turn ended - image discarded");throw _capCancelled()}globalThis.__cdbDiag("[claude-cu] screenshot: captured via desktopCapturer (Electron fallback, source by "+_dc.via+", "+_dc.imgW+"x"+_dc.imgH+")");return{base64:_dc.png.toString("base64"),imgW:_dc.imgW,imgH:_dc.imgH,mimeType:"image/png"}}catch(dce){if(_capGen!==_capLockGen)throw _capCancelled();globalThis.__cdbDiag("[claude-cu] desktopCapturer fallback failed: "+(dce&&dce.message||dce))}
+  try{var _dc=await _withCursorHidden(function(){return _desktopCapturerRegion(_lx0,_ly0,_lw0,_lh0,displayIdx,_xr)});if(_capGen!==_capLockGen){globalThis.__cdbDiag("[claude-cu] desktopCapturer answered after the turn ended - image discarded");throw _capCancelled()}globalThis.__cdbDiag("[claude-cu] screenshot: captured via desktopCapturer (Electron fallback, source by "+_dc.via+", "+_dc.imgW+"x"+_dc.imgH+")");return{base64:_dc.png.toString("base64"),imgW:_dc.imgW,imgH:_dc.imgH,mimeType:"image/png"}}catch(dce){if(_capGen!==_capLockGen)throw _capCancelled();globalThis.__cdbDiag("[claude-cu] desktopCapturer fallback failed: "+(dce&&dce.message||dce))}
   // Name the cause when it is a bridge that is missing or cannot run; when the
   // bridge is there, the per-tier failures are already in claude-patches.log.
   var _noX11=!_x11BridgeBin()&&(!_wayland||(globalThis.__cuBridgeFail&&globalThis.__cuBridgeFail["x11-bridge"]));

@@ -8,6 +8,7 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 - **KDE Plasma 6.6+ (Wayland)** gets the same "Claude is using your computer" glow as sway, Hyprland and niri, with Anthropic's drawn cursor when that is on: a click-through layer-shell overlay drawn by `kwin-portal-bridge overlay`, on the monitor Computer Use works on. It needs the `kwin-portal-bridge` build that carries the overlay (its `doctor` reports `capabilities.overlay` and `capabilities.session_overlay_opt_out`); the screen-sharing session then starts without the bridge's own glow, so there is never more than one. The bridge keeps the overlay out of every screenshot. An older or custom `KWIN_PORTAL_BRIDGE_BIN` keeps drawing its own glow, as before.
 - **Show the glow while Claude uses the computer** now also turns the glow off on KDE Plasma Wayland with that bridge. See [Computer Use](docs/computer-use.md).
+- **Screenshots from a `COWORK_SCREENSHOT_CMD`, from spectacle (KDE) or from Electron's screen capture no longer contain the drawn arrow or its press ring** (they are hidden for the capture like for the bundled bridges). On X11 the monitor list the captures use is refreshed when a monitor is plugged in, removed or changed, instead of staying stale for the session.
 
 ## 2026-11-11
 

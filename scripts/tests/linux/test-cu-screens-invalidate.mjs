@@ -71,9 +71,10 @@ function makeRig(kind, state) {
     },
     spawn() { return { on() {}, unref() {} }; }
   };
+  const screenListeners = {};
   const electron = {
     app: { commandLine: { getSwitchValue: () => "" } },
-    screen: { getAllDisplays: () => DISPLAYS, getPrimaryDisplay: () => DISPLAYS[0], getCursorScreenPoint: () => ({ x: 0, y: 0 }) },
+    screen: { on(n, f) { (screenListeners[n] = screenListeners[n] || []).push(f); }, getAllDisplays: () => DISPLAYS, getPrimaryDisplay: () => DISPLAYS[0], getCursorScreenPoint: () => ({ x: 0, y: 0 }) },
     desktopCapturer: { getSources: async () => [] },
     clipboard: { readText: () => "", writeText: () => {} },
     nativeImage: {}
@@ -96,7 +97,8 @@ function makeRig(kind, state) {
   const ex = globalThis.__linuxExecutor;
   diag.length = 0; sync.length = 0;
   const reset = () => { calls.length = 0; diag.length = 0; };
-  return { ex, calls, sync, diag, reset };
+  const emit = (n) => (screenListeners[n] || []).forEach((f) => f({}, {}));
+  return { ex, calls, sync, diag, reset, emit, screenListeners };
 }
 
 const NF = (name) => "Error: display `" + name + "` not found";
@@ -179,6 +181,43 @@ console.log("\n[x11] a failed screens is not cached as []");
   check(!s.e && screensCalls(r) === 0, "the good list is then cached", JSON.stringify(r.calls));
   check(r.sync.length === 0, "no synchronous spawn", JSON.stringify(r.sync));
   clockOffset = 0;
+}
+
+console.log("\n[x11] layout change through Electron screen events");
+for (const evn of ["display-added", "display-removed", "display-metrics-changed"]) {
+  const state = { screens: [mon("DP-1", 0, 0, 1920, 1080, true)], zoom: () => null };
+  const r = makeRig("x11", state);
+  r.reset();
+  let s = await settle(r.ex.screenshot({ displayId: 0 }));
+  check(!s.e && displayOf(zooms(r)[0] || "") === "DP-1", `${evn}: primed with DP-1`, s.e && s.e.message);
+  check(["display-added", "display-removed", "display-metrics-changed"].every((n) => (r.screenListeners[n] || []).length === 1), "listeners armed once for all three events", JSON.stringify(Object.keys(r.screenListeners)));
+  r.reset();
+  s = await settle(r.ex.screenshot({ displayId: 0 }));
+  check(screensCalls(r) === 0, "no event: the cache is used, no bridge call per capture", JSON.stringify(r.calls));
+  state.screens = [mon("HDMI-A-1", 0, 0, 1920, 1080, true)];
+  r.emit(evn);
+  r.reset();
+  s = await settle(r.ex.screenshot({ displayId: 0 }));
+  check(!s.e && screensCalls(r) === 1 && zooms(r).length === 1 && displayOf(zooms(r)[0]) === "HDMI-A-1", `${evn}: next capture re-enumerates once and names the new monitor, no failed zoom first`, JSON.stringify(r.calls));
+  r.reset();
+  await settle(r.ex.screenshot({ displayId: 0 }));
+  check(screensCalls(r) === 0, "and caches the fresh list again", JSON.stringify(r.calls));
+}
+
+console.log("\n[x11] a region on no cached monitor refreshes the list once (Wayland sibling parity)");
+{
+  const state = { screens: [mon("DP-1", 0, 0, 1920, 1080, true)], zoom: () => null };
+  const r = makeRig("x11", state);
+  r.reset();
+  await settle(r.ex.screenshot({ displayId: 0 }));
+  // The layout grew without an event reaching us: DP-1 now sits right of a new monitor.
+  state.screens = [mon("DP-1", 0, 0, 1920, 1080, true), mon("DP-2", 1920, 0, 1920, 1080)];
+  r.reset();
+  const e = await settle(r.ex.zoom({ x: 2100, y: 100, w: 200, h: 100 }, 1, 0));
+  const z = zooms(r);
+  const miss = r.diag.some((d) => /on no known monitor - monitor list refreshed/.test(d));
+  check(!e.e && miss && screensCalls(r) === 1, "a miss on the cached list re-enumerates once", JSON.stringify({ diag: r.diag, calls: r.calls }));
+  check(z.length === 1 && displayOf(z[0]) === "DP-2", "zoom names the monitor that now holds the region", JSON.stringify(z));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
