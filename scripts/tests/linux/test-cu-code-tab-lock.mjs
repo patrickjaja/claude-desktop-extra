@@ -652,7 +652,7 @@ console.log("\n[12] X11, switch OFF: Claude's own Escape reaches the app, the gr
 const EXEC_SRC = readFileSync(join(repo, "js", "cu_linux_executor.js"), "utf8");
 const escAroundSrc = fnSrc(EXEC_SRC, "_escAround");
 ok(!!escAroundSrc && /__cdbCuEscGrab/.test(escAroundSrc), "the executor's Escape wrapper uses the 17h grab");
-for (const [fn, re] of [["key", /async key\([^)]*\)\{[\s\S]*?return _escAround\(_escKeys\(combo\)/], ["holdKey", /async holdKey\([^)]*\)\{[\s\S]*?return _escAround\(_escKeys\(keyName\)/], ["type", /return _escAround\(_escText\(text\),function\(\)\{_x11Bridge\(\["type"/], ["click (held modifiers)", /return _escAround\(_escKeys\(holdKeys\)/]])
+for (const [fn, re] of [["key", /async key\([^)]*\)\{[\s\S]*?return _escAround\(_escKeys\(combo\)/], ["holdKey", /async holdKey\([^)]*\)\{[\s\S]*?return _escAround\(_escKeys\(keyName\)/], ["type", /return _escAround\(_escText\(text\),function\(\)\{_x11Type\(text\)\}/], ["click (held modifiers)", /return _escAround\(_escKeys\(holdKeys\)/]])
   ok(re.test(EXEC_SRC), `  ${fn} injects through it (a batch's sub-actions use the same methods)`);
 {
   delete globalThis.__cdbCuEscWatch;
