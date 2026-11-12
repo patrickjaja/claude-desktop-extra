@@ -22,6 +22,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - **After the app restarts in the middle of a session**, Claude's clicks, scrolls, drags and moves before its next screenshot are read in the size its screenshots of that monitor have (for example 1430x804 for a 1920x1080 monitor at scale 1.6), on every session type and on KDE Plasma Wayland. They were taken as screen positions (Code sessions and local Cowork) or divided by the scale factor (KDE Plasma Wayland, cloud sessions, teach mode), so they landed short and towards the top left on every monitor whose screenshots are scaled down. The same applies right after `switch_display`, on the newly chosen monitor. A point outside that size is refused with "Take a screenshot first", as is a click whose screenshot size cannot be told yet; Claude then takes a screenshot and goes on. `claude-patches.log` has a `no screenshot yet in this app run` line for each such click.
 - **The same in cloud sessions and teach mode:** a click whose screenshot size cannot be told yet (KDE X11 with spectacle before the bundled `x11-bridge` said whether it masks) is refused with "Take a screenshot first" there too, instead of being divided by the scale factor. `app_ax_find` before any screenshot reports positions in the size the next screenshot will have also where screenshots keep the full size (`COWORK_SCREENSHOT_CMD`, spectacle on KDE X11).
 
+### Computer Use: monitors with the same name
+
+- **Code sessions and local Cowork on X11, sway, Hyprland, niri and GNOME Wayland:** two monitors with the same name (both "Unknown Display" in a VM, two identical monitors) are told apart as "Unknown Display" and "Unknown Display (2)", as Anthropic's own code names them; the second one was unreachable by name with `switch_display`. With two or more monitors each screenshot now names the monitor it shows and the others, the note the `switch_display` description tells Claude to read. Monitors with unique names read as before.
+
 ## 2026-11-11
 
 ### Transparent window: no empty strip in the header

@@ -20,7 +20,7 @@
 //       __cdbAxCall(name, args, {sid, ctx, tier}) before its app_* branch
 // Regular mode (x11 / wlroots / gnome / background display) dispatches in
 // js/cu_handler_injection.js, which calls __cdbAxCall(name, input, {sid, pin,
-// sync}) plus, with "Ask before Computer Use controls an app" on, the
+// sync, dname}) plus, with "Ask before Computer Use controls an app" on, the
 // session's grants as {allowedApps, tier} (js/cu_consent.js axOpts). opts.ctx
 // is upstream's dispatch context and only counts in kwin mode (kctx below):
 // its lastScreenshot / onDisplayPinned frame is upstream's, never ours.
@@ -372,7 +372,10 @@ async function place(opts,x,y,fr){
   globalThis.__cuActiveOrigin={x:f.originX,y:f.originY};
   if(typeof opts.sync==="function"){try{opts.sync({width:shot.imgW,height:shot.imgH,displayWidth:shot.dispW,displayHeight:shot.dispH,displayId:f.displayId,originX:shot.originX,originY:shot.originY})}catch(e){}}
   log("frame: display "+f.displayId+(multi?" (now current)":"")+(had?"":", no screenshot yet"));
-  return{fr:frameOf(opts),note:multi?" Positions are in the frame of display "+f.displayId+" ("+(f.label||"display "+f.displayId)+"), now the current display"+(had?"; the last screenshot showed another display, take a screenshot to see this one":"")+".":""};
+  // The display's name as the handler's screenshot note and switch_display
+  // give it (opts.dname: repeated labels get " (2)", ...), else its label.
+  var dn=null;if(multi&&typeof opts.dname==="function"){try{dn=await opts.dname(f.displayId)}catch(e){dn=null}}
+  return{fr:frameOf(opts),note:multi?" Positions are in the frame of display "+f.displayId+" ("+(dn||f.label||"display "+f.displayId)+"), now the current display"+(had?"; the last screenshot showed another display, take a screenshot to see this one":"")+".":""};
 }
 function centerOf(r){return r&&r.width>0&&r.height>0?[r.x+r.width/2,r.y+r.height/2]:null}
 function pos(el,coords,fr){

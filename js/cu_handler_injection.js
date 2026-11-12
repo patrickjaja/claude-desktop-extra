@@ -171,6 +171,53 @@ function __coldPts(){
 // getLastScreenshotDims), so Eq's pixels branch reproduces __txC exactly:
 // displayWidth/width == dispW/imgW, originX == originX. This makes teach anchors
 // and teach action coordinates land identically to our click path.
+// The monitor names the model reads and passes to switch_display, upstream's
+// own rule (its dispatcher's display-name map, 5.1231.2, used by its
+// screenshot note and switch_display): a label that is trimmed, NFC, plain
+// quotes, at most 40 characters of letters, digits and _ .&'"()+-
+// –—→⌘⌥⌃⇧, else "display <id>"; in
+// displayId order a repeated name gets " (2)", " (3)", ... So two monitors
+// Electron labels alike ("Unknown Display" in a VM, two identical monitors)
+// stay apart. Unique, well-formed labels are their own names, so every text
+// below reads as before. -> Map displayId -> name.
+var __DISP_OK=/^[\p{L}\p{N}_ .&'"()+\-–—→⌘⌥⌃⇧]+$/u;
+function __dispNfc(t){return t.length>256?t:t.normalize("NFC")}
+function __dispLabel(l){
+  var t=typeof l==="string"?l.trim():"";if(!t)return void 0;
+  t=__dispNfc(t).replace(/‘|’/g,"'").replace(/“|”/g,'"').replace(/…/g,"...");
+  return t.length<=40&&__DISP_OK.test(t)?t:void 0;
+}
+function __dispNames(dl){
+  var s=(Array.isArray(dl)?dl:[]).slice().sort(function(a,b){return a.displayId-b.displayId}),seen=new Map,r=new Map;
+  for(var i=0;i<s.length;i++){var t=__dispLabel(s[i].label);if(t===void 0)t="display "+s[i].displayId;var c=(seen.get(t)||0)+1;seen.set(t,c);r.set(s[i].displayId,c===1?t:t+" ("+c+")")}
+  return r;
+}
+function __dispName(names,id){var n=names.get(id);return n!==void 0?n:"display "+id}
+// switch_display's display argument: a name above (case-insensitive,
+// trimmed; a repeated label alone is its first monitor's name, as upstream
+// resolves it), else the raw label when no other monitor has it, else the
+// displayId (as before). -> the listDisplays entry or undefined.
+function __dispFind(dl,names,target){
+  var q=__dispNfc(String(target).trim()).toLowerCase(),i;
+  for(i=0;i<dl.length;i++){if(__dispName(names,dl[i].displayId).toLowerCase()===q)return dl[i]}
+  var same=dl.filter(function(d){return d.label===target});
+  if(same.length===1)return same[0];
+  for(i=0;i<dl.length;i++){if(String(dl[i].displayId)===String(target))return dl[i]}
+  return void 0;
+}
+// The screenshot note naming the captured monitor, upstream's own words (its
+// dispatcher adds it to every screenshot with two or more monitors; the
+// switch_display description tells the model to take names from it). prev =
+// the display of the previous screenshot; upstream treats undefined and 0
+// alike (no "different from" clause), kept as is. -> text or null.
+function __dispNote(dl,id,prev){
+  if(!Array.isArray(dl)||dl.length<2)return null;
+  var names=__dispNames(dl),s=__dispName(names,id),o=dl.filter(function(d){return d.displayId!==id}).map(function(d){return __dispName(names,d.displayId)});
+  var u=o.length>0?" Other attached monitors: "+o.map(function(n){return"\""+n+"\""}).join(", ")+"."+" Use switch_display to capture a different monitor.":"";
+  if(prev===void 0||prev===0)return"This screenshot was taken on monitor \""+s+"\"."+u;
+  if(prev!==id)return"This screenshot was taken on monitor \""+s+"\", which is different from your previous screenshot (taken on \""+__dispName(names,prev)+"\")."+u;
+  return null;
+}
 // switch_display's pin, shared with the accessibility tools (app_ax_find makes
 // the display holding the searched window current): the next screenshot, zoom
 // and click use display d; the old screenshot geometry is dropped.
@@ -253,7 +300,7 @@ async function __travel(p){
 async function __hideWindows(fn){if(ex.__targetActive&&ex.__targetActive())return await fn();if(__x11Hit())return await fn();var __bws=require("electron").BrowserWindow.getAllWindows().filter(function(w){return!w.isDestroyed()&&(typeof w.isFocusable!=="function"||w.isFocusable())});for(var __i=0;__i<__bws.length;__i++)__bws[__i].setIgnoreMouseEvents(true);try{await new Promise(function(r){setTimeout(r,50)});return await fn()}finally{for(var __i=0;__i<__bws.length;__i++){if(!__bws[__i].isDestroyed())__bws[__i].setIgnoreMouseEvents(false)}}}
 // Accessibility tools (issue #306, js/cu_ax_tools.js): only while their switch
 // is on (__cdbAxHandles), otherwise these names fall through as before.
-if(typeof globalThis.__cdbAxHandles==="function"&&globalThis.__cdbAxHandles(__TOOL_NAME__)){try{return await globalThis.__cdbAxCall(__TOOL_NAME__,__INPUT__,Object.assign({sid:__SESSION__&&__SESSION__.sessionId,pin:function(d){__pinDisplay(d);__reportDisplay(d.displayId,!0)},sync:__syncUpstreamShotDims},__ask?__cc.axOpts(__SESSION__):{}))}catch(err){return(await __tgtErr(err))||{content:[{type:"text",text:"Error: "+(err&&err.message||err)}],isError:!0}}}
+if(typeof globalThis.__cdbAxHandles==="function"&&globalThis.__cdbAxHandles(__TOOL_NAME__)){try{return await globalThis.__cdbAxCall(__TOOL_NAME__,__INPUT__,Object.assign({sid:__SESSION__&&__SESSION__.sessionId,pin:function(d){__pinDisplay(d);__reportDisplay(d.displayId,!0)},sync:__syncUpstreamShotDims,dname:async function(id){return __dispName(__dispNames(await ex.listDisplays()),id)}},__ask?__cc.axOpts(__SESSION__):{}))}catch(err){return(await __tgtErr(err))||{content:[{type:"text",text:"Error: "+(err&&err.message||err)}],isError:!0}}}
 var __cg=await __coldGuard(__coldPts());if(__cg)return __cg;
 if(__actionTools.has(__TOOL_NAME__)){try{return await __hideWindows(async function(){switch(__TOOL_NAME__){
 case"left_click":{await __relHeld();var __lc=__txC(__INPUT__.coordinate||[__INPUT__.x,__INPUT__.y]),__g=await __selfHit([__lc])||await __gate("pointer",[__lc]);if(__g)return __g;__g=await __travel(__lc);if(__g)return __g;await ex.click(__lc[0],__lc[1],"left",1);return{content:[{type:"text",text:"Clicked at ("+__lc[0]+","+__lc[1]+")"}]}}
@@ -324,7 +371,7 @@ default:return{content:[{type:"text",text:"Unknown action tool: "+__TOOL_NAME__}
 // then the executor's default (on GNOME the monitor shared in the portal
 // dialog), then Electron's primary.
 try{switch(__TOOL_NAME__){
-case"screenshot":{var __dlist=await ex.listDisplays();var __primaryIdx=0;for(var __pi=0;__pi<__dlist.length;__pi++){if(__dlist[__pi].isPrimary){__primaryIdx=__dlist[__pi].displayId;break}}var __did;if(globalThis.__cuPinnedDisplay!==void 0)__did=globalThis.__cuPinnedDisplay;else if(typeof __INPUT__.display_number==="number")__did=__INPUT__.display_number;else if(typeof __INPUT__.display_id==="number")__did=__INPUT__.display_id;else{var __sdid=typeof ex.__defaultDisplayId==="function"?await ex.__defaultDisplayId():null;__did=typeof __sdid==="number"?__sdid:__primaryIdx}var __actMon=__dlist.find(function(d){return d.displayId===__did})||__dlist[0]||{originX:0,originY:0};globalThis.__cuActiveOrigin={x:__actMon.originX||0,y:__actMon.originY||0};var __ss=await ex.screenshot({displayId:__did,allowedBundleIds:__ask?__cc.shotIds(__SESSION__):void 0});if(__ss&&__ss.captureError)return{content:[{type:"text",text:"Screenshot failed: "+__ss.captureError}],isError:!0};globalThis.__cuLastShot={imgW:__ss.imgW||__ss.displayWidth||(__actMon.width||0),imgH:__ss.imgH||__ss.displayHeight||(__actMon.height||0),dispW:__ss.displayWidth||__actMon.width||0,dispH:__ss.displayHeight||__actMon.height||0,originX:__ss.originX!=null?__ss.originX:(__actMon.originX||0),originY:__ss.originY!=null?__ss.originY:(__actMon.originY||0)};__syncUpstreamShotDims({width:globalThis.__cuLastShot.imgW,height:globalThis.__cuLastShot.imgH,displayWidth:globalThis.__cuLastShot.dispW,displayHeight:globalThis.__cuLastShot.dispH,displayId:__did,originX:globalThis.__cuLastShot.originX,originY:globalThis.__cuLastShot.originY});__reportDisplay(typeof __ss.displayId==="number"?__ss.displayId:__did,!1);var __sn=__ask?__cc.shotNote(__SESSION__,__ss):null;return{content:[{type:"image",data:__ss.base64,mimeType:__ss.mimeType||"image/jpeg"}].concat(__sn?[{type:"text",text:__sn}]:[],globalThis.__cdbCuShotNote?globalThis.__cdbCuShotNote(__ss.base64):[])}}
+case"screenshot":{var __dlist=await ex.listDisplays();var __primaryIdx=0;for(var __pi=0;__pi<__dlist.length;__pi++){if(__dlist[__pi].isPrimary){__primaryIdx=__dlist[__pi].displayId;break}}var __did;if(globalThis.__cuPinnedDisplay!==void 0)__did=globalThis.__cuPinnedDisplay;else if(typeof __INPUT__.display_number==="number")__did=__INPUT__.display_number;else if(typeof __INPUT__.display_id==="number")__did=__INPUT__.display_id;else{var __sdid=typeof ex.__defaultDisplayId==="function"?await ex.__defaultDisplayId():null;__did=typeof __sdid==="number"?__sdid:__primaryIdx}var __actMon=__dlist.find(function(d){return d.displayId===__did})||__dlist[0]||{originX:0,originY:0};globalThis.__cuActiveOrigin={x:__actMon.originX||0,y:__actMon.originY||0};var __ss=await ex.screenshot({displayId:__did,allowedBundleIds:__ask?__cc.shotIds(__SESSION__):void 0});if(__ss&&__ss.captureError)return{content:[{type:"text",text:"Screenshot failed: "+__ss.captureError}],isError:!0};globalThis.__cuLastShot={imgW:__ss.imgW||__ss.displayWidth||(__actMon.width||0),imgH:__ss.imgH||__ss.displayHeight||(__actMon.height||0),dispW:__ss.displayWidth||__actMon.width||0,dispH:__ss.displayHeight||__actMon.height||0,originX:__ss.originX!=null?__ss.originX:(__actMon.originX||0),originY:__ss.originY!=null?__ss.originY:(__actMon.originY||0)};__syncUpstreamShotDims({width:globalThis.__cuLastShot.imgW,height:globalThis.__cuLastShot.imgH,displayWidth:globalThis.__cuLastShot.dispW,displayHeight:globalThis.__cuLastShot.dispH,displayId:__did,originX:globalThis.__cuLastShot.originX,originY:globalThis.__cuLastShot.originY});var __sdi=typeof __ss.displayId==="number"?__ss.displayId:__did;__reportDisplay(__sdi,!1);var __mn=__dispNote(__dlist,__sdi,globalThis.__cuNoteShotDisplay);globalThis.__cuNoteShotDisplay=__sdi;var __sn=__ask?__cc.shotNote(__SESSION__,__ss):null;return{content:(__mn?[{type:"text",text:__mn}]:[]).concat([{type:"image",data:__ss.base64,mimeType:__ss.mimeType||"image/jpeg"}],__sn?[{type:"text",text:__sn}]:[],globalThis.__cdbCuShotNote?globalThis.__cdbCuShotNote(__ss.base64):[])}}
 case"zoom":{
   // region=[x0,y0,x1,y1] corner pairs in the coordinate space of the last
   // full-screen screenshot (image pixels). Map both corners to root pixels via
@@ -360,7 +407,7 @@ case"open_application":{var __oaName=__INPUT__.app||__INPUT__.application||"";va
   // action "opened" = Wayland-native/non-bridge launch-only, or an xdg-open of a
   // path/URL. Byte-for-byte the pre-feature text so non-X11 sessions are unchanged.
   return{content:[{type:"text",text:"Opened app"}]}}
-case"switch_display":{var __displays=await ex.listDisplays();var __target=__INPUT__.display;if(__target==="auto"||!__target){globalThis.__cuPinnedDisplay=void 0;globalThis.__cuLastShot=null;__syncUpstreamShotDims(void 0);__reportDisplay(void 0,!0);return{content:[{type:"text",text:"Display mode set to auto (follows cursor). Available: "+__displays.map(function(d){return d.label+" ("+d.width+"x"+d.height+")"}).join(", ")}]}}var __found=__displays.find(function(d){return d.label===__target||String(d.displayId)===String(__target)});if(__found){__pinDisplay(__found);__reportDisplay(__found.displayId,!0);return{content:[{type:"text",text:"Switched to display: "+__found.label+" ("+__found.width+"x"+__found.height+"). Take a screenshot to refresh coordinates."}]}}return{content:[{type:"text",text:"Display '"+__target+"' not found. Available: "+__displays.map(function(d){return d.label}).join(", ")}]}}
+case"switch_display":{var __displays=await ex.listDisplays(),__dn=__dispNames(__displays);var __target=__INPUT__.display;if(__target==="auto"||!__target){globalThis.__cuPinnedDisplay=void 0;globalThis.__cuLastShot=null;__syncUpstreamShotDims(void 0);__reportDisplay(void 0,!0);return{content:[{type:"text",text:"Display mode set to auto (follows cursor). Available: "+__displays.map(function(d){return __dispName(__dn,d.displayId)+" ("+d.width+"x"+d.height+")"}).join(", ")}]}}var __found=__dispFind(__displays,__dn,__target);if(__found){__pinDisplay(__found);__reportDisplay(__found.displayId,!0);return{content:[{type:"text",text:"Switched to display: "+__dispName(__dn,__found.displayId)+" ("+__found.width+"x"+__found.height+"). Take a screenshot to refresh coordinates."}]}}return{content:[{type:"text",text:"Display '"+__target+"' not found. Available: "+__displays.map(function(d){return __dispName(__dn,d.displayId)}).join(", ")}]}}
 case"list_granted_applications":{return{content:[{type:"text",text:"All applications are accessible on Linux (no grants needed)"}]}}
 case"read_clipboard":{var cb=await ex.readClipboard();return{content:[{type:"text",text:cb}]}}
 case"write_clipboard":{await ex.writeClipboard(__INPUT__.text||"");return{content:[{type:"text",text:"Written to clipboard"}]}}

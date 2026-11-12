@@ -325,7 +325,7 @@ console.log("\n[8] no display selected: the monitor shared in the portal dialog 
   rig.ex.__setLockHeld(true);
   await sleep(60);
   const r = await handler("screenshot", {});
-  ok(r && r.content && r.content[0] && r.content[0].type === "image", "the screenshot returns an image", JSON.stringify(r).slice(0, 120));
+  ok(r && r.content && r.content.some((b) => b.type === "image"), "the screenshot returns an image", JSON.stringify(r).slice(0, 120));
   ok(rig.screensCalls() === 2, "session-start refreshed the cached screens list", String(rig.screensCalls()));
   const seq = calls(rig.log);
   ok(seq.lastIndexOf("CALL screens") > seq.indexOf("DONE session-start"),
@@ -508,7 +508,7 @@ console.log("\n[17] COWORK_SCREENSHOT_CMD: a screenshot outside a lock does not 
   process.env.COWORK_SCREENSHOT_CMD = "true {FILE}";
   try {
     const r = await handler("screenshot", {});
-    ok(r && r.content && r.content[0] && r.content[0].type === "image", "the screenshot is served by the command");
+    ok(r && r.content && r.content.some((b) => b.type === "image"), "the screenshot is served by the command");
     ok(countCalls(rig, "session-start") === 0, "no session-start (no consent dialog)", rig.log.filter(l => l.startsWith("CALL")).join(" ") || "(none)");
   } finally { delete process.env.COWORK_SCREENSHOT_CMD; rig.restore(); }
 }
@@ -651,7 +651,7 @@ console.log("\n[22] GNOME: a session daemon ended by --reset-screen-sharing is r
   rigSocket.present = false;                       // forget-session ended the daemon
   try {
     const r = await handler("screenshot", {});
-    ok(r && r.content && r.content[0] && r.content[0].type === "image", "the next screenshot still captures");
+    ok(r && r.content && r.content.some((b) => b.type === "image"), "the next screenshot still captures");
     ok(countCalls(rig, "session-start") === 2, "after a fresh session-start", String(countCalls(rig, "session-start")));
     ok(rig.log.some(l => l.includes("session daemon is gone")), "and the restart is logged");
   } finally { rigSocket.present = true; rig.restore(); }
@@ -761,7 +761,7 @@ console.log("\n[22e] GNOME: session-start answering \"already active\" is that s
   rig.ex.__setLockHeld(true);
   await sleep(60);
   const r = await handler("screenshot", {});
-  ok(r && r.content && r.content[0] && r.content[0].type === "image", "the screenshot captures on the existing session", JSON.stringify(r).slice(0, 120));
+  ok(r && r.content && r.content.some((b) => b.type === "image"), "the screenshot captures on the existing session", JSON.stringify(r).slice(0, 120));
   ok(countCalls(rig, "session-start") === 1, "no second start", String(countCalls(rig, "session-start")));
   ok(!rig.log.some(l => l.includes("session-start failed")), "no failure logged, no portal-down latch");
   rig.restore();
@@ -846,7 +846,7 @@ console.log("\n[24] GNOME: exit 5 -> the model is told to stop; no new session w
   rig.ex.__setLockHeld(true);
   await sleep(60);
   let r = await handler("screenshot", {});
-  ok(r && r.content && r.content[0] && r.content[0].type === "image", "a live session captures");
+  ok(r && r.content && r.content.some((b) => b.type === "image"), "a live session captures");
   rig.stop.on = true;                              // the user clicked "Stop sharing"
   const capBefore = rig.log.filter(l => l === "CAPTURER").length;
   let text = await shotText({});
@@ -883,7 +883,7 @@ console.log("\n[24] GNOME: exit 5 -> the model is told to stop; no new session w
     ok(countCalls(rig, "session-start") === 2, "the next lock starts a session", String(countCalls(rig, "session-start")));
     resetShot();
     r = await handler("screenshot", {});
-    ok(r && r.content && r.content[0] && r.content[0].type === "image", "and captures on it");
+    ok(r && r.content && r.content.some((b) => b.type === "image"), "and captures on it");
     await rig.ex.moveMouse(5, 5);
     ok(rig.sync.join(" ") === "pointer-move", "sync input runs again", rig.sync.join(" "));
   } finally { rigSocket.present = true; rig.restore(); }
@@ -945,7 +945,7 @@ console.log("\n[25] GNOME: the stopped-by-user marker is a stop, not a vanished 
     rigSocket.stopped = false;                     // session-start removed it
     await sleep(60);
     const r = await handler("screenshot", {});
-    ok(r && r.content && r.content[0] && r.content[0].type === "image" && countCalls(rig, "session-start") === 1,
+    ok(r && r.content && r.content.some((b) => b.type === "image") && countCalls(rig, "session-start") === 1,
        "a stale marker before session-start: the lock still works", JSON.stringify(r).slice(0, 120));
   } finally { rigSocket.stopped = false; rig.restore(); }
 }
@@ -987,7 +987,7 @@ console.log("\n[25b] GNOME: session-start exit 5 (closed before ready) latches; 
   rig.ex.__setLockHeld(true);
   await sleep(60);
   const r = await handler("screenshot", {});
-  ok(countCalls(rig, "session-start") === 2 && r && r.content && r.content[0] && r.content[0].type === "image",
+  ok(countCalls(rig, "session-start") === 2 && r && r.content && r.content.some((b) => b.type === "image"),
      "next lock: a new session, and it captures", String(countCalls(rig, "session-start")));
   rig.restore();
 }
@@ -1571,7 +1571,7 @@ console.log("\n[33] idle: the next command after an idle end restarts the sessio
     await sleep(30);
     ok(countCalls(rig, "session-end") === 1, "idle end", String(countCalls(rig, "session-end")));
     const shot = await handler("screenshot", {});
-    ok(shot && shot.content && shot.content[0] && shot.content[0].type === "image" && countCalls(rig, "session-start") === 2,
+    ok(shot && shot.content && shot.content.some((b) => b.type === "image") && countCalls(rig, "session-start") === 2,
        "a screenshot: the lazy (async) start brings a session back and captures", String(countCalls(rig, "session-start")));
     ok(rig.clock.pending().length === 1, "and the new session is timed again");
     rig.clock.advance(IDLE_MS);
@@ -2176,7 +2176,7 @@ console.log("\n[54] GNOME: a PipeWire frame timeout through the tool handler - o
   st.failZooms = 1;
   let z0 = countCalls(rig, "zoom");
   let r = await handler("screenshot", {});
-  ok(r && r.content && r.content[0] && r.content[0].type === "image" && countCalls(rig, "zoom") === z0 + 2, "one frame timeout: the second zoom captures", String(countCalls(rig, "zoom") - z0));
+  ok(r && r.content && r.content.some((b) => b.type === "image") && countCalls(rig, "zoom") === z0 + 2, "one frame timeout: the second zoom captures", String(countCalls(rig, "zoom") - z0));
   st.failZooms = 2;
   z0 = countCalls(rig, "zoom");
   const cap0 = rig.log.filter(l => l === "CAPTURER").length;
@@ -2186,7 +2186,7 @@ console.log("\n[54] GNOME: a PipeWire frame timeout through the tool handler - o
   ok(countCalls(rig, "session-end") === 0, "the portal session is left up for the retry", String(countCalls(rig, "session-end")));
   st.failZooms = 0;
   r = await handler("screenshot", {});
-  ok(r && r.content && r.content[0] && r.content[0].type === "image", "and the model's retry captures");
+  ok(r && r.content && r.content.some((b) => b.type === "image"), "and the model's retry captures");
   rig.ex.__setLockHeld(false);
   await sleep(40);
   rig.restore && rig.restore();
