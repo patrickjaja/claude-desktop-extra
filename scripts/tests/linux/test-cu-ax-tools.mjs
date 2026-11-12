@@ -125,9 +125,26 @@ const a=process.argv.slice(2);
 let stdin="";
 process.stdin.on("data",d=>stdin+=d);
 process.stdin.on("end",()=>{
-  fs.appendFileSync(process.env.CDB_FAKE_AX_LOG,JSON.stringify({argv:a,stdin})+"\\n");
-  const fx=JSON.parse(fs.readFileSync(process.env.CDB_FAKE_AX_FIX,"utf8"));
+  const LOG=process.env.CDB_FAKE_AX_LOG,FEAT=process.env.CDB_FAKE_AX_FEATURES;
   const arg=n=>{const i=a.indexOf(n);return i>=0?a[i+1]:undefined};
+  // ax-features: logged on its own file (the main log keeps today's argv
+  // sequences). Unset CDB_FAKE_AX_FEATURES = a legacy bridge (clap usage
+  // error, exit 2); "__exit1" = runtime failure; anything else is printed.
+  if(a[0]==="ax-features"){
+    fs.appendFileSync(LOG+".features",JSON.stringify({argv:a,stdin})+"\\n");
+    if(FEAT===undefined){process.stderr.write("error: unrecognized subcommand 'ax-features'\\n");process.exit(2)}
+    if(FEAT==="__exit1"){process.stderr.write("boom\\n");process.exit(1)}
+    process.stdout.write(FEAT);return;
+  }
+  // Legacy bridge: anything beyond today's flags, actions and stdin shapes is
+  // a contract violation of the caller, recorded for the final check.
+  if(FEAT===undefined){
+    const v2=["--expect-json","--window-ref","--deadline-ms","--root-ref","--skeleton","--max-depth","--max-nodes"];
+    const bad=a.some(x=>v2.includes(x))||(a[0]==="ax-action"&&(!["click","set-text"].includes(arg("--action"))||(arg("--action")==="click"&&stdin!=="")));
+    if(bad)fs.appendFileSync(LOG+".legacy-violations",JSON.stringify({argv:a,stdin:stdin.length})+"\\n");
+  }
+  fs.appendFileSync(LOG,JSON.stringify({argv:a,stdin})+"\\n");
+  const fx=JSON.parse(fs.readFileSync(process.env.CDB_FAKE_AX_FIX,"utf8"));
   let out=fx[a[0]];
   const once=process.env.CDB_FAKE_AX_ONCE;
   if(once&&a[0]==="ax-find"&&a.includes(once)&&!fs.existsSync(process.env.CDB_FAKE_AX_LOG+".once")){fs.writeFileSync(process.env.CDB_FAKE_AX_LOG+".once","1");process.stdout.write(JSON.stringify({unavailable:"app_not_found",hint:"No accessible application matched the window."}));return}
@@ -1186,8 +1203,12 @@ if (patchMissing || !existsSync(stubPath)) {
       resetLog();
       r = await xctx.__cdbAxCall("app_ax_find", { app: "pidapp" }, { sid: "x1" });
       check("x11 too: pid mismatch refused, no --expect-* flags", r.isError === true && calls().filter((c) => c.argv[0] === "ax-find").every((c) => !c.argv.includes("--expect-title")), true);
+      // Both contexts restore (each holds its own enable); wait for both, or
+      // the later one's marker removal lands on the file [7] writes.
+      resetLog();
       for (const c of [wctx, xctx]) await c.__linuxExecutor.__setLockHeld(false);
-      for (let i = 0; i < 100 && existsSync(statePath); i++) await tick();
+      for (let i = 0; i < 100 && calls().filter((c) => c.argv[0] === "ax-restore").length < 2; i++) await tick();
+      await tick();
     }
 
     // ---------------------------------------------------------------- [7]
@@ -1209,6 +1230,80 @@ if (patchMissing || !existsSync(stubPath)) {
     await tick();
     await tick();
     check("no state file, switch off: nothing spawned at start", calls().length, 0);
+
+    // ---------------------------------------------------------------- [8]
+    // ax-cli: the bridge's accessibility features are asked once per bridge
+    // binary (`ax-features`); a bridge without the subcommand (exit 2), any
+    // other failure and a wrong shape all mean the legacy (empty) list.
+    console.log("\n[8] ax-features negotiation");
+    const featLog = logFile + ".features";
+    const featCalls = () =>
+      existsSync(featLog) ? readFileSync(featLog, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+    const ALL_FEATURES = ["find.v1", "action.click", "action.focus", "action.set_text", "find.identity", "action.expect", "find.window_ref", "find.deadline", "find.root", "find.skeleton", "action.ensure", "action.scroll_to", "action.set_value"];
+    const setFeatures = (f) => {
+      if (f === undefined) delete process.env.CDB_FAKE_AX_FEATURES;
+      else process.env.CDB_FAKE_AX_FEATURES = typeof f === "string" ? f : JSON.stringify({ ax_features: f });
+    };
+    // A regular-mode context on the fake bridge under `name`.
+    const axCtx = (name, extra = {}) => {
+      const d = extra.diag || [];
+      const c = makeCtx({ userData, diag: d, setTimeout: extra.setTimeout, clearTimeout: extra.clearTimeout });
+      c.__linuxExecutor = { capabilities: { platform: "linux" }, __axBridge: () => ({ bin, name }), async __setLockHeld() {}, async __cuTaskBoundary() {}, ...(extra.executor || {}) };
+      c.__cuKwinMode = false;
+      c.__cdbCuAxElements = () => true;
+      loadAx(c);
+      c.__diag = d;
+      return c;
+    };
+    const releaseAx = async (c) => {
+      await c.__linuxExecutor.__setLockHeld(false);
+      for (let i = 0; i < 100 && existsSync(statePath); i++) await tick();
+    };
+    {
+      setFeatures(undefined);
+      rmSync(featLog, { force: true });
+      const lc = axCtx("x11-bridge");
+      resetLog();
+      await lc.__cdbAxCall("app_ax_find", { app: "org.kde.kate" }, { sid: "f1" });
+      await lc.__cdbAxCall("app_ax_find", { app: "org.kde.kate" }, { sid: "f1" });
+      r = await lc.__cdbAxCall("app_click", { app: "org.kde.kate", element_index: 3 }, { sid: "f1" });
+      check("legacy: ax-features asked once per bridge binary", featCalls().length, 1);
+      check("legacy: probe takes no flags and no stdin", JSON.stringify(featCalls()[0]), JSON.stringify({ argv: ["ax-features"], stdin: "" }));
+      check("legacy: exit 2 -> no features (diag)", lc.__diag.some((l) => l.includes("features: none")), true);
+      check("legacy: click as today", textOf(r).startsWith("Pressed [3]") && calls().map((c) => c.argv.join(" ")).includes("ax-action --scope sc-kate --ref :1.42/org/a11y/atspi/accessible/3 --action click"), true);
+      check("legacy: probe never in the command log", calls().some((c) => c.argv[0] === "ax-features"), false);
+      await releaseAx(lc);
+      const outcomes = [
+        ["v2 list", ALL_FEATURES, "features: " + ALL_FEATURES.join(",")],
+        ["wrong shape (string)", '{"ax_features":"find.v1"}', "features: none"],
+        ["wrong shape (non-string entry)", '{"ax_features":["find.v1",3]}', "features: none"],
+        ["not JSON", "find.v1", "features: none"],
+        ["exit 1", "__exit1", "features: none"],
+      ];
+      for (const [label, f, want] of outcomes) {
+        setFeatures(f);
+        rmSync(featLog, { force: true });
+        const c = axCtx("x11-bridge");
+        await c.__cdbAxCall("app_ax_find", { app: "org.kde.kate" }, { sid: "f2" });
+        await c.__cdbAxCall("app_ax_find", { app: "org.kde.kate" }, { sid: "f2" });
+        check(`${label}: asked once, diag "${want.slice(0, 40)}"`, featCalls().length + "|" + c.__diag.some((l) => l.includes(want)), "1|true");
+        await releaseAx(c);
+      }
+      setFeatures(ALL_FEATURES);
+      rmSync(featLog, { force: true });
+      const oc = axCtx("x11-bridge");
+      oc.__cdbCuAxElements = () => false;
+      resetLog();
+      const offTools = oc.__cdbAxTools({ platform: "linux" });
+      const offKey = oc.__cdbAxKey();
+      check("switch off: no tools, no key, nothing spawned (no probe either)", JSON.stringify(offTools) + "|" + offKey + "|" + calls().length + "|" + featCalls().length, "[]||0|0");
+      setFeatures(undefined);
+    }
+
+    // Every legacy-bridge call in every section above stayed within today's
+    // flags, actions and stdin shapes.
+    const violations = existsSync(logFile + ".legacy-violations") ? readFileSync(logFile + ".legacy-violations", "utf8").trim() : "";
+    check("legacy bridge: no new flag, action or stdin shape was ever sent", violations, "");
   } finally {
     for (const k of Object.keys(process.env)) if (!(k in savedEnv)) delete process.env[k];
     Object.assign(process.env, savedEnv);

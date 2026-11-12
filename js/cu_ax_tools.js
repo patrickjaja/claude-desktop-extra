@@ -104,6 +104,32 @@ function run(br,args,text,ms){
   });
 }
 
+// ── accessibility features of the bridge (ax-features) ───────────────────────
+// docs/computer-use-bridge-contract.md, "Accessibility feature negotiation":
+// `<bridge> ax-features` prints {"ax_features":[...]}. A bridge without the
+// subcommand exits 2; that, any other failure and any other shape mean the
+// empty list: only the baseline commands and flags, used exactly as before.
+// Asked once per bridge binary path for the life of the process (the list is
+// static per build). We never pass a flag, action or stdin shape whose feature
+// is not listed, and ignore names we do not know.
+var _feat=new Map();
+function featShape(o){
+  if(!o||typeof o!=="object"||Array.isArray(o)||!Array.isArray(o.ax_features))return null;
+  for(var i=0;i<o.ax_features.length;i++){if(typeof o.ax_features[i]!=="string")return null}
+  return o.ax_features.slice();
+}
+function featSet(list){var m={};for(var i=0;i<list.length;i++)m[list[i]]=1;return{list:list,has:function(n){return m[n]===1}}}
+var NOFEAT=featSet([]);
+function featRemember(br,list){var f=featSet(list||[]);_feat.set(br.bin,f);log("features: "+(f.list.length?f.list.join(","):"none (legacy bridge)")+" ["+br.name+"]");return f}
+// Runs inside the queue only.
+async function axFeatures(br){
+  if(!br)return NOFEAT;
+  if(_feat.has(br.bin))return _feat.get(br.bin);
+  var list=null;
+  try{list=featShape(await run(br,["ax-features"],null,3000))}catch(e){list=null}
+  return featRemember(br,list);
+}
+
 // ── accessibility switch: enable once, restore on lock release/quit/start ────
 function statePath(){try{return _path.join(require("electron").app.getPath("userData"),STATE_FILE)}catch(e){return null}}
 function readState(){var p=statePath();if(!p)return null;try{var o=JSON.parse(_fs.readFileSync(p,"utf8"));return o&&typeof o.previous==="boolean"?{previous:o.previous,changed:o.changed===!0}:null}catch(e){return null}}
@@ -487,6 +513,7 @@ async function call(name,input,opts){
   var ak=matcherOf(app,grant),appId=String(grant?grant.bundleId:app).trim().replace(/\.desktop$/i,"");
   var br=bridge();
   if(!br)return err("Accessibility tools need a Computer Use bridge, and none is available in this session.");
+  var feat=await axFeatures(br);
   if(name==="app_list_windows"&&isGnome(br)){
     var ge=await ensureEnabled(br);
     if(ge&&ge.unavailable)return unavail(ge);
