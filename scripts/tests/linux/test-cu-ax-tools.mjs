@@ -1699,6 +1699,106 @@ if (patchMissing || !existsSync(stubPath)) {
       useFix(fixFile);
     }
 
+    // ---------------------------------------------------------------- [11]
+    // ax-shape: within (a container's subtree), depth, outline (containers
+    // only), include_text (every node), indented output, nameless groups
+    // collapsed, "more inside" hints, the 24 KB cap and redaction unchanged.
+    console.log("\n[11] within / depth / outline / include_text");
+    {
+      const KON_WIN = { id: "{konsole-1}", title: "Konsole", ref: ":1.60/w", frame_class: "unknown" };
+      const kon = (elements, extra = {}) => ({ app: { name: "konsole", pid: 4242 }, window: KON_WIN, coords: "window_only", scope: "sc-kon", matched_by: "pid", truncated: false, total_seen: 30, elements, ...extra });
+      const na = { actions: [] };
+      const FIX5 = {
+        ...FIX2,
+        "ax-find": {
+          ...FIX2["ax-find"],
+          "{konsole-1}": kon([vEl(2, "page tab list", "Tabs", "r-tabs", { depth: 2, ...na }), vEl(5, "push button", "Run", "r-run", { depth: 3, parent_index: 2 }), vEl(6, "panel", "Gone box", "r-gonebox", { depth: 2, ...na })]),
+          "{konsole-1}|all": kon([vEl(2, "page tab list", "Tabs", "r-tabs", { depth: 2, ...na }), vEl(5, "push button", "Run", "r-run", { depth: 3, parent_index: 2 }), vEl(7, "label", "Status: idle", "r-status", { depth: 2, ...na }), vEl(8, "text", "Cmd", "r-cmd", { depth: 2, value: "ls -la", states: ["editable"] })]),
+          "{konsole-1}|root:r-tabs": kon(
+            [
+              vEl(1, "filler", "", "r-f1", { depth: 1, unique: null, ...na }),
+              vEl(2, "page tab", "Tab A", "r-ta", { depth: 2, parent_index: 1, unique: null }),
+              vEl(3, "panel", "", "r-p2", { depth: 1, unique: null, ...na }),
+              vEl(4, "push button", "Inner 1", "r-i1", { depth: 2, parent_index: 3, unique: null }),
+              vEl(5, "push button", "Inner 2", "r-i2", { depth: 2, parent_index: 3, unique: null }),
+              vEl(6, "password text", "Secret", "r-sec", { depth: 2, parent_index: 3, value_redacted: true, unique: null, states: ["editable"] }),
+            ],
+            { root_ref: "r-tabs", truncated: true, truncated_reason: "nodes" }
+          ),
+          "{konsole-1}|root:r-run": { unavailable: "out_of_scope", hint: "The ref is not inside this window." },
+          "{konsole-1}|root:r-gonebox": { unavailable: "stale_element", hint: "The element is gone." },
+          "{konsole-1}|skeleton": kon([
+            vEl(1, "panel", "Main", "s-main", { depth: 1, child_count: 3, ...na }),
+            vEl(2, "filler", "", "s-f", { depth: 2, parent_index: 1, child_count: 1, ...na }),
+            vEl(3, "panel", "Side", "s-side", { depth: 3, parent_index: 2, child_count: 5, ...na }),
+          ]),
+        },
+      };
+      const fixFile5 = join(scratch, "fixture-shape.json");
+      writeFileSync(fixFile5, JSON.stringify(FIX5));
+      useFix(fixFile5);
+      setFeatures(ALL_FEATURES);
+      const sc = axCtx("x11-bridge");
+      const f = (a, sid = "s1") => sc.__cdbAxCall("app_ax_find", { app: "org.kde.konsole", ...a }, { sid });
+      r = await f({});
+      check("plain find of the window", !r.isError && textOf(r).includes('[2] AXUnknown (page tab list) "Tabs"'), true);
+      resetLog();
+      r = await f({ within: 2 });
+      const wt = textOf(r);
+      check("within: --root-ref <its ref> --scope <window scope>", argvs().filter((x) => x.startsWith("ax-find")).join("|"), "ax-find --window {konsole-1} --window-ref :1.60/w --root-ref r-tabs --scope sc-kon");
+      check("within: says it lists the inside of [2]", /inside \[2\]/.test(wt), true);
+      check("within: a nameless group with one child is collapsed", !/\(filler\)/.test(wt), true);
+      check("within: indented by depth (collapsed group lifts its child)", /\n\[\d+\] AXRadioButton \(page tab\) "Tab A"/.test(wt) && /\n {2}\[\d+\] AXButton \(push button\) "Inner 1"/.test(wt) && /\n\[\d+\] AXGroup \(panel\) ""/.test(wt), true);
+      check("within: redaction as in a plain find", /"Secret" \(editable\) value hidden/.test(wt), true);
+      check("within: a truncated walk says how to continue", /within/.test(wt.split("\n")[0]), true);
+      check("within: [N] of the elements are allocated in the window's table", /\[(?!2\])\d+\] AXButton \(push button\) "Inner 1"/.test(wt), true);
+      r = await f({ within: 5 });
+      check("within an element outside the window's tree (bridge out_of_scope): refused", r.isError === true && /out_of_scope/.test(textOf(r)), true);
+      r = await f({ within: 6 });
+      check("within a container that is gone: refused, find again", r.isError === true && /gone/.test(textOf(r)) && /app_ax_find again/.test(textOf(r)), true);
+      r = await f({ within: 99 });
+      check("within an unknown [N]: refused", r.isError === true && textOf(r).includes("No element [99]"), true);
+      await sc.__cdbAxCall("app_ax_find", { app: "org.kde.kate" }, { sid: "s1" });
+      const kateN = 26;
+      r = await f({ within: kateN });
+      check("within an [N] of another window (granted or not): refused", r.isError === true && textOf(r).includes(`No element [${kateN}]`), true);
+      resetLog();
+      r = await f({ outline: true, depth: 3 });
+      const ot = textOf(r);
+      check("outline + depth: --skeleton --max-depth 3", argvs().filter((x) => x.startsWith("ax-find")).join("|"), "ax-find --window {konsole-1} --window-ref :1.60/w --max-depth 3 --skeleton");
+      check("outline: containers with their child count, indented", /\[\d+\] AXGroup \(panel\) "Main" .*3 children/.test(ot) && /\n {2}\[\d+\] AXGroup \(panel\) "Side"/.test(ot), true);
+      check("outline: nameless single-child group collapsed", !/\(filler\)/.test(ot), true);
+      check("outline: a container cut by depth says how to look inside", /5 more inside - pass within: \[\d+\]/.test(ot), true);
+      r = await f({ outline: true, role: "push button" });
+      check("outline with role: refused (outline lists containers only)", r.isError === true && /outline/.test(textOf(r)), true);
+      resetLog();
+      r = await f({ include_text: true });
+      check("include_text: --all", argvs().filter((x) => x.startsWith("ax-find")).join("|"), "ax-find --window {konsole-1} --window-ref :1.60/w --all");
+      check("include_text: labels listed, values as in a plain find", /"Status: idle"/.test(textOf(r)) && /value "ls -la"/.test(textOf(r)), true);
+      resetLog();
+      r = await f({ depth: 99 });
+      check("depth clamped to 64", argvs().filter((x) => x.startsWith("ax-find")).join("|"), "ax-find --window {konsole-1} --window-ref :1.60/w --max-depth 64");
+      await releaseAx(sc);
+      // A bridge that lists none of these: a clear refusal, nothing walked.
+      for (const [label, feats, arg, re] of [
+        ["legacy: within", undefined, { within: 2 }, /within is not supported by this bridge/],
+        ["legacy: outline", undefined, { outline: true }, /outline is not supported by this bridge/],
+        ["legacy: depth", undefined, { depth: 2 }, /depth is not supported by this bridge/],
+        ["legacy: include_text", undefined, { include_text: true }, /include_text is not supported by this bridge/],
+        ["no find.root: within", ALL_FEATURES.filter((x) => x !== "find.root"), { within: 2 }, /within is not supported by this bridge/],
+        ["no find.skeleton: outline", ALL_FEATURES.filter((x) => x !== "find.skeleton"), { outline: true }, /outline is not supported by this bridge/],
+      ]) {
+        setFeatures(feats);
+        const c = axCtx("x11-bridge");
+        resetLog();
+        r = await c.__cdbAxCall("app_ax_find", { app: "org.kde.konsole", ...arg }, { sid: "s2" });
+        check(`${label}: refused, nothing walked`, r.isError === true && re.test(textOf(r)) && !calls().some((x) => x.argv[0] === "ax-find"), true);
+        await releaseAx(c);
+      }
+      setFeatures(undefined);
+      useFix(fixFile);
+    }
+
     // Every legacy-bridge call in every section above stayed within today's
     // flags, actions and stdin shapes.
     const violations = existsSync(logFile + ".legacy-violations") ? readFileSync(logFile + ".legacy-violations", "utf8").trim() : "";

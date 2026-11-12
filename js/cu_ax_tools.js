@@ -318,11 +318,13 @@ function taintOf(e,byIdx){
   return null;
 }
 function entryFill(ent,e,byIdx){
-  var tt=taintOf(e,byIdx);
+  var tt=taintOf(e,byIdx),prevU=ent.role===str(e.role)&&ent.name===str(e.name)?ent.unique:null;
   ent.ref=e.ref;ent.role=str(e.role);ent.ax_role=typeof e.ax_role==="string"?e.ax_role:null;ent.taint=tt;
   ent.name=tt?null:str(e.name);
   ent.accessible_id=tt||typeof e.accessible_id!=="string"||!e.accessible_id?null:e.accessible_id;
-  ent.unique=tt?null:e.unique===!0?!0:e.unique===!1?!1:null;
+  // A walk that cannot judge uniqueness (truncated, or rooted with within)
+  // keeps what the last whole-window walk said about the same role and name.
+  ent.unique=tt?null:e.unique===!0?!0:e.unique===!1?!1:prevU;
   ent.path=tt||!Array.isArray(e.path)?null:e.path.slice(0,64);
   // The identity the bridge printed, for --expect-json only (a tainted
   // element's name and id print as "" and null).
@@ -475,6 +477,44 @@ function line(el,coords,fr,n){
 function unavail(r){return err("unavailable: "+r.unavailable+(r.hint?" - "+r.hint:"")+(Array.isArray(r.candidates)&&r.candidates.length?" Candidates: "+r.candidates.slice(0,10).map(function(c){return JSON.stringify(String(c))}).join(", "):""))}
 
 // ── tools ────────────────────────────────────────────────────────────────────
+function clampDepth(d){return Math.max(1,Math.min(64,Math.round(d)))}
+function unsupported(what,br){return err(what+" is not supported by this bridge ("+br.name+"): leave it out, or update the bridge.")}
+// app_ax_find's optional shape: within (a container's [N] -> --root-ref),
+// depth (--max-depth), outline (--skeleton, containers only), include_text
+// (--all, every node). Each only when the bridge lists its feature.
+function shapeCheck(input,feat,br){
+  if(input.within!==void 0){if(typeof input.within!=="number"||!Number.isInteger(input.within)||input.within<0)return err("within must be an element_index ([N]) from app_ax_find.");if(!feat.has("find.root"))return unsupported("within",br)}
+  if(input.outline!==void 0&&input.outline!==!1){
+    if(input.outline!==!0)return err("outline must be true or false.");
+    if(!feat.has("find.skeleton"))return unsupported("outline",br);
+    if(input.role||input.title_contains||input.include_text===!0)return err("outline lists containers only; it does not combine with role, title_contains or include_text.");
+  }
+  if(input.depth!==void 0){if(typeof input.depth!=="number"||!isFinite(input.depth))return err("depth must be a number (levels below the window or the within container).");if(!feat.has("find.v1"))return unsupported("depth",br)}
+  if(input.include_text!==void 0&&input.include_text!==!1){if(input.include_text!==!0)return err("include_text must be true or false.");if(!feat.has("find.v1"))return unsupported("include_text",br)}
+  return null;
+}
+// Nameless layout containers with at most one listed child add nothing to an
+// indented listing: not printed, their child takes their place.
+var GROUPISH={panel:1,filler:1,section:1,grouping:1,group:1,"layered pane":1,viewport:1,unknown:1,"redundant object":1};
+function treeText(got,coords,fr,o){
+  var byIdx=new Map(),kids=new Map(),i;
+  for(i=0;i<got.length;i++)byIdx.set(got[i].e.index,got[i]);
+  for(i=0;i<got.length;i++){var p=got[i].e.parent_index;if(typeof p==="number"&&byIdx.has(p))kids.set(p,(kids.get(p)||0)+1)}
+  function folded(x){var e=x.e;return!!GROUPISH[e.role]&&!str(e.name).trim()&&!(Array.isArray(e.actions)&&e.actions.length)&&(kids.get(e.index)||0)<=1}
+  var out=[];
+  for(i=0;i<got.length;i++){
+    var x=got[i];if(folded(x))continue;
+    var lv=0,pp=x.e.parent_index;
+    for(var k=0;k<65&&typeof pp==="number";k++){var px=byIdx.get(pp);if(!px)break;if(!folded(px))lv++;pp=px.e.parent_index}
+    var l=new Array(lv+1).join("  ")+line(x.e,coords,fr,x.n),cc=x.e.child_count;
+    if(typeof cc==="number"){
+      l+=" ("+cc+" children)";
+      if(cc>0&&!(kids.get(x.e.index)>0)&&(o.truncated||typeof x.e.depth==="number"&&x.e.depth>=o.maxDepth))l+=" - "+cc+" more inside - pass within: ["+x.n+"]";
+    }
+    out.push(l);
+  }
+  return out;
+}
 async function find(br,w,input,feat,sid){
   feat=feat||NOFEAT;
   var a=w.gnome?["ax-find","--app-id",w.appId].concat(w.id!=null?["--title",String(w.id)]:[]):["ax-find","--window",String(w.id)];
@@ -490,6 +530,11 @@ async function find(br,w,input,feat,sid){
   // 100..5000 and needs n + 2000 ms at most for the whole command).
   var ms=15000;
   if(input.__deadline&&feat.has("find.deadline")){var dl=Math.max(100,Math.min(5000,Math.round(input.__deadline)));a.push("--deadline-ms",String(dl));ms=dl+3000}
+  // app_ax_find's shape options (validated in call(), feature-gated again).
+  if(typeof input.depth==="number"&&feat.has("find.v1"))a.push("--max-depth",String(clampDepth(input.depth)));
+  if(input.outline===!0&&feat.has("find.skeleton"))a.push("--skeleton");
+  if(input.include_text===!0&&!input.__all&&feat.has("find.v1"))a.push("--all");
+  if(input.__rootRef&&feat.has("find.root"))a.push("--root-ref",input.__rootRef,"--scope",String(input.__rootScope||""));
   // wlroots: toplevel ids are per bridge connection, so `windows` and
   // `ax-find` (two processes) may mean different windows. The bridge checks the
   // window it resolves against what we picked and answers window_changed.
@@ -687,6 +732,7 @@ async function call(name,input,opts,obs){
   var br=bridge();
   if(!br)return err("Accessibility tools need a Computer Use bridge, and none is available in this session.");
   var feat=await axFeatures(br);
+  if(name==="app_ax_find"){var sc=shapeCheck(input,feat,br);if(sc)return sc}
   if(name==="app_list_windows"&&isGnome(br)){
     var ge=await ensureEnabled(br);
     if(ge&&ge.unavailable)return unavail(ge);
@@ -712,25 +758,40 @@ async function call(name,input,opts,obs){
   if(en&&en.unavailable)return unavail(en);
   var fr=frameOf(opts);
   if(name==="app_ax_find"){
-    var r=await find(br,w,input,feat,sid);
+    var fin=input,root=null;
+    if(input.within!==void 0){
+      var rt=tableOf(sid,w);root=rt&&rt.byN.get(input.within);
+      if(!root)return err("No element ["+input.within+"] from app_ax_find of this window. Call app_ax_find again.");
+      fin={};for(var fk in input){if(Object.prototype.hasOwnProperty.call(input,fk))fin[fk]=input[fk]}
+      fin.__rootRef=root.ref;fin.__rootScope=rt.scope;
+    }
+    var r=await find(br,w,fin,feat,sid);
     if(!r||typeof r!=="object")return err("app_ax_find: no answer from the bridge.");
+    if(root&&(r.unavailable==="stale_element"||r.unavailable==="out_of_scope")){
+      if(r.unavailable==="stale_element"){retire(rt,root);return err("within: ["+input.within+"] is gone. Call app_ax_find again.")}
+      return err("within: ["+input.within+"] is not inside this window (out_of_scope)"+(r.hint?" - "+r.hint:"")+". Call app_ax_find again.");
+    }
     if(r.unavailable)return unavail(r);
+    if(root&&r.root_ref!==root.ref){log("find: window="+String(w.id)+" refused (rooted walk answered another root)");return err("within: the bridge answered for another container. Call app_ax_find again.")}
     // GNOME: the window is known by the title the bridge matched.
     if(w.gnome&&r.window&&typeof r.window.title==="string"&&r.window.title)w={id:r.window.title,title:r.window.title,appId:appId,gnome:!0};
     var got=store(sid,w,app,r),list=got.map(function(x){return x.e}),coords=r.coords;
     if(obs){obs.got=got;obs.truncated=r.truncated===!0;obs.t=tableOf(sid,w)}
     log("find: window="+String(w.id)+" elements="+list.length+" coords="+coords+(r.truncated?" truncated="+(r.truncated_reason||"yes"):""));
-    var head=list.length+" element(s) in window "+JSON.stringify(String(w.title||""))+" (window_id "+String(w.id)+")"+(r.truncated?"; walk truncated ("+(r.truncated_reason||"limit")+"): narrow with role or title_contains":"")+".";
+    var tree=(root||input.outline===!0)&&feat.has("find.identity");
+    var more=feat.has("find.root")?", or look into one container with within: [N]":"";
+    var head=list.length+(input.outline===!0?" container(s)":" element(s)")+(root?" inside ["+input.within+"] of":" in")+" window "+JSON.stringify(String(w.title||""))+" (window_id "+String(w.id)+")"+(r.truncated?"; walk truncated ("+(r.truncated_reason||"limit")+"): narrow with role or title_contains"+more:"")+".";
     if(coords!=="screen")head+=" This desktop does not report element positions; app_click and app_type work by element_index.";
     else{
       var c0=centerOf(r.window&&r.window.rect_screen);
       for(var ci=0;!c0&&ci<list.length;ci++)c0=centerOf(list[ci].rect_screen);
       if(c0){var pl=await place(opts||{},c0[0],c0[1],fr);fr=pl.fr;head+=pl.note}
     }
-    if(!list.length)head+=input.role||input.title_contains?" Nothing matched the filter.":" The app exposes no controls here (Electron/Chromium apps usually do not): use screenshots.";
+    if(!list.length)head+=root?" Nothing listed inside it.":input.role||input.title_contains?" Nothing matched the filter.":" The app exposes no controls here (Electron/Chromium apps usually do not): use screenshots.";
+    var lines=tree?treeText(got,coords,fr,{truncated:r.truncated===!0,maxDepth:typeof input.depth==="number"?clampDepth(input.depth):32}):got.map(function(x){return line(x.e,coords,fr,x.n)});
     var out=head,shown=0,nb=bytes(head);
-    for(var i=0;i<list.length;i++){var l="\n"+line(list[i],coords,fr,got[i].n),lb=bytes(l);if(nb+lb>CAP-200)break;out+=l;nb+=lb;shown++}
-    if(shown<list.length)out+="\n... "+(list.length-shown)+" more element(s) not shown (24 KB cap): narrow with role or title_contains.";
+    for(var i=0;i<lines.length;i++){var l="\n"+lines[i],lb=bytes(l);if(nb+lb>CAP-200)break;out+=l;nb+=lb;shown++}
+    if(shown<lines.length)out+="\n... "+(lines.length-shown)+" more element(s) not shown (24 KB cap): narrow with role or title_contains"+more+".";
     return ok(out);
   }
   // Screen sharing stopped by the user (#293): clicks and typing are input,
