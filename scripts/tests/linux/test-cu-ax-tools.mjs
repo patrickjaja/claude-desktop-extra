@@ -664,6 +664,8 @@ if (patchMissing || !existsSync(stubPath)) {
       ["app_ax_find", { app: "org.kde.kate" }],
       ["app_click", { app: "org.kde.kate", element_index: 3 }],
       ["app_list_windows", { app: "org.kde.kate" }],
+      ["app_focus", { app: "org.kde.kate", element_index: 3 }],
+      ["app_scroll", { app: "org.kde.kate", element_index: 3 }],
     ]) {
       const a = textOf(await pristineDispatch(tool, args));
       const b = textOf(await dispatch(tool, args));
@@ -1400,7 +1402,7 @@ if (patchMissing || !existsSync(stubPath)) {
       const vc = axCtx("x11-bridge");
       const v = (n, a, sid = "v1") => vc.__cdbAxCall(n, a, { sid });
       vc.__cuLastShot = { imgW: 1000, imgH: 1000, dispW: 1000, dispH: 1000, originX: 0, originY: 0 };
-      check("key: :cdb-ax2", vc.__cdbAxKey(), ":cdb-ax2");
+      check("key: :cdb-ax2 (plus the offered v2 shape)", vc.__cdbAxKey().startsWith(":cdb-ax2"), true);
       resetLog();
       r = await v("app_ax_find", { app: "org.kde.kate" });
       check("v2 find: first find has no --window-ref", argvs().filter((x) => x.startsWith("ax-find")).join("|"), "ax-find --window {kate-1}");
@@ -1795,6 +1797,181 @@ if (patchMissing || !existsSync(stubPath)) {
         check(`${label}: refused, nothing walked`, r.isError === true && re.test(textOf(r)) && !calls().some((x) => x.argv[0] === "ax-find"), true);
         await releaseAx(c);
       }
+      setFeatures(undefined);
+      useFix(fixFile);
+    }
+
+    // ---------------------------------------------------------------- [12]
+    // ax-actions: ensure on app_click, app_focus, app_scroll (into view), a
+    // number through app_type on a Value control; the tool list per bridge.
+    console.log("\n[12] ensure / app_focus / app_scroll / set-value; tool lists");
+    {
+      const V6 = [
+        ...V_A,
+        vEl(30, "slider", "Volume", "r-vol", { actions: [], value: "40" }),
+        vEl(31, "slider", "Balance", "r-vol2", { actions: [], value: "0" }),
+        vEl(32, "spin button", "Size", "r-size", { states: ["enabled", "editable"], value: "12" }),
+      ];
+      const FIX6 = {
+        ...FIX2,
+        "ax-find": { ...FIX2["ax-find"], "{kate-1}": kateFind(V6) },
+        "ax-action": {
+          ...FIX2["ax-action"],
+          "r-wrap|ensure-checked": { ok: true, action: "ensure_checked", method: "action:toggle", already: false, delivery: "sent", post: { focused: false, checked: true } },
+          "r-wrap|ensure-unchecked": { ok: true, action: "ensure_unchecked", method: "none", already: true, delivery: "not_sent", post: { focused: false, checked: false } },
+          "ok-2|ensure-expanded": { unavailable: "unsupported_action", hint: "This element cannot be expanded.", delivery: "not_sent" },
+          "noact-1|ensure-collapsed": { unavailable: "requires_input", hint: "Qt combo popup on Wayland.", delivery: "not_sent" },
+          "nope-1|ensure-selected": { ok: null, action: "ensure_selected", method: "select_child", already: false, delivery: "sent_unverified", error: "read-back shows selected=false" },
+          "r-search|focus": { ok: true, action: "focus", method: "grab_focus", delivery: "sent", post: { focused: true } },
+          "r-save|scroll-to": { ok: true, action: "scroll_to", method: "scroll_to", delivery: "sent", post: { focused: false } },
+          "noact-1|scroll-to": { unavailable: "unsupported_action", hint: "No Component interface.", delivery: "not_sent" },
+          "r-vol|set-value": { ok: true, action: "set_value", method: "set_current_value", delivery: "sent", post: { focused: false, value: "75" } },
+          "r-vol2|set-value": { unavailable: "value_out_of_range", hint: "Out of range.", range: { min: -10, max: 10 }, delivery: "not_sent" },
+          "r-size|set-value": { ok: true, action: "set_value", method: "set_current_value", delivery: "sent", post: { focused: true, value: "14" } },
+        },
+      };
+      const fixFile6 = join(scratch, "fixture-actions.json");
+      writeFileSync(fixFile6, JSON.stringify(FIX6));
+      useFix(fixFile6);
+      setFeatures(ALL_FEATURES);
+      const ac = axCtx("x11-bridge");
+      ac.__cuLastShot = { imgW: 1000, imgH: 1000, dispW: 1000, dispH: 1000, originX: 0, originY: 0 };
+      const x = (n, a, sid = "a1") => ac.__cdbAxCall(n, { app: "org.kde.kate", ...a }, { sid });
+      await x("app_ax_find", {});
+      resetLog();
+      r = await x("app_click", { element_index: 12, ensure: "checked" });
+      check("ensure checked: --action ensure-checked with the identity on stdin", acts().map((c) => c.argv.slice(5).join(" ")).join() + "|" + acts()[0]?.stdin, "--action ensure-checked --expect-json|" + JSON.stringify({ expect: { role: "check box", name: "Word wrap", accessible_id: null } }));
+      check("ensure checked: done and verified, now checked", !r.isError && /\[12\]/.test(textOf(r)) && /now checked/.test(textOf(r)), true);
+      r = await x("app_click", { element_index: 12, ensure: "unchecked" });
+      check("ensure already in that state: says nothing was sent", !r.isError && /already unchecked/.test(textOf(r)) && /nothing was sent/i.test(textOf(r)), true);
+      r = await x("app_click", { element_index: 14, ensure: "expanded" });
+      check("ensure unsupported_action: nothing sent, points to app_click / left_click", r.isError === true && /unsupported_action/.test(textOf(r)) && /nothing was sent/i.test(textOf(r)) && /left_click/.test(textOf(r)), true);
+      r = await x("app_click", { element_index: 26, ensure: "collapsed" });
+      check("ensure requires_input: nothing sent, left_click at its center", r.isError === true && /requires_input/.test(textOf(r)) && /left_click/.test(textOf(r)) && /at \(/.test(textOf(r)), true);
+      r = await x("app_click", { element_index: 25, ensure: "selected" });
+      check("ensure ok:null (read-back did not confirm): never worded as success", !/^Set |^Pressed /.test(textOf(r)) && /not confirmed/.test(textOf(r)) && /do not repeat it blindly/i.test(textOf(r)), true);
+      resetLog();
+      r = await x("app_click", { element_index: 12, ensure: "sideways" });
+      check("ensure: unknown state refused, nothing spawned", r.isError === true && /ensure must be one of/.test(textOf(r)) && acts().length === 0, true);
+      resetLog();
+      r = await x("app_focus", { element_index: 5 });
+      check("app_focus: --action focus, focused", acts().map((c) => c.argv.slice(5).join(" ")).join() + "|" + /^Focused \[5\]/.test(textOf(r)) + "|" + /now focused/.test(textOf(r)), "--action focus --expect-json|true|true");
+      resetLog();
+      r = await x("app_scroll", { element_index: 3 });
+      check("app_scroll: --action scroll-to, scrolled into view", acts().map((c) => c.argv.slice(5).join(" ")).join() + "|" + /^Scrolled \[3\] .* into view/.test(textOf(r)), "--action scroll-to --expect-json|true");
+      resetLog();
+      for (const bad of [{ coordinate: [10, 10] }, { scroll_direction: "down" }, { dx: 0, dy: 3 }]) {
+        r = await x("app_scroll", { element_index: 3, ...bad });
+        check(`app_scroll ${Object.keys(bad)[0]}: refused with a pointer to scroll, nothing spawned`, r.isError === true && /\bscroll\b.*coordinate/.test(textOf(r)) && calls().length === 0, true);
+      }
+      r = await x("app_scroll", { element_index: 26 });
+      check("app_scroll unsupported_action: nothing sent, scroll at a point instead", r.isError === true && /unsupported_action/.test(textOf(r)) && /nothing was sent/i.test(textOf(r)) && /scroll/.test(textOf(r)), true);
+      resetLog();
+      r = await x("app_type", { element_index: 30, text: " 75 " });
+      check("app_type number on a slider: set-value, the number in the JSON", acts().map((c) => c.argv.slice(5).join(" ")).join() + "|" + acts()[0]?.stdin, "--action set-value --expect-json|" + JSON.stringify({ expect: { role: "slider", name: "Volume", accessible_id: null }, value: 75 }));
+      check("set-value: done, value shown", !r.isError && /\[30\]/.test(textOf(r)) && /value now 75/.test(textOf(r)), true);
+      r = await x("app_type", { element_index: 31, text: "50" });
+      check("value_out_of_range: nothing sent, names the range", r.isError === true && /-10 to 10/.test(textOf(r)) && /nothing was sent/i.test(textOf(r)), true);
+      resetLog();
+      r = await x("app_type", { element_index: 30, text: "loud" });
+      check("app_type text on a slider: refused, nothing spawned", r.isError === true && /number/.test(textOf(r)) && acts().length === 0, true);
+      resetLog();
+      r = await x("app_type", { element_index: 32, text: "14" });
+      check("app_type number on a spin button: set-value (no overwrite_existing needed)", acts().map((c) => c.argv[6]).join() + "|" + !r.isError, "set-value|true");
+      ac.__linuxExecutor.__stoppedByUser = () => true;
+      resetLog();
+      for (const [n, a] of [["app_click", { element_index: 12, ensure: "checked" }], ["app_focus", { element_index: 5 }], ["app_scroll", { element_index: 3 }], ["app_type", { element_index: 30, text: "5" }]]) {
+        r = await x(n, a);
+        check(`stopped sharing: ${n}${a.ensure ? " ensure" : ""} refused`, r.isError === true && /stopped screen sharing/.test(textOf(r)), true);
+      }
+      check("stopped sharing: no ax-action spawned", acts().length, 0);
+      ac.__linuxExecutor.__stoppedByUser = () => false;
+      check("v2 bridge: app_focus / app_scroll handled", ac.__cdbAxHandles("app_focus") && ac.__cdbAxHandles("app_scroll"), true);
+      // Tool list with a v2 bridge.
+      const v2tools = ac.__cdbAxTools({ platform: "linux" });
+      const pr = (n) => Object.keys(v2tools.find((t) => t.name === n)?.inputSchema?.properties || {}).join(",");
+      check("v2 tools: six, upstream's names", v2tools.map((t) => t.name).join(), "app_list_windows,app_ax_find,app_click,app_type,app_focus,app_scroll");
+      check("v2 app_ax_find args", pr("app_ax_find"), "app,window_id,role,title_contains,wait_for,within,depth,outline,include_text");
+      check("v2 app_click args", pr("app_click"), "app,window_id,element_index,target,ensure");
+      check("v2 app_focus args", pr("app_focus"), "app,window_id,element_index,target");
+      check("v2 app_scroll args + required", pr("app_scroll") + "|" + v2tools.find((t) => t.name === "app_scroll").inputSchema.required.join(), "app,window_id,element_index|app,element_index");
+      check("v2 tools: no coordinate arguments", v2tools.some((t) => /coordinate|region|path/.test(Object.keys(t.inputSchema.properties).join())), false);
+      const v2bytes = v2tools.reduce((n, t) => n + t.description.length + JSON.stringify(t.inputSchema).length, 0);
+      check("v2 tools: schema + descriptions within ~7 KB", v2bytes <= 7000, true);
+      await releaseAx(ac);
+      // Feature by feature: an unlisted feature is neither offered nor used.
+      setFeatures(["find.v1", "action.click", "action.set_text", "find.identity", "action.expect"]);
+      const pc = axCtx("x11-bridge");
+      const ptools = pc.__cdbAxTools({ platform: "linux" });
+      check("partial features: four tools, no ensure / within / outline", ptools.map((t) => t.name).join() + "|" + Object.keys(ptools[2].inputSchema.properties).join() + "|" + Object.keys(ptools[1].inputSchema.properties).join(), "app_list_windows,app_ax_find,app_click,app_type|app,window_id,element_index,target|app,window_id,role,title_contains,wait_for,depth,include_text");
+      check("partial features: app_focus / app_scroll not handled", pc.__cdbAxHandles("app_focus") || pc.__cdbAxHandles("app_scroll"), false);
+      await pc.__cdbAxCall("app_ax_find", { app: "org.kde.kate" }, { sid: "p1" });
+      resetLog();
+      r = await pc.__cdbAxCall("app_click", { app: "org.kde.kate", element_index: 12, ensure: "checked" }, { sid: "p1" });
+      check("partial features: ensure refused as not supported, nothing sent", r.isError === true && /ensure is not supported by this bridge/.test(textOf(r)) && acts().length === 0, true);
+      r = await pc.__cdbAxCall("app_type", { app: "org.kde.kate", element_index: 30, text: "5" }, { sid: "p1" });
+      check("partial features: a number on a slider is not set-value (today's refusal)", r.isError === true && /Only target TEXT fields/.test(textOf(r)), true);
+      await releaseAx(pc);
+      // Legacy bridge: today's four tools, byte-identical to the list without a bridge.
+      setFeatures(undefined);
+      const lc = axCtx("x11-bridge");
+      check("legacy bridge: tool list identical to the four-tool list", JSON.stringify(lc.__cdbAxTools({ platform: "linux" })), JSON.stringify(axTools));
+      check("legacy bridge: key :cdb-ax2", lc.__cdbAxKey(), ":cdb-ax2");
+      check("legacy bridge: app_focus / app_scroll not handled (go where they went before)", lc.__cdbAxHandles("app_focus") || lc.__cdbAxHandles("app_scroll"), false);
+      check("legacy bridge: the four still handled", ["app_list_windows", "app_ax_find", "app_click", "app_type"].every((n) => lc.__cdbAxHandles(n)), true);
+      useFix(fixFile);
+    }
+    // Upstream's own app-tool predicate and tier map (pristine bundle): our
+    // two new names pass upstream's check, and each of our tools asks for the
+    // tier upstream's map gives it (15d calls the tier check with TIER[name]).
+    {
+      const all = [...pristine.values()].join("\n");
+      const qm = /function ([\w$]+)\(([\w$]+)\)\{return \2===(["`])app_release\3\|\|\2===\3request_full_control\3\|\|\2===\3release_full_control\3\|\|Object\.hasOwn\(([\w$]+),\2\)\}/.exec(all);
+      const mapM = qm && new RegExp(`(?<![\\w$.])${qm[4].replace(/\$/g, "\\$")}=(\\{app_[^{}]*\\})`).exec(all);
+      check("upstream's app-tool predicate and tier map located in the pristine bundle", !!qm && !!mapM, true);
+      if (qm && mapM) {
+        const up = vm.runInNewContext(`(function(){var ${qm[4]}=${mapM[1]};${qm[0]};return{is:${qm[1]},tiers:${qm[4]}}})()`);
+        check("upstream predicate: app_focus and app_scroll are app tools", up.is("app_focus") && up.is("app_scroll"), true);
+        const tc = axCtx("x11-bridge");
+        const asked = {};
+        for (const n of ["app_list_windows", "app_ax_find", "app_click", "app_type", "app_focus", "app_scroll"]) {
+          await tc.__cdbAxCall(n, { app: "org.kde.kate" }, { sid: "t1", tier: (_a, t) => ((asked[n] = t), { error: { isError: true, content: [{ type: "text", text: "stop" }] } }) });
+        }
+        check("our tier per tool = upstream's tier map", JSON.stringify(asked), JSON.stringify(Object.fromEntries(Object.keys(asked).map((n) => [n, up.tiers[n]]))));
+        check("every one of our tools passes upstream's predicate", Object.keys(asked).every((n) => up.is(n)), true);
+      }
+    }
+    // kwin mode end to end: upstream's dispatcher reaches our app_focus /
+    // app_scroll through its own app-tool branch and tier check.
+    {
+      setFeatures(ALL_FEATURES);
+      writeFileSync(join(scratch, "fixture-kwin6.json"), JSON.stringify({ ...JSON.parse(readFileSync(join(scratch, "fixture-actions.json"), "utf8")) }));
+      useFix(join(scratch, "fixture-kwin6.json"));
+      const kc6 = makeCtx({ userData });
+      kc6.__cuKwinMode = true;
+      kc6.__cuKwinBridgeBin = bin;
+      kc6.__linuxExecutor = kwinExecutor();
+      const kx6 = loadChunk(kc6, patched.get(builderChunk));
+      loadAx(kc6);
+      kc6.__cdbCuAxElements = () => true;
+      const dk = kx6[DKEY](serverCtx(kc6.__linuxExecutor), "pixels", sessionCtx("sess-K6"));
+      dims = { width: 1280, height: 720, displayWidth: 2560, displayHeight: 1440, originX: 0, originY: 0 };
+      const ktools = kx6[BKEY](LINUX_CAPS, "pixels").map((t) => t.name);
+      check("kwin, v2 bridge: upstream's builder lists app_focus and app_scroll", ktools.includes("app_focus") && ktools.includes("app_scroll"), true);
+      await dk("app_ax_find", { app: "org.kde.kate" });
+      resetLog();
+      r = await dk("app_focus", { app: "org.kde.kate", element_index: 5 });
+      check("kwin: app_focus through upstream's dispatch", /^Focused \[5\]/.test(textOf(r)) && acts().length === 1, true);
+      r = await dk("app_scroll", { app: "org.kde.kate", element_index: 3 });
+      check("kwin: app_scroll through upstream's dispatch", /^Scrolled \[3\]/.test(textOf(r)), true);
+      resetLog();
+      r = await dk("app_scroll", { app: "org.kde.dolphin", element_index: 2 });
+      check("kwin: app_scroll needs tier click (upstream's check)", r.isError === true && textOf(r).includes('requires tier "click"') && calls().length === 0, true);
+      r = await dk("app_focus", { app: "org.kde.konsole", element_index: 1 });
+      check("kwin: app_focus needs tier full (upstream's check)", r.isError === true && textOf(r).includes('requires tier "full"') && calls().length === 0, true);
+      await kc6.__linuxExecutor.__setLockHeld(false);
+      for (let i = 0; i < 100 && existsSync(statePath); i++) await tick();
+      kc6.__cdbCuAxElements = () => false;
       setFeatures(undefined);
       useFix(fixFile);
     }

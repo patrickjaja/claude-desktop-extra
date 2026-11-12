@@ -39,33 +39,62 @@
 // or typed text.
 if(process.platform!=="linux"||globalThis.__cdbAxTools)return;
 var _cp=require("child_process"),_fs=require("fs"),_path=require("path");
-var TIER={app_list_windows:"read",app_ax_find:"read",app_click:"click",app_type:"full"};
+// Upstream's own tier map for these names (app_focus full, app_scroll click).
+var TIER={app_list_windows:"read",app_ax_find:"read",app_click:"click",app_type:"full",app_focus:"full",app_scroll:"click"};
+var BASE_TOOLS={app_list_windows:1,app_ax_find:1,app_click:1,app_type:1};
 var CAP=24*1024,STATE_FILE="cdb-ax-state.json";
 function log(m){try{(globalThis.__cdbDiag||function(){})("[claude-cu][ax] "+m)}catch(e){}}
 function on(){try{return typeof globalThis.__cdbCuAxElements==="function"&&globalThis.__cdbCuAxElements()===!0}catch(e){return!1}}
 
 // ── tool definitions ─────────────────────────────────────────────────────────
 function S(d){return{type:"string",description:d}}
-function defs(){
+// f: the active bridge's accessibility features. A bridge without them gets
+// the four tools exactly as before; every addition below appears only when
+// the bridge lists the feature it needs.
+function defs(f){
+  var v2=!!f&&f.list.length>0;
   var app=S("The granted app name (WM_CLASS or desktop id).");
   var win=S("window_id from app_list_windows; default: the window last searched, else the active one.");
   var idx={type:"number",description:"[N] from app_ax_find of this window."};
   var tgt={type:"string",enum:["focused"],description:"The element with keyboard focus, instead of element_index."};
   var live=" Acts on the live desktop (no background control).";
-  return[
+  var findP={app:app,window_id:win,role:S("AX or AT-SPI role, e.g. \"AXButton\", \"push button\", \"AXTextField\"."),title_contains:S("Case-insensitive substring of the name.")};
+  var findD="List the controls of one application window from the desktop accessibility tree (AT-SPI), one per line: [N] AXButton (push button) \"name\" (states) at (x, y). (x, y) is the center in the last screenshot's coordinates (for left_click), or \"position unknown\" where the desktop reports none. Pass N as element_index to app_click / app_type; [N] stays the same for the same control across calls. Prefer this over a screenshot to find controls by name in GTK, Qt, Firefox and LibreOffice apps; Electron/Chromium apps usually expose nothing, use screenshots there.";
+  var clickP={app:app,window_id:win,element_index:idx,target:tgt};
+  var typeD="Set the whole text of one TEXT field through accessibility (no key events), by element_index or target: \"focused\". Refused for non-text controls, and for a field that has text unless overwrite_existing is true. No coordinates; for key presses use key.";
+  if(v2){
+    findP.wait_for={type:"object",description:"Wait (re-checking, at most 15 s) until this holds, then list the window. appears / gone: the controls matching role / title_contains, or element_index; the others: element_index.",properties:{until:{type:"string",enum:Object.keys(UNTIL)},element_index:{type:"number"},value:{type:"string",description:"For value_contains."},timeout_ms:{type:"number",description:"Default 5000, at most 15000."}},required:["until"]};
+    if(f.has("find.root"))findP.within={type:"number",description:"[N] of a container: list only what is inside it."};
+    if(f.has("find.v1"))findP.depth={type:"number",description:"Levels to walk below the window (or within)."};
+    if(f.has("find.skeleton"))findP.outline={type:"boolean",description:"List containers only, with their child counts (no role / title_contains)."};
+    if(f.has("find.v1"))findP.include_text={type:"boolean",description:"Also list labels and other non-interactive nodes."};
+    findD+=" wait_for waits for a control to appear, go or change state."+(f.has("find.root")?" Large windows: outline, then within: [N].":"");
+    if(f.has("action.ensure")){clickP.ensure={type:"string",enum:["checked","unchecked","expanded","collapsed","selected"],description:"Bring the control into this state; nothing is sent when it already is."}}
+    if(f.has("action.set_value"))typeD+=" A number on a slider or spin button sets its value.";
+  }
+  var out=[
     {name:"app_list_windows",description:"List the windows of one application: [{window_id, title, is_main, is_minimized, bounds}] (bounds in desktop coordinates, not screenshot pixels).",inputSchema:{type:"object",properties:{app:app},required:["app"]}},
-    {name:"app_ax_find",description:"List the controls of one application window from the desktop accessibility tree (AT-SPI), one per line: [N] AXButton (push button) \"name\" (states) at (x, y). (x, y) is the center in the last screenshot's coordinates (for left_click), or \"position unknown\" where the desktop reports none. Pass N as element_index to app_click / app_type; [N] stays the same for the same control across calls. Prefer this over a screenshot to find controls by name in GTK, Qt, Firefox and LibreOffice apps; Electron/Chromium apps usually expose nothing, use screenshots there.",inputSchema:{type:"object",properties:{app:app,window_id:win,role:S("AX or AT-SPI role, e.g. \"AXButton\", \"push button\", \"AXTextField\"."),title_contains:S("Case-insensitive substring of the name.")},required:["app"]}},
-    {name:"app_click",description:"Press one element through accessibility (its press/activate/toggle action), by element_index or target: \"focused\". No coordinates: for a point use left_click. If the element has no action, the result gives its position for left_click."+live,inputSchema:{type:"object",properties:{app:app,window_id:win,element_index:idx,target:tgt},required:["app"]}},
-    {name:"app_type",description:"Set the whole text of one TEXT field through accessibility (no key events), by element_index or target: \"focused\". Refused for non-text controls, and for a field that has text unless overwrite_existing is true. No coordinates; for key presses use key."+live,inputSchema:{type:"object",properties:{app:app,window_id:win,element_index:idx,target:tgt,text:{type:"string"},overwrite_existing:{type:"boolean",description:"Allow replacing the field's text."}},required:["app","text"]}}
+    {name:"app_ax_find",description:findD,inputSchema:{type:"object",properties:findP,required:["app"]}},
+    {name:"app_click",description:"Press one element through accessibility (its press/activate/toggle action), by element_index or target: \"focused\". No coordinates: for a point use left_click. If the element has no action, the result gives its position for left_click."+live,inputSchema:{type:"object",properties:clickP,required:["app"]}},
+    {name:"app_type",description:typeD+live,inputSchema:{type:"object",properties:{app:app,window_id:win,element_index:idx,target:tgt,text:{type:"string"},overwrite_existing:{type:"boolean",description:"Allow replacing the field's text."}},required:["app","text"]}}
   ];
+  if(v2&&f.has("action.focus"))out.push({name:"app_focus",description:"Give one element keyboard focus through accessibility, by element_index or target: \"focused\"."+live,inputSchema:{type:"object",properties:{app:app,window_id:win,element_index:idx,target:tgt},required:["app"]}});
+  if(v2&&f.has("action.scroll_to"))out.push({name:"app_scroll",description:"Scroll one element into view through accessibility, by element_index. No coordinates or amounts: to scroll at a point use scroll."+live,inputSchema:{type:"object",properties:{app:app,window_id:win,element_index:idx},required:["app","element_index"]}});
+  return out;
 }
 // Upstream's builder calls this with its capabilities (t). The remote-devices
 // bridge (cloud sessions linked to this computer) builds its computer_* list
 // with the same builder and saveToDisk:false: our tools stay out of that list,
 // since a cloud server is not known to accept tool names it did not bind.
-globalThis.__cdbAxTools=function(t){if(!t||t.platform!=="linux"||t.saveToDisk===!1||!on())return[];return defs()};
-globalThis.__cdbAxKey=function(){return on()?":cdb-ax2":""};
-globalThis.__cdbAxHandles=function(n){return typeof n==="string"&&Object.prototype.hasOwnProperty.call(TIER,n)&&on()};
+globalThis.__cdbAxTools=function(t){if(!t||t.platform!=="linux"||t.saveToDisk===!1||!on())return[];return defs(featNow())};
+// The tools/list cache key: ":cdb-ax2", plus the features that shape the list
+// when the bridge has any (a bridge change rebuilds the list).
+var SHAPE_FEATS=["find.v1","find.root","find.skeleton","action.ensure","action.focus","action.scroll_to","action.set_value"];
+globalThis.__cdbAxKey=function(){if(!on())return"";var f=featNow();return":cdb-ax2"+(f.list.length?":"+SHAPE_FEATS.filter(function(x){return f.has(x)}).join("+"):"")};
+// Our names, while the switch is on; app_focus / app_scroll only when the
+// bridge lists their action (otherwise they go where they went before).
+function offered(n,f){return n==="app_focus"?f.has("action.focus"):n==="app_scroll"?f.has("action.scroll_to"):!0}
+globalThis.__cdbAxHandles=function(n){return typeof n==="string"&&Object.prototype.hasOwnProperty.call(TIER,n)&&on()&&(BASE_TOOLS[n]===1||offered(n,featNow()))};
 
 // ── bridge ───────────────────────────────────────────────────────────────────
 // The active Computer Use bridge: kwin-portal-bridge in kwin mode, else what
@@ -121,6 +150,17 @@ function featShape(o){
 function featSet(list){var m={};for(var i=0;i<list.length;i++)m[list[i]]=1;return{list:list,has:function(n){return m[n]===1}}}
 var NOFEAT=featSet([]);
 function featRemember(br,list){var f=featSet(list||[]);_feat.set(br.bin,f);log("features: "+(f.list.length?f.list.join(","):"none (legacy bridge)")+" ["+br.name+"]");return f}
+// The tool list and the dispatch test are synchronous: the same probe, run
+// synchronously once when the list is built before any call asked (the
+// subcommand opens no D-Bus connection, reads no file and prints a constant).
+function featNow(){
+  var br=bridge();
+  if(!br)return NOFEAT;
+  if(_feat.has(br.bin))return _feat.get(br.bin);
+  var list=null;
+  try{list=featShape(JSON.parse(String(_cp.execFileSync(br.bin,["ax-features"],{encoding:"utf8",timeout:3000,maxBuffer:65536,stdio:["ignore","pipe","ignore"],env:br.env||void 0})).trim()))}catch(e){list=null}
+  return featRemember(br,list);
+}
 // Runs inside the queue only.
 async function axFeatures(br){
   if(!br)return NOFEAT;
@@ -696,7 +736,9 @@ function actResult(r,t,el,c,ri){
   if(!r||typeof r!=="object")return err(label+": no answer from the bridge.");
   var rid=ri?" ("+N+" was re-created and re-identified by its "+ri.how+(ri.was!=null?"; it was ["+ri.was+"]":"")+")":"";
   if(r.__failed)return err(label+": the bridge failed ("+r.__failed+") after the action may have been sent: result not confirmed. Check with app_ax_find or a screenshot; do not repeat it blindly."+rid);
-  var u=r.unavailable||r.error,dv=deliveryOf(r,feat);
+  // `error` is the answer itself only without `ok` (a bridge explaining a
+  // failure); next to ok:null it says what a read-back showed.
+  var u=r.unavailable||(r.ok===void 0?r.error:null),dv=deliveryOf(r,feat);
   if(u==="stale_element"||u==="out_of_scope"||u==="element_changed"){
     if(!feat.has("find.identity")){
       // As before: the window's numbers are dropped.
@@ -707,17 +749,42 @@ function actResult(r,t,el,c,ri){
     if(dv==="sent_unverified")return err("Element "+N+" went away while the action was sent: result not confirmed. Check with app_ax_find or a screenshot; do not repeat it blindly."+rid);
     return err("Element "+N+" is gone"+(u==="element_changed"?" (it is no longer the control that was listed)":"")+". Nothing was sent, safe to retry: call app_ax_find again."+rid);
   }
+  var at=pos(el,t.coords,c.fr),atTxt=at.indexOf("at (")===0?" Its center is "+at+" in the last screenshot":"";
+  if(u==="unsupported_action"){
+    var alt=c.action==="scroll-to"?" Use scroll at a point inside its list instead (take a screenshot first).":c.action==="set-value"?" Use app_focus and key presses (Up / Down), or left_click."+atTxt:c.goal?" Check its state with app_ax_find and use app_click without ensure, or left_click."+atTxt:" Use left_click."+atTxt;
+    return err(label+": this control has no accessibility way to do that (unsupported_action). Nothing was sent, safe to retry."+alt+rid);
+  }
+  if(u==="requires_input")return err(label+": this control needs pointer input for that (requires_input). Nothing was sent. "+(atTxt?atTxt.slice(1)+": left_click there.":"Take a screenshot and left_click it.")+rid);
+  if(u==="value_out_of_range"){
+    var rg=r.range&&typeof r.range==="object"&&typeof r.range.min==="number"&&typeof r.range.max==="number"?" "+r.range.min+" to "+r.range.max:"";
+    return err(label+": the value is outside the range"+rg+" of "+N+" (value_out_of_range). Nothing was sent: choose a value within the range."+rid);
+  }
   if(u){
     var m=label+" refused: "+u+(r.hint?" - "+r.hint:"")+(dv==="not_sent"?" Nothing was sent, safe to retry.":"");
-    if(label==="app_click"){var p=pos(el,t.coords,c.fr);if(p.indexOf("at (")===0)m+=" Its center is "+p+" in the last screenshot: left_click there instead."}
+    if(label==="app_click"&&atTxt)m+=atTxt+": left_click there instead.";
     return err(m+rid);
   }
-  if(r.ok===null)return ok(c.unknown+" sent to "+N+" "+(el.ax_role||"AXUnknown")+", result unknown (not confirmed): take a screenshot or app_ax_find to check. Do not repeat it blindly."+rid);
+  if(r.ok===null){
+    var rb=c.goal||c.action==="set-value"?" (the read-back did not confirm it"+(typeof r.error==="string"&&r.error?": "+r.error.slice(0,160):"")+")":"";
+    return ok(c.unknown+" sent to "+N+" "+(el.ax_role||"AXUnknown")+", result unknown (not confirmed)"+rb+": take a screenshot or app_ax_find to check. Do not repeat it blindly."+rid);
+  }
   if(r.ok!==!0)return err(label+": the app did not accept the "+(r.action||"action")+(r.method?" ("+r.method+")":"")+"."+rid);
   var post=r.post&&typeof r.post==="object"?r.post:null,ps=[];
-  if(post){if(post.focused===!0)ps.push("focused");if(post.checked===!0)ps.push("checked");else if(post.checked===!1)ps.push("not checked")}
-  return ok(what+" "+N+" "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+")"+(ps.length?"; now "+ps.join(", "):"")+"."+rid+" Check the result with app_ax_find or a screenshot.");
+  if(post){
+    if(post.focused===!0)ps.push("focused");
+    if(post.checked===!0)ps.push("checked");else if(post.checked===!1)ps.push("not checked");
+    if(post.expanded===!0)ps.push("expanded");else if(post.expanded===!1)ps.push("collapsed");
+    if(post.selected===!0)ps.push("selected");else if(post.selected===!1)ps.push("not selected");
+    if(c.showValue&&post.value_redacted!==!0&&typeof post.value==="string"&&post.value!=="")ps.push("value now "+post.value.slice(0,40));
+  }
+  if(r.already===!0)return ok(N+" "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+") is already "+c.goal+"; nothing was sent."+rid);
+  if(c.goal)return ok("Set "+N+" "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+") to "+c.goal+" (confirmed by the read-back)"+(ps.length?"; now "+ps.join(", "):"")+"."+rid);
+  return ok(what+" "+N+" "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+")"+(c.after||"")+(ps.length?"; now "+ps.join(", "):"")+"."+rid+" Check the result with app_ax_find or a screenshot.");
 }
+var ENSURE={checked:1,unchecked:1,expanded:1,collapsed:1,selected:1};
+// Value-interface controls: app_type with a number sets their value.
+var VALUE_ROLES={slider:1,"spin button":1,"scroll bar":1,dial:1};
+var NUM_RE=/^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$/;
 var TEXT_AX={AXTextField:1,AXTextArea:1,AXSearchField:1,AXComboBox:1,AXSecureTextField:1};
 async function call(name,input,opts,obs){
   input=input&&typeof input==="object"?input:{};
@@ -728,11 +795,14 @@ async function call(name,input,opts,obs){
   // else every app at tier full (cu_handler_injection.js).
   var grant=grantOf(app,opts);
   if(opts&&typeof opts.tier==="function"){var g=opts.tier(grant?grant.bundleId:app,TIER[name]);if(g&&g.error)return g.error}
+  if(name==="app_scroll"&&(input.coordinate!==void 0||input.scroll_direction!==void 0||input.scroll_amount!==void 0||input.direction!==void 0||input.amount!==void 0||input.dx!==void 0||input.dy!==void 0))return err("app_scroll here only scrolls a control into view by element_index (from app_ax_find). To scroll at a point, use scroll with a coordinate.");
   var ak=matcherOf(app,grant),appId=String(grant?grant.bundleId:app).trim().replace(/\.desktop$/i,"");
   var br=bridge();
   if(!br)return err("Accessibility tools need a Computer Use bridge, and none is available in this session.");
   var feat=await axFeatures(br);
   if(name==="app_ax_find"){var sc=shapeCheck(input,feat,br);if(sc)return sc}
+  if(!offered(name,feat))return unsupported(name,br);
+  if(name==="app_click"&&input.ensure!==void 0){if(!ENSURE[input.ensure])return err("ensure must be one of: "+Object.keys(ENSURE).join(", ")+".");if(!feat.has("action.ensure"))return unsupported("ensure",br)}
   if(name==="app_list_windows"&&isGnome(br)){
     var ge=await ensureEnabled(br);
     if(ge&&ge.unavailable)return unavail(ge);
@@ -797,19 +867,33 @@ async function call(name,input,opts,obs){
   // Screen sharing stopped by the user (#293): clicks and typing are input,
   // so they stay off for the rest of the session; reading still works.
   var sx=globalThis.__linuxExecutor;
-  try{if(sx&&typeof sx.__stoppedByUser==="function"&&sx.__stoppedByUser())return err("The user stopped screen sharing for this Computer Use session, so app_click and app_type are off until this task ends. app_ax_find and app_list_windows still work.")}catch(se){}
+  try{if(sx&&typeof sx.__stoppedByUser==="function"&&sx.__stoppedByUser())return err("The user stopped screen sharing for this Computer Use session, so app_click, app_type, app_focus and app_scroll are off until this task ends. app_ax_find and app_list_windows still work.")}catch(se){}
   if(w.id!=null)remember(_lastWin,sid+"\n"+gk(app),String(w.id));
   var t=await target(br,w,input,sid,name,feat,app);
   if(t.e)return t.e;
   var pc={br:br,feat:feat,w:w,sid:sid,app:app,t:t.t,ent:t.ent,label:name,fr:fr};
+  if(name==="app_click"||name==="app_focus"||name==="app_scroll"||name==="app_type"){if(!fr&&t.t.coords==="screen"){var c1=centerOf(t.ent.rect_screen);if(c1)pc.fr=predict(opts,c1[0],c1[1])}}
   if(name==="app_click"){
-    if(!fr&&t.t.coords==="screen"){var c1=centerOf(t.ent.rect_screen);if(c1)pc.fr=predict(opts,c1[0],c1[1])}
+    if(input.ensure!==void 0){pc.action="ensure-"+input.ensure;pc.goal=input.ensure;pc.what="Set";pc.unknown="Change to "+input.ensure;return perform(pc)}
     pc.action="click";pc.what="Pressed";pc.unknown="Click";
+    return perform(pc);
+  }
+  if(name==="app_focus"){pc.action="focus";pc.what="Focused";pc.unknown="Focus";return perform(pc)}
+  if(name==="app_scroll"){
+    if(input.target!==void 0||typeof input.element_index!=="number")return err("app_scroll takes element_index (from app_ax_find). To scroll at a point, use scroll with a coordinate.");
+    pc.action="scroll-to";pc.what="Scrolled";pc.unknown="Scroll";pc.after=" into view; positions changed: app_ax_find or a screenshot before clicking by position";
     return perform(pc);
   }
   if(name==="app_type"){
     if(typeof input.text!=="string")return err("text is required.");
     var el=t.ent,stt=el.states;
+    if(VALUE_ROLES[el.role]&&feat.has("action.set_value")){
+      var tv=input.text.trim();
+      if(!NUM_RE.test(tv)||!isFinite(Number(tv)))return err("["+el.n+"] is a "+el.role+": app_type takes a number for it (its new value).");
+      log("set-value: window="+String(w.id));
+      pc.action="set-value";pc.extra={value:Number(tv)};pc.what="Set the value of";pc.unknown="Value";pc.showValue=!0;
+      return perform(pc);
+    }
     if(stt.indexOf("editable")<0&&!TEXT_AX[el.ax_role])return err("Only target TEXT fields: ["+el.n+"] is "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+"), not editable text.");
     if(input.overwrite_existing!==!0&&el.hasText)return err("["+el.n+"] already has text, and app_type replaces ALL of it. Pass overwrite_existing: true to replace it.");
     log("set-text: window="+String(w.id)+" chars="+input.text.length);
