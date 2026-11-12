@@ -347,9 +347,11 @@
     return /^file:\/\/.*\/renderer\/main_window\//.test(String(rawUrl));
   }
 
-  // Only the main window is see-through. Pop-outs, the Code and Design windows,
-  // artifact pop-ups and the 3P config window load claude.ai in BrowserWindows
-  // of their own with an opaque background, so a claude.ai webContents that
+  // Only the main window is see-through. The Code and Design windows, artifact
+  // pop-ups and the 3P config window load claude.ai in BrowserWindows of their
+  // own with an opaque background; the pop-out windows the main view opens (a
+  // popped-out Code session, chat or project) are about:blank children with the
+  // React tree portaled in. Either way a claude.ai webContents that
   // another live window provably owns - as its own webContents or as a view in
   // its contentView tree - is left alone. Unclaimed (not attached yet, or the
   // main window's own view), no main window to tell apart, or any error: the

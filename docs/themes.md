@@ -13,7 +13,7 @@ From picking a bundled palette to recoloring the app from your wallpaper, in ord
 | [7. Example configurations](#7-example-configurations) | every example in one list |
 | [Reference](#reference) | schema, tokens, palettes |
 
-Every theme is **dual light/dark**: it ships a `light` and a `dark` palette, and the app's own toggle (Settings → Appearance) picks the matching one live. Colors are CSS variables injected into every app window (chat, sidebar, Code/Cowork, dialogs, Quick Entry), never into third-party pages in the browser pane; every bundled theme is contrast-checked (WCAG AA).
+Every theme is **dual light/dark**: it ships a `light` and a `dark` palette, and the app's own toggle (Settings → Appearance) picks the matching one live. Colors are CSS variables injected into every app window (chat, sidebar, Code/Cowork, pop-out windows, dialogs, Quick Entry), never into third-party pages in the browser pane; every bundled theme is contrast-checked (WCAG AA).
 
 ## 1. Pick a theme
 

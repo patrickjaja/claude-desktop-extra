@@ -35,6 +35,11 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - **X11:** typing allows time in proportion to the text instead of a flat 15 seconds, and when the bundled `x11-bridge` is stopped part-way (the time ran out, or the keyboard layout changed mid-text) only the rest is typed, never the whole text again. An `x11-bridge` without that report behaves as before.
 - **GNOME Wayland:** when a screenshot has to start the screen-sharing session first, it starts it before hiding the glow, so the glow is not hidden while GNOME's consent dialog is open and the capture follows the hide at once.
 
+### Custom themes apply to pop-out windows (#331)
+
+- **"Open in new window" now shows your theme.** A popped-out Code session, chat or project (any window the app pops out of the main window) uses the active theme in the matching light or dark variant and follows live theme switches, config reloads, light/dark flips and clearing the theme; its window background and, where the pop-out has app-drawn caption buttons, their overlay follow the theme; the themed loading spinner shows there too. Content from other sites inside a pop-out, artifact pop-ups opened by an artifact itself, and the in-app browser's pop-ups stay as they are.
+- After clearing a theme the caption symbols return to the stock colors.
+
 ## 2026-11-11
 
 ### Transparent window: no empty strip in the header

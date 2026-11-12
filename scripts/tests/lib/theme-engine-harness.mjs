@@ -106,23 +106,50 @@ export function installEngine({ config, files, transform } = {}) {
 }
 
 /** A webContents that records every insertCSS / executeJavaScript it is handed. */
-export function mkWc(url = "https://claude.ai/new") {
+/**
+ * `opts` (optional): `hosted` / `noWindow` (window ownership, see below); `deferInsert` holds insertCSS promises until wc.flushInserts(); `type` is what getType() returns (default "window", what a main
+ * view and a window.open child report); `opener` is the wc.opener value - an object, a
+ * getter-throwing marker via `openerThrows`, or absent (undefined, as on a plain wc).
+ */
+export function mkWc(url = "https://claude.ai/new", opts = {}) {
   const ev = {};
   let keyN = 0;
   const wc = {
     css: [], js: [], removedKeys: [], destroyed: false,
     getURL: () => url,
+    getType: () => {
+      if (opts.typeThrows) throw new Error("getType failed");
+      return opts.type || "window";
+    },
     on: (e, fn) => { ev[e] = fn; },
     once: (e, fn) => { ev[e] = fn; },
     isDestroyed: () => wc.destroyed,
-    insertCSS: (c) => { wc.css.push(c); return Promise.resolve("k" + ++keyN); },
+    insertCSS: (c) => {
+      wc.css.push(c);
+      const k = "k" + ++keyN;
+      // opts.deferInsert: the promise stays pending until wc.flushInserts() (a held push)
+      if (opts.deferInsert) return new Promise((res) => wc.pendingInserts.push(() => res(k)));
+      return Promise.resolve(k);
+    },
+    pendingInserts: [],
+    flushInserts: () => { const p = wc.pendingInserts.splice(0); p.forEach((f) => f()); },
     removeInsertedCSS: (k) => { wc.removedKeys.push(k); return Promise.resolve(); },
     executeJavaScript: (s) => { wc.js.push(s); return Promise.resolve(); },
-    fire: (e) => ev[e] && ev[e](),
+    fire: (e, ...args) => ev[e] && ev[e](...args),
     sheet: () => wc.css[wc.css.length - 1],
     // the BrowserWindow this webContents belongs to; records setBackgroundColor calls
+    // `webContents` is the window's OWN webContents: a popout/shell wc owns its window. opts.hosted
+    // makes it a view in another window (fromWebContents resolves to the HOST, whose own
+    // webContents is a different object); opts.noWindow makes fromWebContents return null.
     win: { bg: [], isDestroyed: () => false, setBackgroundColor: (c) => wc.win.bg.push(c) },
   };
+  wc.win.webContents = opts.hosted ? { host: true } : wc;
+  if (opts.noWindow) wc.win = null;
+  if (opts.openerThrows) {
+    Object.defineProperty(wc, "opener", { get() { throw new Error("opener failed"); } });
+  } else if ("opener" in opts) {
+    wc.opener = opts.opener;
+  }
   return wc;
 }
 

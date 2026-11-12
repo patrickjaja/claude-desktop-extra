@@ -4,8 +4,8 @@
 # Custom CSS theme injection for Claude Desktop on Linux (dual-variant).
 #
 # Reads a JSON config file (~/.config/Claude/claude-desktop-extra.json) at startup
-# and injects CSS variable overrides into ALL windows (main chat, Quick Entry,
-# Find-in-Page, About) using Electron's stable webContents.insertCSS() API.
+# and injects CSS variable overrides into ALL windows (main chat, pop-out windows,
+# Quick Entry, Find-in-Page, About) using Electron's stable webContents.insertCSS() API.
 #
 # DUAL-VARIANT (v1.15962): each theme may be authored as {light:{...},dark:{...}}.
 # The patch emits TWO :root var blocks -- a light block on `:root,[data-mode=light]`
@@ -217,9 +217,13 @@ function __cdb_paintWindow(wc){
 try{
 if(!_BW||!_BW.fromWebContents||wc.isDestroyed())return false;
 var url=wc.getURL()||"";
-if(!/\/main_window\//.test(url))return false;
+var shell=/\/main_window\//.test(url);
+if(!shell&&!__cdb_popoutChild(wc,url))return false;
 var w=_BW.fromWebContents(wc);
 if(!w||(w.isDestroyed&&w.isDestroyed()))return false;
+// A pop-out window is touched only once a theme is (or was) on it, so with no theme ever applied a
+// light/dark flip leaves its background and caption overlay alone. The main window keeps repainting stock.
+if(!shell){if(__cdb_state.chrome)w.__cdbPainted=true;else if(!w.__cdbPainted)return false}
 var dark=__cdb_isDark(),c=__cdb_state.chrome,hex=(c&&(dark?c.dark:c.light))||(dark?__cdb_STOCK_CHROME.dark:__cdb_STOCK_CHROME.light);
 w.setBackgroundColor(hex);
 __cdb_paintOverlay(w,dark);
@@ -238,7 +242,7 @@ var s=w.__cdbOverlay;
 if(!s){var orig=w.setTitleBarOverlay;if(typeof orig!=="function")return;s=w.__cdbOverlay={last:null,themed:false};
 w.setTitleBarOverlay=function(o){if(o&&typeof o==="object"){s.last=o;o=__cdb_tbOverlay(o,__cdb_isDark())}return orig.call(w,o)}}
 // Nothing upstream pushed yet: only a theme (or undoing one) needs a call; stock keeps the constructor's.
-var o=s.last||((__cdb_state.chrome||s.themed)?{color:dark?__cdb_STOCK_CHROME.dark:__cdb_STOCK_CHROME.light,symbolColor:dark?"#fff":"#000"}:null);
+var o=s.last||((__cdb_state.chrome||s.themed)?{color:dark?__cdb_STOCK_CHROME.dark:__cdb_STOCK_CHROME.light,symbolColor:dark?"#c2c0b6":"#3d3d3a"}:null);
 s.themed=!!__cdb_state.chrome;
 if(o)try{w.setTitleBarOverlay(o)}catch(e){}
 }
@@ -714,7 +718,13 @@ if(old){var r=wc.removeInsertedCSS(old);if(r&&r.catch)r.catch(function(){})}
 __cdb_paintWindow(wc);
 if(!__cdb_state.css)return;
 var q=wc.insertCSS(__cdb_state.css);
-if(q&&q.then)q.then(function(k){if(!wc.isDestroyed())__cdb_wcKeys.set(wc,k)},function(e){__cdb_log("insertCSS rejected: "+(e&&e.message))});
+if(q&&q.then)q.then(function(k){
+if(wc.isDestroyed())return;
+// Untracked while the insert was pending (dom-ready saw a page we do not own): drop the key and do
+// not re-track. It is never removed: keys are per-renderer-process counters, so a late key could
+// name an unrelated sheet in the new document.
+if(__cdb_wcKeys.has(wc))__cdb_wcKeys.set(wc,k);
+},function(e){__cdb_log("insertCSS rejected: "+(e&&e.message))});
 }catch(e){__cdb_log("insertCSS error: "+e.message)}
 }
 function __cdb_restyleAll(){
@@ -946,13 +956,33 @@ try{if(_nt&&_nt.on)_nt.on("updated",function(){setTimeout(function(){var r=__cdb
 // localhost dev servers - shows third-party content that must keep its own colors.
 // app://localhost has the opaque origin "null", so normalise to protocol + "//" + host.
 var __cdb_themeOrigins=["https://claude.ai","https://preview.claude.ai","https://claude.com","https://preview.claude.com","app://localhost"];
+function __cdb_originOf(u){var o=u.origin;if(!o||o==="null")o=u.protocol+"//"+u.host;return o}
 function __cdb_themable(url){
 try{
 var u=new URL(url);
 if(u.protocol==="file:")return u.pathname.indexOf("/app.asar/.vite/renderer/")>=0;
-var o=u.origin;
-if(!o||o==="null")o=u.protocol+"//"+u.host;
-return __cdb_themeOrigins.indexOf(o)>=0;
+return __cdb_themeOrigins.indexOf(__cdb_originOf(u))>=0;
+}catch(e){return false}
+}
+// Matches the windows of upstream's window manager: every pop-out window the main view opens (Code
+// sessions, chats, projects, the shell of a popped-out artifact, and the idle pool windows upstream
+// pre-creates). Each is a window.open("about:blank") child whose document the main view's realm
+// portals into, so its URL is never themable. Content from other sites inside them lives in iframes
+// or separate views that insertCSS/executeJavaScript on this wc do not reach. Accept an about:blank
+// "window" that owns its BrowserWindow and whose opener is a MAIN frame (parent===null) on one of
+// __cdb_themeOrigins (a file: opener is refused). Any error or unknown means "no".
+function __cdb_popoutChild(wc,url){
+try{
+if(url!=="about:blank"||wc.getType()!=="window")return false;
+// It must be the own webContents of a BrowserWindow (the window manager's popout): a view hosted in
+// another window (the main view, a WebContentsView, a webview guest) resolves to its HOST window.
+var w=_BW&&_BW.fromWebContents&&_BW.fromWebContents(wc);
+if(!w||w.webContents!==wc||(w.isDestroyed&&w.isDestroyed()))return false;
+var o=wc.opener;
+if(!o||o.parent!==null)return false;
+if(typeof o.url!=="string")return false;
+var ou=new URL(o.url);
+return ou.protocol!=="file:"&&__cdb_themeOrigins.indexOf(__cdb_originOf(ou))>=0;
 }catch(e){return false}
 }
 // Reads __cdb_state at dom-ready, so a window opened after a live switch gets
@@ -963,14 +993,17 @@ try{
 var url=wc.getURL()||"";
 // A tracked page that navigated to a third-party URL leaves the registry, so a
 // later live switch does not repaint it.
-if(!__cdb_themable(url)){__cdb_wcKeys.delete(wc);return}
+var pop=!__cdb_themable(url)&&__cdb_popoutChild(wc,url);
+if(!pop&&!__cdb_themable(url)){__cdb_wcKeys.delete(wc);return}
 if(url.indexOf("cdb-theme-picker")>=0)return;
 __cdb_trackWc(wc);
 if(!__cdb_state.css)return;
 __cdb_styleOne(wc);
 if(__cdb_state.font){var qf=wc.executeJavaScript("window.__themeFontOverride=true;");if(qf&&qf.catch)qf.catch(function(){})}
 __cdb_spinnerOne(wc);
-__cdb_log("Injected CSS+JS into "+url);
+var po="";
+if(pop)try{po=__cdb_originOf(new URL(wc.opener.url))}catch(e){}
+__cdb_log("Injected CSS+JS into "+url+(pop?" (popout child of "+po+")":""));
 }catch(e){__cdb_log("dom-ready hook error: "+e.message)}
 });
 });
