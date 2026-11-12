@@ -35,6 +35,13 @@
 //       ready; no child at all without the capability, on X11, with the regular
 //       executor in kwin mode,
 //       on a background display, with the glow switch off.
+//       [2g] GNOME Wayland (gnome-portal-bridge, a fake overlay reporting
+//       backend "x11" with a 55 ms hide ack): every capture hides everything
+//       (scope all, any look, badge or not), the ack is awaited within the
+//       x11 bound (150 ms), a capture past the overlay's 3 s self-restore
+//       re-sends the hide, the arrow and the bridge's pointer-move share one
+//       space, no capability = no overlay; a layer-shell overlay keeps its
+//       50 ms bound.
 //   [4] KDE Plasma Wayland (kwin mode): the REAL js/executor_linux.js with a
 //       bridge that announces capabilities.overlay + session_overlay_opt_out
 //       (doctor before session-start, KWIN_PORTAL_BRIDGE_SESSION_OVERLAY=0 on
@@ -111,6 +118,7 @@ function fnSource(s, name) {
 // Logs every stdin line (and its own start: argv, parent pid, env) as JSON
 // lines to $FAKE_OVL_LOG; answers like the cu-overlay crate. Knobs (env, read
 // at spawn): FAKE_OVL_MODE = normal | delay | silent | die-on-glide | fatal,
+// FAKE_OVL_BACKEND (ready.backend, default layer-shell), FAKE_OVL_ACK_MS,
 // FAKE_OVL_DELAY (ms, for delay), FAKE_OVL_OUTPUTS (JSON).
 const FAKE = path.join(scratch, "fake-bridge");
 writeFileSync(FAKE, `#!${process.execPath}
@@ -122,7 +130,8 @@ log({ start: true, argv: process.argv.slice(2), ppid: process.ppid, parentEnv: p
 const out = (o) => process.stdout.write(JSON.stringify(o) + "\\n");
 if (process.argv[2] !== "overlay") { process.stderr.write("usage\\n"); process.exit(2); }
 const scopes = JSON.parse(process.env.FAKE_OVL_SCOPES || '["all","cursor"]');
-const ready = () => out({ event: "ready", protocol: 1, backend: "layer-shell", alphaModifier: true, fractionalScale: true, badge: process.env.FAKE_OVL_BADGE === "true", captureScopes: scopes, outputs });
+const backend = process.env.FAKE_OVL_BACKEND || "layer-shell";
+const ready = () => out({ event: "ready", protocol: 1, backend, alphaModifier: true, fractionalScale: backend !== "x11", badge: process.env.FAKE_OVL_BADGE === "true", captureScopes: scopes, outputs });
 if (mode === "fatal") { out({ event: "error", message: "no wlr-layer-shell on this compositor", fatal: true }); process.exit(2); }
 if (mode === "delay") setTimeout(ready, +process.env.FAKE_OVL_DELAY || 300);
 else if (mode !== "silent") ready();
@@ -134,7 +143,8 @@ process.stdin.on("data", (d) => {
     const line = buf.slice(0, i); buf = buf.slice(i + 1);
     let m; try { m = JSON.parse(line); } catch { continue; }
     log({ pid: process.pid, cmd: m, t: Date.now() });
-    if (m.cmd === "capture" && process.env.FAKE_OVL_NOACK !== "1") out({ event: "ack", id: m.id });
+    // FAKE_OVL_ACK_MS: a hide is acked that late (cu-overlay x11: 50-64 ms); a restore at once.
+    if (m.cmd === "capture" && process.env.FAKE_OVL_NOACK !== "1") { const ack = () => out({ event: "ack", id: m.id }); if (m.phase === "hide" && process.env.FAKE_OVL_ACK_MS) setTimeout(ack, +process.env.FAKE_OVL_ACK_MS); else ack(); }
     if (m.cmd === "show" || m.cmd === "move") { const ev = { event: "shown", output: m.output, scale: 1 }; if (process.env.FAKE_OVL_SHOWN_DELAY) setTimeout(() => out(ev), +process.env.FAKE_OVL_SHOWN_DELAY); else out(ev); }
     if (m.cmd === "hide") out({ event: "hidden" });
     if (m.cmd === "glide" && mode === "die-on-glide") { log({ pid: process.pid, died: true }); process.exit(1); }
@@ -176,8 +186,9 @@ const spawnCalls = [];
 const DOCTOR_WL = (overlay) => ({ contract: 1, bridge: "wlroots-bridge", version: "0.3.0", backend: "wlroots", session_match: true, backend_reachable: true, compositor: "sway", window_geometry: true, screenshot_mask: true, capabilities: overlay === "absent" ? {} : { overlay, overlay_alpha_modifier: true, overlay_fractional_scale: true } });
 const DOCTOR_X11 = { contract: 1, bridge: "x11-bridge", version: "0.1.0", backend: "x11", session_match: true, backend_reachable: true, capabilities: { screenshot_mask: true, compositing: true } };
 const asyncLog = [];
+const ORIG_XRD = process.env.XDG_RUNTIME_DIR;
 const zoomLog = [];
-function load({ session = "wayland", desktop = "sway", wlroots = true, overlay = true, kwin = false, target = null, glow = true, displays = TWO, doctorDelay = 0, screens = null, zoom = null, zoomDelay = 0 } = {}) {
+function load({ session = "wayland", desktop = "sway", wlroots = true, gnome = false, overlay = true, kwin = false, target = null, glow = true, displays = TWO, doctorDelay = 0, screens = null, zoom = null, zoomDelay = 0 } = {}) {
   zoomLog.length = 0;
   asyncLog.length = 0;
   let screensCalls = 0;
@@ -195,6 +206,8 @@ function load({ session = "wayland", desktop = "sway", wlroots = true, overlay =
         return { on() {} };
       }
       asyncLog.push(path.basename(String(bin)) + " " + (args || []).join(" "));
+      // GNOME: the portal session daemon starts and ends at once.
+      if (gnome && args && (args[0] === "session-start" || args[0] === "session-end")) { setTimeout(() => c(null, J(args[0] === "session-start" ? { ok: true, session: "daemon" } : { ok: true, ended: true, daemon: "exited" }), ""), 0); return { on() {} }; }
       if (screens && args && args[0] === "screens") { const l = screens(++screensCalls); setTimeout(() => c(null, J(l), ""), 0); return { on() {} }; }
       if (zoom && args && args[0] === "zoom") {
         zoomLog.push({ t: Date.now(), p: performance.now() });
@@ -232,6 +245,9 @@ function load({ session = "wayland", desktop = "sway", wlroots = true, overlay =
   if (session === "wayland") process.env.WAYLAND_DISPLAY = "wayland-1"; else delete process.env.WAYLAND_DISPLAY;
   for (const k of ["SWAYSOCK", "HYPRLAND_INSTANCE_SIGNATURE", "NIRI_SOCKET", "COWORK_SCREENSHOT_CMD", "X11_BRIDGE_BIN", "YDOTOOL_SOCKET", "WLROOTS_BRIDGE_BIN", "GNOME_PORTAL_BRIDGE_BIN"]) delete process.env[k];
   if (wlroots) { process.env.SWAYSOCK = "/run/user/1000/sway-ipc.sock"; process.env.WLROOTS_BRIDGE_BIN = FAKE; }
+  // GNOME: the fake as gnome-portal-bridge; an empty XDG_RUNTIME_DIR makes the
+  // executor's session-daemon and stopped-by-user file checks answer "no".
+  if (gnome) { process.env.GNOME_PORTAL_BRIDGE_BIN = FAKE; process.env.XDG_RUNTIME_DIR = ""; } else if (ORIG_XRD === undefined) delete process.env.XDG_RUNTIME_DIR; else process.env.XDG_RUNTIME_DIR = ORIG_XRD;
   for (const k of ["__cdbCuElectronDisplayId", "__cdbCuGlowOff", "__linuxExecutor", "__cdbCuWlGlow", "__cdbCuDrawnPointer"]) delete globalThis[k];
   new Function("require", "process", readFileSync(EXECUTOR, "utf8"))(reqEx, process);
   new Function("require", "process", readFileSync(MODULE, "utf8"))(reqMod, process);
@@ -951,6 +967,115 @@ try {
     check("badge over, glow look: no capture command", capCmds().length, 0);
     r.release(); await waitFor(() => readLog().some((x) => x.eof));
     delete process.env.FAKE_OVL_BADGE;
+  }
+
+  // ── GNOME Wayland: gnome-portal-bridge overlay, cu-overlay's x11 backend ─
+  // An XWayland window is in every capture: every capture hides everything
+  // (scope all, any look, badge or not), its ack (55 ms here, 50-64 ms on
+  // GNOME 48) is awaited within the x11 budget (150 ms), a long capture
+  // re-sends the hide before the overlay's own 3 s restore. Layer-shell keeps
+  // its 50 ms bound.
+  console.log("\n[2g] GNOME Wayland: the gnome-portal-bridge overlay (backend x11)");
+  {
+    const scr = (o, i) => ({ id: i, name: o.name, geometry: { x: o.x, y: o.y, width: o.width, height: o.height }, scale: o.scale, refresh_millihz: 60000, is_active: true, is_primary: i === 0, is_shared: true });
+    const ZOK = () => J({ base64: "AA==", width: 10, height: 10 });
+    const capCmds = () => readLog().filter((x) => x.cmd && x.cmd.cmd === "capture");
+    const phases = () => J(capCmds().map((x) => [x.cmd.phase, x.cmd.scope || null]));
+    const showsAt = () => readLog().filter((x) => x.cmd && x.cmd.cmd === "show").map((x) => x.t);
+    const zoomAt = async (r) => { let err = null; const t0 = performance.now(); try { await r.ex.zoom({ x: 2000, y: 100, w: 50, h: 50 }, undefined, null, 1, { globalCoords: true }); } catch (e) { err = e; } return { err, ms: performance.now() - t0, end: Date.now() }; };
+    const G = { gnome: true, wlroots: false, desktop: "GNOME", screens: () => OUTPUTS.map(scr), zoom: ZOK };
+    const up = async (opts) => { const r = await rig({ ...G, ...opts }); r.acquire(); await r.ex.__lockSettled(); await shown(r.glow); return r; };
+    const down = async (r) => { r.release(); await waitFor(() => readLog().some((x) => x.eof)); };
+    process.env.FAKE_OVL_BACKEND = "x11"; process.env.FAKE_OVL_ACK_MS = "55"; process.env.FAKE_OVL_BADGE = "true";
+    process.env.CDB_CU_DEBUG = "1";
+    // 1. The row: the overlay child is gnome-portal-bridge's, the classic glow on the selected display.
+    let r = await up({ flag: false });
+    check("GNOME: __wlGlowRow is gnome-portal-bridge with the overlay", J(r.ex.__wlGlowRow()), J({ name: "gnome-portal-bridge", bin: FAKE, overlay: true }));
+    check("GNOME: __glowNow says the overlay draws the glow", J(r.ex.__glowNow()), J({ where: "overlay", bridge: "gnome-portal-bridge" }));
+    check("GNOME: `<bridge> overlay` spawned once, directly", J(spawnCalls.map((c) => [c.cmd, c.args])), J([[FAKE, ["overlay"]]]));
+    check("GNOME: show on the selected display's output, glow look, badge", J(cmds()[0]), J({ cmd: "show", output: "HDMI-A-1", look: "glow", badge: true, reducedMotion: false, arrow: null }));
+    check("GNOME: the overlay ready line names the x11 backend", diagLines.some((m) => /wl-glow: gnome-portal-bridge overlay ready \(x11, 2 outputs\)$/.test(m)), true);
+    // 2. Badge up: scope all, the zoom starts only after the 55 ms ack.
+    let z = await zoomAt(r);
+    await waitFor(() => capCmds().length >= 2);
+    let lag = zoomLog[0] ? zoomLog[0].t - capCmds()[0].t : -1;
+    check("GNOME, badge up: hide scope all, then restore", phases(), J([["hide", "all"], ["restore", null]]));
+    check(`GNOME: the capture starts after the 55 ms ack (${lag} ms), within the x11 bound`, lag >= 50 && lag < 150 && z.err === null, true);
+    check("GNOME: trace says ack (not the bound) after 50+ ms", diagLines.some((m) => { const k = /wl-glow: trace: t=[\d.]+ capture hide id=\d+ ack after ([\d.]+) ms$/.exec(m); return !!k && +k[1] >= 50 && +k[1] < 150; }), true);
+    check("GNOME: the restore after the capture", !!zoomLog[0] && capCmds()[1].t >= zoomLog[0].t, true);
+    await down(r);
+    // 3. No badge (an overlay that does not draw it): still scope all, classic glow look included.
+    process.env.FAKE_OVL_BADGE = "false";
+    r = await up({ flag: false });
+    resetLog();
+    z = await zoomAt(r);
+    await waitFor(() => capCmds().length >= 2);
+    check("GNOME, classic glow look, no badge: hide scope all (the glow is never in the image)", phases(), J([["hide", "all"], ["restore", null]]));
+    await down(r);
+    // 4. Rim + arrow: scope all, not cursor; the arrow and the real pointer share one space.
+    r = await up({ flag: true });
+    await r.ex.moveMouse(2100, 100);
+    await r.ex.showPointerTravel(2500, 300, () => false);
+    await r.ex.click(2500, 300, "left", 1);
+    await sleep(30);
+    const glides = cmds().filter((c) => c.cmd === "glide");
+    const lastF = glides.length ? glides.at(-1).frames.at(-1) : null;
+    check("GNOME, rim: the arrow glides to the very point the bridge's pointer-move gets", !!lastF && lastF[0] === 2500 && lastF[1] === 300 && bridgeLog.includes("fake-bridge pointer-move --x 2500 --y 300"), true);
+    resetLog();
+    z = await zoomAt(r);
+    await waitFor(() => capCmds().length >= 2);
+    check("GNOME, rim with an arrow: hide scope all (rim included), then restore", phases(), J([["hide", "all"], ["restore", null]]));
+    await down(r);
+    // 5. No ack: the capture waits the x11 bound (150 ms), not the executor's 50.
+    process.env.FAKE_OVL_NOACK = "1";
+    r = await up({ flag: false });
+    resetLog();
+    z = await zoomAt(r);
+    await waitFor(() => capCmds().length >= 2);
+    lag = zoomLog[0] ? zoomLog[0].t - capCmds()[0].t : -1;
+    // lag is from the fake's read of the hide (a few ms after our write) to the zoom.
+    check(`GNOME, no ack: the capture waits the x11 bound (${lag} ms after the overlay read the hide, bound 150)`, lag >= 100 && lag < 400 && z.err === null, true);
+    check("GNOME, no ack: trace says none within 150 ms, after 150+ ms", diagLines.some((m) => { const k = /wl-glow: trace: t=[\d.]+ capture hide id=\d+ none within 150 ms after ([\d.]+) ms$/.exec(m); return !!k && +k[1] >= 149 && +k[1] < 400; }), true);
+    delete process.env.FAKE_OVL_NOACK;
+    await down(r);
+    // 6. A capture longer than the overlay's 3 s self-restore: the hide is re-sent every 2 s.
+    r = await up({ flag: false, zoomDelay: 2400 });
+    resetLog();
+    z = await zoomAt(r);
+    await waitFor(() => capCmds().length >= 3);
+    const cc = capCmds();
+    check("GNOME, 2.4 s capture: the hide re-sent once (before the overlay's 3 s restore), then the restore", J(cc.map((x) => [x.cmd.phase, x.cmd.scope || null])), J([["hide", "all"], ["hide", "all"], ["restore", null]]));
+    check("GNOME: the re-sent hide about 2 s after the first", cc.length === 3 && cc[1].t - cc[0].t >= 1900 && cc[1].t - cc[0].t < 2300, true);
+    await sleep(2100);
+    check("GNOME: nothing re-sent after the restore", capCmds().length, 3);
+    await down(r);
+    // 7. Capture before the overlay is up: the show waits for the restore.
+    process.env.FAKE_OVL_MODE = "delay"; process.env.FAKE_OVL_DELAY = "250";
+    r = await rig({ ...G, flag: false, zoomDelay: 700 });
+    r.acquire(); await r.ex.__lockSettled();
+    z = await zoomAt(r);
+    check("GNOME, capture before ready: no show during the capture", showsAt().filter((t) => t <= z.end).length, 0);
+    check("GNOME, capture before ready: the show follows the restore", await waitFor(() => showsAt().length === 1) && await shown(r.glow), true);
+    await down(r);
+    process.env.FAKE_OVL_MODE = "normal"; delete process.env.FAKE_OVL_DELAY;
+    // 8. No capability (an older gnome-portal-bridge): no child, no capture command.
+    for (const [label, ov] of [["older gnome-portal-bridge (no capability key)", "absent"], ["doctor overlay false", false]]) {
+      r = await rig({ ...G, flag: true, overlay: ov });
+      r.acquire(); await r.ex.__lockSettled(); await sleep(60);
+      z = await zoomAt(r);
+      check(`GNOME, ${label}: no child, captureCursor null, no capture command, the capture runs`, spawnCalls.length === 0 && r.glow.captureCursor(50) === null && capCmds().length === 0 && z.err === null, true);
+      r.release();
+    }
+    // 9. A layer-shell overlay keeps its 50 ms bound (a 120 ms ack is not waited for).
+    process.env.FAKE_OVL_BACKEND = "layer-shell"; process.env.FAKE_OVL_ACK_MS = "120"; process.env.FAKE_OVL_BADGE = "true";
+    r = await up({ ...G, gnome: false, wlroots: true, desktop: "sway", flag: false });
+    resetLog();
+    z = await zoomAt(r);
+    await waitFor(() => capCmds().length >= 2);
+    lag = zoomLog[0] ? zoomLog[0].t - capCmds()[0].t : -1;
+    check(`layer-shell, badge up: scope all, the 50 ms bound unchanged (${lag} ms, ack at 120)`, phases() === J([["hide", "all"], ["restore", null]]) && lag >= 40 && lag < 110, true);
+    await down(r);
+    for (const k of ["FAKE_OVL_BACKEND", "FAKE_OVL_ACK_MS", "FAKE_OVL_BADGE", "CDB_CU_DEBUG"]) delete process.env[k];
   }
 
   // No child at all.

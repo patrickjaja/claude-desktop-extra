@@ -2452,15 +2452,20 @@ function _wlGlowBridge(){
 // kept app windows. Around each bridge capture (_captureRegion: the masked
 // capture, the Wayland and the x11-bridge zoom) the arrow, the press ring and
 // the badge are hidden and restored in a finally; the rim / classic glow
-// stays up, so the indicator does not blink at every screenshot. The masked
+// stays up, so the indicator does not blink at every screenshot (except on
+// GNOME, where nothing can keep it out of the image otherwise). The masked
 // capture is wrapped as a whole (_captureMasked, its one retry after a stale
 // window list included): both attempts run hidden under one hide, instead of
 // the arrow flashing back between them.
 //  - Wayland overlay rows: js/cu_wl_glow.js captureCursor (`capture` scope
-//    "cursor"), its ack awaited at most CU_CAP_WL_ACK_MS. The overlay acks
-//    after a compositor round trip (measured on headless sway: 0.4 ms median,
-//    1.3 ms max); 50 ms leaves a loaded compositor 40x that and still costs a
-//    screenshot almost nothing when no ack comes.
+//    "cursor"), its ack awaited at most CU_CAP_WL_ACK_MS. The layer-shell
+//    overlay acks after a compositor round trip (measured on headless sway:
+//    0.4 ms median, 1.3 ms max); 50 ms leaves a loaded compositor 40x that
+//    and still costs a screenshot almost nothing when no ack comes. GNOME's
+//    overlay is an XWayland window (cu-overlay's x11 backend) that is in
+//    every capture: the module hides all of it (scope "all": glow and rim
+//    too) and waits for its ack at least 150 ms itself (it comes 50-64 ms
+//    after the hide, by design).
 //  - X11: upstream's glow window (cu-glow.html) gets a class on <html> that a
 //    style of ours (inserted once per page load) turns into visibility:hidden
 //    for #cursor, #cursor-press and #badge (the arrow, the ring and bloom, the

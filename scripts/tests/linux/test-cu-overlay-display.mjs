@@ -223,6 +223,20 @@ for (const row of rows) {
   check(`${row.name}: glow on (desktop session, compositing manager running)`, globalThis.__cdbCuGlowOff?.(), false);
 }
 {
+  // GNOME Wayland with its bundled bridge: the Wayland glow row is
+  // gnome-portal-bridge's (its overlay: cu-overlay's x11 backend, see
+  // test-cu-wl-glow.mjs [2g]); upstream's Electron glow is not kept off there
+  // by the X11 compositor check. A bridge whose doctor did not answer says
+  // nothing about the overlay (null), so nothing starts.
+  process.env.GNOME_PORTAL_BRIDGE_BIN = "/res/gnome-portal-bridge";
+  loadExecutor({ displays: HOST, session: "wayland", desktop: "GNOME" });
+  await tick();
+  const ex = globalThis.__linuxExecutor;
+  check("GNOME Wayland + gnome-portal-bridge: the glow row is the bridge's, overlay unknown without a doctor answer", JSON.stringify(ex.__wlGlowRow()), JSON.stringify({ name: "gnome-portal-bridge", bin: "/res/gnome-portal-bridge", overlay: null }));
+  check("GNOME Wayland + gnome-portal-bridge: the X11 compositor check does not apply", globalThis.__cdbCuGlowOff?.(), false);
+  delete process.env.GNOME_PORTAL_BRIDGE_BIN;
+}
+{
   loadExecutor({ displays: MISALIGNED });
   check("misaligned EDID-less ids {1,4}: index 1 -> DP-2 (Electron id 4)", T(1), 4);
   check("misaligned EDID-less ids {1,4}: index 0 -> HDMI-0 (Electron id 1)", T(0), 1);

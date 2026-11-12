@@ -1607,8 +1607,8 @@ async function drawnCursorRow(cuItem, flagsItem) {
     const notes = Array.from(row.querySelectorAll(".cdbx-note")).map(function (n) { return n.textContent; }).join(" ");
     ok(/GrowthBook flag 1916550538, not a switch of this package/.test(notes) && /thin rim/.test(notes) && /arrow glides to each click target/.test(notes) &&
        /about half a second per click/.test(notes), "  says what it is and does");
-    ok(/wherever the glow is shown: X11 with a compositing manager, and sway, Hyprland, niri and KDE Plasma \(Wayland\) when the bundled bridge draws the glow/.test(notes) &&
-       /none on GNOME \(Wayland\), on a background display, on X11 without a compositing manager, or with the glow switched off/.test(notes),
+    ok(/wherever the glow is shown: X11 with a compositing manager, and sway, Hyprland, niri, KDE Plasma and GNOME \(Wayland\) when the bundled bridge draws the glow/.test(notes) &&
+       /none on a background display, on X11 without a compositing manager, or with the glow switched off/.test(notes),
        "  says where it has an effect and where none");
     ok(/re-read on every flag load \(startup, about hourly, account changes\)/.test(notes) && /restart Claude Desktop/.test(notes) && !/applies live/i.test(notes),
        "  says when a change applies, as the flag file does");

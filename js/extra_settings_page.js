@@ -4828,8 +4828,8 @@
       "Anthropic's GrowthBook flag " + id + ", not a switch of this package. While Claude uses the computer, the " +
       "glow becomes a thin rim and an arrow glides to each click target before the real pointer follows - about " +
       "half a second per click. It shows wherever the glow is shown: X11 with a compositing manager, and sway, " +
-      "Hyprland, niri and KDE Plasma (Wayland) when the bundled bridge draws the glow. It has none on GNOME " +
-      "(Wayland), on a background display, on X11 without a compositing manager, or with the glow switched off."));
+      "Hyprland, niri, KDE Plasma and GNOME (Wayland) when the bundled bridge draws the glow. It has none on a " +
+      "background display, on X11 without a compositing manager, or with the glow switched off."));
     main.appendChild(el("div", "cdbx-note",
       "Saved at once. Overrides are re-read on every flag load (startup, about hourly, account changes), but most " +
       "flags are wired up while the app starts, so restart Claude Desktop to be sure a change applies. " +

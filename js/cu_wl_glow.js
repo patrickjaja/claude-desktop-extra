@@ -11,9 +11,14 @@
 //
 // Who draws it, per row (the executor's __wlGlowRow decides: js/cu_linux_executor.js,
 // or js/executor_linux.js in kwin mode):
-//   wlroots Wayland (sway, Hyprland, niri)  wlroots-bridge overlay
-//   GNOME Wayland                           gnome-portal-bridge overlay (none
-//                                           announces it yet: no glow there)
+//   wlroots Wayland (sway, Hyprland, niri)  wlroots-bridge overlay (layer-shell)
+//   GNOME Wayland                           gnome-portal-bridge overlay, when its
+//                                           doctor announces capabilities.overlay
+//                                           (cu-overlay's x11 backend: XWayland
+//                                           override-redirect windows, since
+//                                           Mutter has no layer-shell; static
+//                                           glow; needs XWayland, started on
+//                                           demand, and DISPLAY in our env)
 //   XWayland on either of them              the compositor's row (same bridge)
 //   KDE Plasma 6.6+ (kwin mode)             kwin-portal-bridge overlay, when its
 //                                           doctor announces capabilities.overlay
@@ -50,7 +55,12 @@
 // matches Electron display bounds to the bridge's `screens` geometry 1:1
 // (_gnomeSharedDefaultDisplayId, _wlMonForRegion; kwin mode:
 // electronDisplayForRustScreen): the same identity mapping is used here, so
-// the arrow lands where the real pointer lands. Upstream's
+// the arrow lands where the real pointer lands. On GNOME that space is
+// Mutter's layout space: gnome-portal-bridge `pointer-move` takes a global
+// layout point and maps it onto the shared stream itself, `screens` and the
+// x11 overlay's `ready.outputs` are both in layout units (logical in Mutter's
+// logical layout mode; the bridge passes the factor in physical mode), and
+// output names are the connector names `screens` reports. Upstream's
 // display (its glow getter) is mapped to an output name by its bounds against
 // the overlay's own `ready.outputs`.
 //
@@ -72,7 +82,9 @@
 //           {"event":"error","message","fatal"}
 // `show` naming an unknown output is fatal (exit 2, counted as a failure
 // here), `move` to one is not (the overlay stays). Exit 0 = stdin EOF / parent death, 2 = cannot run here (no display,
-// no layer-shell, unknown output), 1 = lost connection.
+// no layer-shell and no XWayland with a compositing manager, unknown
+// output), 1 = lost connection. The x11 glow is static unless the overlay's
+// own CU_OVERLAY_X11_PULSE_MS is set; nothing here sets it.
 // Badge ("Claude is using your computer" pill: flashes in the centre, slides
 // to the top-right corner over 6 s, ends invisible; never under reduced
 // motion). An overlay that draws it reports `ready.badge: true`; against one
@@ -88,13 +100,27 @@
 // `move`, `look`, `glide`, `jump` and `press` leave it alone.
 // Captures: the drawn arrow and press ring are kept out of the screenshots
 // Claude receives (captureCursor / captureRestore, called by
-// js/cu_linux_executor.js around each bridge capture): `capture` with scope
-// "cursor", only when `ready.captureScopes` lists it. A scope-less hide is
-// never sent (it would blank the rim at every screenshot); the rim stays up.
-// While the badge is still up (6 s after the show that started it) the hide
-// uses scope "all" instead, since "cursor" leaves the badge in the picture
-// (it is centred then and could cover what Claude looks at); in that window
-// the rim blanks for the capture too.
+// js/cu_linux_executor.js around each bridge capture). Per backend:
+//   layer-shell (wlroots-bridge): `capture` with scope "cursor", only when
+//     `ready.captureScopes` lists it and the rim shows a placed arrow. A
+//     scope-less hide is never sent (it would blank the rim at every
+//     screenshot); the rim or the classic glow stays up and is in the image
+//     at the screen edges (an unfiltered capture, or sway's output-cut mask
+//     where it overlaps a kept window; Hyprland's per-window capture has none
+//     of it). While the badge is still up (6 s after the show that started
+//     it) the hide uses scope "all" instead, since "cursor" leaves the badge
+//     in the picture (it is centred then and could cover what Claude looks
+//     at); in that window the rim blanks for the capture too.
+//   x11 (gnome-portal-bridge, ready.backend "x11"): an XWayland window is in
+//     every ScreenCast frame and nothing can exclude it, and GNOME screenshots
+//     are never masked, so every capture hides everything (scope "all", any
+//     look, badge or not): the image has no glow, rim, arrow, ring or badge.
+//     The cost is a short blink of the glow per screenshot. Its ack comes
+//     50-64 ms after the hide by design (the opacity change, an X round trip,
+//     50 ms for Mutter to repaint), so the wait is at least X11_ACK_MS
+//     instead of the executor's layer-shell bound (an ack there takes
+//     ~0.4 ms). The overlay restores a hide by itself after 3 s; a capture
+//     still running then gets the hide again every X11_KEEP_MS.
 // A capture requested while the overlay is not on screen yet but may appear
 // (the child is spawning, ready but not yet shown, or the show has not been
 // requested yet) gets a hold, an already-resolved token: the capture waits for
@@ -110,9 +136,11 @@
 // order, so the hide lands after the show).
 // kwin mode never calls them: kwin-portal-bridge sets KWin's excludeFromCapture
 // on the overlay's surfaces, so none of it is ever in a screenshot.
+// ready.outputs[].scale is not used: on x11 it is the X drawing factor, not
+// the monitor scale.
 var _cp=require("child_process"),_el=require("electron");
-var PROTOCOL=1,BADGE_MS=6500,READY_MS=3000,TERM_MS=1000,KILL_MS=1000,ERR_TAIL=300;
-var st={trace:!1,held:!1,want:null,dfn:null,child:null,ready:!1,outputs:[],shown:!1,out:null,geo:null,respawns:0,off:!1,reshown:0,arrow:null,glide:null,arriveAt:0,real:null,readySaid:!1,noMatchSaid:!1,capId:0,scopeCursor:!1,badgeOk:!1,badgePending:!1,badgeAt:0,acks:{},gen:0,holds:0,deferred:!1,sent:!1};
+var PROTOCOL=1,BADGE_MS=6500,READY_MS=3000,TERM_MS=1000,KILL_MS=1000,ERR_TAIL=300,X11_ACK_MS=150,X11_KEEP_MS=2000;
+var st={trace:!1,held:!1,want:null,dfn:null,child:null,ready:!1,outputs:[],shown:!1,out:null,geo:null,respawns:0,off:!1,reshown:0,arrow:null,glide:null,arriveAt:0,real:null,readySaid:!1,noMatchSaid:!1,capId:0,scopeCursor:!1,x11:!1,badgeOk:!1,badgePending:!1,badgeAt:0,acks:{},gen:0,holds:0,deferred:!1,sent:!1};
 function traceOn(){try{return process.env.CDB_CU_DEBUG==="1"}catch(e){return !1}}
 function diag(m){try{(globalThis.__cdbDiag||function(){})("[claude-cu] wl-glow: "+m)}catch(e){}}
 function now(){return typeof performance!=="undefined"&&performance.now?performance.now():Date.now()}
@@ -183,7 +211,7 @@ function spawnChild(r){
     // closed and masked screenshots go dark under the overlay.
     c=_cp.spawn(r.bin,["overlay"],{stdio:["pipe","pipe","pipe"],env:env});
   }catch(e){fail(r.name,"could not start ("+msg(e)+")");return}
-  st.child=c;st.ready=!1;st.shown=!1;st.sent=!1;st.out=null;st.geo=null;st.badgeOk=!1;st.badgeAt=0;endGlide();
+  st.child=c;st.ready=!1;st.shown=!1;st.sent=!1;st.out=null;st.geo=null;st.badgeOk=!1;st.badgeAt=0;st.x11=!1;endGlide();
   c.__name=r.name;c.__buf="";c.__err="";
   try{if(c.stdin&&typeof c.stdin.on==="function")c.stdin.on("error",function(){})}catch(e){}
   try{
@@ -212,6 +240,7 @@ function onLine(c,line){
     st.outputs=outputsOf(m);
     st.scopeCursor=Array.isArray(m.captureScopes)&&m.captureScopes.indexOf("cursor")>=0;
     st.badgeOk=m.badge===!0;
+    st.x11=m.backend==="x11";
     if(!st.readySaid){st.readySaid=!0;diag(c.__name+" overlay ready ("+String(m.backend||"?")+", "+st.outputs.length+" output"+(st.outputs.length===1?"":"s")+")")}
     if(st.want)sendShow();
   }else if(m.event==="outputs"){
@@ -236,7 +265,7 @@ function gone(c,code,sig,err){
   if(c.__done)return;
   c.__done=!0;clearTimeout(c.__rt);clearTimeout(c.__t1);clearTimeout(c.__t2);
   if(c!==st.child)return;
-  st.child=null;st.ready=!1;st.shown=!1;st.sent=!1;st.out=null;st.badgeOk=!1;st.badgeAt=0;endGlide();
+  st.child=null;st.ready=!1;st.shown=!1;st.sent=!1;st.out=null;st.badgeOk=!1;st.badgeAt=0;st.x11=!1;endGlide();
   if(!st.held||!st.want||st.off)return;
   var why=c.__fatal||c.__why||err||(code!=null?"exit "+code:"signal "+sig);
   var tail=String(c.__err||"").trim().split("\n").pop();
@@ -279,7 +308,7 @@ function sendShow(){
 // Hide + stdin EOF; SIGTERM after TERM_MS, SIGKILL KILL_MS later.
 function stop(){
   var c=st.child;
-  st.child=null;st.ready=!1;st.shown=!1;st.sent=!1;st.out=null;st.geo=null;st.arrow=null;st.badgeOk=!1;st.badgeAt=0;endGlide();
+  st.child=null;st.ready=!1;st.shown=!1;st.sent=!1;st.out=null;st.geo=null;st.arrow=null;st.badgeOk=!1;st.badgeAt=0;st.x11=!1;endGlide();
   if(!c)return;
   c.__ours=!0;
   write(c,{cmd:"hide"});
@@ -318,7 +347,7 @@ function takeHold(){
 }
 function releaseHold(h){
   if(!h||h.done)return;
-  h.done=!0;clearTimeout(h.t);
+  h.done=!0;clearTimeout(h.t);if(h.ka)clearInterval(h.ka);
   if(h.gen!==st.gen)return;
   if(st.holds>0)st.holds--;
   if(st.holds===0&&st.deferred){st.deferred=!1;if(st.held&&!st.off)sendShow()}
@@ -425,13 +454,17 @@ globalThis.__cdbCuWlGlow={
   // (no arrow), no arrow placed yet, an overlay without the "cursor" scope.
   // While the badge is up the hide is scope "all" (everything, the badge
   // included) whatever the look, since "cursor" would leave the pill in the
-  // picture; after its 6 s it is the cursor hide again.
+  // picture; after its 6 s it is the cursor hide again. An x11 overlay
+  // (GNOME) gets scope "all" on every capture, any look, waited for at least
+  // X11_ACK_MS (see Captures in the header).
   captureCursor:function(boundMs){
     if(st.off||!st.held)return null;
     // A show on its way (sent, not yet answered `shown`) counts: the overlay
     // processes the hide after it, in order.
     var up=!!(st.child&&st.ready&&(st.shown||st.sent)&&st.want);
-    var all=up&&st.badgeAt>0&&now()-st.badgeAt<BADGE_MS;
+    // An XWayland overlay (ready.backend "x11", GNOME) is in every capture
+    // and nothing can leave it out: everything is hidden, whatever the look.
+    var all=up&&(st.x11||st.badgeAt>0&&now()-st.badgeAt<BADGE_MS);
     if(!up||(!all&&(st.want.look!=="rim"||!st.arrow||!st.scopeCursor))){
       // Nothing to hide now. When an overlay can still appear during this
       // capture (the child is spawning, ready but not yet shown, or the show
@@ -443,9 +476,23 @@ globalThis.__cdbCuWlGlow={
       return Promise.resolve({id:0,child:null,hold:h0});
     }
     var c=st.child,id=++st.capId,t0=now(),hd=takeHold();
+    // x11 acks a hide 50-64 ms after it (opacity, X round trip, 50 ms for
+    // Mutter to repaint): its own bound. Layer-shell keeps the caller's.
+    var bound=st.x11?Math.max(+boundMs||0,X11_ACK_MS):boundMs;
     write(c,{cmd:"capture",phase:"hide",id:id,scope:all?"all":"cursor"});
+    // x11: the overlay restores a hide by itself after 3 s; a capture that
+    // takes longer (a portal frame or session wait) re-sends the hide every
+    // X11_KEEP_MS, which restarts that timer, until the restore (or the
+    // hold's 30 s timer, or another child).
+    if(st.x11){
+      hd.ka=setInterval(function(){
+        if(hd.done||st.child!==c||!alive(c)){clearInterval(hd.ka);return}
+        write(c,{cmd:"capture",phase:"hide",id:++st.capId,scope:"all"});
+      },X11_KEEP_MS);
+      if(hd.ka&&hd.ka.unref)hd.ka.unref();
+    }
     return new Promise(function(res){
-      var done=!1,tm=setTimeout(function(){fin("none within "+boundMs+" ms")},boundMs);
+      var done=!1,tm=setTimeout(function(){fin("none within "+bound+" ms")},bound);
       st.acks[id]=function(){fin("ack")};
       function fin(why){
         if(done)return;done=!0;clearTimeout(tm);delete st.acks[id];
