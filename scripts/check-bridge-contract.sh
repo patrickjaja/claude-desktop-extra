@@ -135,6 +135,19 @@ elif mode == "wlroots-caps":
         problems.append("screenshot_mask_protocol must be a string or null")
     elif v.get("screenshot_mask_mode") == "toplevel" and not v["screenshot_mask_protocol"]:
         problems.append("screenshot_mask_mode \"toplevel\" needs a screenshot_mask_protocol")
+elif mode == "ax-features":
+    feats = v.get("ax_features")
+    if not isinstance(feats, list) or not all(isinstance(f, str) for f in feats):
+        problems.append("expected {\"ax_features\": [<string>, ...]}, got %s" % json.dumps(v))
+    else:
+        for f in sys.argv[2:]:
+            if f not in feats:
+                problems.append("missing feature %r" % f)
+        if "action.expect" in feats and "find.identity" not in feats:
+            problems.append("action.expect is listed without find.identity")
+        for f in ("action.ensure", "action.scroll_to", "action.set_value"):
+            if f in feats and "action.expect" not in feats:
+                problems.append("%s is listed without action.expect" % f)
 elif mode == "session-end":
     if v.get("ok") is not True: problems.append("ok must be true")
     if v.get("ended") is not False: problems.append("ended must be false with no daemon")
@@ -193,6 +206,41 @@ run_bridge() {
 # Anything a command left in the sandbox (state or runtime dirs, HOME).
 leftovers() {
     find "$1/home" "$1/state" "$1/run" -mindepth 1 2>/dev/null | sed "s|^$1/||" | head -5 | tr '\n' ' '
+}
+
+# Accessibility features every bridge must offer (`ax-features`, see the
+# "Accessibility feature negotiation" section of the contract doc). This is the
+# set the bundled JS relies on for the full tool surface: keep it in sync with
+# js/cu_ax_tools.js.
+AX_REQUIRED=(find.v1 action.click action.focus action.set_text find.identity
+    action.expect find.window_ref find.deadline find.root find.skeleton
+    action.ensure action.scroll_to action.set_value)
+
+check_ax_features() {
+    local bin="$1" name sb why f missing=''
+    name="${bin##*/}"
+    sb="$(sandbox)"
+    run_bridge "$sb" "$bin" ax-features
+    if [[ "$RC" == 0 ]]; then
+        if why="$(json_check ax-features "${AX_REQUIRED[@]}" <<< "$OUT")"; then
+            pass "$name: ax-features lists all ${#AX_REQUIRED[@]} required features, coupling rules hold"
+        else
+            fail "$name: ax-features" "$why"
+        fi
+    elif [[ "$RC" == 126 || "$RC" == 127 ]] || ! "$bin" --version >/dev/null 2>&1; then
+        # Not runnable here (foreign architecture, glibc): the feature names
+        # are string literals in the binary. A strings check only.
+        for f in "${AX_REQUIRED[@]}"; do
+            grep -aqF -- "$f" "$bin" || missing+="$f "
+        done
+        if [[ -z "$missing" ]]; then
+            pass "$name: ax-features: all required feature names present in the binary (strings check, not runnable on this host)"
+        else
+            fail "$name: ax-features" "missing feature ${missing% } in the binary (strings check, not runnable on this host)"
+        fi
+    else
+        fail "$name: ax-features" "exit $RC (want 0 and {\"ax_features\": [...]}): ${ERR:0:120}"
+    fi
 }
 
 # x11-bridge capabilities the app relies on (issue #327); see the header.
@@ -339,6 +387,8 @@ check_bridge() {
             pass "$name: forget-session with a stored grant (no session: exact no-op, file untouched)"
         fi
     fi
+
+    check_ax_features "$bin"
 
     for sub in screens windows session-start; do
         sb="$(sandbox)"
