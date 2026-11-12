@@ -4744,16 +4744,19 @@
 
   // --- Computer Use: show the glow ----------------------------------------
   // On by default (main answers enabled unless the key is false). Main side:
-  // cdb-cu-glow:* in js/extra_settings_main.js; js/cu_linux_executor.js reads
-  // it at every Computer Use start (its __cdbCuGlowOff), so a flip applies
+  // cdb-cu-glow:* in js/extra_settings_main.js; js/cu_linux_executor.js (and
+  // js/executor_linux.js on KDE Plasma Wayland) reads it at every Computer Use
+  // start (their __cdbCuGlowOff), so a flip applies
   // from the next one. It tells the drawn-cursor row below whether the glow
   // is on (ctx.setGlow).
   function cusGlowLine(st) {
     var s = st && st.screenshots;
     if (!s || typeof s !== "object") return "";
     var sess = typeof s.session === "string" && s.session ? s.session : "this session";
-    if (s.glow === "kwin" || s.kwin === true) {
-      return "On this session (" + sess + ") the KDE bridge draws its own glow while it shares the screen; this switch does not turn that one off.";
+    // kwin mode: "overlay" when its bridge hands the glow to the shared
+    // overlay, "kwin" when it draws its own (an older kwin-portal-bridge).
+    if (s.glow === "kwin" || (s.kwin === true && !s.glow)) {
+      return "On this session (" + sess + ") the KDE bridge draws its own glow while it shares the screen; this switch does not turn that one off (a kwin-portal-bridge with the glow overlay hands it over).";
     }
     if (s.glow === "x11") return "On this session (" + sess + ") Anthropic's own glow is shown (it needs a compositing manager).";
     if (s.glow === "overlay") return "On this session (" + sess + ") the bundled bridge draws the glow.";
@@ -4768,8 +4771,8 @@
       title: "Show the glow while Claude uses the computer",
       note: "An orange glow around the screen shows that Claude is using the computer; with Anthropic's drawn " +
         "cursor it becomes a thin rim with Claude's own arrow. X11 with a compositing manager shows Anthropic's " +
-        "glow; sway, Hyprland and niri (Wayland) show it when the bundled bridge can draw it. KDE Plasma " +
-        "(Wayland) keeps the glow its own bridge draws. Off: no glow, rim or drawn cursor; Computer Use itself " +
+        "glow; sway, Hyprland, niri and KDE Plasma (Wayland) show it when the bundled bridge can draw it. A " +
+        "KDE bridge without the glow overlay keeps drawing its own glow. Off: no glow, rim or drawn cursor; Computer Use itself " +
         "works the same. Applies from the next Computer Use task.",
       ariaLabel: "show the glow while Claude uses the computer",
       read: "cuGlowRead",
@@ -4825,7 +4828,7 @@
       "Anthropic's GrowthBook flag " + id + ", not a switch of this package. While Claude uses the computer, the " +
       "glow becomes a thin rim and an arrow glides to each click target before the real pointer follows - about " +
       "half a second per click. It shows wherever the glow is shown: X11 with a compositing manager, and sway, " +
-      "Hyprland and niri (Wayland) when the bundled bridge draws the glow. It has none on GNOME or KDE Plasma " +
+      "Hyprland, niri and KDE Plasma (Wayland) when the bundled bridge draws the glow. It has none on GNOME " +
       "(Wayland), on a background display, on X11 without a compositing manager, or with the glow switched off."));
     main.appendChild(el("div", "cdbx-note",
       "Saved at once. Overrides are re-read on every flag load (startup, about hourly, account changes), but most " +
@@ -4867,7 +4870,7 @@
       var s = lastSt && lastSt.screenshots;
       if (!s || typeof s !== "object") return "";
       var sess = typeof s.session === "string" && s.session ? s.session : "this session";
-      if (s.glow === "kwin" || s.kwin === true) return "This session (" + sess + ") shows no drawn cursor: the KDE bridge draws its own glow, without one.";
+      if (s.glow === "kwin" || (s.kwin === true && !s.glow)) return "This session (" + sess + ") shows no drawn cursor: the KDE bridge draws its own glow, without one.";
       if (s.glow === "none") return "This session (" + sess + ") shows no drawn cursor: no glow is drawn here.";
       return "";
     }

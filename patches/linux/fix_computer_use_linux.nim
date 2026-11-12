@@ -58,7 +58,9 @@
 # drawn pointer in the glow. 10e-10g hand upstream's glow show, hide and
 # display change to js/cu_wl_glow.js (embedded by Patch 1), which draws the
 # glow and the drawn pointer through the bridge's layer-shell overlay on a
-# Wayland row whose bridge announces it; 10h exposes upstream's glide planner
+# Wayland row whose bridge announces it (KDE Plasma Wayland included: there
+# the kwin executor decides per lock, and its __cdbCuGlowOff keeps upstream's
+# show off while kwin-portal-bridge draws its own glow); 10h exposes upstream's glide planner
 # (globalThis.__cdbCuGlidePlan) so that arrow moves exactly like upstream's.
 # Sub-patch 17c exposes upstream's "user stopped sharing" abort as
 # globalThis.__cdbCuShareEnded, so the executors stop the running turn the
@@ -502,10 +504,6 @@ proc endStateMarkers(): seq[EndStateMarker] =
       "9b working handler",
       """\(process\.platform!=="linux"&&[\w$]+\.setIgnoreMouseEvents\(!0,\{forward:!0\}\)\),[\w$]+(?:\.[\w$]+)*\.getDispatcher\(""",
     ),
-    rx(
-      "8a glow overlay",
-      """\{if\(process\.platform==="linux"&&globalThis\.__cuKwinMode\)return;[\w$]+(?:\.[\w$]+)*\.on\(["`]cuLockChanged["`],""",
-    ),
     lit("10 overlay transparency", "transparent:!globalThis.__isVM"),
     rx(
       "10b1 glow display switch",
@@ -756,7 +754,7 @@ proc apply*(input: string): string =
   let original = input
   var patchesApplied = 0
   var changes = 0
-  const EXPECTED_PATCHES = 70
+  const EXPECTED_PATCHES = 69
 
   let gateSet = cuPlatformSetName(content)
   if gateSet == "":
@@ -1762,28 +1760,6 @@ proc apply*(input: string): string =
       else:
         echo "  [FAIL] teach overlay: SUn pattern not found"
 
-  # ── Patch 8a (kwin-wayland): disable glow overlay ──────────────────────
-  block:
-    # v1.26832.0: the emitter is reached through a module namespace (`N.t.on(...)`)
-    # and the event name is a backtick literal. Capture the whole `.on(...)` head
-    # and re-emit it instead of rebuilding it from an identifier.
-    let pat =
-      re"""(function [\w$]+\(([\w$]+),([\w$]+)\)\{)([\w$]+(?:\.[\w$]+)*\.on\(["`]cuLockChanged["`],)"""
-    let n = replaceFirst(
-      content,
-      pat,
-      proc(m: RegexMatch): string =
-        m.captures[0] &
-          "if(process.platform===\"linux\"&&globalThis.__cuKwinMode)return;" &
-          m.captures[3],
-    )
-    if n >= 1:
-      echo &"  [OK] cu glow overlay: disabled in kwin-wayland mode ({n} match)"
-      inc changes, n
-      inc patchesApplied
-    else:
-      echo "  [FAIL] cu glow overlay pattern: 0 matches"
-
   # ── Patch 10: teach overlay VM-aware transparency ──────────────────────
   block:
     # Python walks ALL matches and picks the first whose 80-byte prefix contains "workArea".
@@ -2008,9 +1984,10 @@ proc apply*(input: string): string =
   # and getCursorScreenPoint() use; upstream's own Linux executor works in
   # screen pixels, hence its screenToDipPoint. `live` (L4(!1,()=>!0)) answers
   # whether the arrow is shown right now, with upstream's own test. Wayland
-  # sessions show no glow upstream, kwin mode skips it (8a), a background
-  # display and X11 without a compositing manager turn it off (10c): the
-  # arrow is never live there and the executor does not call it. The flag
+  # sessions show no glow upstream (their overlay rows, kwin mode included,
+  # use js/cu_wl_glow.js's own arrow), a background display and X11 without a
+  # compositing manager turn it off (10c): the arrow is never live there and
+  # the executor does not call it. The flag
   # decision (toi) stays upstream's.
   # Anchor: the factory exactly once, its four methods once each through the
   # same wrapper, the wrapper's shape (default unless the arrow is shown), and

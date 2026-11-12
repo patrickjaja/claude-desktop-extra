@@ -543,8 +543,10 @@
   // upstream shows the glow - that is, at every Computer Use start - so a flip
   // applies from the next start. Off: no glow, no rim and no drawn cursor on
   // any session (upstream's Electron glow on X11, the Wayland bridge overlay of
-  // js/cu_wl_glow.js); KDE Wayland's own kwin-portal-bridge glow has no switch
-  // in that bridge and stays. A read that fails answers true (glow on). Cached
+  // js/cu_wl_glow.js, KDE Plasma Wayland included, where js/executor_linux.js
+  // asks it too); only the session glow of a kwin-portal-bridge that cannot
+  // opt out of it (older builds) stays. A read that fails answers true (glow
+  // on). Cached
   // like the ask switch: two stat calls per read, dropped by every write of ours.
   var __cdbEx_CUGLOW_KEY = "computerUseGlow";
   var __cdbEx_cuGlowCache = null;
@@ -3069,13 +3071,13 @@
           }
           if (c && typeof c.backend === "string" && c.backend) out.backend = c.backend;
         }
-        // What draws the glow here (x11 / overlay / none / unknown); kwin mode:
-        // its bridge's own session glow.
-        if (out.kwin) out.glow = "kwin";
-        else if (typeof ex.__glowNow === "function") {
+        // What draws the glow here (x11 / overlay / none / unknown, and in kwin
+        // mode overlay / kwin / unknown, "kwin" being the bridge's own session
+        // glow); an executor without the answer in kwin mode: "kwin".
+        if (typeof ex.__glowNow === "function") {
           var g = ex.__glowNow();
           if (g && typeof g.where === "string") out.glow = g.where;
-        }
+        } else if (out.kwin) out.glow = "kwin";
       }
     } catch (e2) { out.filtering = "unknown"; }
     return out;

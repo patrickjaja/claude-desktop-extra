@@ -32,8 +32,17 @@
 //       child's parent is this process) with CLAUDE_CU_PARENT_PID; child
 //       death mid-glide never delays or fails input, one respawn then off with
 //       one diag line; fatal error -> off without respawn; delayed / missing
-//       ready; no child at all without the capability, on X11, in kwin mode,
+//       ready; no child at all without the capability, on X11, with the regular
+//       executor in kwin mode,
 //       on a background display, with the glow switch off.
+//   [4] KDE Plasma Wayland (kwin mode): the REAL js/executor_linux.js with a
+//       bridge that announces capabilities.overlay + session_overlay_opt_out
+//       (doctor before session-start, KWIN_PORTAL_BRIDGE_SESSION_OVERLAY=0 on
+//       every session-start of the lock, the overlay spawned once the decision
+//       lands, the drawn pointer fed like the wlroots rows, no capture round
+//       trip), with older bridges (no variable, no child, upstream's show kept
+//       off through __cdbCuGlowOff even where it could draw) and with the glow
+//       switch off (no glow of either kind where the bridge can opt out).
 //   [3] X11: with the switch on, upstream's glow show / hide / display setter
 //       behave exactly as the pristine functions (call traces compared); with
 //       the switch off upstream's Electron glow is not shown.
@@ -44,6 +53,7 @@ import { spawnSync, execFileSync } from "node:child_process";
 import * as realCp from "node:child_process";
 import path from "node:path";
 import os from "node:os";
+import util from "node:util";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -303,7 +313,10 @@ try {
   // ── The real upstream functions + planner in vm ────────────────────────
   const chunk = after.bodies[ci] || "";
   const pristineChunk = splitParts(blob).bodies.find((b) => b.includes("function " + showFn + "(")) || "";
-  const lockFn = (/function ([\w$]+)\([\w$]+,[\w$]+\)\{if\(process\.platform==="linux"&&globalThis\.__cuKwinMode\)return;[\w$]+\.on\("cuLockChanged",/.exec(chunk) || [])[1];
+  // Upstream's glow lock handler, unchanged (no kwin-mode early return: kwin
+  // mode reaches the overlay too, see [4]).
+  const lockFn = (/function ([\w$]+)\([\w$]+,[\w$]+\)\{[\w$]+\.on\("cuLockChanged",\(\(\{holder:[\w$]+\}\)=>\{if\([\w$]+\)\{let [\w$]+=/.exec(chunk) || [])[1];
+  check("upstream's glow lock handler registers in every mode (no kwin early return)", /__cuKwinMode\)return;[\w$]+(?:\.[\w$]+)*\.on\(["`]cuLockChanged/.test(patched), false);
   const switchFn = (new RegExp("function ([\\w$]+)\\(([\\w$]+),([\\w$]+)\\)\\{\\2===([\\w$]+)\\.currentHolder&&" + esc(dispFn || "\u0000") + "\\(").exec(chunk) || []);
   const resolverFn = (new RegExp("function " + esc(getter || "\u0000") + "\\(\\)\\{return ([\\w$]+)\\(").exec(chunk) || [])[1];
   const scrN = (new RegExp("function " + esc(resolverFn || "\u0000") + "\\([\\w$]+\\)\\{return [\\w$]+===null\\?([\\w$]+)\\.screen").exec(chunk) || [])[1];
@@ -768,7 +781,7 @@ try {
     ["older bridge (no capability key)", { overlay: "absent" }],
     ["glow switch off", { glow: false, flag: true }],
     ["background display", { target: { kind: "wlroots", display: "wayland-9", env: {} } }],
-    ["kwin mode (KDE Wayland)", { kwin: true, wlroots: false, desktop: "KDE" }],
+    ["regular executor in kwin mode (its row is null; kwin mode is [4])", { kwin: true, wlroots: false, desktop: "KDE" }],
     ["KDE < 6.6 / exotic Wayland (no first-party bridge)", { wlroots: false, desktop: "COSMIC" }],
   ]) {
     const r = await rig(opts);
@@ -790,6 +803,199 @@ try {
     r.release();
     delete process.env.DISPLAY;
     await waitFor(() => readLog().some((x) => x.eof));
+  }
+
+  // ── [4] KDE Plasma Wayland (kwin mode, js/executor_linux.js) ────────────
+  // The REAL kwin executor (its bridge calls stubbed and recorded, env
+  // included), the REAL module (the overlay child is the fake bridge, spawned
+  // for real) and the REAL patched upstream glow functions.
+  console.log("\n[4] kwin mode: the shared overlay when kwin-portal-bridge announces it, its own glow otherwise");
+  {
+    const KEXEC = path.join(repo, "js", "executor_linux.js");
+    const KSCREENS = [
+      { id: "DP-1", name: "DP-1", geometry: R(0, 0, 1920, 1080), scale: 1, is_primary: true },
+      { id: "HDMI-A-1", name: "HDMI-A-1", geometry: R(1920, 0, 1707, 960), scale: 1.5, is_primary: false },
+    ];
+    const KDOC = (caps) => ({ contract: 1, bridge: "kwin-portal-bridge", version: "0.4.0", backend: "kwin-portal", session_match: true, backend_reachable: true, ...(caps === "absent" ? {} : { capabilities: caps }) });
+    const FULL = { overlay: true, overlay_alpha_modifier: true, overlay_fractional_scale: true, session_overlay_opt_out: true };
+    const kw = [];
+    const consoleDebug = console.debug;
+    console.debug = () => {}; // the kwin executor's debugLog
+    function loadKwin({ caps = FULL, glow = true, doctorDelay = 0 } = {}) {
+      kw.length = 0; diagLines.length = 0; spawnCalls.length = 0;
+      const screen = makeScreen(TWO);
+      const reply = (sub) => {
+        if (sub === "screens") return J(KSCREENS);
+        if (sub === "session-start") return J({ ok: true, session: "daemon" });
+        if (sub === "session-end") return J({ ok: true, ended: true, daemon: "exited" });
+        if (sub === "screenshot") return J({ base64: "AAAA", width: 1707, height: 960 });
+        if (sub === "restore-prepare-state") return J({ hidden: [], activated: null });
+        return "{}";
+      };
+      const cpStub = {
+        execFile(bin, args, opts, cb) {
+          if (typeof opts === "function") { cb = opts; opts = {}; }
+          const sub = (args || [])[0];
+          kw.push({ sub, env: opts && opts.env ? opts.env.KWIN_PORTAL_BRIDGE_SESSION_OVERLAY ?? "(unset)" : null });
+          if (sub === "doctor") {
+            setTimeout(() => (caps === "fail" ? cb(Object.assign(new Error("Command failed: doctor"), { code: 1, stderr: "boom" })) : cb(null, { stdout: J(KDOC(caps)), stderr: "" })), doctorDelay);
+            return;
+          }
+          setImmediate(() => cb(null, { stdout: reply(sub), stderr: "" }));
+        },
+        spawnSync() { return { status: 0 }; },
+      };
+      const src = readFileSync(KEXEC, "utf8")
+        .replace("import { execFile as execFileCb, spawnSync } from 'node:child_process'", "const { execFile: execFileCb, spawnSync } = __cp")
+        .replace("import { screen as electronScreen } from 'electron'", "const electronScreen = __screen")
+        .replace("import { promisify } from 'node:util'", "const { promisify } = __util")
+        .replace(/^export /gm, "");
+      if (/^import /m.test(src)) throw new Error("executor_linux.js imports changed - update this splice");
+      const electron = { screen, systemPreferences: { getAnimationSettings: () => ({ prefersReducedMotion: false }) } };
+      const cpRec = { ...realCp, spawn: (cmd, args, opts) => { spawnCalls.push({ cmd, args, opts }); return realCp.spawn(cmd, args, opts); } };
+      const reqMod = (id) => ({ child_process: cpRec, electron })[id] || (() => { throw new Error("unexpected require " + id); })();
+      for (const k of ["__cdbCuElectronDisplayId", "__cdbCuGlowOff", "__linuxExecutor", "__cdbCuWlGlow", "__cdbCuDrawnPointer", "__cuTargetRead", "__cuTargetSig"]) delete globalThis[k];
+      for (const k of ["SWAYSOCK", "WLROOTS_BRIDGE_BIN", "KWIN_PORTAL_BRIDGE_BIN", "KWIN_PORTAL_BRIDGE_SESSION_OVERLAY"]) delete process.env[k];
+      process.env.XDG_CURRENT_DESKTOP = "KDE"; process.env.XDG_SESSION_TYPE = "wayland"; process.env.WAYLAND_DISPLAY = "wayland-0";
+      globalThis.__cdbDiag = (m) => diagLines.push(String(m));
+      globalThis.__cuKwinMode = true;
+      globalThis.__cuKwinBridgeBin = FAKE;
+      globalThis.__cdbCuGlowEnabled = () => glow;
+      const mod = new Function("__cp", "__util", "__screen", src + "\nreturn { createLinuxExecutor };")(cpStub, util, screen);
+      globalThis.__linuxExecutor = mod.createLinuxExecutor({ hostBundleId: "com.anthropic.claude" });
+      new Function("require", "process", readFileSync(MODULE, "utf8"))(reqMod, process);
+      return { screen, ex: globalThis.__linuxExecutor, glow: globalThis.__cdbCuWlGlow };
+    }
+    async function rigKwin(opts = {}) {
+      resetLog();
+      const { screen, ex, glow } = loadKwin(opts);
+      // pai: upstream's CLICK_THROUGH_WINDOWS true (it could draw its own glow).
+      const w = world(chunk, screen, { wayland: opts.pai !== true, flag: opts.flag === true });
+      const mainWin = { isDestroyed: () => false, getBounds: () => ({ x: 10, y: 10, width: 100, height: 100 }) };
+      // kwin display ids are Electron ids (202 = HDMI-A-1).
+      w.api[lockFn](() => 202, mainWin);
+      let lockP = null;
+      const acquire = () => { w.holder.currentHolder = "s1"; lockP = ex.__setLockHeld(true, "s1").catch((e) => diagLines.push("lock failed " + e)); w.listeners.forEach((f) => f({ holder: "s1" })); };
+      const release = async () => { const p = ex.__setLockHeld(false).catch(() => {}); w.holder.currentHolder = undefined; w.listeners.forEach((f) => f({ holder: undefined })); await p; };
+      return { ex, glow, w, acquire, release, settled: () => lockP };
+    }
+    const subs = () => kw.map((k) => k.sub);
+    const startEnvs = () => kw.filter((k) => k.sub === "session-start").map((k) => k.env);
+    const KSEQ = ["jump", "glide", "press", "press", "jump", "press", "jump", "glide"];
+
+    // (a) a bridge that announces the overlay and the session-glow opt-out.
+    {
+      const r = await rigKwin({ flag: true, doctorDelay: 40 });
+      r.acquire();
+      check("capable: upstream's show waits for the decision (no child before the doctor answers)", spawnCalls.length, 0);
+      check("capable: the module owns the show at once (upstream's body skipped)", J(r.w.trace), "[]");
+      await r.settled();
+      check("capable: the doctor ran before session-start", subs().indexOf("doctor") >= 0 && subs().indexOf("doctor") < subs().indexOf("session-start"), true);
+      check("capable: session-start runs with KWIN_PORTAL_BRIDGE_SESSION_OVERLAY=0 (no session glow)", J(startEnvs()), J(["0"]));
+      check("capable: set-overlay-display still sent (a no-op for the bridge)", subs().includes("set-overlay-display"), true);
+      check("capable: one overlay child, `kwin-portal-bridge overlay`", await waitFor(() => starts().length === 1) && J(spawnCalls.map((c) => [c.cmd, c.args])), J([[FAKE, ["overlay"]]]));
+      check("capable: a direct child of this process with CLAUDE_CU_PARENT_PID", (starts()[0] || {}).ppid === process.pid && (starts()[0] || {}).parentEnv === String(process.pid), true);
+      await shown(r.glow);
+      check("capable: rim on the selected display's output", J(cmds()[0]), J({ cmd: "show", output: "HDMI-A-1", look: "rim", badge: true, reducedMotion: false, arrow: null }));
+      check("capable: __wlGlowRow overlay true, __glowNow overlay", r.ex.__wlGlowRow().overlay === true && r.ex.__glowNow().where === "overlay", true);
+      check("capable: __cdbCuGlowOff false (switch on)", globalThis.__cdbCuGlowOff(), false);
+      resetLog();
+      const before = kw.length;
+      await r.ex.moveMouse(2100, 100);
+      const spt = await r.ex.showPointerTravel(2500.4, 300.6, () => false);
+      await r.ex.click(2500.4, 300.6, "left", 1);
+      await r.ex.mouseDown();
+      await r.ex.moveMouse(2600, 400);
+      await r.ex.mouseUp();
+      await r.ex.drag({ x: 2000, y: 50 }, { x: 2100, y: 60 });
+      await r.ex.scroll(2200, 200, 0, 3);
+      await waitFor(() => cmds().length >= KSEQ.length);
+      check("capable: showPointerTravel glided (true)", spt, true);
+      check("capable: the drawn pointer is fed like the wlroots rows", J(cmds().map((x) => x.cmd)), J(KSEQ));
+      check("capable: arrow commands in the bridge's own coordinates", J(cmds()[0]) + J(cmds()[2]), J({ cmd: "jump", x: 2100, y: 100 }) + J({ cmd: "press", x: 2500.4, y: 300.6 }));
+      check("capable: the real input reached the bridge, one command per action",
+        J(kw.slice(before).map((k) => k.sub).filter((s) => /^(pointer-|left-mouse-)/.test(s))), J(["pointer-move", "pointer-click", "left-mouse-down", "pointer-move", "left-mouse-up", "pointer-drag", "pointer-scroll"]));
+      resetLog();
+      await r.ex.screenshot({ displayId: 202 });
+      await sleep(20);
+      check("capable: a screenshot sends no capture round trip (the bridge excludes the overlay from capture)", cmds().filter((c) => c.cmd === "capture").length, 0);
+      // A session ended at a task boundary restarts with the same decision.
+      await r.ex.__cuTaskBoundary("s1", "renderer", "s1");
+      await r.ex.key("a");
+      check("capable: the restarted session gets the variable too", J(startEnvs()), J(["0", "0"]));
+      const pid = (starts()[0] || {}).pid;
+      await r.release();
+      check("capable: release hides and ends the child", await waitFor(() => readLog().some((x) => x.eof)) && kinds().at(-1) === "hide" && await waitFor(() => !pidAlive(pid)), true);
+      const doctors = subs().filter((s) => s === "doctor").length;
+      r.acquire(); await r.settled();
+      check("capable: the next lock reuses the cached doctor and decides the same", subs().filter((s) => s === "doctor").length === doctors && J(startEnvs().slice(-1)) === J(["0"]), true);
+      await r.release();
+      await waitFor(() => readLog().filter((x) => x.eof).length >= 2);
+    }
+    // (b) bridges without both keys: the bridge's own glow, exactly as before.
+    for (const [label, caps] of [["older bridge (no capabilities)", "absent"], ["overlay without the session-glow opt-out", { overlay: true }], ["doctor failed", "fail"]]) {
+      const r = await rigKwin({ caps, flag: true });
+      r.acquire();
+      await r.settled();
+      await sleep(60);
+      check(`${label}: session-start without the variable`, J(startEnvs()), J([null]));
+      check(`${label}: no overlay child`, spawnCalls.length, 0);
+      check(`${label}: upstream's lock-time show did not draw (busy untouched)`, J(r.w.trace), "[]");
+      check(`${label}: showPointerTravel false, the click reached the bridge`, (await r.ex.showPointerTravel(2500, 300, () => false)) === false && (await r.ex.click(2500, 300, "left", 1), subs().includes("pointer-click")), true);
+      check(`${label}: __wlGlowRow overlay false, __glowNow kwin`, r.ex.__wlGlowRow().overlay === false && r.ex.__glowNow().where === "kwin", true);
+      check(`${label}: __cdbCuGlowOff true (upstream's Electron glow never next to the bridge's)`, globalThis.__cdbCuGlowOff(), true);
+      if (caps === "fail") check(`${label}: one diag line`, diagLines.filter((m) => /kwin-portal-bridge doctor failed/.test(m)).length, 1);
+      await r.release();
+    }
+    {
+      // Where upstream WOULD draw (CLICK_THROUGH_WINDOWS true: XDG_SESSION_TYPE
+      // says x11 while kwin mode runs): its show after the decision stays off.
+      const r = await rigKwin({ caps: "absent", pai: true, flag: true });
+      r.acquire();
+      await r.settled();
+      r.w.trace.length = 0;
+      await r.w.api[showFn]({ showBadge: !1, claudeHasThePointer: !1 });
+      check("older bridge, upstream able to draw: its show is refused by 10c (__cdbCuGlowOff)", J(r.w.trace), "[]");
+      await r.release();
+    }
+    // (c) the glow switch off.
+    {
+      const r = await rigKwin({ glow: false, flag: true });
+      r.acquire(); await r.settled(); await sleep(60);
+      check("switch off, capable bridge: session-start with the variable (no session glow)", J(startEnvs()), J(["0"]));
+      check("switch off, capable bridge: no overlay child, nothing drawn", spawnCalls.length === 0 && J(r.w.trace) === "[]", true);
+      check("switch off: __cdbCuGlowOff true", globalThis.__cdbCuGlowOff(), true);
+      await r.release();
+    }
+    {
+      const r = await rigKwin({ glow: false, caps: { session_overlay_opt_out: true } });
+      r.acquire(); await r.settled();
+      check("switch off, opt-out without overlay: session-start with the variable", J(startEnvs()), J(["0"]));
+      await r.release();
+      globalThis.__cdbCuGlowEnabled = () => true;
+      r.acquire(); await r.settled();
+      check("switch on again, opt-out without overlay: its own glow (no variable)", J(startEnvs().slice(-1)), J([null]));
+      await r.release();
+    }
+    {
+      const r = await rigKwin({ glow: false, caps: "absent" });
+      r.acquire(); await r.settled();
+      check("switch off, older bridge: no variable (it cannot opt out; its own glow stays)", J(startEnvs()), J([null]));
+      await r.release();
+    }
+    {
+      // Released before the doctor answered: no child, the late answer is dropped.
+      const r = await rigKwin({ flag: true, doctorDelay: 80 });
+      r.acquire();
+      await sleep(5);
+      await r.release();
+      await sleep(150);
+      check("released before the decision: no overlay child", spawnCalls.length, 0);
+    }
+    delete process.env.KWIN_PORTAL_BRIDGE_SESSION_OVERLAY;
+    delete globalThis.__cuKwinBridgeBin;
+    globalThis.__cuKwinMode = false;
+    console.debug = consoleDebug;
   }
 
   // ── [3] X11: upstream unchanged with the switch on, off with it off ─────

@@ -9,24 +9,29 @@
 // first; 10h exposes upstream's glide planner (the arc, tilt and lift frames
 // its drawn arrow animates) as globalThis.__cdbCuGlidePlan.
 //
-// Who draws it, per row (js/cu_linux_executor.js __wlGlowRow decides):
+// Who draws it, per row (the executor's __wlGlowRow decides: js/cu_linux_executor.js,
+// or js/executor_linux.js in kwin mode):
 //   wlroots Wayland (sway, Hyprland, niri)  wlroots-bridge overlay
 //   GNOME Wayland                           gnome-portal-bridge overlay (none
 //                                           announces it yet: no glow there)
 //   XWayland on either of them              the compositor's row (same bridge)
-//   KDE Plasma 6.6+ (kwin mode)             not here: kwin-portal-bridge draws
-//                                           its own session glow (8a keeps
-//                                           upstream's handler off). SEAM: to
-//                                           move KDE to this overlay, give
-//                                           js/executor_linux.js a __wlGlowRow /
-//                                           __wlGlowProbe pair and drop the kwin
-//                                           check in row() below.
+//   KDE Plasma 6.6+ (kwin mode)             kwin-portal-bridge overlay, when its
+//                                           doctor announces capabilities.overlay
+//                                           AND session_overlay_opt_out (its
+//                                           session daemon then starts no glow
+//                                           of its own); otherwise the bridge's
+//                                           own session glow (overlay:false
+//                                           here, upstream's show stays off
+//                                           through the executor's
+//                                           __cdbCuGlowOff, sub-patch 10c)
 //   KDE < 6.6, exotic Wayland, X11,         nothing (show() answers false, so
 //   background display                      upstream's own path runs: on X11
 //                                           its Electron glow, on Wayland none)
 // A row only gets the overlay when its bridge's `doctor` announces
 // capabilities.overlay: true (the executor's cached async doctor; no new
-// blocking call). Until then nothing here starts.
+// blocking call). Until then nothing here starts. In kwin mode the decision
+// is taken once per lock before its session-start; until it lands, row()
+// answers overlay:null and show() waits on __wlGlowProbe().
 //
 // Lifecycle: `<bridge> overlay` is spawned on the first show inside a
 // Computer Use lock, never before. Its stdin takes JSON lines, written
@@ -43,8 +48,9 @@
 // the Wayland rows the executor sends the very numbers it receives (Electron
 // DIP) to the bridge's pointer commands (_moveMouse, pointer-click, ...), and
 // matches Electron display bounds to the bridge's `screens` geometry 1:1
-// (_gnomeSharedDefaultDisplayId, _wlMonForRegion): the same identity mapping
-// is used here, so the arrow lands where the real pointer lands. Upstream's
+// (_gnomeSharedDefaultDisplayId, _wlMonForRegion; kwin mode:
+// electronDisplayForRustScreen): the same identity mapping is used here, so
+// the arrow lands where the real pointer lands. Upstream's
 // display (its glow getter) is mapped to an output name by its bounds against
 // the overlay's own `ready.outputs`.
 //
@@ -69,10 +75,12 @@
 // drawn. Exit 0 = stdin EOF / parent death, 2 = cannot run here (no display,
 // no layer-shell, unknown output), 1 = lost connection.
 // Captures: the drawn arrow and press ring are kept out of the screenshots
-// Claude receives (captureCursor / captureRestore, called by the executor
-// around each bridge capture): `capture` with scope "cursor", only when
-// `ready.captureScopes` lists it. A scope-less hide is never sent (it would
-// blank the rim at every screenshot); the rim stays up.
+// Claude receives (captureCursor / captureRestore, called by
+// js/cu_linux_executor.js around each bridge capture): `capture` with scope
+// "cursor", only when `ready.captureScopes` lists it. A scope-less hide is
+// never sent (it would blank the rim at every screenshot); the rim stays up.
+// kwin mode never calls them: kwin-portal-bridge sets KWin's excludeFromCapture
+// on the overlay's surfaces, so none of it is ever in a screenshot.
 var _cp=require("child_process"),_el=require("electron");
 var PROTOCOL=1,READY_MS=3000,TERM_MS=1000,KILL_MS=1000,ERR_TAIL=300;
 var st={trace:!1,held:!1,want:null,dfn:null,child:null,ready:!1,outputs:[],shown:!1,out:null,geo:null,respawns:0,off:!1,reshown:0,arrow:null,glide:null,arriveAt:0,real:null,readySaid:!1,noMatchSaid:!1,capId:0,scopeCursor:!1,acks:{}};
@@ -91,7 +99,7 @@ function reducedMotion(){try{return _el.systemPreferences.getAnimationSettings()
 function host(){var ex=globalThis.__linuxExecutor;return ex&&typeof ex.__wlGlowRow==="function"?ex:null}
 // {name, bin, overlay: true|false|null} for an overlay row, else null.
 function row(){
-  if(process.platform!=="linux"||globalThis.__cuKwinMode)return null;
+  if(process.platform!=="linux")return null;
   var h=host();if(!h)return null;
   try{var r=h.__wlGlowRow();return r&&typeof r.bin==="string"&&r.bin?r:null}catch(e){return null}
 }

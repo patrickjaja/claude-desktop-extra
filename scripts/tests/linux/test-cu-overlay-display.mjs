@@ -963,9 +963,11 @@ if (!haveBin || !existsSync(path.join(BUILD_DIR, "index.js"))) {
       }
       globalThis.__cuKwinMode = false;
       delete globalThis.__cdbCuDrawnPointer;
-      // The KWin executor has no showPointerTravel: upstream's handler skips the glide.
+      // The KWin executor feeds the shared overlay's arrow (js/cu_wl_glow.js
+      // pointer(), test-cu-kwin-glow.mjs), never upstream's X11 drawn pointer.
       const kwinSrc = readFileSync(path.join(repo, "js", "executor_linux.js"), "utf8");
-      check("KWin executor: no showPointerTravel, no drawn-pointer use (8a: no glow in kwin mode)", /showPointerTravel|__cdbCuDrawnPointer/.test(kwinSrc), false);
+      check("KWin executor: no use of upstream's X11 drawn pointer (__cdbCuDrawnPointer)", /__cdbCuDrawnPointer/.test(kwinSrc), false);
+      check("KWin executor: its drawn pointer is the overlay's (__cdbCuWlGlow?.pointer)", /__cdbCuWlGlow\?\.pointer\?\.\(\)/.test(kwinSrc), true);
     }
 
     console.log("\n[6] the drawn cursor and the badge stay out of the screenshots (X11 glow page)");

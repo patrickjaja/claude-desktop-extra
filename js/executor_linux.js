@@ -125,12 +125,15 @@ function expandAllowedBundleIds(bundleIds) {
   return [...expanded]
 }
 
-function buildBridgeCommand(command, args) {
-  const bin = process.env.KWIN_PORTAL_BRIDGE_BIN
+function bridgeBin() {
+  return process.env.KWIN_PORTAL_BRIDGE_BIN
     || globalThis.__cuKwinBridgeBin
     || 'kwin-portal-bridge'
+}
+
+function buildBridgeCommand(command, args) {
   const spec = {
-    command: bin,
+    command: bridgeBin(),
     args: [command, ...args],
   }
   debugLog('bridge command prepared', spec)
@@ -277,6 +280,11 @@ async function execBridge(command, args, opts = {}) {
   if (command !== 'session-end' && command !== 'session-start') touchSessionCheck()
   if (command !== 'session-end') await refreshTargetSetting()
   if (targetRestartMessage && command !== 'session-end') throw new Error(targetRestartMessage)
+  // The glow overlay's debug trace (CDB_CU_DEBUG=1, js/cu_wl_glow.js): the
+  // real pointer commands, on the overlay commands' clock. A flag check when off.
+  if (/^(?:pointer-|left-mouse-)/.test(command)) {
+    try { globalThis.__cdbCuWlGlow?.input?.([command, ...args]) } catch {}
+  }
   if (!KWIN_SESSION_COMMANDS.has(command)) return execBridgeOnce(command, args, opts)
   portalCommandsInFlight += 1
   try {
@@ -294,12 +302,15 @@ async function execBridgeOnce(command, args, opts = {}) {
   const timeout = opts.timeoutMs ?? bridgeTimeoutMs(command)
   debugLog(`exec ${command}`, { args: spec.args, timeout })
   try {
-    const { stdout } = await execFile(spec.command, spec.args, {
+    const execOpts = {
       encoding: 'utf8',
       windowsHide: true,
       maxBuffer: 16 * 1024 * 1024,
       timeout,
-    })
+    }
+    // session-start only: the session daemon's environment (see glowStartEnv).
+    if (opts.env) execOpts.env = opts.env
+    const { stdout } = await execFile(spec.command, spec.args, execOpts)
     debugLog(`exec ${command} ok`, {
       stdoutLength: stdout.trim().length,
     })
@@ -403,7 +414,7 @@ async function ensureBridgeSession() {
     sessionStartInFlight = true
     const startPromise = (async () => {
       bridgeDaemonMayExist = true
-      await execBridge('session-start', [], { allowAlreadyActive: true })
+      await execBridge('session-start', [], { allowAlreadyActive: true, env: glowStartEnv() })
     })().catch(error => {
       if (sessionReadyPromise === startPromise) sessionReadyPromise = null
       globalThis.__cdbDiag('[linux-executor] bridge session startup failed', error)
@@ -661,6 +672,173 @@ function installExitHook() {
   })
 }
 
+// ── "Claude is using your computer" on KDE Plasma Wayland ──
+// Two possible painters, never both at once:
+//  - The shared glow overlay of js/cu_wl_glow.js (`kwin-portal-bridge overlay`,
+//    cu-overlay protocol 1, the same module and protocol as wlroots-bridge on
+//    sway / Hyprland / niri), with Anthropic's drawn cursor fed from this
+//    executor's pointer actions. Used when the bridge's `doctor` announces
+//    BOTH capabilities.overlay and capabilities.session_overlay_opt_out: the
+//    lock's session-start then runs with KWIN_PORTAL_BRIDGE_SESSION_OVERLAY=0,
+//    so the session daemon starts no glow of its own (set-overlay-display stays
+//    a successful no-op), and upstream's glow show / hide / display change
+//    reach the overlay through sub-patches 10e-10g.
+//  - Otherwise (an older bridge, a KWIN_PORTAL_BRIDGE_BIN without those keys,
+//    a doctor that failed or timed out): the bridge's own session glow, exactly
+//    as before. js/cu_wl_glow.js sees overlay:false and leaves upstream's show
+//    alone, and __cdbCuGlowOff (createLinuxExecutor) answers true to upstream's
+//    show (sub-patch 10c), so its Electron glow never starts in kwin mode.
+// The decision is taken once per lock, on its acquire, from the bridge's
+// doctor (async, cached per bridge binary once it answered; a failed one is
+// asked again at the next lock), BEFORE the lock's session-start: the start
+// awaits it (it already awaits the bridge), so the daemon's environment and
+// the overlay always agree, and no input path waits on it. Upstream's glow
+// show runs right after the acquire, before the decision: js/cu_wl_glow.js
+// then gets overlay:null and waits on __wlGlowProbe() (the decision promise)
+// before it starts anything.
+// The glow switch (Settings -> Extra -> Cowork (Linux) -> Computer Use, key
+// computerUseGlow) off: no glow of either kind with a bridge that can opt out
+// (the overlay asks __cdbCuGlowOff; the session-start gets the variable too).
+// A bridge without the opt-out keeps its own glow (it has no switch).
+// Teach mode keeps the bridge's teach overlay: a separate surface the glow
+// overlay does not touch (it is click-through and has no keyboard focus), and
+// upstream keeps its glow up during teach mode too.
+const KWIN_DOCTOR_MS = 5000
+const SESSION_OVERLAY_ENV = 'KWIN_PORTAL_BRIDGE_SESSION_OVERLAY'
+// bin -> Promise<{overlay, optOut} | null>; answered entries also in kwinCapsNow.
+const kwinDoctorAsks = new Map()
+const kwinCapsNow = new Map()
+let kwinCapsLine = null
+// The current (or last) lock's decision: glowRow true = the overlay draws the
+// glow, false = the bridge's own session glow (or none), null = undecided.
+let glowCaps = null
+let glowRow = null
+let glowDecision = null
+let glowDecisionSettle = null
+let glowGeneration = 0
+
+function glowSwitchOff() {
+  const f = globalThis.__cdbCuGlowEnabled
+  if (typeof f !== 'function') return false
+  try { return f() === false } catch { return false }
+}
+
+function kwinCapsFromDoctor(stdout) {
+  let doc
+  try { doc = JSON.parse(String(stdout ?? '').trim()) } catch { return null }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return null
+  const c = doc.capabilities && typeof doc.capabilities === 'object' ? doc.capabilities : {}
+  return { overlay: c.overlay === true, optOut: c.session_overlay_opt_out === true }
+}
+
+// -> Promise<{overlay, optOut} | null>. Async only (never a sync exec);
+// null = the doctor failed, which counts as "an older bridge".
+function kwinDoctorCaps() {
+  const bin = bridgeBin()
+  const asked = kwinDoctorAsks.get(bin)
+  if (asked) return asked
+  const ask = execFile(bin, ['doctor'], {
+    encoding: 'utf8',
+    windowsHide: true,
+    maxBuffer: 1024 * 1024,
+    timeout: KWIN_DOCTOR_MS,
+  }).then(
+    ({ stdout }) => {
+      const caps = kwinCapsFromDoctor(stdout)
+      if (!caps) globalThis.__cdbDiag?.('[claude-cu] kwin-portal-bridge doctor answered no JSON object - its own session glow is used')
+      return caps
+    },
+    error => {
+      globalThis.__cdbDiag?.(`[claude-cu] kwin-portal-bridge doctor failed (${error?.message || error}) - its own session glow is used`)
+      return null
+    },
+  ).then(caps => {
+    if (caps) kwinCapsNow.set(bin, caps)
+    else kwinDoctorAsks.delete(bin)
+    const line = caps
+      ? `[claude-cu] kwin-portal-bridge capabilities: glow overlay ${caps.overlay ? 'yes' : 'no'}, session glow opt-out ${caps.optOut ? 'yes' : 'no'}`
+      : null
+    if (line && line !== kwinCapsLine) {
+      kwinCapsLine = line
+      globalThis.__cdbDiag?.(line)
+    }
+    return caps
+  })
+  kwinDoctorAsks.set(bin, ask)
+  return ask
+}
+
+// Lock acquire (synchronous, before upstream's lock-change handler shows the
+// glow): the decision of the previous lock no longer counts.
+function beginGlowDecision() {
+  glowGeneration += 1
+  glowRow = null
+  glowCaps = null
+  if (glowDecisionSettle) glowDecisionSettle(null)
+  glowDecision = new Promise(resolve => { glowDecisionSettle = resolve })
+}
+
+function settleGlowDecision(row) {
+  glowRow = row
+  const settle = glowDecisionSettle
+  glowDecisionSettle = null
+  glowDecision = null
+  if (settle) settle(row)
+}
+
+async function decideGlow() {
+  if (glowRow !== null) return
+  const generation = glowGeneration
+  const caps = await kwinDoctorCaps()
+  if (generation !== glowGeneration) return
+  glowCaps = caps
+  settleGlowDecision(!!(caps && caps.overlay && caps.optOut))
+}
+
+// session-start's environment: the variable only for a bridge that announced
+// it, and only when its own glow must stay off (the overlay draws one, or the
+// glow switch is off). undefined = inherit, as before.
+function glowStartEnv() {
+  if (glowCaps?.optOut !== true) return undefined
+  if (glowRow !== true && !glowSwitchOff()) return undefined
+  return { ...process.env, [SESSION_OVERLAY_ENV]: '0' }
+}
+
+// ── Anthropic's drawn cursor on the overlay (js/cu_wl_glow.js pointer()) ──
+// Fed the way upstream's input mixin feeds its own drawn pointer, method for
+// method and before the real pointer command, exactly as js/cu_linux_executor.js
+// does on the wlroots rows. Every call is a no-op unless the overlay shows the
+// arrow; a throwing method is logged once and input goes on. The kwin bridge
+// takes the numbers it gets (global logical KWin coordinates, the space of its
+// `screens`, which this executor matches 1:1 to Electron's display bounds) and
+// so does the overlay: the arrow lands where the real pointer lands.
+// Captures need no hide round trip here: the bridge sets KWin's
+// excludeFromCapture on the overlay's surfaces (rim, arrow, press ring), so
+// they are never in a screenshot Claude receives.
+const DP_GLIDE_MAX_MS = 2000
+let dpHeld = false
+let dpFailSaid = false
+function dpFail(method, error) {
+  if (dpFailSaid) return
+  dpFailSaid = true
+  globalThis.__cdbDiag?.(`[claude-cu] drawn pointer: ${method} failed (${error?.message || error}) - input goes on without it`)
+}
+function dpLive() {
+  let d = null
+  try { d = globalThis.__cdbCuWlGlow?.pointer?.() ?? null } catch { d = null }
+  if (!d || typeof d !== 'object' || typeof d.live !== 'function') return null
+  try { return d.live() === true ? d : null } catch (error) { dpFail('live', error); return null }
+}
+function dpCall(d, method, x, y) {
+  if (!d || typeof d[method] !== 'function') return undefined
+  try { return x === undefined ? d[method]() : d[method]({ x, y }) } catch (error) { dpFail(method, error); return undefined }
+}
+// The real pointer's last position (Wayland cannot query it cheaply): the
+// overlay presses its arrow there and starts the next glide there. Exec-free.
+function realPointerAt(x, y) {
+  try { globalThis.__cdbCuWlGlow?.pointerAt?.(x, y) } catch {}
+}
+
 async function startBridgeSession() {
   installExitHook()
   bridgeSessionActive = true
@@ -674,6 +852,9 @@ async function startBridgeSession() {
     stoppedByUser = false
     globalThis.__cdbDiag('[linux-executor] stopped-by-user latch cleared (new lock)')
   }
+  // Who draws the glow for this lock, decided before its session-start (which
+  // reads the decision for the daemon's environment).
+  await decideGlow()
   if (sessionStopPromise) {
     await sessionStopPromise
   }
@@ -1641,6 +1822,18 @@ export function createLinuxExecutor(opts = {}) {
     }
   }
 
+  // Upstream's glow show asks this (sub-patch 10c; js/cu_linux_executor.js
+  // defines it for the other sessions, which kwin mode does not load), and so
+  // does js/cu_wl_glow.js before it draws. true = no glow: the glow switch is
+  // off, or this lock's glow is the bridge's own (glowRow false) - upstream's
+  // Electron glow never runs next to it. The overlay only asks it on an
+  // overlay row (true) or before the decision (null), so there only the
+  // switch counts.
+  globalThis.__cdbCuGlowOff = function kwinGlowOff() {
+    if (glowSwitchOff()) return true
+    return glowRow === false
+  }
+
   reapplySessionOverlay = () => backend.setSessionOverlayDisplay(
     sessionOverlayState.lastDisplayId ?? undefined,
   ).then(recordSessionOverlayDisplay)
@@ -1948,6 +2141,18 @@ export function createLinuxExecutor(opts = {}) {
 
     async __setLockHeld(isHeld, holder) {
       debugLog('__setLockHeld', { isHeld, holder })
+      // Synchronous, before upstream's lock-change event reaches its glow
+      // handler: a new lock decides its glow afresh (beginGlowDecision), and
+      // the glow overlay follows the lock (js/cu_wl_glow.js; release stops its
+      // child). The drawn pointer's "button held" state does not outlive a lock.
+      if (isHeld) beginGlowDecision()
+      else if (glowRow === null) {
+        // Released before its decision landed: that decision is dropped.
+        glowGeneration += 1
+        settleGlowDecision(false)
+      }
+      dpHeld = false
+      try { globalThis.__cdbCuWlGlow?.lock?.(!!isHeld) } catch {}
       globalThis.__cdbDiag?.(`[claude-cu] ${isHeld ? `lock taken by ${typeof holder === 'string' && holder ? holder : 'none'}` : 'lock released'}`)
       // The lock holder names the cloud session the session check asks about
       // (patch 4b passes upstream's exclusiveHolder; 4b.2 releases without one).
@@ -1959,7 +2164,11 @@ export function createLinuxExecutor(opts = {}) {
       if (isHeld) {
         try { if (typeof globalThis.__cuTargetSig === 'function') targetSigLast = await globalThis.__cuTargetSig() } catch {}
         applyTargetSetting()
-        if (targetRestartMessage) return
+        if (targetRestartMessage) {
+          // Refused until a restart: no session, so no glow of either kind.
+          settleGlowDecision(false)
+          return
+        }
       }
       dockControllerState.isLockHeld = isHeld
       if (isHeld) {
@@ -1983,6 +2192,36 @@ export function createLinuxExecutor(opts = {}) {
         await lifted
         await stopBridgeSession()
       }
+    },
+
+    // The glow overlay's row (js/cu_wl_glow.js): {name, bin, overlay} with
+    // overlay = this lock's decision (true = the overlay draws the glow,
+    // false = the bridge's own session glow, null = not decided yet). Exec-free.
+    __wlGlowRow() {
+      return { name: 'kwin-portal-bridge', bin: bridgeBin(), overlay: glowRow }
+    },
+
+    // -> Promise<true|false|null>: the decision, once this lock's session
+    // start has taken it (no exec of its own; the doctor runs there).
+    __wlGlowProbe() {
+      return glowDecision ?? Promise.resolve(glowRow)
+    },
+
+    // What draws "Claude is using your computer" on this session, for the
+    // Computer Use page: "overlay" (the shared overlay), "kwin" (the bridge's
+    // own session glow), "unknown" (its doctor has not answered yet). The glow
+    // switch is not part of it. Exec-free (may start an async doctor).
+    __glowNow() {
+      let row = glowRow
+      if (row === null) {
+        const caps = kwinCapsNow.get(bridgeBin())
+        if (caps) row = caps.overlay && caps.optOut
+        else kwinDoctorCaps().catch(() => {})
+      }
+      if (row === null) return { where: 'unknown', bridge: 'kwin-portal-bridge' }
+      return row
+        ? { where: 'overlay', bridge: 'kwin-portal-bridge' }
+        : { where: 'kwin', bridge: 'kwin-portal-bridge', why: 'kwin-portal-bridge draws its own glow (it does not announce the glow overlay)' }
     },
 
     // Upstream's releaseRemoteCuLock IPC (patch in fix_computer_use_linux.nim):
@@ -2306,23 +2545,74 @@ export function createLinuxExecutor(opts = {}) {
       return backend.writeClipboard(text)
     },
 
+    // Upstream's mixin: moveMouse `held ? jumpTo(p) : glideTo(p)`, then the
+    // real move announced by realPointerGoesTo(p).
     async moveMouse(x, y) {
       escAction()
+      const dp = dpLive()
+      if (dp) {
+        dpCall(dp, dpHeld ? 'jumpTo' : 'glideTo', x, y)
+        dpCall(dp, 'realPointerGoesTo', x, y)
+      }
+      realPointerAt(x, y)
       await backend.moveMouse(x, y)
     },
 
+    // Upstream's click handler glides the drawn pointer to the target first
+    // (await executor.showPointerTravel?.(x, y, isAborted)). true = it
+    // animated (the handler then checks the abort); false when nothing is
+    // animated: no live arrow, already there, reduced motion, a target off
+    // the glow's monitor. glideTo answers the ms until arrival; it is asked
+    // again at most every 50 ms until then or until the turn is aborted.
+    // Never throws.
+    async showPointerTravel(x, y, isAborted) {
+      const dp = dpLive()
+      if (!dp) return false
+      const p = { x, y }
+      const aborted = () => {
+        try { return typeof isAborted === 'function' && !!isAborted() } catch { return true }
+      }
+      try {
+        const first = dp.glideTo(p)
+        if (!(typeof first === 'number' && first > 0)) return false
+        const end = performance.now() + Math.min(first, DP_GLIDE_MAX_MS)
+        for (let left = Math.min(first, DP_GLIDE_MAX_MS); left > 0 && !aborted();) {
+          await new Promise(resolve => setTimeout(resolve, Math.min(left, 50)))
+          const again = dp.glideTo(p)
+          left = Math.min(end - performance.now(), typeof again === 'number' ? again : 0)
+        }
+        return true
+      } catch (error) {
+        dpFail('glideTo', error)
+        return false
+      }
+    },
+
+    // Upstream: the real move (realPointerGoesTo first), press(), then the
+    // click; pointer-click moves the real pointer itself. The glide came from
+    // showPointerTravel.
     async click(x, y, button, count, modifiers) {
       escAction()
+      const dp = dpLive()
+      if (dp) dpCall(dp, 'realPointerGoesTo', x, y)
+      realPointerAt(x, y)
+      if (dp) dpCall(dp, 'press')
       await backend.click(x, y, button, count, modifiers)
     },
 
+    // Upstream: press(), the button, then "held" (moves jump the drawn pointer
+    // instead of gliding it until mouseUp).
     async mouseDown() {
       escAction()
+      const dp = dpLive()
+      if (dp) dpCall(dp, 'press')
       await backend.mouseDown()
+      dpHeld = true
     },
 
     async mouseUp() {
       escAction()
+      dpHeld = false
       await backend.mouseUp()
     },
 
@@ -2330,13 +2620,32 @@ export function createLinuxExecutor(opts = {}) {
       return backend.getCursorPosition()
     },
 
+    // Upstream's mixin order, as on the wlroots rows: the real pointer at the
+    // start, the press ring there, the arrow jumps to the end while the button
+    // is held. pointer-drag makes the start move itself.
     async drag(from, to) {
       escAction()
+      const dp = dpLive()
+      if (dp) {
+        if (from) dpCall(dp, 'realPointerGoesTo', from.x, from.y)
+        dpCall(dp, 'press')
+        dpCall(dp, 'jumpTo', to.x, to.y)
+        dpCall(dp, 'realPointerGoesTo', to.x, to.y)
+      }
+      realPointerAt(to.x, to.y)
       await backend.drag(from, to)
     },
 
+    // Upstream: glideTo(p) (always a glide), the real move, the wheel;
+    // pointer-scroll moves the real pointer itself.
     async scroll(x, y, dx, dy) {
       escAction()
+      const dp = dpLive()
+      if (dp) {
+        dpCall(dp, 'glideTo', x, y)
+        dpCall(dp, 'realPointerGoesTo', x, y)
+      }
+      realPointerAt(x, y)
       await backend.scroll(x, y, dx, dy)
     },
 

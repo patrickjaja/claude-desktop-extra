@@ -1607,8 +1607,8 @@ async function drawnCursorRow(cuItem, flagsItem) {
     const notes = Array.from(row.querySelectorAll(".cdbx-note")).map(function (n) { return n.textContent; }).join(" ");
     ok(/GrowthBook flag 1916550538, not a switch of this package/.test(notes) && /thin rim/.test(notes) && /arrow glides to each click target/.test(notes) &&
        /about half a second per click/.test(notes), "  says what it is and does");
-    ok(/wherever the glow is shown: X11 with a compositing manager, and sway, Hyprland and niri \(Wayland\) when the bundled bridge draws the glow/.test(notes) &&
-       /none on GNOME or KDE Plasma \(Wayland\), on a background display, on X11 without a compositing manager, or with the glow switched off/.test(notes),
+    ok(/wherever the glow is shown: X11 with a compositing manager, and sway, Hyprland, niri and KDE Plasma \(Wayland\) when the bundled bridge draws the glow/.test(notes) &&
+       /none on GNOME \(Wayland\), on a background display, on X11 without a compositing manager, or with the glow switched off/.test(notes),
        "  says where it has an effect and where none");
     ok(/re-read on every flag load \(startup, about hourly, account changes\)/.test(notes) && /restart Claude Desktop/.test(notes) && !/applies live/i.test(notes),
        "  says when a change applies, as the flag file does");
@@ -1756,6 +1756,10 @@ async function drawnCursorRow(cuItem, flagsItem) {
     cu = await open(cuItem);
     sn = cu.querySelector(SW).closest(".cdbx-row").querySelector("[data-cdbx-flag-session]");
     ok(sn.classList.contains("cdbx-hide"), "a Wayland row whose bridge draws the overlay: no note");
+    window.__cusState = Object.assign({}, realCus, { screenshots: { session: "KDE Wayland", kwin: true, glow: "overlay" } });
+    cu = await open(cuItem);
+    sn = cu.querySelector(SW).closest(".cdbx-row").querySelector("[data-cdbx-flag-session]");
+    ok(sn.classList.contains("cdbx-hide"), "KDE Wayland whose bridge hands the glow to the overlay: no note");
 
     // --- the build does not know the flag: no row
     catalog = [{ id: "1001", note: "x", valueFlag: false, warn: "" }];
@@ -1801,7 +1805,8 @@ async function cuGlowRow(cuItem) {
     ok(row.querySelector(".cdbx-id").textContent === "Show the glow while Claude uses the computer", "  titled: " + row.querySelector(".cdbx-id").textContent);
     const note = row.querySelector(".cdbx-note").textContent;
     ok(/Off: no glow, rim or drawn cursor; Computer Use itself works the same/.test(note) && /Applies from the next Computer Use task/.test(note) &&
-       /KDE Plasma \(Wayland\) keeps the glow its own bridge draws/.test(note), "  says what off does, when it applies, and the KDE exception");
+       /sway, Hyprland, niri and KDE Plasma \(Wayland\) show it when the bundled bridge can draw it/.test(note) &&
+       /A KDE bridge without the glow overlay keeps drawing its own glow/.test(note), "  says what off does, when it applies, and the older-KDE-bridge exception");
     ok(!/\u2014/.test(row.textContent), "  no U+2014 dash");
     ok(sw.getAttribute("aria-checked") === "true" && /^on - the glow shows while Claude uses the computer$/.test(row.querySelector(".cdbx-state").textContent),
        "  on by default: " + row.querySelector(".cdbx-state").textContent);
@@ -1826,7 +1831,8 @@ async function cuGlowRow(cuItem) {
     for (const [facts, re] of [
       [{ session: "sway (Wayland)", glow: "overlay" }, /^On this session \(sway \(Wayland\)\) the bundled bridge draws the glow\.$/],
       [{ session: "sway (Wayland)", glow: "none" }, /^On this session \(sway \(Wayland\)\) no glow is shown: the bridge for this desktop does not draw it\.$/],
-      [{ session: "KDE Wayland", kwin: true, glow: "kwin" }, /^On this session \(KDE Wayland\) the KDE bridge draws its own glow while it shares the screen; this switch does not turn that one off\.$/],
+      [{ session: "KDE Wayland", kwin: true, glow: "kwin" }, /^On this session \(KDE Wayland\) the KDE bridge draws its own glow while it shares the screen; this switch does not turn that one off \(a kwin-portal-bridge with the glow overlay hands it over\)\.$/],
+      [{ session: "KDE Wayland", kwin: true, glow: "overlay" }, /^On this session \(KDE Wayland\) the bundled bridge draws the glow\.$/],
     ]) {
       window.__cusState = Object.assign({}, realCus, { screenshots: facts });
       cu = await open();

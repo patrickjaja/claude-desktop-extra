@@ -2388,9 +2388,9 @@ function _glowOffNote(why){
 // overlay (wlroots, GNOME; XWayland follows the compositor's row) it is
 // js/cu_wl_glow.js's adapter with the same methods and return values, drawn
 // by `<bridge> overlay`. Upstream has no glow on Wayland, so every other
-// Wayland row (KDE < 6.6, exotic) gets none; kwin mode skips upstream's glow
-// (8a), a background display and X11 without a compositing manager turn it
-// off (10c); there nothing is called. Cosmetic only: a throwing method is
+// Wayland row (KDE < 6.6, exotic) gets none; kwin mode is js/executor_linux.js
+// (it feeds the same adapter itself), a background display and X11 without a
+// compositing manager turn it off (10c); there nothing is called. Cosmetic only: a throwing method is
 // logged once and input goes on.
 var CU_DP_GLIDE_MAX_MS=2000;
 var _dpHeld=!1,_dpSaid=!1;
@@ -2414,8 +2414,8 @@ function _wlPtr(x,y){
 // ── The Wayland glow overlay's bridge (js/cu_wl_glow.js) ──
 // The bridge that would draw the glow for this session: the input bridge of
 // a wlroots row (wlroots-bridge) or of GNOME Wayland (gnome-portal-bridge).
-// None on X11, in kwin mode (kwin-portal-bridge draws its own glow), on a
-// background display, on KDE < 6.6 or exotic Wayland (no first-party bridge).
+// None on X11, in kwin mode (js/executor_linux.js answers for KDE Plasma
+// Wayland itself), on a background display, on KDE < 6.6 or exotic Wayland (no first-party bridge).
 // Its overlay capability is the bridge's `doctor` capabilities.overlay, read
 // through the same cached async doctor as the screenshot mask (_bcProbe).
 function _wlGlowBridge(){
@@ -2449,9 +2449,10 @@ function _wlGlowBridge(){
 //    refresh); all of it bounded by CU_CAP_X11_MAX_MS. When the page shows
 //    none of the three (the arrow off, the badge faded out) it answers at once
 //    and nothing waits.
-//  - KDE kwin mode: kwin-portal-bridge's session glow has no arrow and is
-//    already left out of its captures: nothing to do. Background display: the
-//    overlay is not on the captured display.
+//  - KDE kwin mode (js/executor_linux.js): kwin-portal-bridge keeps both its
+//    own session glow and the glow overlay out of its captures (KWin
+//    excludeFromCapture): nothing to do. Background display: the overlay is
+//    not on the captured display.
 // Never blocks: async only, every wait bounded, failures ignored (the capture
 // runs regardless); the capture's own retry / failure accounting is untouched.
 var CU_CAP_WL_ACK_MS=50,CU_CAP_X11_MAX_MS=80,CU_CAP_X11_SETTLE_MS=17,CU_CAP_HIDE_CLASS="cdb-cu-capture";
