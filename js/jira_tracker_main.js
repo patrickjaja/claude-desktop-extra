@@ -177,6 +177,7 @@
   function applySwitch(on) {
     pref.at = 0;
     if (on) { eachMainView(injectRow); return; }
+    clearCaches();
     view.destroy();
     eachMainView(function (wc) { dropRowCss(wc); webCall(wc, "window.__cdbJiraWeb&&window.__cdbJiraWeb.remove()"); });
   }
@@ -340,9 +341,32 @@
     if (r && r.kind === "redirect" && !mediaWarned) { mediaWarned = true; log("media: redirect refused"); }
     return r;
   }
+  // Board, sprint, configuration and status answers, refusals, media bytes and the open ticket's files
+  // belong to one site and token: saved credentials or switching off start them over.
+  function clearCaches() {
+    boardCache = {}; sprintCache = {}; configCache = {}; statusCache = {}; backlogRefused = {};
+    mediaCache = new Map(); mediaBytes = 0;
+    openFiles = { key: "", byId: {} };
+  }
+  var NAME_MAX_BYTES = 200, EXT_MAX_BYTES = 16;
+  var FORMAT_RE = /[\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g;
+  function utf8Len(s) { return Buffer.byteLength(s, "utf8"); }
+  // The longest prefix of s within max UTF-8 bytes; a code point is never cut.
+  function cutBytes(s, max) {
+    var used = 0, i = 0;
+    while (i < s.length) {
+      var cp = s.codePointAt(i), n = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+      if (used + n > max) break;
+      used += n; i += cp > 0xffff ? 2 : 1;
+    }
+    return s.slice(0, i);
+  }
   function safeName(name) {
-    var base = String(name || "").split(/[\\/]/).pop().replace(/[\x00-\x1f\x7f<>:"|?*]/g, "_").replace(/^[\s.]+|[\s.]+$/g, "");
-    if (base.length > 150) { var dot = base.lastIndexOf("."), ext = dot > 0 && base.length - dot <= 16 ? base.slice(dot) : ""; base = base.slice(0, 150 - ext.length) + ext; }
+    var base = String(name || "").split(/[\\/]/).pop().replace(FORMAT_RE, "").replace(/[\x00-\x1f\x7f<>:"|?*]/g, "_").replace(/^[\s.]+|[\s.]+$/g, "");
+    if (utf8Len(base) > NAME_MAX_BYTES) {
+      var dot = base.lastIndexOf("."), ext = dot > 0 && utf8Len(base.slice(dot)) <= EXT_MAX_BYTES ? base.slice(dot) : "";
+      base = cutBytes(ext ? base.slice(0, dot) : base, NAME_MAX_BYTES - utf8Len(ext)) + ext;
+    }
     return base || "attachment";
   }
   function saveUnique(dir, name, bytes) {
@@ -414,7 +438,7 @@
       }
       var c = {};
       ["site", "email", "token"].forEach(function (k) { if (fields[k] !== undefined) c[k] = fields[k]; });
-      if (Object.keys(c).length) { var r = store.credsSave(c); if (!r.ok) return r; }
+      if (Object.keys(c).length) { var r = store.credsSave(c); if (!r.ok) return r; clearCaches(); }
       if (fields.template !== undefined) { var t = store.stateWrite({ template: fields.template }); if (!t.ok) return t; }
       return prefView();
     },

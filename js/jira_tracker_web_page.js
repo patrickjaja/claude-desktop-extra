@@ -19,7 +19,8 @@
   var MODEL_STATE = ["id", "aria-current", "aria-pressed", "aria-selected", "data-state", "data-active"];
   var SVGNS = "http://www.w3.org/2000/svg";
   var MISSES_BEFORE_WARN = 30;
-  var warned = {}, active = false, misses = 0, textMiss = false, frame = 0, scanTimer = 0, observer = null, resizer = null, attrs = null;
+  // A fresh install (window.__cdbJiraWeb gone) starts with removed = false; remove() ends this copy for good.
+  var removed = false, warned = {}, active = false, misses = 0, textMiss = false, frame = 0, scanTimer = 0, observer = null, resizer = null, attrs = null;
   var stats = { raf: 0, timer: 0, attr: 0, motion: 0, resize: 0 };
 
   function noop() {}
@@ -176,10 +177,11 @@
   }
   function scan() {
     scanTimer = 0;
+    if (removed) return;
     try { place(); } catch (e) { warn("row:error", ((e && e.name) || "Error") + ": " + String((e && e.message) || "").slice(0, 120)); }
   }
   function place() {
-    if (ours()) return;
+    if (removed || ours()) return;
     var model = anchorRow();
     if (!model) {
       if (++misses === MISSES_BEFORE_WARN) {
@@ -192,12 +194,12 @@
     paint();
     watchSize();
   }
-  function schedule() { if (!scanTimer) scanTimer = setTimeout(scan, 100); }
+  function schedule() { if (!removed && !scanTimer) scanTimer = setTimeout(scan, 100); }
   function sendBounds() {
-    if (active) Promise.resolve(api.jiraBounds(rect())).then(null, noop);
+    if (active && !removed) Promise.resolve(api.jiraBounds(rect())).then(null, noop);
   }
   function onResize() {
-    if (frame) return;
+    if (removed || frame) return;
     frame = 1;
     function go(by) { if (!frame) return; frame = 0; stats[by]++; sendBounds(); }
     requestAnimationFrame(function () { go("raf"); });
@@ -210,6 +212,7 @@
     if (side && ev && ev.target && side.contains(ev.target)) { stats.motion++; onResize(); }
   }
   function watchSize() {
+    if (removed) return;
     if (resizer) resizer.disconnect();
     resizer = new ResizeObserver(onResize);
     var side = sidebar();
@@ -239,11 +242,14 @@
   }
   function toggle() { return active ? close() : open(); }
   function remove() {
+    removed = true;
+    if (scanTimer) { clearTimeout(scanTimer); scanTimer = 0; }
     var row = ours();
     if (row) row.remove();
     if (observer) observer.disconnect();
     if (resizer) resizer.disconnect();
     if (attrs) attrs.disconnect();
+    observer = resizer = attrs = null;
     document.removeEventListener("click", onSidebarClick, true);
     document.removeEventListener("transitionend", onMotion, true);
     document.removeEventListener("animationend", onMotion, true);

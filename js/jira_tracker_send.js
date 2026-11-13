@@ -8,7 +8,22 @@
   var KEY_RE = /^[A-Z][A-Z0-9_]+-\d+$/;
   var GIT_TIMEOUT_MS = 5000;
 
+  var CONFIRM_SHOWN = 2000;
+
   function message(e) { return String((e && e.message) || e || "unknown error").slice(0, 500); }
+
+  function shownText(text) {
+    if (text.length <= CONFIRM_SHOWN) return text;
+    var cut = CONFIRM_SHOWN, code = text.charCodeAt(cut - 1);
+    if (code >= 0xd800 && code <= 0xdbff) cut--;
+    return text.slice(0, cut) + "\n... (" + (text.length - cut) + " more characters)";
+  }
+  function confirmDetail(text, folder, mode) {
+    return "Folder: " + folder + "\n" +
+      "The session runs in your default permission mode" + (mode ? " (" + mode + ")" : "") + ".\n" +
+      "The ticket text comes from Jira and can be written by anyone who can edit the ticket.\n\n" +
+      "First message:\n\n" + shownText(text);
+  }
 
   function isGitWorkTree(execFile, folder) {
     function run(args) {
@@ -93,6 +108,11 @@
       if (useWorktree) options.useWorktree = true;
       var mode = await defaultMode(manager, folder);
       if (mode) options.permissionMode = mode;
+      // The ticket text is untrusted: show the exact first message before every send.
+      var go = await box(win, { type: "question", title: "Send " + rec.key + " to a Code session?", message: "Start a Code session for " + rec.key + " in " + folder + "?",
+        detail: confirmDetail(text, folder, mode), buttons: ["Cancel", "Start session"], defaultId: 0, cancelId: 0, noLink: true });
+      if (!go) return { ok: false, cancelled: true };
+      if (!deps.enabled()) return { ok: false, error: "The Jira tracker was switched off." };
       var startOpts = START_ATTENDED ? { initiator: "user" } : { origin: { kind: "auto-continuation" }, initiator: "jira-tracker" };
       var sessionId;
       try { sessionId = await manager.startSession(options, startOpts); }

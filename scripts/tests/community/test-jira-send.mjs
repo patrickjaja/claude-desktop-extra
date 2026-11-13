@@ -77,7 +77,7 @@ function sendHarness(o = {}) {
     adf: ctx.__cdbJiraAdf, prompt: ctx.__cdbJiraPrompt, fs,
     dialog: {
       showOpenDialog: async (win, opts) => { calls.picker.push(opts); if (o.onPick) o.onPick(); return o.pick ?? { canceled: false, filePaths: [link] }; },
-      showMessageBox: async (win, opts) => { calls.boxes.push(opts); return { response: o.boxAnswer ?? 1 }; }
+      showMessageBox: async (win, opts) => { calls.boxes.push(opts); if (o.onBox) o.onBox(opts); return { response: o.answer ? o.answer(opts) : (o.boxAnswer ?? 1) }; }
     },
     window: () => ({ id: 1 }), enabled: () => (o.enabled ? o.enabled() : true), gitWorkTree: async (f) => o.git ?? true,
     getManager: async () => manager, closeTracker: () => { calls.closed++; }, navigate: (r) => { calls.navigated.push(r); return o.navigates ?? true; },
@@ -119,7 +119,8 @@ try {
     assert.deepEqual(plain(yes.calls.trust), [[fs.realpathSync(link)]]);
     const trusted = sendHarness({ trusted: true });
     await trusted.sender.send(REQ);
-    assert.equal(trusted.calls.boxes.length, 0); assert.equal(trusted.calls.trust.length, 0);
+    assert.deepEqual(trusted.calls.boxes.map((b) => b.title), ["Send ACME-7 to a Code session?"], "a trusted folder only gets the send confirm");
+    assert.equal(trusted.calls.trust.length, 0);
   });
   await test("send: a non-git folder or a null default mode leaves those options out", async () => {
     const h = sendHarness({ git: false, mode: null, pick: { canceled: false, filePaths: [plainDir] } });
@@ -167,10 +168,52 @@ try {
     assert.equal(shared.calls.boxes[0].title, "Folder already in use");
     const alone = sendHarness({ edits: { WORKTREE_FROM_START: false }, sessions: [{ cwd: "/elsewhere" }] });
     await alone.sender.send(REQ);
-    assert.equal("useWorktree" in alone.calls.start[0][0], false); assert.equal(alone.calls.boxes.length, 0);
+    assert.equal("useWorktree" in alone.calls.start[0][0], false); assert.equal(alone.calls.boxes.filter((b) => b.title === "Folder already in use").length, 0);
     const spec = sendHarness({ edits: { START_ATTENDED: false } });
     await spec.sender.send(REQ);
     assert.deepEqual(plain(spec.calls.start[0][1]), { origin: { kind: "auto-continuation" }, initiator: "jira-tracker" });
+  });
+  const CONFIRM = "Send ACME-7 to a Code session?";
+  const confirmOf = (h) => h.calls.boxes.filter((b) => b.title === CONFIRM);
+  await test("send confirm: shows the exact first message, the folder and the permission mode before the start; Cancel is the default", async () => {
+    const order = [];
+    const h = sendHarness({ trusted: false, onBox: (b) => order.push(b.title) });
+    const r = plain(await h.sender.send(REQ));
+    assert.equal(r.ok, true);
+    assert.deepEqual(order, ["Trust this folder?", CONFIRM], "the confirm follows the trust step");
+    const [box] = plain(confirmOf(h)), [opts] = plain(h.calls.start[0]), folder = fs.realpathSync(link);
+    assert.deepEqual(box.buttons, ["Cancel", "Start session"]);
+    assert.equal(box.defaultId, 0); assert.equal(box.cancelId, 0);
+    assert.equal(box.message, "Start a Code session for ACME-7 in " + folder + "?");
+    assert.equal(box.detail, "Folder: " + folder + "\nThe session runs in your default permission mode (acceptEdits).\n" +
+      "The ticket text comes from Jira and can be written by anyone who can edit the ticket.\n\nFirst message:\n\n" + opts.message);
+    assert.ok(box.detail.endsWith("\n\n" + opts.message), "the text shown is the text sent");
+    assert.deepEqual(h.calls.issue, ["ACME-7"], "the ticket is read once; nothing is re-fetched after the confirm");
+  });
+  await test("send confirm: Cancel starts nothing, writes nothing and keeps the page open", async () => {
+    const h = sendHarness({ answer: (b) => (b.title === CONFIRM ? 0 : 1) });
+    assert.deepEqual(plain(await h.sender.send(REQ)), { ok: false, cancelled: true });
+    assert.equal(confirmOf(h).length, 1);
+    assert.equal(h.calls.start.length, 0); assert.equal(h.calls.writes.length, 0); assert.equal(h.calls.closed, 0); assert.equal(h.calls.navigated.length, 0);
+    assert.equal(h.sender.busy(), false, "a cancelled send frees the lock");
+  });
+  await test("send confirm: switch turned off while the confirm is open starts nothing", async () => {
+    let on = true;
+    const h = sendHarness({ enabled: () => on, onBox: (b) => { if (b.title === CONFIRM) on = false; } });
+    assert.deepEqual(plain(await h.sender.send(REQ)), { ok: false, error: "The Jira tracker was switched off." });
+    assert.equal(h.calls.start.length, 0); assert.equal(h.calls.writes.length, 0); assert.equal(h.calls.closed, 0);
+  });
+  await test("send confirm: a long message is shown cut at 2000 characters with a count, but sent in full; no mode, no mode name", async () => {
+    const template = "{{key}} " + "x".repeat(2500) + " end";
+    const h = sendHarness({ template, mode: null });
+    assert.equal((await h.sender.send(REQ)).ok, true);
+    const [box] = plain(confirmOf(h)), sent = h.calls.start[0][0].message;
+    assert.equal(sent, "ACME-7 " + "x".repeat(2500) + " end", "the full text is sent");
+    assert.ok(box.detail.includes("The session runs in your default permission mode.\n"));
+    assert.ok(box.detail.endsWith("\n\n" + sent.slice(0, 2000) + "\n... (" + (sent.length - 2000) + " more characters)"));
+    const pair = sendHarness({ template: "y".repeat(1999) + "\u{1F600}" + "z".repeat(10) });
+    await pair.sender.send(REQ);
+    assert.ok(confirmOf(pair)[0].detail.endsWith("y".repeat(1999) + "\n... (12 more characters)"), "a cut never splits a surrogate pair");
   });
   await test("git check: inside a work tree with a commit only", async () => {
     const isGit = load(["js/jira_tracker_send.js"]).__cdbJiraIsGitWorkTree;

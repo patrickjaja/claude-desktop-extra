@@ -21,6 +21,9 @@ Patch: [`add_feature_jira_tracker.nim`](../patches/community/add_feature_jira_tr
 2. Switch **Jira issue tracker** on. Enter your site (a pasted board or ticket link is reduced to `https://<name>.atlassian.net`), your Atlassian email and the token, then **Save site, email and token** and **Test connection**.
    The **i** beside "API token (write-only)" lists the scopes a scoped token needs, in the groups of the table above (hover or focus shows it, a click keeps it open so the names can be copied). **Test connection** first checks the email and token, names the token type (classic: the site route; scoped: the `api.atlassian.com` route) and then tries one call per feature, at most 4 requests (5 on a Scrum board): tickets (a search), Board and Backlog (the board lookup and the backlog for the page's last project, else the first project the search finds), Board view columns (the configuration) and, on a Scrum board, the active sprint. Each line says OK, "Not checked" with the reason, or which scopes are probably missing and what still works without them. Jira's 401 does not name the scope, so the missing scopes are inferred from the endpoint table. The test writes nothing and logs only the method, path and status.
 3. The token is stored encrypted with the system keyring for this profile. Without GNOME Keyring or KWallet the row says so and refuses to store it.
+4. Changing the site clears the saved token: enter the token again (or save it together with the new site). The row says so after the save.
+
+The token field is part of Settings, which is a claude.ai page, so while you type the token it is visible to scripts of the claude.ai origin (the same as the keys in Custom models). A saved token is never sent back to any page; the field stays empty after a save.
 
 ## How requests reach Jira
 
@@ -60,9 +63,10 @@ Start it from the sparkle button on each list row, from a row's **...** menu, or
 
 1. The app reads the ticket again from Jira.
 2. A folder picker opens at the last folder used for that Jira project. Cancel stops.
-3. A folder the app does not trust yet asks first (**Trust and start** / **Cancel**); trust is saved only after Trust and start.
-4. A new Code session starts in that folder as a normal user-started session, with your default permission mode, in its own worktree when the folder is a git repository with at least one commit.
-5. The Jira page closes and the app opens the new session (or shows "Started <KEY> in <folder>").
+3. A folder the app does not trust yet asks first (**Trust and start** / **Cancel**); trust is saved only after Trust and start, and it stays saved if you then cancel the confirm dialog below. Trust saved here does not pin the folder's git origin the way the trust prompt in the Code tab does (upstream's `pinOriginAtTrust` is not reachable from the Jira page).
+4. A confirm dialog shows the folder, the permission mode and the exact first message (cut at 2,000 characters in the dialog, sent in full). Ticket text is untrusted: anyone who can edit the ticket can write it. **Cancel** (the default) stops; **Start session** sends that message as shown.
+5. A new Code session starts in that folder as a normal user-started session, with your default permission mode, in its own worktree when the folder is a git repository with at least one commit.
+6. The Jira page closes and the app opens the new session (or shows "Started <KEY> in <folder>").
 
 The first message comes from the prompt template in the settings row. Placeholders: `{{key}}`, `{{summary}}`, `{{url}}`, `{{type}}`, `{{priority}}`, `{{description}}` (the description as Markdown, at most 20,000 characters). Ticket text is framed as data inside `<ticket>...</ticket>`; a `</ticket>` inside the ticket becomes `</ticket_>`. **Reset template** restores the default.
 
@@ -75,7 +79,7 @@ The first message comes from the prompt template in the settings row. Placeholde
 - The upstream row that was active before (for example Scheduled) keeps its highlight while the Jira page is open.
 - The board's columns have a fixed width (260 px). A better width for wide windows is still open.
 - In a light theme, the state and note lines and the buttons of the Jira row in Settings -> Extra -> Community can fall below the AA contrast ratio. They use the shared Extra settings styles, which a separate change will fix.
-- The folder picker and the trust dialog of **Send to agent** are native GTK dialogs and follow the system theme, not the claude.ai theme.
+- The folder picker, the trust dialog and the confirm dialog of **Send to agent** are native GTK dialogs and follow the system theme, not the claude.ai theme.
 - Not covered: editing fields, writing comments, uploading attachments, avatars (initials only), Jira saved filters, creating or ranking sprints, ranking cards within a column, sending to an open session.
 
 ## Privacy and files

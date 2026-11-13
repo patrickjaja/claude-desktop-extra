@@ -155,7 +155,7 @@ try {
     assert.deepEqual([store.creds().route, store.creds().cloudId], ["gateway", "cloud-abc"]);
     store.credsSave({ email: EMAIL });
     assert.equal(store.creds().route, "gateway", "saving the same email keeps the route");
-    store.credsSave({ site: "https://other.atlassian.net" });
+    store.credsSave({ site: "https://other.atlassian.net", token: TOKEN });
     assert.deepEqual([store.creds().route, store.creds().cloudId], ["", ""]);
     store.saveRoute("site", "ignored");
     assert.deepEqual([store.creds().route, store.creds().cloudId], ["site", ""]);
@@ -163,6 +163,23 @@ try {
     assert.equal(store.creds().route, "");
     store.credsSave({ token: null });
     assert.equal(store.creds(), null);
+  });
+  await test("a new site clears the saved token unless a new token comes with it", () => {
+    const dir = path.join(temp, "site-token");
+    const { store } = loadStore(dir);
+    assert.equal(store.credsSave({ site: "acme.atlassian.net", email: EMAIL, token: TOKEN }).ok, true);
+    assert.equal(store.credsSave({ site: " https://Acme.atlassian.net/ ", email: EMAIL }).ok, true);
+    assert.equal(store.creds().token, TOKEN, "the same site (as Settings sends it on every save) keeps the token");
+    assert.equal(store.credsSave({ email: "other@example.com" }).ok, true);
+    assert.equal(store.creds().token, TOKEN, "an email change alone keeps it");
+    assert.equal(store.credsSave({ site: "other.atlassian.net", email: EMAIL }).ok, true);
+    assert.deepEqual(plain(store.credsView()), { site: "https://other.atlassian.net", email: EMAIL, tokenSet: false, keyringOk: true, keyringBackend: "gnome_libsecret" });
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "cdb-jira-credentials.json"), "utf8")).tokenEnc, "", "the encrypted token is gone from the file");
+    assert.equal(store.creds(), null, "the old token never reaches the new site");
+    assert.equal(store.credsSave({ site: "acme.atlassian.net", token: TOKEN + "y" }).ok, true);
+    assert.deepEqual([store.creds().site, store.creds().token], ["https://acme.atlassian.net", TOKEN + "y"], "a token saved together with the site is kept");
+    assert.equal(store.credsSave({ site: "third.atlassian.net", token: "short" }).ok, false);
+    assert.deepEqual([store.creds().site, store.creds().token], ["https://acme.atlassian.net", TOKEN + "y"], "a refused save changes nothing");
   });
   await test("keyring unavailable or basic_text: saving a token is refused", () => {
     for (const ks of [{ available: false, backend: "gnome_libsecret" }, { available: true, backend: "basic_text" }]) {
@@ -262,7 +279,7 @@ try {
     class MutationObserver { observe() {} disconnect() {} }
     const timers = [];
     const ctx = vm.createContext({ window, document, MutationObserver, ResizeObserver: class { observe() {} disconnect() {} }, console: { warn: () => {} },
-      setTimeout: (f) => { timers.push(f); return timers.length; }, requestAnimationFrame: (f) => f() });
+      setTimeout: (f) => { timers.push(f); return timers.length; }, clearTimeout: () => {}, requestAnimationFrame: (f) => f() });
     assert.equal(vm.runInContext(read("js/jira_tracker_web_page.js"), ctx), "jira: installed");
     const api = window.__cdbJiraWeb;
     assert.deepEqual(plain(api.rect()), { x: 0, y: 0, width: 1000, height: 700 });
@@ -288,11 +305,12 @@ try {
       const timers = [];
       const MO = class { constructor(f) { this.f = f; this.targets = []; observers.push(this); } observe(t, o) { this.targets.push([t, o]); } disconnect() { this.targets = []; } };
       const c = vm.createContext({ window: win, document: dom.document, NodeFilter: { SHOW_TEXT: 4 }, MutationObserver: MO,
-        ResizeObserver: class { observe() {} disconnect() {} }, console: { warn: () => {} }, setTimeout: (f) => { timers.push(f); return timers.length; },
+        ResizeObserver: class { observe() {} disconnect() {} }, console: { warn: () => {} },
+        setTimeout: (f) => { const g = () => f(); timers.push(g); return g; }, clearTimeout: (g) => { const i = timers.indexOf(g); if (i >= 0) timers.splice(i, 1); },
         requestAnimationFrame: opts.frozenFrames ? () => 0 : (f) => f() });
       assert.equal(vm.runInContext(read("js/jira_tracker_web_page.js"), c), "jira: installed");
       const scans = (n) => { for (let i = 0; i < n; i++) { win.__cdbJiraWeb.refresh(); timers.splice(0).forEach((f) => f()); } };
-      return { win, calls, diag, scans, winEvents, observers, timers };
+      return { win, calls, diag, scans, winEvents, observers, timers, ctx: c };
     };
     const strip = (n) => n.all().concat([n]);
     {
@@ -440,6 +458,39 @@ try {
       assert.equal(dom.document.querySelector("[data-cdb-jira-row]"), null, "unknown labels: no row");
       assert.equal(diag.filter((m) => m.startsWith("[cdb-jira] anchor:row-text")).length, 1);
       assert.equal(diag.filter((m) => m.startsWith("[cdb-jira] anchor:sidebar")).length, 0);
+    }
+    {
+      // Switch off with a scan pending, then on again: the removed copy never puts a row back.
+      const dom = miniDom(), { h } = dom;
+      const sched = h("button", { class: ROW }, h("svg"), "Scheduled");
+      dom.html.appendChild(sidebarOf(h, h("div", { class: "list" }, h("button", { class: ROW }, "New"), sched)));
+      dom.pointAt(sched);
+      const { win, timers, observers, winEvents, ctx } = install(dom);
+      const rows = () => dom.document.querySelectorAll("[data-cdb-jira-row]").length;
+      assert.equal(rows(), 1);
+      const old = win.__cdbJiraWeb, oldObservers = observers.slice();
+      assert.ok(oldObservers.length >= 2, "the childList observer and the sidebar attribute observer");
+      old.refresh();
+      const pending = timers.slice();
+      assert.equal(pending.length, 1, "a scan is pending");
+      old.remove();
+      assert.equal(rows(), 0);
+      assert.equal(win.__cdbJiraWeb, undefined);
+      assert.equal(timers.length, 0, "remove clears the pending scan");
+      pending.forEach((f) => f());
+      assert.equal(rows(), 0, "a scan that fires anyway after remove puts no row back");
+      oldObservers.forEach((o) => o.f([{ type: "childList" }]));
+      (winEvents.resize || []).forEach((f) => f());
+      old.refresh();
+      assert.equal(timers.length, 0, "the removed copy schedules nothing from observers, resizes or refresh");
+      assert.equal(vm.runInContext(read("js/jira_tracker_web_page.js"), ctx), "jira: installed", "a later switch-on installs a fresh copy");
+      assert.equal(rows(), 1);
+      pending.forEach((f) => f());
+      oldObservers.forEach((o) => o.f([{ type: "childList" }]));
+      timers.splice(0).forEach((f) => f());
+      assert.equal(rows(), 1, "the old copy stays inert next to the new one");
+      win.__cdbJiraWeb.refresh(); timers.splice(0).forEach((f) => f());
+      assert.equal(rows(), 1);
     }
   });
   const MODULES = ["js/jira_tracker_adf.js", "js/jira_tracker_client.js", "js/jira_tracker_store.js", "js/jira_tracker_prompt.js", "js/jira_tracker_send.js", "js/jira_tracker_view.js"];
@@ -854,6 +905,87 @@ try {
     assert.match((await w.call("cdb-jira:attachment", t, { key: "ACME-7", id: "101" })).error, /not an attachment of the open ticket/, "only the ticket read last");
     assert.match((await w.call("cdb-jira:attachment", w.claude, { key: "ACME-8", id: "101" })).error, /unrecognized sender/);
   });
+  await test("saved credentials, a forgotten token or switching off start the board, sprint, config, status, media and ticket-file caches over", async () => {
+    const png = Buffer.from([137, 80, 78, 71, 13, 10]);
+    const count = { boards: 0, config: 0, statuses: 0, sprint: 0, backlog: 0, media: 0 };
+    const w = world(path.join(temp, "w-caches"), { respond: (u, b) => {
+      const p = new URL(u).pathname;
+      if (p.endsWith("/rest/agile/1.0/board")) { count.boards++; return [200, { values: [{ id: 16, name: "B2 scrum", type: "scrum" }] }]; }
+      if (p.endsWith("/board/16/backlog")) { count.backlog++; return [200, { issues: [] }]; }
+      if (p.endsWith("/board/16/sprint")) { count.sprint++; return [200, { values: [{ id: 5, state: "active" }] }]; }
+      if (p.endsWith("/board/16/configuration")) { count.config++; return [200, { columnConfig: { columns: [{ name: "To Do", statuses: [{ id: "1" }] }] } }]; }
+      if (p.endsWith("/project/B2/statuses")) { count.statuses++; return [200, [{ name: "Bug", statuses: [{ id: "1", name: "To Do", statusCategory: { key: "new" } }] }]]; }
+      if (p.endsWith("/issue/B2-1")) return [200, { key: "B2-1", fields: { summary: "S", attachment: [{ id: "101", filename: "shot.png", mimeType: "image/png", size: 6 }] } }];
+      if (/\/comment$/.test(p)) return [200, { comments: [] }];
+      if (p.endsWith("/attachment/content/101")) { count.media++; return [200, png, { "content-type": "image/png" }]; }
+      if (b && b.jql) return [200, { issues: [{ key: "B2-1", fields: { summary: "S", project: { key: "B2" }, issuetype: { name: "Bug" }, status: { id: "1", name: "To Do", statusCategory: { key: "new" } } } }] }];
+      return null;
+    } });
+    const CREDS = { site: "https://acme.atlassian.net", email: EMAIL, token: TOKEN };
+    await on(w);
+    await w.call("cdb-jira:open", w.claude, RECT);
+    let t = w.views[0].webContents;
+    await w.call("cdb-jira-pref:set", w.claude, CREDS);
+    const search = async () => assert.equal((await w.call("cdb-jira:search", t, { preset: "assigned" })).groups, "agile");
+    const media = async () => (await w.call("cdb-jira:attachment", t, { key: "B2-1", id: "101" }));
+    await search(); await search();
+    assert.deepEqual(count, { boards: 1, config: 1, statuses: 1, sprint: 1, backlog: 2, media: 0 }, "cached within one set of credentials");
+    await w.call("cdb-jira:issue", t, { key: "B2-1" });
+    assert.equal((await media()).ok, true); assert.equal((await media()).ok, true);
+    assert.equal(count.media, 1, "the second read comes from the media cache");
+    const saved = await w.call("cdb-jira-pref:set", w.claude, CREDS);
+    assert.equal(saved.tokenSet, true);
+    assert.match((await media()).error, /not an attachment of the open ticket/, "saving credentials forgets the open ticket's files");
+    await search();
+    assert.deepEqual([count.boards, count.config, count.statuses, count.sprint], [2, 2, 2, 2], "saving credentials re-reads boards, config, statuses and sprints");
+    await w.call("cdb-jira:issue", t, { key: "B2-1" });
+    assert.equal((await media()).ok, true);
+    assert.equal(count.media, 2, "the media cache started over");
+    assert.equal((await w.call("cdb-jira-pref:set", w.claude, { token: null })).tokenSet, false);
+    assert.match((await media()).error, /not an attachment of the open ticket/, "a forgotten token serves no cached bytes");
+    assert.equal(count.media, 2);
+    await w.call("cdb-jira-pref:set", w.claude, CREDS);
+    await search();
+    assert.equal(count.boards, 3);
+    await w.call("cdb-jira:issue", t, { key: "B2-1" });
+    assert.equal((await media()).ok, true);
+    assert.equal(count.media, 3);
+    await w.call("cdb-jira-pref:set", w.claude, { enabled: false });
+    await on(w);
+    await w.call("cdb-jira:open", w.claude, RECT);
+    t = w.views.at(-1).webContents;
+    assert.match((await media()).error, /not an attachment of the open ticket/, "switching off forgets the open ticket's files");
+    await search();
+    assert.deepEqual([count.boards, count.config, count.statuses, count.sprint], [4, 4, 4, 4], "switching off starts the caches over");
+    const moved = await w.call("cdb-jira-pref:set", w.claude, { site: "https://other.atlassian.net", email: EMAIL });
+    assert.deepEqual([moved.site, moved.tokenSet], ["https://other.atlassian.net", false], "Settings reads tokenSet false after a site change");
+  });
+  await test("downloads: names capped at 200 UTF-8 bytes without cutting a character, bidi and invisible format characters stripped", async () => {
+    const png = Buffer.from([137, 80, 78, 71, 13, 10]);
+    const cjk = "\u6f22".repeat(150) + ".png", emoji = "\u{1F600}".repeat(60), bidi = "invoice\u202Egnp.exe", hidden = "\u200Bre\u200Dport\uFEFF\u2066x\u2069\u061C\u200E\u200F.txt";
+    const files = [{ id: "201", filename: cjk }, { id: "202", filename: emoji }, { id: "203", filename: bidi }, { id: "204", filename: hidden }].map((f) => ({ ...f, mimeType: "application/octet-stream", size: 6 }));
+    const w = world(path.join(temp, "w-names"), { respond: (u) => {
+      const p = new URL(u).pathname;
+      if (p.endsWith("/issue/ACME-7")) return [200, { key: "ACME-7", fields: { summary: "S", attachment: files } }];
+      if (/\/comment$/.test(p)) return [200, { comments: [] }];
+      if (/\/attachment\/content\/20[1-4]$/.test(p)) return [200, png, { "content-type": "application/octet-stream" }];
+      return null;
+    } });
+    await on(w);
+    await w.call("cdb-jira:open", w.claude, RECT);
+    const t = w.views[0].webContents;
+    await w.call("cdb-jira-pref:set", w.claude, { site: "https://acme.atlassian.net", email: EMAIL, token: TOKEN });
+    await w.call("cdb-jira:issue", t, { key: "ACME-7" });
+    const names = [];
+    for (const id of ["201", "202", "203", "204"]) { const r = await w.call("cdb-jira:download", t, { key: "ACME-7", id }); assert.equal(r.ok, true, id); names.push(r.name); }
+    assert.equal(names[0], "\u6f22".repeat(65) + ".png", "150 CJK characters: 65 kept (195 bytes) plus the extension");
+    assert.equal(Buffer.byteLength(names[0], "utf8"), 199);
+    assert.equal(names[1], "\u{1F600}".repeat(50), "4-byte characters without an extension: exactly 200 bytes, no half character");
+    assert.ok(!names.some((n) => n.includes("\uFFFD")));
+    assert.equal(names[2], "invoicegnp.exe", "U+202E cannot make the name read backwards");
+    assert.equal(names[3], "reportx.txt");
+    for (const n of names) assert.ok(fs.existsSync(path.join(w.dir, n)), n);
+  });
   await test("details card state: read with the state, written through its own channel", async () => {
     const w = world(path.join(temp, "w-details"));
     await on(w);
@@ -930,6 +1062,25 @@ try {
     assert.equal(w.views[0].visible, true, "the page opens after Settings has closed");
     w.claude.emit("did-navigate-in-page", {}, "https://claude.ai/epitaxy/local_7?tab=2", true);
     assert.equal(w.views[0].visible, true, "the route change that left Settings does not close the page");
+  });
+  await test("an upstream view attach closes the page without focusing claude.ai again", async () => {
+    const w = world(path.join(temp, "w-upstream-focus"));
+    await on(w);
+    let listener = null;
+    w.ctx.__cdbJiraOnNativeViewAttached = (f) => { listener = f; };
+    w.emitApp("ready");
+    await new Promise((r) => setTimeout(r, 5));
+    await w.call("cdb-jira:open", w.claude, RECT);
+    w.win.hasFocus = true; w.claude.hasFocus = false;
+    const f0 = w.claude.focused;
+    assert.ok(listener, "hook registered");
+    listener(w.win);
+    w.win.hasFocus = false;
+    await new Promise((r) => setTimeout(r, 90));
+    assert.equal(w.views[0].visible, false);
+    assert.equal(w.claude.focused, f0, "claude.ai is not focused, neither at once nor after the delay");
+    assert.equal(w.win.focusCalls, 0, "the window is not raised");
+    assert.ok(w.claude.js.includes("window.__cdbJiraWeb&&window.__cdbJiraWeb.setActive(false)"), "the row still turns inactive");
   });
   await test("window maximize, resize or claude.ai view bounds change re-apply the page bounds without a push from the web script", async () => {
     const w = world(path.join(temp, "w-refit"));

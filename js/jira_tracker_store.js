@@ -124,6 +124,8 @@
         try { next.tokenEnc = safeStorage.encryptString(token).toString("base64"); }
         catch (e) { return { ok: false, error: "The system keyring refused to encrypt the token" }; }
       }
+      // A token is only ever sent to the site it was saved for: a new site needs the token again.
+      if (next.site !== cur.site && fields.token === undefined) next.tokenEnc = "";
       if (next.site !== cur.site || next.email !== cur.email || next.tokenEnc !== cur.tokenEnc) { next.route = ""; next.cloudId = ""; }
       return writeAtomic(file(CREDS_FILE), next);
     }

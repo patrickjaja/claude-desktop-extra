@@ -1312,6 +1312,28 @@ async function featuresPanel(featuresItem) {
     const lines = Array.prototype.map.call(card.querySelectorAll(".cdbx-jira-checks li"), function (li) { return li.getAttribute("data-state") + " " + li.textContent; });
     ok(lines.join(" | ") === "ok Tickets: OK | failed Board and Backlog: Probably missing read:board-scope:jira-software (inferred). The list groups by status instead. | not-checked Board view columns: Not checked: no project with a board",
        "one line per feature: " + lines.join(" | "));
+    // Save with a new site and no token: main clears the token (pref:set answers with pref:read's
+    // shape and tokenSet false), and the card says so instead of "saved".
+    const view = function (site, tokenSet) {
+      return { ok: true, enabled: true, locked: false, site: site, email: "dev@example.com", tokenSet: tokenSet, keyringOk: true, keyringBackend: "gnome_libsecret",
+        template: "", defaultTemplate: "Work on {{key}}", scopes: [] };
+    };
+    const saveBtn = Array.prototype.filter.call(card.querySelectorAll("button"), function (b) { return b.textContent === "Save site, email and token"; })[0];
+    const siteIn = document.getElementById("cdbx-jira-site");
+    window.__jiraSets = [];
+    window.__jiraSetRes = view("https://acme.atlassian.net", true);
+    saveBtn.click();
+    await sleep(80);
+    ok(JSON.stringify(window.__jiraSets) === JSON.stringify([{ site: "https://acme.atlassian.net", email: "dev@example.com" }]), "Save sends site and email, no token: " + JSON.stringify(window.__jiraSets));
+    ok(state.textContent === "Token saved, encrypted by the system keyring.", "the same site keeps the token: " + state.textContent);
+    siteIn.value = "https://other.atlassian.net";
+    window.__jiraSetRes = view("https://other.atlassian.net", false);
+    saveBtn.click();
+    await sleep(80);
+    ok(state.textContent === "The site changed, so the saved token was cleared. Enter the API token for https://other.atlassian.net and save again.",
+       "a new site says the token was cleared: " + state.textContent);
+    ok(window.__jiraSets.length === 2 && !("token" in window.__jiraSets[1]), "no extra IPC: one pref:set per save");
+    window.__jiraSetRes = null;
   }
 }
 
@@ -4236,7 +4258,7 @@ window.cdbExtra = {
     keyringBackend: "gnome_libsecret", template: "", defaultTemplate: "Work on {{key}}",
     scopes: [{ name: "Basic", scopes: ["read:jira-work", "read:jira-user", "write:jira-work"] }, { name: "Board and Backlog", scopes: ["read:board-scope:jira-software", "read:project:jira"] },
       { name: "Scrum boards only, untested", scopes: ["read:sprint:jira-software"] }] }),
-  jiraPrefSet: stub({ ok: true }),
+  jiraPrefSet: function (f) { window.__jiraSets = (window.__jiraSets || []).concat([f]); return Promise.resolve(window.__jiraSetRes || { ok: true }); },
   jiraPrefTest: stub({ ok: true, displayName: "Ada", token: "scoped", checks: [
     { feature: "Tickets", state: "ok", text: "OK" },
     { feature: "Board and Backlog", state: "failed", text: "Probably missing read:board-scope:jira-software (inferred). The list groups by status instead." },

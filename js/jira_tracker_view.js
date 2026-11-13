@@ -177,15 +177,18 @@
       var win = host && !host.win.isDestroyed() ? host.win : null, hadFocus = false;
       try { hadFocus = !!win && typeof win.isFocused === "function" && win.isFocused(); } catch (e) {}
       try { view.setVisible(false); } catch (e) {}
-      try { if (claude && !claude.isDestroyed()) claude.focus(); } catch (e) {}
-      var wc = claude;
-      setTimeout(function () {
-        if (shown) return;
-        try {
-          if (hadFocus && win && !win.isDestroyed() && !win.isFocused()) win.focus();
-          if (wc && !wc.isDestroyed() && typeof wc.isFocused === "function" && !wc.isFocused()) wc.focus();
-        } catch (e) {}
-      }, REFOCUS_MS);
+      // Upstream mounting its own view over claude.ai leaves focus to that view; upstream's own exit does not refocus.
+      if (reason !== "upstream-view") {
+        try { if (claude && !claude.isDestroyed()) claude.focus(); } catch (e) {}
+        var wc = claude;
+        setTimeout(function () {
+          if (shown) return;
+          try {
+            if (hadFocus && win && !win.isDestroyed() && !win.isFocused()) win.focus();
+            if (wc && !wc.isDestroyed() && typeof wc.isFocused === "function" && !wc.isFocused()) wc.focus();
+          } catch (e) {}
+        }, REFOCUS_MS);
+      }
       log("view: closed (" + reason + ")");
       if (deps.onHidden) deps.onHidden(reason);
       return { ok: true };

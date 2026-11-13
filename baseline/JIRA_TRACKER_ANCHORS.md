@@ -65,7 +65,9 @@ EOF
 
 5.11492.0: B is `getClaudeCodeSessionManager:()=>DC` (index.chunk-DGzL9Hug.js@2476207) with `async function DC(){if(EC)return EC;let{claudeCodeSessionManager:e}...` (@2476472); C is `onNativeViewAttached:()=>GHi` (@4608570) with `function GHi(e){return WHi.add(e),()=>{WHi.delete(e)}}` (@4609293).
 
-`exports.claudeCodeSessionManager=` appears in exactly one chunk (5.1231.2 and 5.11492.0).
+5.11492.2 (re-checked 2026-11-13): the B and C anchors moved to `index.chunk-1pEy0mTq.js` at the same offsets and names as 5.11492.0 (`getClaudeCodeSessionManager:()=>DC` @2476207, `async function DC(){` @2476472, `onNativeViewAttached:()=>GHi` @4608570, `function GHi(e){` @4609293); the session manager class (`async startSession(`, `exports.claudeCodeSessionManager=`) is in `index.chunk-CNlrPrcI.js`. Every census count equals the 5.11492.0 column.
+
+`exports.claudeCodeSessionManager=` appears in exactly one chunk (5.1231.2, 5.11492.0 and 5.11492.2).
 
 ## Gates (spec section 8)
 
@@ -84,7 +86,7 @@ EOF
 - Row model: `a[href="/artifacts"]`, else `a[href$="/artifacts"]`, inside `[data-testid="sidebar"]`; the row box is its closest `li`. When no such link exists, the sidebar button whose own label is "Scheduled", else "Artifacts"; with several hits, the one matching `button.w-full.shrink-0`. The live run on 2026-11-13 (5.1231.2) placed the row after "Scheduled", so this path is the one in use.
 - Theme: the page copies claude.ai's computed `--cds-*` variables and the page background on open, on focus, on `nativeTheme` "updated" and every 1 s while open (custom themes and claude.ai's appearance switch change CSS with no event).
 - Sidebar edge: around the row model, the first of `[data-testid="sidebar"]`, `nav`, `.df-hub-rail`, `.dframe-nav-scroll`.
-- Main window's claude.ai view: a child `WebContentsView` of a `BrowserWindow` contentView whose webContents is not the window's own; popouts, popups and the 3P setup window are excluded by that rule.
+- Main window's claude.ai view (`mainView()` in js/jira_tracker_main.js): a child `WebContentsView` of a `BrowserWindow` contentView whose webContents is not the window's own, whose URL passes the shared sender guard's origin allowlist and is not the 3P setup page. The structural rule excludes popouts (no claude.ai child view, see the probe log below) and a window's own webContents; it does not exclude artifact popups, which only the origin allowlist keeps out. The 3P setup window is excluded by its URL.
 - Page warning keys (claude.ai-web.log and claude-patches.log): `[cdb-jira] anchor:sidebar`, `[cdb-jira] anchor:row-text`, `[cdb-jira] anchor:content`, `[cdb-jira] row:error`.
 - Main warning keys (claude-patches.log): `[cdb-jira] hook:native-view missing`, `[cdb-jira] hook:session-manager missing`, `[cdb-jira] navigate: no dispatcher`, `[cdb-jira] send: session manager missing`.
 

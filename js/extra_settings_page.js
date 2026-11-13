@@ -3368,9 +3368,16 @@
     save.addEventListener("click", function () {
       var fields = { site: site.value.trim(), email: email.value.trim() };
       if (token.value) fields.token = token.value;
+      var hadToken = !!(last && last.tokenSet), oldSite = last ? last.site || "" : "";
       run(api.jiraPrefSet(fields), function (res) {
         if (failed(res)) { state.textContent = "Could not save: " + reason(res); return; }
-        show(res); toast("Jira site, email and token saved");
+        show(res);
+        if (hadToken && !fields.token && !res.tokenSet && (res.site || "") !== oldSite) {
+          state.textContent = "The site changed, so the saved token was cleared. Enter the API token for " + (res.site || "the new site") + " and save again.";
+          toast("Jira site saved; the token was cleared");
+          return;
+        }
+        toast("Jira site, email and token saved");
       });
     });
     forget.addEventListener("click", function () {
