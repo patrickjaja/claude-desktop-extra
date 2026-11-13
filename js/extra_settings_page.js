@@ -3283,6 +3283,64 @@
       field("cdbx-jira-token", "API token (write-only)", token), actions, state,
       field("cdbx-jira-template", "Send to agent prompt ({{key}} {{summary}} {{url}} {{type}} {{priority}} {{description}})", template, true),
       tplActions].forEach(function (n) { form.appendChild(n); });
+    var tokenBox = token.parentNode, tokenLabel = tokenBox.querySelector("label");
+    var labelRow = el("div", "cdbx-jira-labelrow"), tip = el("span", "cdbx-jira-info");
+    var info = el("button", "cdbx-jira-i", "i"), pop = el("div", "cdbx-jira-pop");
+    info.type = "button";
+    info.setAttribute("aria-label", "Which scopes the token needs");
+    info.setAttribute("aria-expanded", "false");
+    pop.id = "cdbx-jira-scopes";
+    pop.hidden = true;
+    info.setAttribute("aria-controls", pop.id);
+    tip.appendChild(info); tip.appendChild(pop);
+    tokenBox.insertBefore(labelRow, tokenLabel);
+    labelRow.appendChild(tokenLabel); labelRow.appendChild(tip);
+    var pinned = false, hovered = false, focused = false, checks = null;
+    function syncTip() {
+      var open = pinned || hovered || focused;
+      pop.hidden = !open;
+      info.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    function onKey(e) {
+      if (!tip.isConnected) { document.removeEventListener("keydown", onKey, true); return; }
+      if (e.key !== "Escape" || pop.hidden) return;
+      // Escape closes the popover only; the Settings dialog stays open.
+      e.stopPropagation();
+      pinned = hovered = focused = false; syncTip();
+    }
+    function onDown(e) {
+      if (!tip.isConnected) { document.removeEventListener("mousedown", onDown, true); return; }
+      if (pinned && !tip.contains(e.target)) { pinned = hovered = false; syncTip(); }
+    }
+    tip.addEventListener("mouseenter", function () { hovered = true; syncTip(); });
+    tip.addEventListener("mouseleave", function () { hovered = false; syncTip(); });
+    info.addEventListener("focus", function () { focused = true; syncTip(); });
+    info.addEventListener("blur", function () { focused = false; syncTip(); });
+    info.addEventListener("click", function () { pinned = !pinned; syncTip(); });
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("mousedown", onDown, true);
+    function fillScopes(groups) {
+      while (pop.firstChild) pop.removeChild(pop.firstChild);
+      pop.appendChild(el("p", "cdbx-jira-pop-lead", "A classic token needs no scopes. A scoped token needs these:"));
+      (Array.isArray(groups) ? groups : []).forEach(function (g) {
+        var box = el("div", "cdbx-jira-scope-group"), list = el("div", "cdbx-jira-scope-list");
+        box.appendChild(el("div", "cdbx-jira-scope-name", g && g.name));
+        (g && Array.isArray(g.scopes) ? g.scopes : []).forEach(function (sc) { list.appendChild(el("code", null, sc)); });
+        box.appendChild(list);
+        pop.appendChild(box);
+      });
+    }
+    function showChecks(list) {
+      if (checks) { checks.remove(); checks = null; }
+      if (!Array.isArray(list) || !list.length) return;
+      checks = el("ul", "cdbx-jira-checks");
+      list.forEach(function (c) {
+        var li = el("li", null, (c && c.feature) + ": " + (c && c.text));
+        li.setAttribute("data-state", c && c.state);
+        checks.appendChild(li);
+      });
+      state.parentNode.insertBefore(checks, state.nextSibling);
+    }
     main.appendChild(form);
     var busy = false, last = null;
     function controls() {
@@ -3296,6 +3354,7 @@
       last = res;
       site.value = res.site || ""; email.value = res.email || ""; token.value = "";
       template.value = res.template || res.defaultTemplate || "";
+      fillScopes(res.scopes);
       state.textContent = !res.keyringOk
         ? "The system keyring is not available (" + (res.keyringBackend || "unknown") + "), so a token cannot be stored. Start GNOME Keyring or KWallet and restart Claude."
         : res.tokenSet ? "Token saved, encrypted by the system keyring." : "No token saved.";
@@ -3322,8 +3381,11 @@
     });
     test.addEventListener("click", function () {
       state.textContent = "Testing...";
+      showChecks(null);
       run(api.jiraPrefTest(), function (res) {
-        state.textContent = failed(res) ? "Test failed: " + reason(res) : "Connected as " + (res.displayName || "your Atlassian account");
+        if (failed(res)) { state.textContent = "Test failed: " + reason(res); return; }
+        state.textContent = "Connected as " + (res.displayName || "your Atlassian account") + (res.token ? " \u00b7 " + res.token + " token" : "");
+        showChecks(res.checks);
       });
     });
     saveTpl.addEventListener("click", function () {

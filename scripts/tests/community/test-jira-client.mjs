@@ -62,7 +62,7 @@ await test("constants match the spec; win32 installs nothing", () => {
 });
 await test("site route: Basic credential on the site, no tenant_info, route saved once", async () => {
   const h = harness([myselfOk(SITE)]);
-  assert.deepEqual(plain(await h.client.myself(CREDS)), { ok: true, displayName: "Ada" });
+  assert.deepEqual(plain(await h.client.myself(CREDS)), { ok: true, displayName: "Ada", route: "site" });
   assert.deepEqual(h.requests.map((r) => r.url), [SITE + "/rest/api/3/myself", SITE + "/rest/api/3/myself"]);
   assert.ok(h.requests.every((r) => r.headers.authorization === BASIC && r.redirect === "manual"));
   assert.deepEqual(h.routesSaved, [["site", ""]]);
@@ -329,5 +329,47 @@ await test("subtasks: mapped from the parent's subtasks field; their own list fi
   assert.equal(ch.ok, true); assert.equal(ch.records[0].assignee, "Bo");
   assert.deepEqual(plain(await h.client.children(c, [])), { ok: true, records: [] });
   assert.equal(h.requests.length, 2);
+});
+await test("token scopes: one list in three groups, kept in the docs; each feature check maps Jira's answer to one line", () => {
+  const f = load().__cdbJiraClientFactory;
+  assert.deepEqual(plain(f.SCOPE_GROUPS), [
+    { name: "Basic", scopes: ["read:jira-work", "read:jira-user", "write:jira-work"] },
+    { name: "Board and Backlog", scopes: ["read:board-scope:jira-software", "read:project:jira", "read:issue-details:jira", "read:board-scope.admin:jira-software", "write:board-scope:jira-software"] },
+    { name: "Scrum boards only, untested", scopes: ["read:sprint:jira-software", "write:sprint:jira-software"] }]);
+  const all = f.SCOPE_GROUPS.flatMap((g) => g.scopes), docs = readFileSync(join(ROOT, "docs/jira-tracker.md"), "utf8");
+  for (const s of all) assert.ok(docs.includes("`" + s + "`"), "docs/jira-tracker.md names " + s);
+  for (const call of Object.keys(f.CALL_SCOPES)) for (const s of f.CALL_SCOPES[call]) assert.ok(all.includes(s), call + " needs a listed scope: " + s);
+  const missing = (scopes, fallback) => "Probably missing " + scopes.join(", ") + " (inferred: Jira does not name the missing scope). " + fallback;
+  assert.deepEqual(plain(f.checkLine("agile", "boards", { ok: true })), { feature: "Board and Backlog", state: "ok", text: "OK" });
+  assert.deepEqual(plain(f.checkLine("tickets", "search", { ok: false, status: 401, kind: "auth", message: "m" })),
+    { feature: "Tickets", state: "failed", scopes: ["read:jira-work"], text: missing(["read:jira-work"], "The tracker cannot list tickets.") });
+  assert.deepEqual(plain(f.checkLine("agile", "backlog", { ok: false, status: 403, kind: "forbidden", message: "m" })),
+    { feature: "Board and Backlog", state: "failed", scopes: ["read:board-scope:jira-software", "read:issue-details:jira"],
+      text: missing(["read:board-scope:jira-software", "read:issue-details:jira"], "The list groups by status instead.") });
+  assert.deepEqual(plain(f.checkLine("agile", "boards", { ok: false, status: 401, kind: "auth", message: "m" })).scopes, ["read:board-scope:jira-software", "read:project:jira"]);
+  assert.deepEqual(plain(f.checkLine("columns", "config", { ok: false, status: 401, kind: "auth", message: "m" })),
+    { feature: "Board view columns", state: "failed", scopes: ["read:board-scope.admin:jira-software"],
+      text: missing(["read:board-scope.admin:jira-software"], "The board shows workflow statuses as columns instead.") });
+  assert.deepEqual(plain(f.checkLine("sprints", "sprint", { ok: false, status: 401, kind: "auth", message: "m" })).text,
+    missing(["read:sprint:jira-software"], "Move to board stays off for this Scrum board."));
+  assert.deepEqual(plain(f.checkLine("agile", "boards", { ok: false, status: 0, kind: "unavailable", message: "Could not reach Jira." })),
+    { feature: "Board and Backlog", state: "failed", text: "Could not reach Jira. The list groups by status instead." });
+  assert.deepEqual(plain(f.checkLine("agile", "backlog", { notChecked: "this board has no backlog" })),
+    { feature: "Board and Backlog", state: "not-checked", text: "Not checked: this board has no backlog" });
+});
+await test("myself names the route that answered; probeSearch is one key-and-project query that never re-detects", async () => {
+  let h = harness([myselfOk(SITE)]);
+  assert.deepEqual(plain(await h.client.myself({ ...CREDS })), { ok: true, displayName: "Ada", route: "site" });
+  h = harness([myself401(SITE), tenantInfo, myselfOk(GW)]);
+  assert.deepEqual(plain(await h.client.myself({ ...CREDS })), { ok: true, displayName: "Ada", route: "gateway" });
+  const gw = { ...CREDS, route: "gateway", cloudId: "cloud-abc" };
+  h = harness([[at(GW, "/rest/api/3/search/jql"), () => response(401, { message: "Unauthorized; scope does not match" })]]);
+  const refused = plain(await h.client.probeSearch(gw, "assignee = currentUser() ORDER BY updated DESC"));
+  assert.equal(refused.ok, false); assert.equal(refused.status, 401);
+  assert.equal(h.requests.length, 1, "a scope refusal does not re-detect the route");
+  h = harness([[at(GW, "/rest/api/3/search/jql"), () => response(200, { issues: [{ key: "ACME-7", fields: { project: { key: "ACME" } } }, { key: "bad", fields: {} }] })]]);
+  assert.deepEqual(plain(await h.client.probeSearch(gw, "project = ACME ORDER BY updated DESC")), { ok: true, records: [{ key: "ACME-7", project: "ACME" }] });
+  assert.deepEqual(h.requests[0].body, { jql: "project = ACME ORDER BY updated DESC", fields: ["project"], maxResults: 50 });
+  assert.ok(!h.logs.join("\n").includes("ACME ORDER"), "no JQL in the log");
 });
 console.log(`PASS ${passed} Jira client tests`);

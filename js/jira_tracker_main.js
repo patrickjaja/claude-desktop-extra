@@ -359,7 +359,42 @@
   function prefView() {
     var p = store.prefRead(), c = store.credsView();
     return { ok: true, enabled: p.enabled, locked: p.locked, site: c.site, email: c.email, tokenSet: c.tokenSet, keyringOk: c.keyringOk,
-      keyringBackend: c.keyringBackend, template: store.state().template, defaultTemplate: prompt.DEFAULT_TEMPLATE };
+      keyringBackend: c.keyringBackend, template: store.state().template, defaultTemplate: prompt.DEFAULT_TEMPLATE,
+      scopes: globalThis.__cdbJiraClientFactory.SCOPE_GROUPS };
+  }
+  // Test connection checks one call per feature after the auth check; only a Scrum board adds the sprint read.
+  var TEST_REQUESTS = 4, TEST_REQUESTS_SCRUM = 5;
+  function featureChecks(c) {
+    var line = globalThis.__cdbJiraClientFactory.checkLine, lines = [], used = 0, records = [];
+    var none = { notChecked: "no project with a board" };
+    function spend(cap, run) {
+      if (used >= cap) return Promise.resolve({ notChecked: "request limit reached" });
+      used++;
+      return run();
+    }
+    var last = store.state().project, project = PROJECT_RE.test(last) ? last : "";
+    var jql = (project ? "project = " + project : "assignee = currentUser()") + " ORDER BY updated DESC";
+    return spend(TEST_REQUESTS, function () { return client.probeSearch(c, jql); }).then(function (found) {
+      lines.push(line("tickets", "search", found));
+      if (found.ok) records = found.records;
+      if (!project) project = (records.filter(function (r) { return PROJECT_RE.test(r.project); })[0] || {}).project || "";
+      if (!project) { lines.push(line("agile", "boards", none), line("columns", "config", none)); return lines; }
+      return spend(TEST_REQUESTS, function () { return client.boards(c, project); }).then(function (b) {
+        if (!b.ok) { lines.push(line("agile", "boards", b), line("columns", "config", { notChecked: "the board lookup failed" })); return lines; }
+        if (!b.boards.length) { lines.push(line("agile", "boards", none), line("columns", "config", none)); return lines; }
+        var board = chosenBoard(project, b.boards), cap = board.type === "scrum" ? TEST_REQUESTS_SCRUM : TEST_REQUESTS;
+        var keys = records.filter(function (r) { return r.project === project; }).map(function (r) { return r.key; });
+        var backlog = keys.length ? spend(cap, function () { return client.backlogKeys(c, board.id, keys); }) : Promise.resolve({ ok: true });
+        return backlog.then(function (bl) {
+          lines.push(line("agile", "backlog", !bl.ok && bl.status === 400 ? { notChecked: "this board has no backlog" } : bl));
+          return spend(cap, function () { return client.boardConfig(c, board.id); });
+        }).then(function (cf) {
+          lines.push(line("columns", "config", cf));
+          if (board.type !== "scrum") return lines;
+          return spend(cap, function () { return client.activeSprint(c, board.id); }).then(function (sp) { lines.push(line("sprints", "sprint", sp)); return lines; });
+        });
+      });
+    });
   }
 
   var CLAUDE = {
@@ -387,7 +422,12 @@
       if (!enabled()) return { ok: false, error: "Switch the Jira tracker on first." };
       var c = creds();
       if (!c) return { ok: false, error: "Save the site, email and API token first." };
-      return client.myself(c).then(function (r) { return r.ok ? { ok: true, displayName: r.displayName } : { ok: false, error: r.message }; });
+      return client.myself(c).then(function (r) {
+        if (!r.ok) return { ok: false, error: r.message };
+        return featureChecks(creds() || c).then(function (checks) {
+          return { ok: true, displayName: r.displayName, token: r.route === "gateway" ? "scoped" : "classic", checks: checks };
+        });
+      });
     }
   };
   var TRACKER = {

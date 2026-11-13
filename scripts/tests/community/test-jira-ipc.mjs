@@ -519,6 +519,72 @@ try {
     assert.equal(w.fetches.length, 0);
     assert.equal(w.views.length, 0);
   });
+  const scopeWorld = (name, answers) => world(path.join(temp, name), { respond: (u, b) => {
+    const p = new URL(u).pathname;
+    for (const [suffix, a] of answers) if (p.endsWith(suffix)) return typeof a === "function" ? a(u, b) : a;
+    return null;
+  } });
+  const testRun = async (w) => {
+    await on(w);
+    await w.call("cdb-jira-pref:set", w.claude, { site: "https://acme.atlassian.net", email: EMAIL, token: TOKEN });
+    const stateFile = path.join(w.dir, "cdb-jira-state.json"), before = fs.existsSync(stateFile) ? fs.readFileSync(stateFile, "utf8") : null;
+    const diags = []; w.ctx.__cdbDiag = (m) => diags.push(m);
+    const n0 = w.fetches.length, r = await w.call("cdb-jira-pref:test", w.claude);
+    assert.equal(fs.existsSync(stateFile) ? fs.readFileSync(stateFile, "utf8") : null, before, "Test connection writes no page state");
+    const log = diags.join("\n");
+    for (const secret of ["currentUser", "ORDER BY", "Ada", EMAIL, TOKEN, "B2-1"]) assert.ok(!log.includes(secret), "no " + secret + " in the log");
+    return { r, sent: w.fetches.slice(n0) };
+  };
+  await test("Test connection: one check per feature, at most 4 extra requests (5 on a Scrum board), no state written, nothing private logged", async () => {
+    for (const type of ["simple", "scrum"]) {
+      const w = scopeWorld("w-scopes-" + type, [
+        ["/rest/api/3/myself", [200, { displayName: "Ada" }]],
+        ["/rest/api/3/search/jql", [200, { issues: [{ key: "B2-1", fields: { project: { key: "B2" } } }] }]],
+        ["/rest/agile/1.0/board", [200, { values: [{ id: 15, name: "B2 board", type }] }]],
+        ["/board/15/backlog", [401, { message: "Unauthorized; scope does not match" }]],
+        ["/board/15/configuration", [200, { columnConfig: { columns: [{ name: "To Do", statuses: [{ id: "1" }] }] } }]],
+        ["/board/15/sprint", [401, { message: "Unauthorized; scope does not match" }]]]);
+      const { r, sent } = await testRun(w);
+      assert.equal(r.ok, true); assert.equal(r.displayName, "Ada"); assert.equal(r.token, "classic");
+      assert.deepEqual(r.checks.map((c) => [c.feature, c.state]), [["Tickets", "ok"], ["Board and Backlog", "failed"], ["Board view columns", "ok"]].concat(type === "scrum" ? [["Scrum sprints", "failed"]] : []));
+      assert.match(r.checks[1].text, /^Probably missing read:board-scope:jira-software, read:issue-details:jira \(inferred/);
+      assert.equal(sent.filter((u) => !u.endsWith("/myself")).length, type === "scrum" ? 5 : 4, "extra requests after the auth check (route detection is part of the auth check)");
+      const search = JSON.parse(w.bodies[w.fetches.indexOf(sent.find((u) => u.includes("/search/jql")))]);
+      assert.deepEqual(search, { jql: "assignee = currentUser() ORDER BY updated DESC", fields: ["project"], maxResults: 50 });
+      assert.ok(sent.some((u) => u.includes("projectKeyOrId=B2")));
+    }
+  });
+  await test("Test connection: the page's last project, a board without a backlog, no project with a board, and a scoped token", async () => {
+    let w = scopeWorld("w-scopes-last", [
+      ["/rest/api/3/myself", [200, { displayName: "Ada" }]],
+      ["/rest/api/3/search/jql", [200, { issues: [{ key: "XY-3", fields: { project: { key: "XY" } } }] }]],
+      ["/rest/agile/1.0/board", [200, { values: [{ id: 30, name: "XY board", type: "kanban" }] }]],
+      ["/board/30/backlog", [400, { errorMessages: ["The board does not support the backlog"] }]],
+      ["/board/30/configuration", [200, { columnConfig: { columns: [] } }]]]);
+    fs.mkdirSync(w.dir, { recursive: true });
+    fs.writeFileSync(path.join(w.dir, "cdb-jira-state.json"), JSON.stringify({ project: "XY" }));
+    let { r, sent } = await testRun(w);
+    assert.equal(JSON.parse(w.bodies[w.fetches.indexOf(sent.find((u) => u.includes("/search/jql")))]).jql, "project = XY ORDER BY updated DESC");
+    assert.deepEqual(r.checks.map((c) => c.text), ["OK", "Not checked: this board has no backlog", "OK"]);
+    w = scopeWorld("w-scopes-none", [["/rest/api/3/myself", [200, { displayName: "Ada" }]], ["/rest/api/3/search/jql", [200, { issues: [] }]]]);
+    ({ r, sent } = await testRun(w));
+    assert.deepEqual(r.checks.map((c) => c.text), ["OK", "Not checked: no project with a board", "Not checked: no project with a board"]);
+    assert.equal(sent.filter((u) => !u.endsWith("/myself")).length, 1, "only the search when no project is known");
+    w = scopeWorld("w-scopes-gw", [
+      ["/_edge/tenant_info", [200, { cloudId: "cloud-abc" }]],
+      ["/rest/api/3/myself", (u) => (u.startsWith("https://api.atlassian.com/") ? [200, { displayName: "Ada" }] : [401, {}])],
+      ["/rest/api/3/search/jql", [401, { message: "Unauthorized; scope does not match" }]]]);
+    ({ r, sent } = await testRun(w));
+    assert.equal(r.token, "scoped");
+    assert.deepEqual(r.checks.map((c) => [c.feature, c.state]), [["Tickets", "failed"], ["Board and Backlog", "not-checked"], ["Board view columns", "not-checked"]]);
+    const searchAt = sent.findIndex((u) => u.includes("/search/jql"));
+    assert.ok(searchAt > 0 && !sent.slice(searchAt).some((u) => u.endsWith("/myself") || u.endsWith("/tenant_info")), "a refused check does not re-detect the route");
+  });
+  await test("pref:read carries the scope groups for the card", async () => {
+    const w = world(path.join(temp, "w-scopes-read"));
+    const r = await w.call("cdb-jira-pref:read", w.claude);
+    assert.deepEqual(r.scopes.map((g) => g.name), ["Basic", "Board and Backlog", "Scrum boards only, untested"]);
+  });
   await test("sender groups: the main window's claude.ai view only for open/close/bounds; the tracker view only for data", async () => {
     const w = world(path.join(temp, "w-senders"));
     await on(w);

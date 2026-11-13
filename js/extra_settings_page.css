@@ -789,6 +789,20 @@
 .cdbx-jira-form { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 10px; }
 .cdbx-jira-field { display: flex; flex-direction: column; gap: 4px; width: 100%; max-width: 420px; }
 .cdbx-jira-field.cdbx-jira-wide { max-width: 640px; }
+.cdbx-jira-labelrow { display: flex; align-items: center; gap: 6px; }
+.cdbx-jira-info { position: relative; display: inline-flex; }
+.cdbx-jira-i { box-sizing: border-box; width: 16px; height: 16px; padding: 0; border: 1px solid currentColor; border-radius: 50%; background: transparent; color: var(--cdbx-ink, CanvasText); font: italic 600 10px/14px Georgia, serif; text-align: center; cursor: pointer; }
+.cdbx-jira-i:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.cdbx-jira-pop { position: absolute; left: 0; top: calc(100% + 6px); z-index: 30; width: max-content; max-width: 360px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--cdbx-ink, CanvasText) 22%, transparent); border-radius: 8px; background: var(--cdbx-surface, Canvas); color: var(--cdbx-ink, CanvasText); box-shadow: 0 6px 24px rgb(0 0 0 / 0.2); font-size: 12px; line-height: 1.45; user-select: text; }
+.cdbx-jira-pop[hidden] { display: none; }
+.cdbx-jira-pop-lead { margin: 0 0 8px; }
+.cdbx-jira-scope-group + .cdbx-jira-scope-group { margin-top: 8px; }
+.cdbx-jira-scope-name { margin-bottom: 3px; font-weight: 600; }
+.cdbx-jira-scope-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.cdbx-jira-scope-list code { padding: 1px 5px; border-radius: 4px; background: color-mix(in srgb, var(--cdbx-ink, CanvasText) 9%, transparent); font: 11px/1.4 ui-monospace, monospace; }
+.cdbx-jira-checks { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; color: var(--cdbx-ink, CanvasText); font-size: 12px; }
+.cdbx-jira-checks li::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: currentColor; vertical-align: 1px; }
+.cdbx-jira-checks li[data-state="not-checked"]::before { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
 .cdbx-jira-field .cdbx-input { width: 100%; max-width: 100%; box-sizing: border-box; border-color: color-mix(in srgb, currentColor 38%, transparent); padding: 7px 9px; }
 .cdbx-jira-field .cdbx-area { width: 100%; box-sizing: border-box; font-family: monospace; }
 .cdbx-jira-actions { display: flex; flex-wrap: wrap; gap: 8px; }

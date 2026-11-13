@@ -173,7 +173,7 @@
         r = await once(c, method, base(c) + path, body, cap);
       }
       if (r.ok && cap) return { ok: true, status: r.status, bytes: r.bytes, type: r.type };
-      if (r.ok) return { ok: true, status: r.status, json: r.json };
+      if (r.ok) return { ok: true, status: r.status, json: r.json, route: c.route };
       return scoped ? withDetail(failure(r, c), r, c) : failure(r, c);
     }
 
@@ -220,7 +220,13 @@
 
     async function myself(c) {
       var r = await call(c, "GET", "/rest/api/3/myself");
-      return r.ok ? { ok: true, displayName: str(r.json && r.json.displayName) } : r;
+      return r.ok ? { ok: true, displayName: str(r.json && r.json.displayName), route: r.route } : r;
+    }
+    async function probeSearch(c, jql) {
+      var r = await call(c, "POST", "/rest/api/3/search/jql", { jql: jql, fields: ["project"], maxResults: PAGE_SIZE }, 0, true);
+      if (!r.ok) return r;
+      var list = r.json && Array.isArray(r.json.issues) ? r.json.issues : [];
+      return { ok: true, records: list.filter(function (i) { return i && KEY_RE.test(str(i.key)); }).map(function (i) { return { key: i.key, project: str(i.fields && i.fields.project && i.fields.project.key) }; }) };
     }
     async function search(c, jql, nextPageToken) {
       var body = { jql: jql, fields: LIST_FIELDS, maxResults: PAGE_SIZE };
@@ -356,7 +362,7 @@
     return {
       constants: { MAX_CONCURRENT: MAX_CONCURRENT, TIMEOUT_MS: TIMEOUT_MS, RETRY_CAP_MS: RETRY_CAP_MS, PAGE_SIZE: PAGE_SIZE, GATEWAY_HOST: GATEWAY_HOST },
       validSite: function (s) { return SITE_RE.test(str(s)); },
-      myself: myself, search: search, children: children, sprintKeys: sprintKeys, boards: boards, backlogKeys: backlogKeys, activeSprint: activeSprint,
+      myself: myself, probeSearch: probeSearch, search: search, children: children, sprintKeys: sprintKeys, boards: boards, backlogKeys: backlogKeys, activeSprint: activeSprint,
       moveToBacklog: moveToBacklog, moveToBoard: moveToBoard, boardConfig: boardConfig, projectStatuses: projectStatuses, drop: drop, attachmentBytes: attachmentBytes, projects: projects, issue: issue, transitions: transitions, transition: transition
     };
   }
@@ -421,6 +427,38 @@
   create.withSort = withSort;
   create.attachmentIds = attachmentIds;
   create.SORTS = Object.keys(SORTS);
+
+  var SCOPE_GROUPS = [
+    { name: "Basic", scopes: ["read:jira-work", "read:jira-user", "write:jira-work"] },
+    { name: "Board and Backlog", scopes: ["read:board-scope:jira-software", "read:project:jira", "read:issue-details:jira", "read:board-scope.admin:jira-software", "write:board-scope:jira-software"] },
+    { name: "Scrum boards only, untested", scopes: ["read:sprint:jira-software", "write:sprint:jira-software"] }
+  ];
+  var CALL_SCOPES = {
+    search: ["read:jira-work"],
+    boards: ["read:board-scope:jira-software", "read:project:jira"],
+    backlog: ["read:board-scope:jira-software", "read:issue-details:jira"],
+    config: ["read:board-scope.admin:jira-software"],
+    sprint: ["read:sprint:jira-software"]
+  };
+  var FEATURES = {
+    tickets: { label: "Tickets", fallback: "The tracker cannot list tickets." },
+    agile: { label: "Board and Backlog", fallback: "The list groups by status instead." },
+    columns: { label: "Board view columns", fallback: "The board shows workflow statuses as columns instead." },
+    sprints: { label: "Scrum sprints", fallback: "Move to board stays off for this Scrum board." }
+  };
+  function checkLine(feature, call, r) {
+    var f = FEATURES[feature];
+    if (r && r.ok) return { feature: f.label, state: "ok", text: "OK" };
+    if (r && r.notChecked) return { feature: f.label, state: "not-checked", text: "Not checked: " + r.notChecked };
+    if (r && (r.status === 401 || r.status === 403)) {
+      var need = CALL_SCOPES[call];
+      return { feature: f.label, state: "failed", scopes: need.slice(), text: "Probably missing " + need.join(", ") + " (inferred: Jira does not name the missing scope). " + f.fallback };
+    }
+    return { feature: f.label, state: "failed", text: ((r && r.message) || "Jira did not answer.") + " " + f.fallback };
+  }
+  create.SCOPE_GROUPS = SCOPE_GROUPS;
+  create.CALL_SCOPES = CALL_SCOPES;
+  create.checkLine = checkLine;
 
   globalThis.__cdbJiraClientFactory = create;
 })();

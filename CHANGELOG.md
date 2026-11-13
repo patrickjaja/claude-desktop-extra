@@ -22,6 +22,7 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - Needs your Jira Cloud site, Atlassian email and an API token (classic or scoped), stored encrypted with the system keyring per profile; requests go only to your site and `api.atlassian.com`. Setup and limits: [docs/jira-tracker.md](docs/jira-tracker.md) (new patch `add_feature_jira_tracker`).
 - **Board** view: the columns of the project's Jira board; drag a card to change its status (one fitting transition runs, several ask which, none or only ones that need fields send the card back with the reason). Board and Backlog moves read Jira's backlog again until the ticket shows in its new place.
 - The page follows the claude.ai theme, custom themes included, while it is open. In light themes, secondary text is clamped to a readable lightness and opacity; dark themes keep their colours.
+- Token scopes in Settings: an **i** beside the token field lists the scopes a scoped token needs, and **Test connection** names the token type and checks tickets, Board and Backlog, board columns and (Scrum) sprints, with the scopes each failed check probably lacks.
 - Known gaps: fixed 260 px board columns; the shared Extra settings styles of the Jira row can fall below AA contrast in light themes (separate fix); the native folder picker and trust dialog follow the system theme.
 
 ## 2026-11-12
