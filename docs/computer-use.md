@@ -127,7 +127,7 @@ Then restart Claude and start a **new** Cowork task; a running task keeps the to
 
 ## Read app controls through accessibility (experimental)
 
-Settings -> Extra -> Cowork (Linux) -> **Computer Use: read app controls (accessibility)** (off by default) gives Claude the app-scoped tools `app_list_windows`, `app_ax_find`, `app_click` and `app_type`. `app_ax_find` lists a window's controls (role, name, states, position) from the desktop accessibility bus (AT-SPI), and `app_click` / `app_type` press a control or set a text field by its `[N]` index, so Claude finds controls by name instead of by screenshot coordinates. With the switch off the tools do not exist and nothing touches the accessibility bus.
+Settings -> Extra -> Cowork (Linux) -> **Computer Use: read app controls (accessibility)** (off by default) gives Claude the app-scoped tools `app_list_windows`, `app_ax_find`, `app_click` and `app_type`, plus `app_focus` and `app_scroll` when the bridge offers them. `app_ax_find` lists a window's controls (role, name, states, position) from the desktop accessibility bus (AT-SPI), and the other tools act on a control by its `[N]` index, so Claude finds controls by name instead of by screenshot coordinates. With the switch off the tools do not exist and nothing touches the accessibility bus.
 
 While a Computer Use session uses it, Claude turns the desktop accessibility service on, and turns it back off when the session ends (a crash is healed at the next start). A running screen reader is never touched. The text of password fields and terminals is never read. It needs `at-spi2-core` (installed with every common desktop). Switching the desktop accessibility setting on or off yourself during a Computer Use session is overridden: Claude Desktop switches it on when the tools are used and back to the previous value afterwards.
 
@@ -137,6 +137,23 @@ While a Computer Use session uses it, Claude turns the desktop accessibility ser
 | GNOME Wayland, Sway / Hyprland / Niri | Names and actions; positions where the compositor reports them (Sway and Hyprland IPC), otherwise "position unknown" and Claude uses a screenshot to click. On GNOME, XWayland apps report positions as unknown |
 
 GTK, Qt, Firefox and LibreOffice apps expose their controls. Electron and Chromium apps expose almost nothing unless started with `--force-renderer-accessibility`; Claude uses screenshots there. Every missing piece (no `at-spi2-core`, no matching window) gives a plain "unavailable" answer and normal Computer Use carries on.
+
+**Stable element numbers.** The `[N]` of a control stays the same across listings of its window for the rest of the task, so Claude can keep using a number after listing again. Before an action the bridge checks that the control is still the one that was listed (role, name and accessible id). A control the app re-created is found again only when that is unambiguous: the same accessible id and name, or a role and name that only one control has. Otherwise the tool says the element is gone, nothing is sent, and Claude lists the window again. A different process behind the window is never matched.
+
+**What was sent.** Every action result says which of three things happened: refused before sending (nothing reached the app, safe to retry), sent and confirmed, or sent but not confirmed (Claude checks with a new listing or a screenshot before repeating it).
+
+**Waiting.** `app_ax_find` with `wait_for` re-checks the window until a control appears or goes (`appears`, `gone`), or changes state (`enabled`, `checked`, `unchecked`, `expanded`, `collapsed`, `focused`, `value_contains`), for at most 15 seconds (5 by default), then lists the window and says whether the condition was met or timed out. The wait ends early on Stop, when another Claude session takes over the computer, when screen sharing is stopped, when the session's accessibility use ends, or when the app's grant no longer allows the call.
+
+**Large windows.** `app_ax_find` can list only what is inside one container (`within`), limit the depth (`depth`), list containers with their child counts (`outline`), or include labels and other plain text (`include_text`).
+
+**More actions.** `app_click` with `ensure` brings a control into a state (`checked`, `unchecked`, `expanded`, `collapsed`, `selected`) and checks the result; when the control already is in that state nothing is sent and the result says so. `app_focus` gives a control keyboard focus. `app_scroll` scrolls a control into view. `app_type` with a number sets a slider's or spin button's value (outside its range, nothing is sent).
+
+**Limits.**
+
+- Rows and cells in lists and trees are not expanded or selected through a fallback click: the tool refuses and Claude uses the pointer.
+- A Qt combo box whose popup is a native window on Wayland needs pointer input; the tool refuses and Claude clicks it.
+- Where a control has no accessibility way to do something, the result says so and Claude uses the pointer.
+- The new parameters and the two extra tools are offered only when the bridge lists the matching features (`ax-features`). An older or third-party bridge (`KWIN_PORTAL_BRIDGE_BIN` and the like) keeps the four tools and the earlier behavior, including numbers that are replaced by each listing.
 
 ## Computer Use on a background display (experimental)
 

@@ -2,6 +2,15 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-13
+
+### Computer Use: read app controls (accessibility) - stable numbers, waiting, more actions
+
+- **Element numbers stay put.** With the experimental accessibility switch on, a control keeps its `[N]` across listings of its window for the whole task. Before acting, the control is checked to still be the one that was listed; a re-created control is found again only when that is unambiguous (same accessible id and name, or a unique role and name), otherwise the tool says so and sends nothing.
+- **Results say whether anything was sent:** refused before sending (safe to retry), or sent but not confirmed.
+- **`app_ax_find` can wait** (at most 15 s) for a control to appear, go or change state, and can look inside one container, limit depth, list only containers (outline) or include plain text.
+- **More actions:** `app_click` can bring a control into a state (checked, unchecked, expanded, collapsed, selected) and reports when it already was; new `app_focus` and `app_scroll` (scroll into view); `app_type` sets a slider's or spin button's value from a number. A bridge without these features keeps the four earlier tools. See [Computer Use](docs/computer-use.md#read-app-controls-through-accessibility-experimental).
+
 ## 2026-11-12
 
 ### Computer Use: the glow and the drawn cursor on KDE Plasma and GNOME Wayland
