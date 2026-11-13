@@ -292,9 +292,11 @@ function shotNote(s,res){
 function lockReleased(){_noted.clear()}
 // The accessibility tools' grant check (js/cu_ax_tools.js opts.allowedApps /
 // opts.tier). Not opts.ctx: that is upstream's dispatch context (kwin mode).
+// The check and grantsNow read the session's grants when called, so a grant
+// revoked during a wait_for ends the wait.
 function axOpts(s){
   var list=grants(s);
-  return{allowedApps:list,tier:function(id){return grantFor(id,list)?null:{error:err("\""+id+"\" is not in the allowed applications. Call request_access with it in the apps array first.")}}};
+  return{allowedApps:list,grantsNow:function(){return grants(s)},tier:function(id){return grantFor(id,grants(s))?null:{error:err("\""+id+"\" is not in the allowed applications. Call request_access with it in the apps array first.")}}};
 }
 function diag(m){try{var d=globalThis.__cdbDiag;if(typeof d==="function")d(m)}catch(e){}}
 // ── What upstream tells the model and the UI about per-app access ──

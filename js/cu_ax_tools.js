@@ -231,11 +231,15 @@ function armIdle(){
   _idle=setTimeout(function(){_idle=null;if(_st)restore("idle")},IDLE_MS);
   if(_idle&&typeof _idle.unref==="function")_idle.unref();
 }
-function restore(why){
+// holder: the session whose use ended, when known (its numbers and waits go);
+// null = every session's (fail closed). The generation moves once, here: a
+// wait that began after this call is not ended by the queued part, which
+// only drops tables that calls queued ahead of it wrote.
+function restore(why,holder){
   if(_idle){clearTimeout(_idle);_idle=null}
-  clearTables(why);
+  clearTables(why,holder);
   return queue(async function(){
-    clearTables(why);
+    clearTables(why,holder,!0);
     var s=_st||readState();_st=null;_fresh=!1;
     if(!s)return;
     var br=bridge();
@@ -257,8 +261,24 @@ function hook(){
   if(!ex||ex.__cdbAxHooked)return;
   ex.__cdbAxHooked=!0;
   var sl=ex.__setLockHeld,tb=ex.__cuTaskBoundary;
-  if(typeof sl==="function")ex.__setLockHeld=function(held,holder){if(held){_lockSeq++;_lockHolder=typeof holder==="string"?holder:null}var p=sl.apply(ex,arguments);if(!held)clearTables("lock release");if(!held&&(_st||_pending>0))restore("lock release");return p};
-  if(typeof tb==="function")ex.__cuTaskBoundary=function(id,source,holder){var p=tb.apply(ex,arguments);if((_st||_pending>0)&&(id==null||holder==null||sessKey(id)===sessKey(holder)))restore("task boundary ("+source+")");return p};
+  // A release ends the use of the session that held the lock (the holder 4b
+  // handed over at the acquire); without a known holder, every session's.
+  if(typeof sl==="function")ex.__setLockHeld=function(held,holder){
+    var h=null;
+    if(held){_lockSeq++;_lockHolder=typeof holder==="string"?holder:null}else{h=_lockHolder;_lockHolder=null}
+    var p=sl.apply(ex,arguments);
+    if(!held){if(_st||_pending>0)restore("lock release",h);else clearTables("lock release",h)}
+    return p;
+  };
+  // A task boundary ends that session's task: its numbers, waits and marks
+  // go. The lock's own session (or an unknown one) also restores.
+  if(typeof tb==="function")ex.__cuTaskBoundary=function(id,source,holder){
+    var p=tb.apply(ex,arguments),why="task boundary ("+source+")",known=id!=null&&holder!=null&&sessKey(id)===sessKey(holder);
+    if((_st||_pending>0)&&(id==null||holder==null||known))restore(why,known?id:null);
+    else if(id!=null)clearTables(why,id);
+    if(id!=null)dropMarks(id);
+    return p;
+  };
 }
 hook();
 process.once("exit",function(){
@@ -280,6 +300,9 @@ function keysOf(arr){var k={};for(var i=0;i<arr.length;i++){var x=arr[i];if(type
 // upstream's context (kwin mode).
 function kctx(opts){return globalThis.__cuKwinMode&&opts&&opts.ctx?opts.ctx:null}
 function grantList(opts){
+  // Regular mode with the consent switch: the session's grants as they are
+  // now (js/cu_consent.js axOpts), else the list handed over with the call.
+  if(opts&&typeof opts.grantsNow==="function"){try{var l=opts.grantsNow();if(Array.isArray(l))return l}catch(e){return[]}}
   if(opts&&Array.isArray(opts.allowedApps))return opts.allowedApps;
   var c=kctx(opts);
   return c&&Array.isArray(c.allowedApps)?c.allowedApps:[];
@@ -330,8 +353,8 @@ function owns(w,m){
 globalThis.__cdbCuWindowOwns=function(bundleId,w){return typeof bundleId==="string"&&!!bundleId.trim()&&!!w&&!!owns(w,matcherOf(bundleId,null))};
 // The app's windows. A bare name whose last segment names windows of two
 // different reverse-DNS apps is ambiguous: refused, never guessed.
-async function windowsOf(br,m){
-  var all=await run(br,["windows"],null,15000),out=[],vendors={};
+async function windowsOf(br,m,ms){
+  var all=await run(br,["windows"],null,ms||15000),out=[],vendors={};
   (Array.isArray(all)?all:[]).forEach(function(w){
     if(!w||w.id==null||w.is_dock===!0||w.is_desktop===!0)return;
     var o=owns(w,m);if(!o)return;
@@ -374,7 +397,20 @@ function remember(m,k,v,cap){m.delete(k);m.set(k,v);if(m.size>(cap||64))m.delete
 var _gen=0,_sgen=new Map();
 function genNow(sid){return{g:_gen,s:_sgen.get(sessKey(sid))||0}}
 function genSame(g0,sid){return!!g0&&g0.g===_gen&&g0.s===(_sgen.get(sessKey(sid))||0)}
-function clearTables(why){_gen++;if(_wins.size)log("element numbers cleared ("+why+")");_wins.clear();_alias.clear()}
+// holder known: that session's tables only, and only its waits end (its own
+// generation); else every table and every wait. quiet: no generation move.
+function clearTables(why,holder,quiet){
+  if(holder!=null){
+    var sk=sessKey(holder)+"\n",n=0;
+    [_wins,_alias].forEach(function(m){Array.from(m.keys()).forEach(function(k){if(k.indexOf(sk)===0){m.delete(k);n++}})});
+    if(!quiet)remember(_sgen,sessKey(holder),(_sgen.get(sessKey(holder))||0)+1,1024);
+    if(n)log("element numbers of one session cleared ("+why+")");
+    return;
+  }
+  if(!quiet)_gen++;
+  if(_wins.size)log("element numbers cleared ("+why+")");_wins.clear();_alias.clear();
+}
+function dropMarks(id){var sk=sessKey(id)+"\n";Array.from(_marks.keys()).forEach(function(k){if(k.indexOf(sk)===0)_marks.delete(k)})}
 function wkeyOf(r,w){return r&&r.window&&typeof r.window.ref==="string"&&r.window.ref?"ref:"+r.window.ref:"id:"+String(w.id)}
 // Keys: session (sessKey), the app's matcher id (appKeyOf), then the window.
 function akey(sid,appK,x){return sessKey(sid)+"\n"+appK+"\n"+x}
@@ -426,7 +462,7 @@ function ok(t){if(bytes(t)>CAP){while(bytes(t)>CAP-100)t=t.slice(0,Math.floor(t.
 // the window inside the granted app's own AT-SPI application (`--app-id`) and
 // picks among that app's windows by title (`--title`); window_id is a title.
 function isGnome(br){return br&&br.name==="gnome-portal-bridge"}
-async function pickWin(br,app,ak,appId,id,sid){
+async function pickWin(br,app,ak,appId,id,sid,ms){
   var lk=sessKey(sid)+"\n"+appKeyOf(ak);
   if(isGnome(br)){
     var t=id!=null&&id!==""?String(id):_lastWin.get(lk);
@@ -434,7 +470,7 @@ async function pickWin(br,app,ak,appId,id,sid){
     // stripped); the bridge matches it against its AT-SPI applications.
     return{w:{id:t==null?null:t,title:t==null?"":t,appId:appId,gnome:!0}};
   }
-  var wins=await windowsOf(br,ak);
+  var wins=await windowsOf(br,ak,ms);
   if(wins.ambiguous)return{e:ambiguous(app,wins)};
   if(id!=null&&id!==""){
     var s=String(id);
@@ -611,10 +647,12 @@ async function find(br,w,input,feat,sid,appK){
   // so a title change (GNOME) or a shifted id (wlroots) keeps it. The bridge
   // still matches the app as always and ignores a ref that no longer fits.
   if(feat.has("find.window_ref")&&sid!=null&&appK!=null){var kt=tableOf(sid,appK,w);if(kt&&kt.windowRef)a.push("--window-ref",kt.windowRef)}
-  // find.deadline: a wait_for poll ends its walk early (the bridge clamps
-  // 100..5000 and needs n + 2000 ms at most for the whole command).
-  var ms=15000;
-  if(input.__deadline&&feat.has("find.deadline")){var dl=Math.max(100,Math.min(5000,Math.round(input.__deadline)));a.push("--deadline-ms",String(dl));ms=dl+3000}
+  // A wait_for poll (input.__budget: the wait's time left) never outlasts the
+  // wait. find.deadline: its walk ends early, leaving the bridge its 2000 ms
+  // for the rest of the command where the time allows (clamped 100..2000).
+  var ms=15000,bud=typeof input.__budget==="number"&&input.__budget>0?input.__budget:null;
+  if(bud!=null&&feat.has("find.deadline")){var dl=Math.max(100,Math.min(2000,Math.round(bud-2000)));a.push("--deadline-ms",String(dl));ms=dl+3000}
+  if(bud!=null&&ms>bud)ms=Math.max(300,Math.round(bud));
   // app_ax_find's shape options (validated in call(), feature-gated again).
   if(typeof input.depth==="number"&&feat.has("find.v1"))a.push("--max-depth",String(clampDepth(input.depth)));
   if(input.outline===!0&&feat.has("find.skeleton"))a.push("--skeleton");
@@ -628,12 +666,14 @@ async function find(br,w,input,feat,sid,appK){
     if(wid)a.push("--expect-app-id",wid.replace(/\.desktop$/i,""));
     a.push("--expect-title",String(w.title||""));
   }
-  var r=await run(br,a,null,ms),fresh=_fresh;
+  // A poll cut at the wait's time limit is "not met yet", not a failure.
+  function go(){return run(br,a,null,ms).catch(function(e){if(bud!=null&&e&&e.axWhy==="timed out"){var c=new Error("cut at the wait's time limit");c.axCut=!0;throw c}throw e})}
+  var r=await go(),fresh=_fresh;
   _fresh=!1;
   if(fresh&&r&&r.unavailable==="app_not_found"){
     log("find: app_not_found right after enable - retrying once");
     await new Promise(function(res){setTimeout(res,500)});
-    r=await run(br,a,null,ms);
+    r=await go();
   }
   // kwin mode enforces upstream's grants: when KWin named the window's pid,
   // a tree found by name alone may belong to another app.
@@ -894,7 +934,7 @@ async function call(name,input,opts,obs){
   // regular mode the consent switch's check (opts.tier, opts.allowedApps),
   // else every app at tier full (cu_handler_injection.js).
   var grant=grantOf(app,opts);
-  if(opts&&typeof opts.tier==="function"){var g=opts.tier(grant?grant.bundleId:app,TIER[name]);if(g&&g.error)return g.error}
+  if(opts&&typeof opts.tier==="function"){var g=opts.tier(grant?grant.bundleId:app,TIER[name]);if(g&&g.error){if(obs)obs.refused=!0;return g.error}}
   if(name==="app_scroll"&&(input.coordinate!==void 0||input.scroll_direction!==void 0||input.scroll_amount!==void 0||input.direction!==void 0||input.amount!==void 0||input.dx!==void 0||input.dy!==void 0))return err("app_scroll here only scrolls a control into view by element_index (from app_ax_find). To scroll at a point, use scroll with a coordinate.");
   if(name==="app_type"&&typeof input.text!=="string")return err("text is required.");
   // Without a session id there is no session to keep numbers for: reading
@@ -928,7 +968,10 @@ async function call(name,input,opts,obs){
     if(!wins.length)return err("No window of "+app+" was found. Is it running? open_application starts it.");
     return ok(JSON.stringify(wins.map(function(x){var gm=x.geometry;return{window_id:String(x.id),title:typeof x.title==="string"?x.title:"",is_main:x===mw,is_minimized:x.is_minimized===!0,bounds:gm&&gm.width>0&&gm.height>0?{x:gm.x,y:gm.y,width:gm.width,height:gm.height}:void 0}})));
   }
-  var pw=await pickWin(br,app,ak,appId,input.window_id,sid);
+  // A wait_for poll: the window list counts against the poll's budget too.
+  var pw;
+  try{pw=await pickWin(br,app,ak,appId,input.window_id,sid,input.__budget>0?Math.max(300,Math.round(input.__budget)):0)}
+  catch(e){if(input.__budget>0&&e&&e.axWhy==="timed out"){var ce=new Error("cut at the wait's time limit");ce.axCut=!0;throw ce}throw e}
   if(pw.e)return pw.e;
   var w=pw.w;
   var en=await ensureEnabled(br);
@@ -1014,8 +1057,12 @@ async function call(name,input,opts,obs){
 // the wait ends on a turn abort (regular mode: the handler's abort test as
 // opts.aborted; kwin mode: upstream's context isAborted), on the Computer Use
 // lock going to another session (opts.lock from the handler; the executor's
-// lock hook in both modes), on a restore or lock release (_gen), and when the
-// user stopped screen sharing.
+// lock hook in both modes), on a restore, lock release or task end of this
+// session (genSame), when the user stopped screen sharing, and when the app's
+// grant went away (grants read live: regular mode opts.tier / opts.grantsNow,
+// kwin mode upstream's readTheGrantsAfresh). The wait's time limit bounds
+// every poll: its process timeout and --deadline-ms never exceed the time
+// left (a poll cut off that way counts as "not met yet").
 var UNTIL={appears:1,gone:1,enabled:1,checked:1,unchecked:1,expanded:1,collapsed:1,focused:1,value_contains:1};
 var WAIT_MAX=15000,WAIT_DEFAULT=5000;
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
@@ -1059,12 +1106,20 @@ function judge(sp,obs){
   }
   return{met:!1,note:""};
 }
-async function waitStop(opts,sid,start){
+// The app is still granted, judged on the grants as they are now.
+function stillGranted(app,opts){
+  var kc=kctx(opts);
+  if(kc&&typeof kc.readTheGrantsAfresh==="function"){try{var g=kc.readTheGrantsAfresh();if(g&&typeof g==="object")Object.assign(kc,g)}catch(e){return!1}}
+  if(!opts||typeof opts.tier!=="function")return!0;
+  try{var gr=grantOf(app,opts),t=opts.tier(gr?gr.bundleId:app,"read");return!(t&&t.error)}catch(e){return!1}
+}
+async function waitStop(opts,sid,start,app){
   try{
     if(opts&&typeof opts.aborted==="function"&&opts.aborted()===!0)return"aborted";
     var kc=kctx(opts);if(kc&&typeof kc.isAborted==="function"&&kc.isAborted()===!0)return"aborted";
   }catch(e){return"aborted"}
-  if(_gen!==start.gen)return"ended";
+  if(!genSame(start.gen,sid))return"ended";
+  if(!stillGranted(app,opts))return"revoked";
   if(_lockSeq!==start.lockSeq){if(_lockHolder==null||sessKey(_lockHolder)!==sessKey(sid))return"lock";start.lockSeq=_lockSeq}
   if(opts&&typeof opts.lock==="function"){try{if(await opts.lock()===!1)return"lock"}catch(e){return"lock"}}
   var sx=globalThis.__linuxExecutor;
@@ -1075,8 +1130,10 @@ var STOP_TEXT={
   aborted:"app_ax_find aborted (user interrupt).",
   lock:"Another Claude session is currently using the computer, so the wait ended. Wait for that session to finish, or find a non-computer-use approach.",
   ended:"The wait ended: this Computer Use session's accessibility use ended (task end, lock release or idle). Call app_ax_find again.",
-  sharing:"The wait ended: the user stopped screen sharing for this Computer Use session."
+  sharing:"The wait ended: the user stopped screen sharing for this Computer Use session.",
+  revoked:"The wait ended: the app is no longer in the allowed applications for this session."
 };
+var CUT={cut:!0};
 async function waitFind(input,opts){
   var sp=waitSpec(input);
   if(sp.e)return sp.e;
@@ -1084,30 +1141,40 @@ async function waitFind(input,opts){
   var sid=String(opts&&opts.sid!=null?opts.sid:"(no-session)");
   var base={};for(var k in input){if(Object.prototype.hasOwnProperty.call(input,k)&&k!=="wait_for")base[k]=input[k]}
   // A wait on one element walks the whole window, so the element is listed
-  // whatever the interactive filter says.
-  if(sp.idx!=null&&!base.role&&!base.title_contains)base.__all=!0;
-  var start={gen:_gen,lockSeq:_lockSeq},spent=0,delay=400,polls=0,last=null;
+  // whatever a filter or shape option would hide.
+  if(sp.idx!=null){["role","title_contains","outline","within","depth"].forEach(function(x){delete base[x]});base.__all=!0}
+  var start={gen:genNow(sid),lockSeq:_lockSeq},spent=0,delay=400,polls=0,last=null;
   log("wait: until="+sp.until+" timeout="+sp.timeout);
   for(;;){
     var pin={};for(var bk in base)pin[bk]=base[bk];
-    pin.__deadline=Math.max(100,Math.min(2000,sp.timeout-spent));
+    // The poll's whole budget: what is left of the wait (at least 300 ms).
+    pin.__budget=Math.max(300,sp.timeout-spent);
     var t0=Date.now(),obs={};
     var res=await queue(async function(){
-      if(_gen!==start.gen)return null;
+      if(!genSame(start.gen,sid))return null;
       try{return await call("app_ax_find",pin,opts,obs)}
-      catch(e){log("app_ax_find failed: "+(e&&e.axWhy||"error"));return err("app_ax_find failed: "+(e&&e.message||e))}
+      catch(e){if(e&&e.axCut){log("wait: poll cut at the time limit");return CUT}log("app_ax_find failed: "+(e&&e.axWhy||"error"));return err("app_ax_find failed: "+(e&&e.message||e))}
       finally{if(_st)armIdle()}
     });
     spent+=Math.max(0,Date.now()-t0);polls++;
     if(res===null){log("wait: ended");return err(STOP_TEXT.ended)}
+    if(res===CUT){
+      last="the last check was cut off at the time limit";
+      if(spent>=sp.timeout){log("wait: timed out after "+spent+" ms, "+polls+" poll(s)");return ok("wait_for "+sp.until+": timed out after "+spent+" ms ("+polls+" check(s)); "+last+".")}
+      var why0=await waitStop(opts,sid,start,input.app);
+      if(why0){log("wait: stopped ("+why0+")");return err(STOP_TEXT[why0])}
+      continue;
+    }
+    // A grant check refused a later poll: the grant went away mid-wait.
+    if(res.isError&&obs.refused&&polls>1){log("wait: stopped (revoked)");return err(STOP_TEXT.revoked)}
     if(res.isError)return res;
     if(sp.idx!=null&&!(obs.t&&obs.t.byN.has(sp.idx)))return err("No element ["+sp.idx+"] from app_ax_find of this window. Call app_ax_find again.");
     var j=judge(sp,obs),txt=res.content&&res.content[0]?res.content[0].text:"";
     last=j.note;
     if(j.met){log("wait: met after "+spent+" ms, "+polls+" poll(s)");return ok("wait_for "+sp.until+": met after "+spent+" ms ("+polls+" check(s)).\n"+txt)}
     if(spent>=sp.timeout){log("wait: timed out after "+spent+" ms, "+polls+" poll(s)");return ok("wait_for "+sp.until+": timed out after "+spent+" ms ("+polls+" check(s)); last observation: "+last+".\n"+txt)}
-    var why=await waitStop(opts,sid,start);
-    if(!why){var d=Math.min(delay,sp.timeout-spent);await sleep(d);spent+=d;delay=Math.min(800,Math.round(delay*1.25));why=await waitStop(opts,sid,start)}
+    var why=await waitStop(opts,sid,start,input.app);
+    if(!why){var d=Math.min(delay,sp.timeout-spent);await sleep(d);spent+=d;delay=Math.min(800,Math.round(delay*1.25));why=await waitStop(opts,sid,start,input.app)}
     if(why){log("wait: stopped ("+why+")");return err(STOP_TEXT[why])}
   }
 }

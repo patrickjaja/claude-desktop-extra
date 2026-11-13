@@ -2348,6 +2348,144 @@ if (patchMissing || !existsSync(stubPath)) {
       setFeatures(undefined);
     }
 
+    // ---------------------------------------------------------------- [16]
+    // Waits: an element wait walks the whole window; a revoked grant ends a
+    // wait; the 15 s cap bounds every poll; a restore ends only the waits
+    // that were running when it began; a lock release with a known holder
+    // ends only that session's waits and clears only its numbers.
+    console.log("\n[16] waits: element walk, revoked grants, bounded polls, scoped ends");
+    {
+      const wt = (elements) => ({ app: { name: "wt" }, window: { id: "{wt-1}", title: "Waits", ref: ":1.400/w" }, coords: "window_only", scope: "sc-wt", matched_by: "app_id", truncated: false, total_seen: 9, elements });
+      const box = vEl(4, "check box", "Box", "wt-box");
+      const btn = vEl(5, "push button", "Btn", "wt-btn");
+      const FIX16 = {
+        ...FIX2,
+        windows: [...FIXTURE.windows, xWin("{wt-1}", "Waits", "org.example.wait")],
+        "ax-find": {
+          ...FIX2["ax-find"],
+          "{wt-1}": wt([box, btn]),
+          "{wt-1}|all": wt([box, btn]),
+          "{wt-1}|role:push button": wt([btn]),
+          "{wt-1}|role:--all": wt([btn]),
+          "{wt-1}|role:nothing": wt([]),
+        },
+      };
+      const fixFile16 = join(scratch, "fixture-waits.json");
+      writeFileSync(fixFile16, JSON.stringify(FIX16));
+      useFix(fixFile16);
+      setFeatures(ALL_FEATURES);
+      const hooks = {};
+      const wc = waitCtx("x11-bridge", hooks);
+      const app = "org.example.wait";
+      const W = (a, o = {}) => wc.__cdbAxCall("app_ax_find", { app, ...a }, { sid: "wa", ...o });
+      const boxN = Number((/\[(\d+)\] AXCheckBox/.exec(textOf(await W({}))) || [])[1]);
+      resetLog();
+      r = await W({ role: "push button", wait_for: { until: "gone", element_index: boxN, timeout_ms: 1000 } });
+      check("element wait ignores role / title_contains: an existing box is not 'gone'", !r.isError && /timed out/.test(textOf(r)) && finds().every((c) => c.argv.includes("--all") && !c.argv.some((x) => x.startsWith("--role"))), true);
+      // A grant revoked during the wait ends it (regular mode, live tier).
+      let revoked = false;
+      const tier = (id) => (revoked && id === app ? { error: { isError: true, content: [{ type: "text", text: "not granted" }] } } : null);
+      hooks.fn = () => (revoked = true);
+      resetLog();
+      r = await W({ role: "nothing", wait_for: { until: "appears", timeout_ms: 5000 } }, { tier });
+      check("regular: a grant revoked during the wait ends it", r.isError === true && /no longer/.test(textOf(r)) && finds().length === 1, true);
+      hooks.fn = null;
+      revoked = false;
+      // js/cu_consent.js: the grant check reads the session's grants live.
+      {
+        const cc = makeCtx({ userData });
+        cc.__cdbCuAskBeforeControl = () => true;
+        vm.runInContext(readFileSync(CONSENT_JS, "utf8"), cc);
+        let list = [{ bundleId: app, displayName: "Wait" }];
+        const sess = { sessionId: "cs", getCuAllowedApps: () => list, getCuGrantFlags: () => ({}) };
+        const o = cc.__cdbCuConsent.axOpts(sess);
+        const before = o.tier(app);
+        list = [];
+        const after = o.tier(app);
+        check("consent: the accessibility grant check is live (a revoked app is refused)", before === null && !!(after && after.error), true);
+        check("consent: the grant list is live too", typeof o.grantsNow === "function" && o.grantsNow().length === 0, true);
+      }
+      // The 15 s cap bounds each poll: a bridge that never answers a find is
+      // cut at the wait's remaining time (legacy bridge: no --deadline-ms).
+      for (const feats of [undefined, ALL_FEATURES]) {
+        setFeatures(feats);
+        const bc = waitCtx("x11-bridge", {});
+        await bc.__cdbAxCall("app_ax_find", { app }, { sid: "wb" });
+        process.env.CDB_FAKE_AX_HANG = "ax-find";
+        const t0 = Date.now();
+        r = await bc.__cdbAxCall("app_ax_find", { app, role: "nothing", wait_for: { until: "appears", timeout_ms: 1000 } }, { sid: "wb" });
+        const el = Date.now() - t0;
+        delete process.env.CDB_FAKE_AX_HANG;
+        check(`${feats ? "v2" : "legacy"} bridge: a poll that never ends is cut at the remaining wait time, then the wait times out`, !r.isError && /timed out/.test(textOf(r)) && el < 3000, true);
+        await releaseAx(bc);
+      }
+      for (const pid of (existsSync(logFile + ".hang") ? readFileSync(logFile + ".hang", "utf8") : "").split("\n").filter(Boolean)) {
+        try {
+          process.kill(Number(pid), "SIGKILL");
+        } catch {}
+      }
+      setFeatures(ALL_FEATURES);
+      resetLog();
+      r = await W({ role: "nothing", wait_for: { until: "appears", timeout_ms: 1500 } });
+      const dls = finds().map((c) => Number(c.argv[c.argv.indexOf("--deadline-ms") + 1]));
+      check("--deadline-ms never exceeds the remaining wait time", dls.length > 0 && dls.every((d) => d >= 100 && d <= 1500), true);
+      // A restore that began before the wait does not end it (one bump).
+      await W({});
+      const busy = W({});
+      wc.__linuxExecutor.__setLockHeld(false);
+      r = await W({ role: "nothing", wait_for: { until: "appears", timeout_ms: 800 } });
+      await busy;
+      check("a restore queued before the wait began does not end it", !r.isError && /timed out/.test(textOf(r)), true);
+      // Lock release with a known holder: only that session's waits end and
+      // only its numbers go.
+      await W({}, { sid: "sa" });
+      await W({}, { sid: "sb" });
+      await wc.__linuxExecutor.__setLockHeld(true, "session_sa");
+      hooks.fn = (n) => n === 1 && wc.__linuxExecutor.__setLockHeld(false);
+      wc.__sleeps.length = 0;
+      r = await W({ role: "nothing", wait_for: { until: "appears", timeout_ms: 1500 } }, { sid: "sb" });
+      check("lock release of session A: B's wait goes on", !r.isError && /timed out/.test(textOf(r)), true);
+      await W({}, { sid: "sa" });
+      await wc.__linuxExecutor.__setLockHeld(true, "session_sa");
+      wc.__sleeps.length = 0;
+      r = await W({ role: "nothing", wait_for: { until: "appears", timeout_ms: 1500 } }, { sid: "sa" });
+      check("lock release of session A: A's wait ends", r.isError === true && /ended/.test(textOf(r)), true);
+      hooks.fn = null;
+      for (let i = 0; i < 100 && existsSync(statePath); i++) await tick();
+      resetLog();
+      r = await wc.__cdbAxCall("app_click", { app, element_index: boxN }, { sid: "sb" });
+      check("lock release of session A: B's numbers still work", /No element/.test(textOf(r)), false);
+      r = await wc.__cdbAxCall("app_click", { app, element_index: boxN }, { sid: "sa" });
+      check("lock release of session A: A's numbers are gone", /No element/.test(textOf(r)), true);
+      await releaseAx(wc);
+    }
+    // kwin mode: upstream's context is re-read (readTheGrantsAfresh) between
+    // polls, so a grant revoked during the wait ends it.
+    {
+      setFeatures(undefined);
+      useFix(join(scratch, "fixture-waits.json"));
+      const kc = makeCtx({ userData });
+      kc.__cuKwinMode = true;
+      kc.__cuKwinBridgeBin = bin;
+      kc.__linuxExecutor = kwinExecutor();
+      const kx = loadChunk(kc, patched.get(builderChunk));
+      loadAx(kc);
+      kc.__cdbCuAxElements = () => true;
+      let kg = [...GRANTS, { bundleId: "org.example.wait", displayName: "Wait", tier: "full" }];
+      const realST = kc.setTimeout;
+      kc.setTimeout = (fn, ms) => (ms >= 400 && ms <= 800 ? ((kg = GRANTS), setTimeout(fn, 0)) : realST(fn, ms));
+      const dk = kx[DKEY](serverCtx(kc.__linuxExecutor), "pixels", { ...sessionCtx("sess-R"), getAllowedApps: () => kg });
+      dims = { width: 1280, height: 720, displayWidth: 2560, displayHeight: 1440, originX: 0, originY: 0 };
+      resetLog();
+      r = await dk("app_ax_find", { app: "org.example.wait", role: "nothing", wait_for: { until: "appears", timeout_ms: 5000 } });
+      check("kwin: a grant revoked during the wait ends it (upstream's grants read afresh)", r.isError === true && /no longer/.test(textOf(r)) && finds().length === 1, true);
+      kc.setTimeout = realST;
+      await kc.__linuxExecutor.__setLockHeld(false);
+      for (let i = 0; i < 100 && existsSync(statePath); i++) await tick();
+      kc.__cdbCuAxElements = () => false;
+      useFix(fixFile);
+    }
+
     // Every legacy-bridge call in every section above stayed within today's
     // flags, actions and stdin shapes.
     const violations = existsSync(logFile + ".legacy-violations") ? readFileSync(logFile + ".legacy-violations", "utf8").trim() : "";
