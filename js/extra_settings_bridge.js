@@ -30,6 +30,11 @@
   }
   var BAD_LEVEL = "transparency must be a number from 0 to 0.9";
 
+  function jiraRect(r) {
+    var v = r && typeof r === "object" ? r : {};
+    return { x: Number(v.x), y: Number(v.y), width: Number(v.width), height: Number(v.height) };
+  }
+
   contextBridge.exposeInMainWorld("cdbExtra", {
     // __cdb_extra_bridge
     version: 1,
@@ -127,6 +132,35 @@
     },
     autoFixMergeReadySet: function (enabled) {
       return ipcRenderer.invoke("cdb-autofix-merge-ready:set", enabled === true);
+    },
+
+    // Jira tracker: every channel is owned by patches/community/add_feature_jira_tracker.nim; the token travels page to main only.
+    jiraOpen: function (rect) {
+      return ipcRenderer.invoke("cdb-jira:open", jiraRect(rect));
+    },
+    jiraClose: function () {
+      return ipcRenderer.invoke("cdb-jira:close");
+    },
+    jiraBounds: function (rect) {
+      return ipcRenderer.invoke("cdb-jira:bounds", jiraRect(rect));
+    },
+    jiraPrefRead: function () {
+      return ipcRenderer.invoke("cdb-jira-pref:read");
+    },
+    jiraPrefSet: function (fields) {
+      var f = fields && typeof fields === "object" ? fields : {};
+      var out = {};
+      if (typeof f.enabled === "boolean") out.enabled = f.enabled;
+      if (typeof f.site === "string") out.site = f.site.slice(0, 300);
+      if (typeof f.email === "string") out.email = f.email.slice(0, 254);
+      if (typeof f.token === "string") out.token = f.token.slice(0, 600);
+      else if (f.token === null) out.token = null;
+      if (typeof f.template === "string") out.template = f.template.slice(0, 10001);
+      else if (f.template === null) out.template = null;
+      return ipcRenderer.invoke("cdb-jira-pref:set", out);
+    },
+    jiraPrefTest: function () {
+      return ipcRenderer.invoke("cdb-jira-pref:test");
     },
 
     // Computer Use: read app controls (accessibility). Fixed channels, boolean only.

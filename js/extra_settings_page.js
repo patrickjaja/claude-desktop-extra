@@ -3232,6 +3232,189 @@
     });
   }
 
+  // --- Code: Jira issue tracker ---------------------------------------------
+  // Off by default. Every channel (cdb-jira-pref:*) belongs to
+  // patches/community/add_feature_jira_tracker.nim; the token is write-only.
+  function renderJiraTrackerRow(panel) {
+    if (!api || typeof api.jiraPrefRead !== "function" || typeof api.jiraPrefSet !== "function" ||
+        typeof api.jiraPrefTest !== "function") return;
+    var row = renderToggleRow(panel, {
+      title: "Jira issue tracker",
+      note: "Adds a Jira row to the sidebar (or press Ctrl+Shift+J): your Jira Cloud tickets as a list, status changes, and Send to agent, which starts a Code session in a folder you pick with the ticket in its first message. Needs your Jira Cloud site, Atlassian email and an API token, stored encrypted by the system keyring for this profile. Applies live.",
+      keywords: "jira atlassian ticket issue jql transition status board agent api token keyring sidebar ctrl+shift+j",
+      ariaLabel: "show the Jira issue tracker",
+      read: "jiraPrefRead",
+      write: "jiraPrefSet",
+      lockFile: "claude-desktop-extra.jsonc",
+      isOn: function (res) { return res.enabled === true; },
+      describe: function (on) { return on ? "on - Jira row in the sidebar and Ctrl+Shift+J" : "off - no Jira row and no Jira requests"; },
+      writeArg: function (next) { return { enabled: next }; },
+      toast: function (next) { return next ? "Jira tracker on" : "Jira tracker off"; },
+      errorPrefix: "Could not change the Jira setting: "
+    });
+    var main = row && row.host.querySelector(".cdbx-row-main");
+    if (!main) return row;
+    function input(type, max) {
+      var i = el("input", "cdbx-input");
+      i.type = type; i.maxLength = max; i.spellcheck = false;
+      i.autocomplete = type === "password" ? "new-password" : "off";
+      return i;
+    }
+    function field(id, label, control, wide) {
+      var box = el("div", "cdbx-jira-field" + (wide ? " cdbx-jira-wide" : ""));
+      var l = el("label", "cdbx-note", label);
+      l.htmlFor = id; control.id = id;
+      box.appendChild(l); box.appendChild(control);
+      return box;
+    }
+    function btn(text) { var b = el("button", "cdbx-btn", text); b.type = "button"; return b; }
+    var site = input("url", 300), email = input("email", 254), token = input("password", 600);
+    site.placeholder = "https://your-team.atlassian.net";
+    var template = el("textarea", "cdbx-area");
+    template.rows = 12; template.maxLength = 10000; template.spellcheck = false;
+    var save = btn("Save site, email and token"), forget = btn("Forget token"), test = btn("Test connection");
+    var saveTpl = btn("Save template"), resetTpl = btn("Reset template");
+    var state = el("div", "cdbx-state", "Loading...");
+    state.setAttribute("role", "status"); state.setAttribute("aria-live", "polite");
+    var form = el("div", "cdbx-jira-form"), actions = el("div", "cdbx-jira-actions"), tplActions = el("div", "cdbx-jira-actions");
+    [save, forget, test].forEach(function (n) { actions.appendChild(n); });
+    [saveTpl, resetTpl].forEach(function (n) { tplActions.appendChild(n); });
+    [field("cdbx-jira-site", "Jira Cloud site", site), field("cdbx-jira-email", "Atlassian account email", email),
+      field("cdbx-jira-token", "API token (write-only)", token), actions, state,
+      field("cdbx-jira-template", "Send to agent prompt ({{key}} {{summary}} {{url}} {{type}} {{priority}} {{description}})", template, true),
+      tplActions].forEach(function (n) { form.appendChild(n); });
+    var tokenBox = token.parentNode, tokenLabel = tokenBox.querySelector("label");
+    var labelRow = el("div", "cdbx-jira-labelrow"), tip = el("span", "cdbx-jira-info");
+    var info = el("button", "cdbx-jira-i", "i"), pop = el("div", "cdbx-jira-pop");
+    info.type = "button";
+    info.setAttribute("aria-label", "Which scopes the token needs");
+    info.setAttribute("aria-expanded", "false");
+    pop.id = "cdbx-jira-scopes";
+    pop.hidden = true;
+    info.setAttribute("aria-controls", pop.id);
+    tip.appendChild(info); tip.appendChild(pop);
+    tokenBox.insertBefore(labelRow, tokenLabel);
+    labelRow.appendChild(tokenLabel); labelRow.appendChild(tip);
+    var pinned = false, hovered = false, focused = false, checks = null;
+    function syncTip() {
+      var open = pinned || hovered || focused;
+      pop.hidden = !open;
+      info.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    function onKey(e) {
+      if (!tip.isConnected) { document.removeEventListener("keydown", onKey, true); return; }
+      if (e.key !== "Escape" || pop.hidden) return;
+      // Escape closes the popover only; the Settings dialog stays open.
+      e.stopPropagation();
+      pinned = hovered = focused = false; syncTip();
+    }
+    function onDown(e) {
+      if (!tip.isConnected) { document.removeEventListener("mousedown", onDown, true); return; }
+      if (pinned && !tip.contains(e.target)) { pinned = hovered = false; syncTip(); }
+    }
+    tip.addEventListener("mouseenter", function () { hovered = true; syncTip(); });
+    tip.addEventListener("mouseleave", function () { hovered = false; syncTip(); });
+    info.addEventListener("focus", function () { focused = true; syncTip(); });
+    info.addEventListener("blur", function () { focused = false; syncTip(); });
+    info.addEventListener("click", function () { pinned = !pinned; syncTip(); });
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("mousedown", onDown, true);
+    function fillScopes(groups) {
+      while (pop.firstChild) pop.removeChild(pop.firstChild);
+      pop.appendChild(el("p", "cdbx-jira-pop-lead", "A classic token needs no scopes. A scoped token needs these:"));
+      (Array.isArray(groups) ? groups : []).forEach(function (g) {
+        var box = el("div", "cdbx-jira-scope-group"), list = el("div", "cdbx-jira-scope-list");
+        box.appendChild(el("div", "cdbx-jira-scope-name", g && g.name));
+        (g && Array.isArray(g.scopes) ? g.scopes : []).forEach(function (sc) { list.appendChild(el("code", null, sc)); });
+        box.appendChild(list);
+        pop.appendChild(box);
+      });
+    }
+    function showChecks(list) {
+      if (checks) { checks.remove(); checks = null; }
+      if (!Array.isArray(list) || !list.length) return;
+      checks = el("ul", "cdbx-jira-checks");
+      list.forEach(function (c) {
+        var li = el("li", null, (c && c.feature) + ": " + (c && c.text));
+        li.setAttribute("data-state", c && c.state);
+        checks.appendChild(li);
+      });
+      state.parentNode.insertBefore(checks, state.nextSibling);
+    }
+    main.appendChild(form);
+    var busy = false, last = null;
+    function controls() {
+      var keyring = !!(last && last.keyringOk), saved = !!(last && last.tokenSet), on = !!(last && last.enabled);
+      site.disabled = busy; email.disabled = busy; token.disabled = busy || !keyring; save.disabled = busy;
+      forget.disabled = busy || !saved; test.disabled = busy || !saved || !on;
+      template.disabled = busy; saveTpl.disabled = busy; resetTpl.disabled = busy;
+    }
+    function show(res) {
+      if (failed(res)) { state.textContent = "Unavailable: " + reason(res); return; }
+      last = res;
+      site.value = res.site || ""; email.value = res.email || ""; token.value = "";
+      template.value = res.template || res.defaultTemplate || "";
+      fillScopes(res.scopes);
+      state.textContent = !res.keyringOk
+        ? "The system keyring is not available (" + (res.keyringBackend || "unknown") + "), so a token cannot be stored. Start GNOME Keyring or KWallet and restart Claude."
+        : res.tokenSet ? "Token saved, encrypted by the system keyring." : "No token saved.";
+      controls();
+    }
+    function run(promise, done) {
+      busy = true; controls();
+      promise.then(function (res) { busy = false; done(res); controls(); },
+        function (e) { busy = false; controls(); state.textContent = String(e && e.message ? e.message : e); });
+    }
+    save.addEventListener("click", function () {
+      var fields = { site: site.value.trim(), email: email.value.trim() };
+      if (token.value) fields.token = token.value;
+      var hadToken = !!(last && last.tokenSet), oldSite = last ? last.site || "" : "";
+      run(api.jiraPrefSet(fields), function (res) {
+        if (failed(res)) { state.textContent = "Could not save: " + reason(res); return; }
+        show(res);
+        if (hadToken && !fields.token && !res.tokenSet && (res.site || "") !== oldSite) {
+          state.textContent = "The site changed, so the saved token was cleared. Enter the API token for " + (res.site || "the new site") + " and save again.";
+          toast("Jira site saved; the token was cleared");
+          return;
+        }
+        toast("Jira site, email and token saved");
+      });
+    });
+    forget.addEventListener("click", function () {
+      run(api.jiraPrefSet({ token: null }), function (res) {
+        if (failed(res)) { state.textContent = "Could not forget the token: " + reason(res); return; }
+        show(res); toast("Jira token forgotten");
+      });
+    });
+    test.addEventListener("click", function () {
+      state.textContent = "Testing...";
+      showChecks(null);
+      run(api.jiraPrefTest(), function (res) {
+        if (failed(res)) { state.textContent = "Test failed: " + reason(res); return; }
+        state.textContent = "Connected as " + (res.displayName || "your Atlassian account") + (res.token ? " \u00b7 " + res.token + " token" : "");
+        showChecks(res.checks);
+      });
+    });
+    saveTpl.addEventListener("click", function () {
+      run(api.jiraPrefSet({ template: template.value }), function (res) {
+        if (failed(res)) { toast("Could not save the template: " + reason(res), true); return; }
+        show(res); toast("Prompt template saved");
+      });
+    });
+    resetTpl.addEventListener("click", function () {
+      run(api.jiraPrefSet({ template: null }), function (res) {
+        if (failed(res)) { toast("Could not reset the template: " + reason(res), true); return; }
+        show(res); toast("Prompt template reset");
+      });
+    });
+    var toggle = row.host.querySelector(".cdbx-switch");
+    if (toggle) toggle.addEventListener("click", function () { setTimeout(function () { api.jiraPrefRead().then(show, function () {}); }, 300); });
+    controls();
+    api.jiraPrefRead().then(show, function (e) { state.textContent = "Unavailable: " + String(e); });
+    return row;
+  }
+
+
   // --- Code: native dialog with "Allow always" for starting other sessions --
   // Off by default. Main side: cdb-session-start:* in js/extra_settings_main.js;
   // the broker hook in patches/community/add_feature_session_start_always_allow.nim
@@ -3693,6 +3876,7 @@
       renderDiffViewsRow,
       renderTranscriptLimitsRow,
       renderSessionStartAlwaysAllowRow,
+      renderJiraTrackerRow,
       { title: "Pull requests", sub: "Auto-fix and auto-archive for your GitHub PRs", items: [
         renderAutoFixAuthorRow,
         renderAutoFixMergeReadyRow,

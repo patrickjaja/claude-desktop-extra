@@ -1099,7 +1099,7 @@ async function featuresPanel(featuresItem) {
         return !own || n.closest(".cdbx-group") === g;
       }).map(function (n) { return n.textContent; });
     };
-    ok(titlesIn(topGroups[0], true).join("|") === "Panel tabs|Files quick open|Diff view modes|Load large sessions in full|Native dialog with 'Allow always' for starting other sessions",
+    ok(titlesIn(topGroups[0], true).join("|") === "Panel tabs|Files quick open|Diff view modes|Load large sessions in full|Native dialog with 'Allow always' for starting other sessions|Jira issue tracker",
        "Code rows in order, the session dialog before the subgroup: " + titlesIn(topGroups[0], true).join("|"));
     ok(titlesIn(subGroup[0]).join("|") === "Trusted Auto-fix PR authors|Auto-fix notices: ready to merge, comments after merge|Auto-archive delay after a PR merges or closes",
        "Pull requests rows: " + titlesIn(subGroup[0]).join("|"));
@@ -1261,6 +1261,79 @@ async function featuresPanel(featuresItem) {
     const lp = document.querySelector(".cdbx-panel");
     ok(Array.from(lp.querySelectorAll(".cdbx-group")).some(function (g) { return g.style.display !== "none" && g.firstElementChild.textContent === "Computer Use"; }),
        "Linux again: the Computer Use group is back");
+  }
+  // Jira issue tracker: the i beside the token label holds the scope list (hover or focus shows it,
+  // a click pins it, Escape or a click outside closes it); Test connection reports one line per feature.
+  featuresItem.click();
+  await sleep(150);
+  const jiraToken = document.getElementById("cdbx-jira-token");
+  ok(!!jiraToken, "renders the Jira card");
+  if (jiraToken) {
+    const field = jiraToken.closest(".cdbx-jira-field");
+    const info = field && field.querySelector('button[aria-label="Which scopes the token needs"]');
+    const pop = info && document.getElementById(info.getAttribute("aria-controls") || "");
+    ok(!!info && !!pop, "the token label has an i that controls a scope popover");
+    if (info && pop) {
+      const shown = function () { return !pop.hidden && info.getAttribute("aria-expanded") === "true"; };
+      ok(!shown(), "the scope popover starts hidden");
+      info.parentElement.dispatchEvent(new MouseEvent("mouseenter"));
+      ok(shown(), "hover shows it");
+      info.parentElement.dispatchEvent(new MouseEvent("mouseleave"));
+      ok(!shown(), "leaving hides it");
+      info.dispatchEvent(new FocusEvent("focus"));
+      ok(shown(), "keyboard focus shows it");
+      ok(pop.firstElementChild && pop.firstElementChild.textContent === "A classic token needs no scopes. A scoped token needs these:",
+         "it opens with the classic-token line: " + (pop.firstElementChild && pop.firstElementChild.textContent));
+      const groups = Array.prototype.map.call(pop.querySelectorAll(".cdbx-jira-scope-group"), function (g) {
+        return g.querySelector(".cdbx-jira-scope-name").textContent + ": " + Array.prototype.map.call(g.querySelectorAll("code"), function (c) { return c.textContent; }).join(" ");
+      });
+      ok(groups.join(" | ") === "Basic: read:jira-work read:jira-user write:jira-work | Board and Backlog: read:board-scope:jira-software read:project:jira | Scrum boards only, untested: read:sprint:jira-software",
+         "the groups come from pref:read: " + groups.join(" | "));
+      info.dispatchEvent(new FocusEvent("blur"));
+      ok(!shown(), "blur hides it while not pinned");
+      info.click();
+      ok(shown(), "a click pins it");
+      info.dispatchEvent(new FocusEvent("blur"));
+      ok(shown(), "a pinned popover stays on blur, so the scope names can be selected");
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      ok(!shown(), "Escape closes it");
+      info.click();
+      pop.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      ok(shown(), "a click inside the popover keeps it");
+      document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      ok(!shown(), "a click outside closes it");
+    }
+    const card = jiraToken.closest(".cdbx-row");
+    const testBtn = Array.prototype.filter.call(card.querySelectorAll("button"), function (b) { return b.textContent === "Test connection"; })[0];
+    testBtn.click();
+    await sleep(80);
+    const state = card.querySelector(".cdbx-jira-form .cdbx-state");
+    ok(state.textContent === "Connected as Ada · scoped token", "the head line names the token type: " + state.textContent);
+    const lines = Array.prototype.map.call(card.querySelectorAll(".cdbx-jira-checks li"), function (li) { return li.getAttribute("data-state") + " " + li.textContent; });
+    ok(lines.join(" | ") === "ok Tickets: OK | failed Board and Backlog: Probably missing read:board-scope:jira-software (inferred). The list groups by status instead. | not-checked Board view columns: Not checked: no project with a board",
+       "one line per feature: " + lines.join(" | "));
+    // Save with a new site and no token: main clears the token (pref:set answers with pref:read's
+    // shape and tokenSet false), and the card says so instead of "saved".
+    const view = function (site, tokenSet) {
+      return { ok: true, enabled: true, locked: false, site: site, email: "dev@example.com", tokenSet: tokenSet, keyringOk: true, keyringBackend: "gnome_libsecret",
+        template: "", defaultTemplate: "Work on {{key}}", scopes: [] };
+    };
+    const saveBtn = Array.prototype.filter.call(card.querySelectorAll("button"), function (b) { return b.textContent === "Save site, email and token"; })[0];
+    const siteIn = document.getElementById("cdbx-jira-site");
+    window.__jiraSets = [];
+    window.__jiraSetRes = view("https://acme.atlassian.net", true);
+    saveBtn.click();
+    await sleep(80);
+    ok(JSON.stringify(window.__jiraSets) === JSON.stringify([{ site: "https://acme.atlassian.net", email: "dev@example.com" }]), "Save sends site and email, no token: " + JSON.stringify(window.__jiraSets));
+    ok(state.textContent === "Token saved, encrypted by the system keyring.", "the same site keeps the token: " + state.textContent);
+    siteIn.value = "https://other.atlassian.net";
+    window.__jiraSetRes = view("https://other.atlassian.net", false);
+    saveBtn.click();
+    await sleep(80);
+    ok(state.textContent === "The site changed, so the saved token was cleared. Enter the API token for https://other.atlassian.net and save again.",
+       "a new site says the token was cleared: " + state.textContent);
+    ok(window.__jiraSets.length === 2 && !("token" in window.__jiraSets[1]), "no extra IPC: one pref:set per save");
+    window.__jiraSetRes = null;
   }
 }
 
@@ -4181,6 +4254,15 @@ window.cdbExtra = {
   cuStatusResetScreenSharing: function () { window.__cusCalls.reset += arguments.length ? 100 : 1; return Promise.resolve(window.__cusReset); },
   cuStatusKvmEnable: function () { window.__cusCalls.kvmEnable = (window.__cusCalls.kvmEnable || 0) + (arguments.length ? 100 : 1); return Promise.resolve(window.__cusKvmEnable); },
   cuStatusKvmDisable: function () { window.__cusCalls.kvmDisable = (window.__cusCalls.kvmDisable || 0) + (arguments.length ? 100 : 1); return Promise.resolve(window.__cusKvmDisable); },
+  jiraPrefRead: stub({ ok: true, enabled: true, locked: false, site: "https://acme.atlassian.net", email: "dev@example.com", tokenSet: true, keyringOk: true,
+    keyringBackend: "gnome_libsecret", template: "", defaultTemplate: "Work on {{key}}",
+    scopes: [{ name: "Basic", scopes: ["read:jira-work", "read:jira-user", "write:jira-work"] }, { name: "Board and Backlog", scopes: ["read:board-scope:jira-software", "read:project:jira"] },
+      { name: "Scrum boards only, untested", scopes: ["read:sprint:jira-software"] }] }),
+  jiraPrefSet: function (f) { window.__jiraSets = (window.__jiraSets || []).concat([f]); return Promise.resolve(window.__jiraSetRes || { ok: true }); },
+  jiraPrefTest: stub({ ok: true, displayName: "Ada", token: "scoped", checks: [
+    { feature: "Tickets", state: "ok", text: "OK" },
+    { feature: "Board and Backlog", state: "failed", text: "Probably missing read:board-scope:jira-software (inferred). The list groups by status instead." },
+    { feature: "Board view columns", state: "not-checked", text: "Not checked: no project with a board" }] }),
   diag: function (m) { diags.push(String(m)); return Promise.resolve({ ok: true }); }
 };
 </script>

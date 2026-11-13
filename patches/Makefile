@@ -178,5 +178,19 @@ core/add_tool_path_resolver: ../js/tool_path.js
 
 linux/fix_open_external_tool_path: ../js/open_external_tool_path.js
 
+community/add_feature_jira_tracker: \
+  ../js/jira_tracker_adf.js \
+  ../js/jira_tracker_client.js \
+  ../js/jira_tracker_store.js \
+  ../js/jira_tracker_prompt.js \
+  ../js/jira_tracker_send.js \
+  ../js/jira_tracker_view.js \
+  ../js/jira_tracker_main.js \
+  ../js/jira_tracker_page.html \
+  ../js/jira_tracker_page.js \
+  ../js/jira_tracker_preload.js \
+  ../js/jira_tracker_web_page.js
+
+
 clean:
 	@rm -rf $(BINS) .nimcache
