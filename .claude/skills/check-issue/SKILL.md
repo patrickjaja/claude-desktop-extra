@@ -30,6 +30,7 @@ for n in <numbers>; do gh issue view $n --json title,author,createdAt,body; gh i
 
 - `--comments` shows only the comments, never the body. Always fetch the body separately with `--json body`.
 - Pull any `--diagnose` gist the reporter linked with `gh gist view <id> --raw > <scratch>/gist<n>/diagnose.txt`. Then grep it for session type, compositor, scale, bridges and versions.
+- Run `git fetch && git rev-list --left-right --count HEAD...origin/master` first. Other sessions push from their worktrees, so this checkout can be far behind while agent worktrees branch from origin: gates and a test build from a stale tree measure the wrong base (#331: 28 commits behind, found only when a worktree worker reported other counts). Fast-forward before any work.
 - Compare the reporter's version with `.upstream-version` and the installed package (`pacman -Q claude-desktop-extra`). `tmp/` is reusable read-only only when `tmp/app.asar.contents/package.json` says the same version: its mtime lies (a fresh-looking `tmp/` held the previous release in #318). Otherwise re-extract before any probe or real-release harness section runs.
 
 ## Phase 2 - investigate in parallel (read-only)
@@ -182,6 +183,11 @@ Before reporting done, update **this file**: `.claude/skills/check-issue/SKILL.m
 6. Tell the maintainer in one line what changed in the skill. The edit ships with the next `/commit-fast` like any other tracked file.
 
 ## Lessons
+
+- 2026-11-13 (#331): hardening added after a review is new code with its own regressions. A `did-start-navigation` untrack fired before upstream's `will-navigate` prevention and would have dropped the main view from theming; the final review caught it. Prefer narrowing the predicate over adding an event listener, and brief the final reviewer on every round's additions.
+- 2026-11-13 (#331): a logged-in scratch instance rewrites integration files in the real HOME (Chrome native-messaging manifest, KDE/Nautilus "Open in Claude Code" entries, the .desktop file) to point at the scratch binary. Give it a throwaway `XDG_DATA_HOME` (login survives) and snapshot and restore the Chrome manifest. Workers that click in the real session list must match controls by exact label, never by a text prefix: one opened the maintainer's session titled "New session".
+- 2026-11-13 (#331): the main checkout is shared. Another session's commit-all absorbed this run's uncommitted files, and `git push origin master` sends every local commit of every session. Keep unfinished rounds in a worktree, and say in the push report which foreign commits went out.
+- 2026-11-13 (#331): pop-out windows are about:blank children whose React tree runs in the opener's realm; upstream clones DOM style nodes into them but not insertCSS sheets. Anything of ours that selects windows by URL skips them. Look-related CSS must be checked on a real logged-in session: three transparency defects (header ground, floating rail, docked rail) existed only in the 1P DOM.
 
 - 2026-11-11 (Code-tab lock): a live worker that drives the real desktop sends every click and key through a guard that first checks the window under the point belongs to its own pid and, for typed input, is the active window (a click-through window let a typed prompt reach the maintainer's terminal). Place the test windows where nothing of the maintainer's lies underneath, including the dock area at the top right of that display. Code-tab test sessions leave transcripts under `~/.claude/projects`; say so in the report.
 - 2026-11-11 (#327): two features that each passed alone met only on the reporter's single monitor (the glow overlay above a masked screenshot). When a change adds a window or a filter, ask which other window or filter of ours it can sit above or below on a one-monitor desktop, and note that the maintainer's three-monitor host hides such cases.
