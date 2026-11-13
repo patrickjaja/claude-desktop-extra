@@ -142,7 +142,7 @@ GTK, Qt, Firefox and LibreOffice apps expose their controls. Electron and Chromi
 
 **What was sent.** Every action result says which of three things happened: refused before sending (nothing reached the app, safe to retry), sent and confirmed, or sent but not confirmed (Claude checks with a new listing or a screenshot before repeating it).
 
-**Waiting.** `app_ax_find` with `wait_for` re-checks the window until a control appears or goes (`appears`, `gone`), or changes state (`enabled`, `checked`, `unchecked`, `expanded`, `collapsed`, `focused`, `value_contains`), for at most 15 seconds (5 by default), then lists the window and says whether the condition was met or timed out. The wait ends early on Stop, when another Claude session takes over the computer, when screen sharing is stopped, when the session's accessibility use ends, or when the app's grant no longer allows the call.
+**Waiting.** `app_ax_find` with `wait_for` re-checks the window until a control appears or goes (`appears`, `gone`), or changes state (`enabled`, `checked`, `unchecked`, `expanded`, `collapsed`, `focused`, `value_contains`), for up to 15 seconds (5 by default; a last check may add about a second), then lists the window and says whether the condition was met or timed out. The wait ends early on Stop, when another Claude session takes over the computer, when screen sharing is stopped, when the session's accessibility use ends, or when the app's grant no longer allows the call.
 
 **Large windows.** `app_ax_find` can list only what is inside one container (`within`), limit the depth (`depth`), list containers with their child counts (`outline`), or include labels and other plain text (`include_text`).
 

@@ -67,7 +67,7 @@ function defs(f){
   var clickP={app:app,window_id:win,element_index:idx,target:tgt};
   var typeD="Set the whole text of one TEXT field through accessibility (no key events), by element_index or target: \"focused\". Refused for non-text controls, and for a field that has text unless overwrite_existing is true. No coordinates; for key presses use key.";
   if(v2){
-    findP.wait_for={type:"object",description:"Wait (re-checking, at most 15 s) until this holds, then list the window. appears / gone: the controls matching role / title_contains, or element_index; the others: element_index.",properties:{until:{type:"string",enum:Object.keys(UNTIL)},element_index:{type:"number"},value:{type:"string",description:"For value_contains."},timeout_ms:{type:"number",description:"Default 5000, at most 15000."}},required:["until"]};
+    findP.wait_for={type:"object",description:"Wait (re-checking, about 15 s at most) until this holds, then list the window. appears / gone: the controls matching role / title_contains, or element_index; the others: element_index.",properties:{until:{type:"string",enum:Object.keys(UNTIL)},element_index:{type:"number"},value:{type:"string",description:"For value_contains."},timeout_ms:{type:"number",description:"Default 5000, at most 15000 (a last check may add about 1 s)."}},required:["until"]};
     if(f.has("find.root"))findP.within={type:"number",description:"[N] of a container: list only what is inside it."};
     if(f.has("find.v1"))findP.depth={type:"number",description:"Levels to walk below the window (or within)."};
     if(f.has("find.skeleton"))findP.outline={type:"boolean",description:"List containers only, with their child counts (no role / title_contains)."};
@@ -663,12 +663,14 @@ async function find(br,w,input,feat,sid,appK){
   // so a title change (GNOME) or a shifted id (wlroots) keeps it. The bridge
   // still matches the app as always and ignores a ref that no longer fits.
   if(feat.has("find.window_ref")&&sid!=null&&appK!=null){var kt=tableOf(sid,appK,w);if(kt&&kt.windowRef)a.push("--window-ref",kt.windowRef)}
-  // A wait_for poll (input.__budget: the wait's time left) never outlasts the
-  // wait. find.deadline: its walk ends early, leaving the bridge its 2000 ms
-  // for the rest of the command where the time allows (clamped 100..2000).
+  // A wait_for poll (input.__budget: the wait's time left). find.deadline:
+  // its walk gets the time left, clamped 300..2000 (a short wait still walks
+  // 300 ms). The process gets the bridge's 2000 ms after the walk, but at most
+  // the time left plus 1 s: a wait overruns timeout_ms by about 1 s at most,
+  // and a poll cut there counts as "not met yet".
   var ms=15000,bud=typeof input.__budget==="number"&&input.__budget>0?input.__budget:null;
-  if(bud!=null&&feat.has("find.deadline")){var dl=Math.max(100,Math.min(2000,Math.round(bud-2000)));a.push("--deadline-ms",String(dl));ms=dl+3000}
-  if(bud!=null&&ms>bud)ms=Math.max(300,Math.round(bud));
+  if(bud!=null&&feat.has("find.deadline")){var dl=Math.max(300,Math.min(2000,Math.round(bud)));a.push("--deadline-ms",String(dl));ms=dl+2000}
+  if(bud!=null)ms=Math.min(ms,Math.round(bud)+1000);
   // app_ax_find's shape options (validated in call(), feature-gated again).
   if(typeof input.depth==="number"&&feat.has("find.v1"))a.push("--max-depth",String(clampDepth(input.depth)));
   if(input.outline===!0&&feat.has("find.skeleton"))a.push("--skeleton");
@@ -827,7 +829,11 @@ async function reidentify(br,feat,w,sid,appK,t,ent,label){
   if(!hits.length){log("re-identify: window="+wlog(w)+" no match");return gone("no control in the window matches it any more")}
   var e=hits[0],ex=t.byRef.get(e.ref);
   // A control that is not showing (hidden, collapsed away) is not a target.
-  if(!(Array.isArray(e.states)&&e.states.indexOf("showing")>=0)){log("re-identify: window="+wlog(w)+" match not showing");return gone("the matching control is not showing")}
+  // The bridges print the compact state labels: "hidden" when it is not
+  // showing (never "showing" itself), "disabled" when it is not enabled.
+  // An element with no label at all has no states key (an empty list is
+  // not printed).
+  if(Array.isArray(e.states)&&e.states.indexOf("hidden")>=0){log("re-identify: window="+wlog(w)+" match not showing");return gone("the matching control is not showing")}
   t.scope=r.scope;
   if(ex&&ex!==ent){retire(t,ent);entryFill(ex,e,byIdx);log("re-identify: window="+wlog(w)+" matched an element listed as another number");return{ent:ex,how:byId?"accessible id":"role and name",was:ent.n}}
   t.byRef.delete(ent.ref);entryFill(ent,e,byIdx);t.byRef.set(e.ref,ent);
@@ -1069,7 +1075,8 @@ async function call(name,input,opts,obs){
   return err("Unknown tool: "+name);
 }
 // ── wait_for on app_ax_find ──────────────────────────────────────────────────
-// Polls one-shot finds until a condition holds, at most 15 s. Each poll is its
+// Polls one-shot finds until a condition holds, about 15 s at most (timeout_ms
+// up to 15000, plus at most about 1 s for a last check cut there). Each poll is its
 // own serial-queue item (enable + find stay together, a restore or another
 // call runs between two polls), the sleep is outside the queue. Between polls
 // the wait ends on a turn abort (regular mode: the handler's abort test as
@@ -1109,11 +1116,11 @@ function judge(sp,obs){
   var st=Array.isArray(hit.states)?hit.states:[],has=function(x){return st.indexOf(x)>=0};
   var note=N+" states: "+(st.filter(function(x){return!NOISE[x]}).join(", ")||"none");
   switch(sp.until){
-    case"enabled":return{met:has("enabled")||has("sensitive"),note:note};
+    case"enabled":return{met:!has("disabled"),note:note};
     case"checked":return{met:has("checked"),note:note};
     case"unchecked":return{met:!has("checked"),note:note};
     case"expanded":return{met:has("expanded"),note:note};
-    case"collapsed":return{met:has("collapsed")||has("expandable")&&!has("expanded"),note:note};
+    case"collapsed":return{met:has("collapsed")||!has("expanded"),note:note};
     case"focused":return{met:has("focused"),note:note};
     case"value_contains":
       // A redacted or terminal element (or one inside such) never matches.

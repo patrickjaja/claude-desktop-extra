@@ -173,13 +173,21 @@ process.stdin.on("end",()=>{
   process.stdout.write(JSON.stringify(out));
 });
 `;
-const el = (index, ax_role, role, name, extra = {}) => ({
+// The bridges (cu-atspi) leave out an element's empty name, description,
+// states and actions and a false value_redacted: the fake prints the same.
+const asPrinted = (o) => {
+  for (const k of ["name", "description"]) if (o[k] === "") delete o[k];
+  for (const k of ["states", "actions"]) if (Array.isArray(o[k]) && o[k].length === 0) delete o[k];
+  if (o.value_redacted === false) delete o.value_redacted;
+  return o;
+};
+const el = (index, ax_role, role, name, extra = {}) => asPrinted({
   index,
   ax_role,
   role,
   name,
   ref: ":1.42/org/a11y/atspi/accessible/" + index,
-  states: ["enabled", "sensitive", "showing", "visible"],
+  states: [],
   actions: ["click"],
   ...extra,
 });
@@ -1342,9 +1350,9 @@ if (patchMissing || !existsSync(stubPath)) {
       for (const f of readdirSync(scratch)) if (f.startsWith("bridge.log.seq.")) rmSync(join(scratch, f));
     };
     const AXR = { "push button": "AXButton", text: "AXTextField", "check box": "AXCheckBox", slider: "AXSlider", "spin button": "AXIncrementor", panel: "AXGroup", filler: "AXGroup", "page tab": "AXRadioButton" };
-    const vEl = (index, role, name, ref, extra = {}) => ({
+    const vEl = (index, role, name, ref, extra = {}) => asPrinted({
       index, ax_role: AXR[role] || "AXUnknown", role, name, ref,
-      states: ["enabled", "sensitive", "showing", "visible"], actions: ["click"],
+      states: [], actions: ["click"],
       accessible_id: null, depth: 2, parent_index: null, path: [0, index], unique: true,
       rect_screen: { x: 100 + index * 10, y: 200, width: 20, height: 20 },
       ...extra,
@@ -1353,7 +1361,7 @@ if (patchMissing || !existsSync(stubPath)) {
     const kateFind = (elements, extra = {}) => ({ app: { name: "kate", pid: 1111 }, window: KATE_WIN, coords: "screen", scope: "sc-kate2", matched_by: "pid", truncated: false, total_seen: 60, elements, ...extra });
     const V_A = [
       vEl(3, "push button", "Save", "r-save", { accessible_id: "save-btn" }),
-      vEl(5, "text", "Search", "r-search", { states: ["enabled", "editable"] }),
+      vEl(5, "text", "Search", "r-search", { states: ["editable"] }),
       vEl(12, "check box", "Word wrap", "r-wrap"),
       vEl(13, "push button", "OK", "ok-1", { unique: false }),
       vEl(14, "push button", "OK", "ok-2", { unique: false }),
@@ -1542,7 +1550,7 @@ if (patchMissing || !existsSync(stubPath)) {
     console.log("\n[10] wait_for on app_ax_find");
     const KATE2_WIN = { id: "{kate-2}", title: "other - Kate", ref: ":1.42/w2", frame_class: "global_frame" };
     const k2 = (elements, extra = {}) => ({ app: { name: "kate", pid: 1111 }, window: KATE2_WIN, coords: "window_only", scope: "sc-k2", matched_by: "pid", truncated: false, total_seen: 9, elements, ...extra });
-    const BOX = (states, extra = {}) => vEl(4, "check box", "Spell check", "r-box", { states: ["enabled", "showing", ...states], ...extra });
+    const BOX = (states, extra = {}) => vEl(4, "check box", "Spell check", "r-box", { states: [...states], ...extra });
     const FIX3 = {
       ...FIX2,
       "ax-find": {
@@ -1599,6 +1607,22 @@ if (patchMissing || !existsSync(stubPath)) {
       r = await w({ wait_for: { until: "checked", element_index: boxN, timeout_ms: 5000 } });
       check("checked on the box: met after polls, list with its stable [N]", !r.isError && /^wait_for checked: met after/.test(textOf(r)) && textOf(r).includes(`[${boxN}] AXCheckBox (check box) "Spell check" (checked)`), true);
       check("checked: element waits walk the whole window (--all)", finds().every((c) => c.argv.includes("--all")), true);
+      // The bridges print compact state labels: "disabled" when not enabled,
+      // never "enabled"; "expanded" only while expanded (GTK 3 sets no
+      // "collapsed"). Waits judge by those labels.
+      for (const [until, seq, label] of [
+        ["enabled", [["disabled"], []], "enabled: met once \"disabled\" is gone"],
+        ["collapsed", [["expanded"], []], "collapsed: met once \"expanded\" is gone (no \"collapsed\" label needed)"],
+      ]) {
+        const fx = { ...FIX3, "ax-find": { ...FIX3["ax-find"], "{kate-2}|all": { __seq: seq.map((st) => k2([BOX(st)])) } } };
+        const ff = join(scratch, `fixture-wait-${until}.json`);
+        writeFileSync(ff, JSON.stringify(fx));
+        useFix(ff);
+        resetSeq();
+        resetLog();
+        r = await w({ wait_for: { until, element_index: boxN, timeout_ms: 5000 } });
+        check(label, !r.isError && new RegExp(`^wait_for ${until}: met after \\d+ ms \\(2 check\\(s\\)\\)`).test(textOf(r)), true);
+      }
       useFix(fixFile4);
       wc.__sleeps.length = 0;
       resetLog();
@@ -1844,7 +1868,7 @@ if (patchMissing || !existsSync(stubPath)) {
         ...V_A,
         vEl(30, "slider", "Volume", "r-vol", { actions: [], value: "40" }),
         vEl(31, "slider", "Balance", "r-vol2", { actions: [], value: "0" }),
-        vEl(32, "spin button", "Size", "r-size", { states: ["enabled", "editable"], value: "12" }),
+        vEl(32, "spin button", "Size", "r-size", { states: ["editable"], value: "12" }),
       ];
       const FIX6 = {
         ...FIX2,
@@ -2018,7 +2042,8 @@ if (patchMissing || !existsSync(stubPath)) {
     // Re-identification never retargets to a twin; numbers never come back
     // for another control; numbers are bound to the app they were listed for.
     console.log("\n[13] re-identification, numbering, app binding");
-    const HIDDEN = ["enabled", "sensitive"];
+    // The bridges' label for a node that is not showing (they never print "showing").
+    const HIDDEN = ["hidden"];
     const xWin = (id, title, cls, extra = {}) => ({ id, title, resource_class: cls, stacking_order: 1, geometry: { x: 0, y: 0, width: 800, height: 600 }, ...extra });
     const xFind = (id, elements, extra = {}) => ({ app: { name: id }, window: { id, title: id, ref: ":1.300/" + id }, coords: "window_only", scope: "sc-" + id, matched_by: "app_id", truncated: false, total_seen: 20, elements, ...extra });
     const FIX13 = {
@@ -2050,7 +2075,7 @@ if (patchMissing || !existsSync(stubPath)) {
           vEl(8, "push button", "Plain", "f-2", { unique: false }),
         ]),
         "{nm-1}": xFind("{nm-1}", [vEl(3, "push button", "Alpha", "n-a"), vEl(4, "push button", "Beta", "n-b")]),
-        "{nm-1}|all": xFind("{nm-1}", [vEl(3, "push button", "Gamma", "n-g"), vEl(4, "text", "Field", "n-f", { states: ["enabled", "showing", "editable", "focused"] })]),
+        "{nm-1}|all": xFind("{nm-1}", [vEl(3, "push button", "Gamma", "n-g"), vEl(4, "text", "Field", "n-f", { states: ["editable", "focused"] })]),
         "{nm-2}": { __seq: [xFind("{nm-2}", [vEl(3, "push button", "Old", "p-old")], { app: { name: "num", pid: 100 } }), xFind("{nm-2}", [vEl(3, "push button", "New", "p-new")], { app: { name: "num", pid: 200 } })] },
         "{nm-3}": { __seq: [xFind("{nm-3}", [vEl(3, "push button", "Old", "w-old")]), xFind("{nm-3}", [vEl(3, "push button", "New", "w-new")], { window: { id: "{nm-3}", title: "Num 3", ref: ":1.300/other-window" } })] },
       },
@@ -2205,12 +2230,12 @@ if (patchMissing || !existsSync(stubPath)) {
           ...FIX13["ax-find"],
           "{ri-1}": xFind("{ri-1}", [
             vEl(3, "push button", "Chg", "chg-1"),
-            vEl(4, "text", "Notes", "nt-1", { states: ["enabled", "showing", "editable"] }),
+            vEl(4, "text", "Notes", "nt-1", { states: ["editable"] }),
             vEl(5, "push button", "Go", "go-1"),
           ]),
           "{ri-1}|all": xFind("{ri-1}", [
             vEl(3, "push button", "Chg", "chg-2"),
-            vEl(4, "text", "Notes", "nt-2", { states: ["enabled", "showing", "editable"], value: "typed meanwhile" }),
+            vEl(4, "text", "Notes", "nt-2", { states: ["editable"], value: "typed meanwhile" }),
             vEl(5, "push button", "Go", "go-2"),
           ]),
         },
@@ -2443,7 +2468,17 @@ if (patchMissing || !existsSync(stubPath)) {
       resetLog();
       r = await W({ role: "nothing", wait_for: { until: "appears", timeout_ms: 1500 } });
       const dls = finds().map((c) => Number(c.argv[c.argv.indexOf("--deadline-ms") + 1]));
-      check("--deadline-ms never exceeds the remaining wait time", dls.length > 0 && dls.every((d) => d >= 100 && d <= 1500), true);
+      check("1500 ms wait: the first poll walks the whole wait (--deadline-ms 1500), no poll walks less than 300 ms", dls.length > 1 && dls[0] === 1500 && dls.every((d) => d >= 300 && d <= 1500), true);
+      // A poll cut by its process timeout (remaining + 1 s, here 2000 + 2000
+      // capped) is "not met yet": the wait goes on and is met on the next poll.
+      process.env.CDB_FAKE_AX_HANG = "ax-find";
+      setTimeout(() => delete process.env.CDB_FAKE_AX_HANG, 1000);
+      resetLog();
+      const tc = Date.now();
+      r = await W({ role: "push button", wait_for: { until: "appears", timeout_ms: 5000 } });
+      const tcEl = Date.now() - tc;
+      delete process.env.CDB_FAKE_AX_HANG;
+      check("a poll cut at its process timeout is not met yet: the next poll meets it", !r.isError && /^wait_for appears: met after \d+ ms \(2 check\(s\)\)/.test(textOf(r)) && tcEl >= 3500 && tcEl < 6000, true);
       // A restore that began before the wait does not end it (one bump).
       await W({});
       const busy = W({});
