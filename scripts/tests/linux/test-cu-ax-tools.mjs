@@ -1753,10 +1753,16 @@ if (patchMissing || !existsSync(stubPath)) {
           ),
           "{konsole-1}|root:r-run": { unavailable: "out_of_scope", hint: "The ref is not inside this window." },
           "{konsole-1}|root:r-gonebox": { unavailable: "stale_element", hint: "The element is gone." },
+          // Walk (breadth-first) order, as the real bridges list: Side and
+          // Rows are both at depth 3 but under different parents; s-col is a
+          // nameless container whose children are not containers (none listed).
           "{konsole-1}|skeleton": kon([
             vEl(1, "panel", "Main", "s-main", { depth: 1, child_count: 3, ...na }),
             vEl(2, "filler", "", "s-f", { depth: 2, parent_index: 1, child_count: 1, ...na }),
-            vEl(3, "panel", "Side", "s-side", { depth: 3, parent_index: 2, child_count: 5, ...na }),
+            vEl(3, "panel", "Right", "s-right", { depth: 2, parent_index: 1, child_count: 1, ...na }),
+            vEl(4, "filler", "", "s-col", { depth: 2, parent_index: 1, child_count: 4, ...na }),
+            vEl(5, "panel", "Side", "s-side", { depth: 3, parent_index: 2, child_count: 5, ...na }),
+            vEl(6, "list box", "Rows", "s-rows", { depth: 3, parent_index: 3, child_count: 3, ...na }),
           ]),
         },
       };
@@ -1793,7 +1799,11 @@ if (patchMissing || !existsSync(stubPath)) {
       const ot = textOf(r);
       check("outline + depth: --skeleton --max-depth 3", argvs().filter((x) => x.startsWith("ax-find")).join("|"), "ax-find --window={konsole-1} --window-ref :1.60/w --max-depth 3 --skeleton");
       check("outline: containers with their child count, indented", /\[\d+\] AXGroup \(panel\) "Main" .*3 children/.test(ot) && /\n {2}\[\d+\] AXGroup \(panel\) "Side"/.test(ot), true);
-      check("outline: nameless single-child group collapsed", !/\(filler\)/.test(ot), true);
+      check("outline: nameless single-child group collapsed", (ot.match(/\(filler\)/g) || []).length, 1);
+      check("outline: a nameless container with unlisted children is kept (where within leads)", /\n {2}\[\d+\] AXGroup \(filler\) "" [^\n]*\(4 children\)$/m.test(ot), true);
+      check("outline: depth first, each container right above its own children",
+        ot.split("\n").slice(1).map((l) => (/^( *)\[\d+\] \S+ \([^)]*\) "([^"]*)"/.exec(l) || []).slice(1).join("")).join("|"),
+        "Main|  Side|  Right|    Rows|  ");
       check("outline: a container cut by depth says how to look inside", /5 more inside - pass within: \[\d+\]/.test(ot), true);
       r = await f({ outline: true, role: "push button" });
       check("outline with role: refused (outline lists containers only)", r.isError === true && /outline/.test(textOf(r)), true);
@@ -1849,6 +1859,8 @@ if (patchMissing || !existsSync(stubPath)) {
           "r-search|focus": { ok: true, action: "focus", method: "grab_focus", delivery: "sent", post: { focused: true } },
           "r-save|scroll-to": { ok: true, action: "scroll_to", method: "scroll_to", delivery: "sent", post: { focused: false } },
           "noact-1|scroll-to": { unavailable: "unsupported_action", hint: "No Component interface.", delivery: "not_sent" },
+          // GTK 3 (real x11-/wlroots-bridge on the crate's fixture): ScrollTo answers false.
+          "r-search|scroll-to": { ok: false, action: "scroll_to", method: "scroll_to", delivery: "sent", post: { focused: false } },
           "r-vol|set-value": { ok: true, action: "set_value", method: "set_current_value", delivery: "sent", post: { focused: false, value: "75" } },
           "r-vol2|set-value": { unavailable: "value_out_of_range", hint: "Out of range.", range: { min: -10, max: 10 }, delivery: "not_sent" },
           "r-size|set-value": { ok: true, action: "set_value", method: "set_current_value", delivery: "sent", post: { focused: true, value: "14" } },
@@ -1888,12 +1900,14 @@ if (patchMissing || !existsSync(stubPath)) {
         r = await x("app_scroll", { element_index: 3, ...bad });
         check(`app_scroll ${Object.keys(bad)[0]}: refused with a pointer to scroll, nothing spawned`, r.isError === true && /\bscroll\b.*coordinate/.test(textOf(r)) && calls().length === 0, true);
       }
+      r = await x("app_scroll", { element_index: 5 });
+      check("app_scroll refused by the toolkit (ok:false, GTK 3): not worded as success, scroll at a point instead", r.isError === true && /did not accept the scroll_to/.test(textOf(r)) && /Use scroll at a point/.test(textOf(r)), true);
       r = await x("app_scroll", { element_index: 26 });
       check("app_scroll unsupported_action: nothing sent, scroll at a point instead", r.isError === true && /unsupported_action/.test(textOf(r)) && /nothing was sent/i.test(textOf(r)) && /scroll/.test(textOf(r)), true);
       resetLog();
       r = await x("app_type", { element_index: 30, text: " 75 " });
       check("app_type number on a slider: set-value, the number in the JSON", acts().map((c) => c.argv.slice(5).join(" ")).join() + "|" + acts()[0]?.stdin, "--action set-value --expect-json|" + JSON.stringify({ expect: { role: "slider", name: "Volume", accessible_id: null }, value: 75 }));
-      check("set-value: done, value shown", !r.isError && /\[30\]/.test(textOf(r)) && /value now 75/.test(textOf(r)), true);
+      check("set-value: done, value shown", !r.isError && /\[30\]/.test(textOf(r)) && /; now value 75\./.test(textOf(r)), true);
       r = await x("app_type", { element_index: 31, text: "50" });
       check("value_out_of_range: nothing sent, names the range", r.isError === true && /-10 to 10/.test(textOf(r)) && /nothing was sent/i.test(textOf(r)), true);
       resetLog();

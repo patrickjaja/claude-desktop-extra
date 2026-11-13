@@ -623,10 +623,19 @@ function treeText(got,coords,fr,o){
   var byIdx=new Map(),kids=new Map(),i;
   for(i=0;i<got.length;i++)byIdx.set(got[i].e.index,got[i]);
   for(i=0;i<got.length;i++){var p=got[i].e.parent_index;if(typeof p==="number"&&byIdx.has(p))kids.set(p,(kids.get(p)||0)+1)}
-  function folded(x){var e=x.e;return!!GROUPISH[e.role]&&!str(e.name).trim()&&!(Array.isArray(e.actions)&&e.actions.length)&&(kids.get(e.index)||0)<=1}
+  // A container whose children were not all listed (outline lists containers
+  // only) is where within: [N] leads, so it is never folded away.
+  function folded(x){var e=x.e;return!!GROUPISH[e.role]&&!str(e.name).trim()&&!(Array.isArray(e.actions)&&e.actions.length)&&(kids.get(e.index)||0)<=1&&!(typeof e.child_count==="number"&&e.child_count>(kids.get(e.index)||0))}
+  // The bridge lists in walk (breadth-first) order; indented lines go depth
+  // first, each node right above its own children (siblings keep list order).
+  var ch=new Map(),top=[],ord=[];
+  for(i=0;i<got.length;i++){var pi=got[i].e.parent_index;if(typeof pi==="number"&&byIdx.has(pi)&&pi!==got[i].e.index){if(!ch.has(pi))ch.set(pi,[]);ch.get(pi).push(got[i])}else top.push(got[i])}
+  var seen=new Set(),stk=top.slice().reverse();
+  while(stk.length){var y=stk.pop();if(seen.has(y))continue;seen.add(y);ord.push(y);var cs=ch.get(y.e.index);if(cs){for(var q=cs.length-1;q>=0;q--)stk.push(cs[q])}}
+  for(i=0;i<got.length;i++){if(!seen.has(got[i]))ord.push(got[i])}
   var out=[];
-  for(i=0;i<got.length;i++){
-    var x=got[i];if(folded(x))continue;
+  for(i=0;i<ord.length;i++){
+    var x=ord[i];if(folded(x))continue;
     var lv=0,pp=x.e.parent_index;
     for(var k=0;k<65&&typeof pp==="number";k++){var px=byIdx.get(pp);if(!px)break;if(!folded(px))lv++;pp=px.e.parent_index}
     var l=new Array(lv+1).join("  ")+line(x.e,coords,fr,x.n),cc=x.e.child_count;
@@ -898,14 +907,15 @@ function actResult(r,t,el,c,ri){
     var rb=c.goal||c.action==="set-value"?" (the read-back did not confirm it"+(typeof r.error==="string"&&r.error?": "+r.error.slice(0,160):"")+")":"";
     return ok(c.unknown+" sent to "+N+" "+(el.ax_role||"AXUnknown")+", result unknown (not confirmed)"+rb+": take a screenshot or app_ax_find to check. Do not repeat it blindly."+rid);
   }
-  if(r.ok!==!0)return err(label+": the app did not accept the "+(r.action||"action")+(r.method?" ("+r.method+")":"")+"."+rid);
+  // GTK 3 answers every Component.ScrollTo with false (it has no scroll_to).
+  if(r.ok!==!0)return err(label+": the app did not accept the "+(r.action||"action")+(r.method?" ("+r.method+")":"")+"."+(c.action==="scroll-to"?" Use scroll at a point inside its list instead (take a screenshot first).":"")+rid);
   var post=r.post&&typeof r.post==="object"?r.post:null,ps=[];
   if(post){
     if(post.focused===!0)ps.push("focused");
     if(post.checked===!0)ps.push("checked");else if(post.checked===!1)ps.push("not checked");
     if(post.expanded===!0)ps.push("expanded");else if(post.expanded===!1)ps.push("collapsed");
     if(post.selected===!0)ps.push("selected");else if(post.selected===!1)ps.push("not selected");
-    if(c.showValue&&post.value_redacted!==!0&&typeof post.value==="string"&&post.value!=="")ps.push("value now "+post.value.slice(0,40));
+    if(c.showValue&&post.value_redacted!==!0&&typeof post.value==="string"&&post.value!=="")ps.push("value "+post.value.slice(0,40));
   }
   if(r.already===!0)return ok(N+" "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+") is already "+c.goal+"; nothing was sent."+rid);
   if(c.goal)return ok("Set "+N+" "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+") to "+c.goal+" (confirmed by the read-back)"+(ps.length?"; now "+ps.join(", "):"")+"."+rid);
