@@ -626,7 +626,11 @@ try {
     const qnName = site(/\}async firstUseSidePlace\([\w$]+,[\w$]+,[\w$]+\)\{if\(!\([^{}]*?\|\|[\w$]+\.([\w$]+)\([\w$]+,\([\w$]+=>this\.config\.getSession\(/);
     const planNs = method.match(/permissionMode!==[\w$]+\.([\w$]+)\.Plan/)[1];
     const uuidNs = method.match(/=\(0,([\w$]+)\.randomUUID\)\(\)/)[1];
-    const identity = method.match(/([\w$]+)=([\w$]+)\(\1\),[\w$]+&&[\w$]+\?\.length&&this\.askFirstSessionApprovals/)[2];
+    // `if(a=<filter>(c,r,a),i=<identity>(i),h!==void 0&&a?.length&&this.askFirstSessionApprovals...`:
+    // the input sanitizer and (5.11492+) the suggestion filter both pass their argument through here.
+    const preAsk = method.match(/(?:([\w$]+)=([\w$]+)\([\w$]+,[\w$]+,\1\),)?([\w$]+)=([\w$]+)\(\3\),[\w$]+(?:!==void 0)?&&[\w$]+\?\.length&&this\.askFirstSessionApprovals/);
+    assert.ok(preAsk, "real pre-ask sanitizer site found");
+    const identity = preAsk[4], suggestionFilter = preAsk[2];
     const gate = brokerSrc.match(/function ([\w$]+)\([\w$]+,[\w$]+,[\w$]+,[\w$]+,[\w$]+,[\w$]+\)\{if\(!([\w$]+)\.has\([\w$]+\)[^{}]*;return [\w$]+\.[\w$]+\([\w$]+\)\|\|[\w$]+\([\w$]+,[\w$]+,[\w$]+\)\|\|[\w$]+\([\w$]+,[\w$]+,[\w$]+\)>=10\}/);
     assert.ok(gate && method.includes(gate[1] + "("), "real start gate found and called by the hook");
     const apiChunk = brokerSrc.match(new RegExp(`(?:^|[^\\w$.])${api.replace(/\$/g, "\\$")}=require\\("\\./(index[\\w.-]*\\.js)"\\)`))[1];
@@ -649,7 +653,7 @@ try {
     Object.defineProperty(nsOverrides, mainExport, { get: () => mainWin });
     const passthrough = new Set(["Promise", "Object", "Array", "JSON", "Date", "Error", "TypeError", "Set", "Map", "WeakMap", "String", "Number",
       "Boolean", "Symbol", "Math", "RegExp", "undefined", "NaN", "Infinity", "globalThis", "process", "require", "isFinite", "parseInt", "Reflect"]);
-    const explicit = { [api]: soft(nsOverrides), [uuidNs]: { randomUUID: () => "req-" + Math.random() }, [identity]: x => x,
+    const explicit = { [api]: soft(nsOverrides), [uuidNs]: { randomUUID: () => "req-" + Math.random() }, [identity]: x => x, ...(suggestionFilter ? { [suggestionFilter]: (_s, _t, x) => x } : {}),
       [gate[2]]: new Set([START]), setTimeout: () => ({ unref() {} }), clearTimeout() {} };
     const scope = new Proxy({}, {
       has: (t, k) => typeof k !== "symbol" && !passthrough.has(k),
