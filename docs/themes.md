@@ -132,8 +132,8 @@ Template values are HSL triplets built from matugen's `.hue`/`.saturation`/`.lig
 
 **Window shape.** Two switches in Settings -> Extra -> Community Features change the main window:
 
-- **Hide window controls** drops the min/max/close buttons (you then close and minimize through your WM). Window edges still resize normally. Also `claude-desktop --no-window-controls` for a single launch.
-- **Native titlebar** uses the system frame instead of the integrated titlebar. Also `claude-desktop --native-titlebar`.
+- **Hide window controls** drops the min/max/close buttons (you then close and minimize through your WM; pop-out windows get the window manager's frame). Window edges still resize normally. Also `claude-desktop --no-window-controls` for a single launch.
+- **Native titlebar** uses the system frame instead of the integrated titlebar, in pop-out windows too. Also `claude-desktop --native-titlebar`.
 
 Both are read when the main window is created, so they take effect on the next start; each row shows a "Restart now" button while its saved switch and the running window disagree. In both modes the header's icons move up to the window edge instead of leaving room for the buttons.
 

@@ -67,3 +67,5 @@ claude-theme-extract-*.json
 
 # Maintainer agent working files (spec, plan, constraints)
 /.agent/
+
+sudo-pw.txt

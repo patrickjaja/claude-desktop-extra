@@ -49,6 +49,15 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - **"Open in new window" now shows your theme.** A popped-out Code session, chat or project (any window the app pops out of the main window) uses the active theme in the matching light or dark variant and follows live theme switches, config reloads, light/dark flips and clearing the theme; its window background and, where the pop-out has app-drawn caption buttons, their overlay follow the theme; the themed loading spinner shows there too. Content from other sites inside a pop-out, artifact pop-ups opened by an artifact itself, and the in-app browser's pop-ups stay as they are.
 - After clearing a theme the caption symbols return to the stock colors.
 
+### Transparent window, title bar modes and profile names in pop-out windows
+
+- **Transparent window: pop-out windows follow the main window.** With the Transparent window switch on, a popped-out Code session, chat, project or artifact window is see-through like the main window, also where it has an OS frame (native Wayland), and the Transparency slider changes it live. Pop-outs stay opaque whenever the main window is (switch off, native titlebar).
+- **The Code tab's session view is see-through too.** Transcript, composer and the new-session page share the one see-through layer with the rest of the window instead of staying solid, in the main window and in pop-outs.
+- **Session rail and floating cards:** the docked session rail and the side panes are part of the see-through layer instead of a solid box, while cards that float over the transcript (the session rail in a narrow window, notices above the composer) keep a solid ground so nothing shows through them. A pop-out's header follows the Transparency slider.
+- **Embedded pages stay readable.** Pages embedded in the app, such as artifacts, previews and other sites, keep an opaque backing in a transparent window, so their text never sits directly over the desktop.
+- **Native and bare title bar modes apply to pop-out windows:** they open with the window manager's frame instead of drawn caption buttons.
+- **Named profiles:** pop-out windows carry the profile name in their title (`Claude (work)`), like the main window.
+
 ## 2026-11-11
 
 ### Transparent window: no empty strip in the header

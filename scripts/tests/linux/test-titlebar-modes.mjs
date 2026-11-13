@@ -126,12 +126,21 @@ function section(title) {
 //
 // Upstream's own `icon:` key sits AFTER titleBarOverlay in the real object and
 // is kept here for faithfulness - see the closing NOTE.
+// The pop-out status site (sub-patch 3), verbatim upstream shape (v5.1231.2):
+// the status function, the schema-map entry WITHOUT parens (must not match), and
+// the one call site inside the features object.
+const POPOUT_FN =
+  'function pvi(){return gV()?{status:"unsupported",reason:"Pop-out title bar overlay is not available under Wayland",unsupportedCode:"unsupported_session"}:{status:"supported"}}';
+const POPOUT_SITE = `${POPOUT_FN}
+var __cdbSchemaMap={popoutZoom:A_,popoutTitleBarOverlay:A_,filePreviewNativeViewRouting:A_};
+function __cdbFixtureFeatures(){return {popoutZoom:IG,popoutTitleBarOverlay:pvi(),filePreviewNativeViewRouting:IG}}
+`;
 function fixture(overlaySlot) {
   return `"use strict";
 function a0n(e,t){let n=e==="main"&&H1n,r=e==="main"&&W1n,i=Math.max(n0n,Math.round((n?t0n:e==="main"?KZn:qZn)*t)),o=e==="main"&&pQn()||RI(),s=n?a.nativeTheme.shouldUseDarkColors?"#f9f8f4":"#141412":r?e0n(o):o;return a.nativeTheme.shouldUseDarkColors?{color:s,symbolColor:n?"#000":"#c2c0b6",height:i}:{color:s,symbolColor:n?"#fff":"#3d3d3a",height:i}}
 function YSe(e){return e}
 function __cdbFixtureOptions(){let e={x:0,y:0,width:1200,height:800},i=!0,c=!1,n={default:{join:(...s)=>s.join("/")}};return YSe({x:e.x,y:e.y,width:e.width,height:e.height,minWidth:600,minHeight:400,title:x$a(),titleBarStyle:"hidden",titleBarOverlay:${overlaySlot},trafficLightPosition:LVi(),show:i&&!0,backgroundColor:fQn({signedIn:c}),opacity:1,icon:n.default.join(VW(),"icon.png"),webPreferences:{preload:"mainWindow.js"}})}
-`;
+${POPOUT_SITE}`;
 }
 
 // The sentinel stubs the patched expressions run against. Distinguishable
@@ -148,7 +157,7 @@ const UPSTREAM_OVERLAY_SENTINEL = { __upstreamOverlayValue: true };
 // `nativeTb` / `noWinCtl` install those readers (a function, or any value - the
 // patch coerces with !!). Passing undefined leaves the global genuinely ABSENT,
 // which is the fallback path sections [1]-[6] exercise.
-function evalFixture(src, { platform, env, dark = true, nativeTb, noWinCtl } = {}) {
+function evalFixture(src, { platform, env, dark = true, nativeTb, noWinCtl, waylandSession = false } = {}) {
   const sandbox = {
     console,
     process: { platform, env },
@@ -174,6 +183,10 @@ function evalFixture(src, { platform, env, dark = true, nativeTb, noWinCtl } = {
     // without one is a TypeError - modelled, not just stubbed
     fQn: ({ signedIn }) => (signedIn === undefined ? "#NO-SIGNEDIN" : WINDOW_BG),
     eKi: UPSTREAM_OVERLAY_SENTINEL,
+    // sub-patch 3: upstream's Wayland predicate and the schema placeholders
+    gV: () => !!waylandSession,
+    A_: "SCHEMA",
+    IG: { status: "supported" },
   };
   // Assigned conditionally so "no reader" means the property does not exist,
   // not that it exists holding undefined - the patch's guard is a truthiness
@@ -181,10 +194,14 @@ function evalFixture(src, { platform, env, dark = true, nativeTb, noWinCtl } = {
   if (nativeTb !== undefined) sandbox.__cdbNativeTb = nativeTb;
   if (noWinCtl !== undefined) sandbox.__cdbNoWinCtl = noWinCtl;
   vm.runInNewContext(
-    src + "\n;globalThis.__OPTS=__cdbFixtureOptions;globalThis.__OVERLAY=a0n;",
+    src + "\n;globalThis.__OPTS=__cdbFixtureOptions;globalThis.__OVERLAY=a0n;globalThis.__FEATURES=__cdbFixtureFeatures;",
     vm.createContext(sandbox)
   );
-  return { opts: sandbox.__OPTS(), overlayMain: sandbox.__OVERLAY("main", 1) };
+  return {
+    opts: sandbox.__OPTS(),
+    overlayMain: sandbox.__OVERLAY("main", 1),
+    features: sandbox.__FEATURES(),
+  };
 }
 
 // Readers as the community patch injects them: memoized zero-arg functions.
@@ -1476,6 +1493,90 @@ try {
     }
     check("inject: app://localhost + claude.ai only, not the 3P setup wizard",
       JSON.stringify(injected), JSON.stringify(["app://localhost/new", "https://claude.ai/new"]));
+  }
+
+  // ------------------------------------------ [17] pop-out windows (sub-patch 3)
+  section("[17] pop-outs follow the title bar mode through popoutTitleBarOverlay");
+  {
+    // Upstream's renderer picks a pop-out's chrome from this status: supported
+    // -> hidden title bar + drawn caption buttons, unsupported -> a real frame.
+    // Native and bare mode must report unsupported (same shape and code as
+    // upstream's Wayland answer); integrated mode must hand back upstream's own
+    // object untouched.
+    const p = runPatch(scratch, "index-popout.js", fixture("!0"));
+    check("sub-patch 3 reports its match", /\[OK\] pop-out windows follow[^\n]*: 1/.test(p.out), true);
+    check("the schema-map entry is not touched",
+      p.patched.includes("popoutTitleBarOverlay:A_,"), true);
+    check("exactly one patched call site", countOf(p.patched, "__CDB_POPOUT_FRAME__"), 1);
+    check("upstream's status function is still called unchanged",
+      countOf(p.patched, ":pvi(),"), 1);
+    check("the injected status reuses upstream's unsupportedCode",
+      p.patched.includes('unsupportedCode:"unsupported_session"}:pvi(),'), true);
+    check("the pop-out gate keeps the reader guards",
+      p.patched.includes("/*__CDB_POPOUT_FRAME__*/popoutTitleBarOverlay:(process.platform===\"linux\"&&((globalThis.__cdbNativeTb?"), true);
+
+    const UP_OK = { status: "supported" };
+    const UP_WL = { status: "unsupported", reason: "Pop-out title bar overlay is not available under Wayland", unsupportedCode: "unsupported_session" };
+    const popout = (o) => evalFixture(p.patched, { platform: "linux", env: {}, ...o }).features.popoutTitleBarOverlay;
+    const shape = (v) => JSON.stringify({ status: v.status, code: v.unsupportedCode, hasReason: typeof v.reason === "string" && v.reason.length > 0 });
+    const UNSUP = shape(UP_WL);
+
+    // integrated: pristine, upstream's result in both session kinds
+    for (const wayland of [false, true]) {
+      const wlOpts = { waylandSession: wayland };
+      const v = popout({ ...wlOpts });
+      check(`integrated (readers absent, wayland=${wayland}) -> upstream's answer`,
+        JSON.stringify(v), JSON.stringify(wayland ? UP_WL : UP_OK));
+      const v2 = popout({ ...wlOpts, nativeTb: READER(false), noWinCtl: READER(false) });
+      check(`integrated (readers false, wayland=${wayland}) -> upstream's answer`,
+        JSON.stringify(v2), JSON.stringify(wayland ? UP_WL : UP_OK));
+    }
+    // identity of the returned object: the patched code must not wrap or clone it
+    {
+      const marker = { status: "supported", __identity: true };
+      const sb = { process: { platform: "linux", env: {} }, IG: 1, A_: 1, __M: marker };
+      vm.runInNewContext(
+        p.patched + "\n;pvi=()=>globalThis.__M;globalThis.__R=__cdbFixtureFeatures().popoutTitleBarOverlay;",
+        vm.createContext(sb)
+      );
+      check("integrated: the returned object IS upstream's (identity)", sb.__R === marker, true);
+    }
+    // native
+    for (const via of ["reader", "env"]) {
+      const o = via === "reader" ? { nativeTb: READER(true) } : { env: { CLAUDE_NATIVE_TITLEBAR: "1" } };
+      check(`native via ${via} -> unsupported with upstream's shape`, shape(popout(o)), UNSUP);
+      check(`native via ${via} -> reason names the mode`,
+        /native or bare/.test(popout(o).reason), true);
+    }
+    // bare is treated like native here
+    for (const via of ["reader", "env"]) {
+      const o = via === "reader" ? { noWinCtl: READER(true) } : { env: { CLAUDE_NO_WINDOW_CONTROLS: "1" } };
+      check(`bare via ${via} -> unsupported with upstream's shape`, shape(popout(o)), UNSUP);
+    }
+    check("native + bare together -> unsupported",
+      shape(popout({ nativeTb: READER(true), noWinCtl: READER(true) })), UNSUP);
+    // a reader present is the single authority: env alone must not flip it
+    check("reader false wins over a set env var",
+      JSON.stringify(popout({ nativeTb: READER(false), noWinCtl: READER(false), env: { CLAUDE_NATIVE_TITLEBAR: "1" } })),
+      JSON.stringify(UP_OK));
+    // non-Linux never consults the modes
+    check("non-Linux platforms keep upstream's answer",
+      JSON.stringify(evalFixture(p.patched, { platform: "win32", env: {}, nativeTb: READER(true) }).features.popoutTitleBarOverlay),
+      JSON.stringify(UP_OK));
+    // refusals
+    const none = runPatchExpectingFailure(scratch, "index-nopopout.js",
+      fixture("!0").replace(/function pvi[^\n]*\n/, "").replace("popoutTitleBarOverlay:pvi()", "popoutTitleBarOverlay:A_"));
+    check("a bundle without the call site fails the patch", none.status !== 0 && /popoutTitleBarOverlay call site: 0\/1/.test(none.out), true);
+    const two = runPatchExpectingFailure(scratch, "index-twopopout.js",
+      fixture("!0") + "function __x(){return {popoutTitleBarOverlay:pvi(),y:1}}\n");
+    check("two call sites fail the patch", two.status !== 0 && /popoutTitleBarOverlay call site: 2\/1/.test(two.out), true);
+    const noFn = runPatchExpectingFailure(scratch, "index-nofn.js",
+      fixture("!0").replace("unsupportedCode:\"unsupported_session\"}:{status:\"supported\"}", "unsupportedCode:\"unsupported_session\"}:{status:\"ok\"}"));
+    check("an upstream status function in another shape fails the patch", noFn.status !== 0 && /status function pvi not found/.test(noFn.out), true);
+    // idempotency must assert OUR end state: first marker without the popout one is a failure
+    const half = runPatchExpectingFailure(scratch, "index-half.js",
+      p.patched.replace("/*__CDB_POPOUT_FRAME__*/", ""));
+    check("already-patched without the pop-out gate fails loudly", half.status !== 0 && /pop-out title bar gate/.test(half.out), true);
   }
 
   console.log("");

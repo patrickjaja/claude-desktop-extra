@@ -21,6 +21,23 @@
 #     asserts upstream's preventDefault on that event is still attached to
 #     the main window. "Claude" -> "Claude (work)".
 #
+# Pop-out windows (popped-out Code sessions, chats, artifact shells, idle pool
+# windows) are not created by that factory: the main view opens them with
+# `window.open("about:blank", <frame name>)` and upstream's window manager
+# adopts the resulting child BrowserWindow, whose OS title is the page's
+# document.title verbatim. With a profile set, the same injection also installs
+# ONE `app.on("web-contents-created")` listener that watches each webContents'
+# `did-create-window` and, for a child that is an about:blank window opened by
+# the MAIN frame of an app-origin page (the same `opener === mainFrame` test
+# upstream's own did-create-window handler applies; origins via
+# globalThis.__cdbSenderGuard, a missing guard fails closed), wraps that
+# window's setTitle like the main window's and listens for the BrowserWindow's
+# own page-title-updated (the event Electron emits on the window; it is the
+# one preventDefault stops, as in the main-window path) so every later page
+# title keeps the suffix exactly once. A title the window already has at
+# creation is suffixed once right away.
+# Anything else (no opener, a subframe opener, a foreign origin) is left alone.
+#
 # Default profile (CLAUDE_PROFILE unset) → no listener attached, no behavior
 # change.
 #
@@ -36,6 +53,21 @@ import std/[os, strformat, strutils]
 import regex
 
 const SENTINEL = "__cdb_titleHook"
+const POPOUT_SENTINEL = "__cdb_popoutTitleHook"
+
+# Runs once with the suffix (" (work)"). Installed from the main-window
+# factory, i.e. after upstream's `ready`, so __cdbDiag exists.
+const POPOUT_HOOK =
+  """((__cdb_s)=>{if(globalThis.__cdb_popoutTitleHook)return;globalThis.__cdb_popoutTitleHook=true;""" &
+  """const __cdb_el=require("electron");""" &
+  """const __cdb_wrap=(w)=>{const o=w.setTitle.bind(w);""" &
+  """const f=(t)=>{t=String(t??"");return o(t.endsWith(__cdb_s)?t:t+__cdb_s)};w.setTitle=f;""" &
+  """w.on("page-title-updated",(ev,t)=>{if(!t)return;ev.preventDefault();f(t)});const t0=w.getTitle();if(t0)f(t0)};""" &
+  """__cdb_el.app.on("web-contents-created",(_e,__cdb_wc)=>{__cdb_wc.on("did-create-window",(__cdb_c,__cdb_d)=>{""" &
+  """try{if(!__cdb_d||__cdb_d.url!=="about:blank")return;const op=__cdb_c.webContents.opener;""" &
+  """if(!op||op.parent!==null||op!==__cdb_wc.mainFrame)return;""" &
+  """const g=globalThis.__cdbSenderGuard;if(!g||!g.originAllowed(op.url))return;__cdb_wrap(__cdb_c)}catch(_x){}})});""" &
+  """try{(globalThis.__cdbDiag||console.log)("[profile-title] pop-out windows of the main view carry the profile suffix:"+__cdb_s)}catch(_x){}})"""
 
 # Precondition: a helper `function H(e){e.on("page-title-updated",(e=>{
 # e.preventDefault()}))}` (groups: 0 = H, 1 = param, 2 = receiver, 3 = event
@@ -93,6 +125,11 @@ proc apply*(input: string): string =
   result = input
 
   if SENTINEL in result:
+    if POPOUT_SENTINEL notin result:
+      raise newException(
+        ValueError,
+        "fix_profile_window_title: main-window hook present but the pop-out hook is missing",
+      )
     echo "  [INFO] Window title hook already applied"
     echo "  [PASS] No changes needed (already patched)"
     return
@@ -145,7 +182,8 @@ proc apply*(input: string): string =
         "__cdb_w.setTitle=(__cdb_t)=>{__cdb_t=String(__cdb_t??\"\");" &
         "return __cdb_o(__cdb_t.endsWith(__cdb_s)?__cdb_t:__cdb_t+__cdb_s)};" &
         "__cdb_w.setTitle(__cdb_w.getTitle())})(" & winVar &
-        ",\" (\"+process.env.CLAUDE_PROFILE+\")\")),",
+        ",\" (\"+process.env.CLAUDE_PROFILE+\")\")," & POPOUT_HOOK &
+        "(\" (\"+process.env.CLAUDE_PROFILE+\")\")),",
   )
 
   if hits == 1:

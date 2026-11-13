@@ -36,6 +36,13 @@
  *   4. The transparency slider in Settings -> Extra swaps that claude.ai stylesheet
  *      live (insertCSS the new alpha, removeInsertedCSS the old key); only the
  *      on/off switch needs a restart.
+ *   5. Pop-out windows (a popped-out Code session, chat, project or artifact,
+ *      and the idle pool windows upstream pre-creates) follow the main window:
+ *      upstream's window manager builds them from an options literal that the
+ *      patch wraps in globalThis.__cdbWinTransPopout(); while the main window
+ *      is transparent, a pop-out its own claude.ai view opens gets the same
+ *      constructor keys, the same paint guards (2) and the same stylesheet (3,
+ *      4). A pop-out is never transparent while the main window is not.
  *
  * Transparency needs a frameless window, so it is skipped (and logged) when the
  * native titlebar is in use (frame:true). Why the patch is a spread in the options
@@ -50,6 +57,7 @@
   "use strict";
   if (typeof process === "undefined" || process.platform !== "linux") {
     globalThis.__cdbWinTransExtra = function () { return {}; };
+    globalThis.__cdbWinTransPopout = function (_opener, _name, o) { return o; };
     return;
   }
   if (globalThis.__cdbWinTrans) return;
@@ -227,7 +235,7 @@
       if (!pendingMain) return;
       pendingMain = false;
       mainWin = win;
-      win.setBackgroundColor = function () {};
+      guardPaint(win);
       // patches/linux/fix_window_bounds.nim "jiggles" the window on
       // ready-to-show: setSize(w+1,h+1), then 50 ms later setSize(w,h) with the
       // size captured BEFORE the jiggle. On a tiling compositor the window has
@@ -241,29 +249,180 @@
       var realSetSize = win.setSize;
       win.setSize = function () {};
       setTimeout(function () { try { win.setSize = realSetSize; } catch (e) {} }, 4000);
-      var orig = win.setTitleBarOverlay;
-      if (typeof orig === "function") {
-        win.setTitleBarOverlay = function (o) {
-          if (o && typeof o === "object") {
-            var t = {};
-            for (var k in o) t[k] = o[k];
-            t.color = "#00000000";
-            o = t;
-          }
-          return orig.call(win, o);
-        };
-        // The constructor already got upstream's opaque overlay colour; replace it
-        // now. Bare mode has no overlay and setTitleBarOverlay throws there.
-        try {
-          orig.call(win, {
-            color: "#00000000",
-            symbolColor: _electron.nativeTheme.shouldUseDarkColors ? "#fff" : "#000",
-            height: 36
-          });
-        } catch (e0) {}
-      }
     } catch (e) { log("window hook failed: " + ((e && e.message) || e)); }
   });
+
+  // The paint guards of a transparent window, shared by the main window and
+  // the transparent pop-outs: setBackgroundColor becomes a no-op and every
+  // titlebar-overlay colour ends at #00000000. They must be in place before
+  // anything else wraps setTitleBarOverlay: the theme engine
+  // (add_feature_custom_themes, __cdb_paintOverlay) wraps it later, on top of
+  // this wrapper, so the colour is forced here, last.
+  // `popOpts` (pop-outs only) is the window's own construction options: the
+  // initial overlay push is seeded from them. The main window passes nothing
+  // and keeps its fixed push. Answers the guard's state: `released` hands the
+  // window back to upstream's own painting (a pop-out that left our pages).
+  function guardPaint(win, popOpts) {
+    var g = { released: false };
+    var origBg = win.setBackgroundColor;
+    win.setBackgroundColor = function () {
+      if (g.released && typeof origBg === "function") return origBg.apply(win, arguments);
+    };
+    var orig = win.setTitleBarOverlay;
+    g.origBg = origBg;
+    g.origOverlay = orig;
+    if (typeof orig !== "function") return g;
+    win.setTitleBarOverlay = function (o) {
+      if (!g.released && o && typeof o === "object") {
+        var t = {};
+        for (var k in o) t[k] = o[k];
+        t.color = "#00000000";
+        o = t;
+      }
+      return orig.call(win, o);
+    };
+    // The constructor already got upstream's opaque overlay colour; replace it
+    // now. Windows without an overlay (bare mode, os-frame pop-outs) throw here.
+    var seed = null;
+    if (popOpts === undefined) {
+      seed = {
+        color: "#00000000",
+        symbolColor: _electron.nativeTheme.shouldUseDarkColors ? "#fff" : "#000",
+        height: 36
+      };
+    } else {
+      // A pop-out has its own overlay (symbolColor, height - 44 on 5.1231.2):
+      // keep what upstream gave it and force only the colour. No overlay in
+      // its options (an OS-framed pop-out) = nothing to replace.
+      var tb = popOpts && popOpts.titleBarOverlay;
+      if (tb && typeof tb === "object") {
+        seed = {};
+        for (var k2 in tb) seed[k2] = tb[k2];
+        seed.color = "#00000000";
+      } else if (tb === true) {
+        seed = { color: "#00000000" };
+      }
+    }
+    if (seed) { try { orig.call(win, seed); } catch (e0) {} }
+    return g;
+  }
+
+  // ---- pop-out windows ------------------------------------------------------
+  // Every pop-out (popped-out Code session, chat, project, the shell of a
+  // popped-out artifact, and the idle pool windows upstream pre-creates) comes
+  // from upstream's window manager: the main view registers a window id, calls
+  // window.open("about:blank", id), and the manager's open handler answers
+  // {action:"allow", overrideBrowserWindowOptions:{..., show:false}} without a
+  // createWindow. The patch wraps that options literal as
+  // __cdbWinTransPopout(<opener webContents>, <frame name>, {...}); the call is
+  // only reached for an about:blank open of a registered id the opener owns.
+  //
+  // Identity (the very same object, upstream's path untouched) unless ALL hold:
+  // the main window was built transparent (`active`, so a pop-out never exceeds
+  // it: switch off or native titlebar = identity), the opener is a view inside
+  // the main window's contentView (not its shell page, not another window), its
+  // main frame is on an app origin (the shared sender guard: file: and other
+  // sites fail), and the options have the manager's show:false. A framed
+  // pop-out (native Wayland, where upstream reports the titlebar overlay
+  // unsupported and pop-outs get an OS frame) is made transparent too: measured
+  // on sway, its content is see-through inside the compositor's frame.
+  // Frame name -> {opener, timer}: an allowed open the window manager has not
+  // turned into a window yet. An entry that never produces one (the open was
+  // blocked later, the opener went away) must not pin its opener: it is dropped
+  // when the opener is destroyed and expires after 10 s (upstream's own
+  // pending sweep uses 10 s); it can never mark a window afterwards.
+  var POP_PENDING_MS = 10000;
+  var popPending = new Map();
+  var popWatched = new WeakSet();   // openers with a destroyed listener
+  var popState = new WeakMap();     // pop-out webContents -> {win, guard}
+  function dropPending(name) {
+    var e = popPending.get(name);
+    if (!e) return;
+    popPending.delete(name);
+    try { clearTimeout(e.timer); } catch (x) {}
+  }
+  function addPending(name, opener) {
+    dropPending(name);
+    var timer = null;
+    try {
+      timer = setTimeout(function () {
+        var cur = popPending.get(name);
+        if (cur && cur.timer === timer) popPending.delete(name);
+      }, POP_PENDING_MS);
+      if (timer && typeof timer.unref === "function") timer.unref();
+    } catch (x) {}
+    popPending.set(name, { opener: opener, timer: timer });
+    if (!popWatched.has(opener)) {
+      popWatched.add(opener);
+      try {
+        opener.once("destroyed", function () {
+          popPending.forEach(function (e, n) { if (e.opener === opener) dropPending(n); });
+        });
+      } catch (x) {}
+    }
+  }
+  var popouts = new WeakSet();  // webContents of the transparent pop-outs
+  var toldInactive = false;
+  function mainViewHolds(wc) {
+    try {
+      if (!mainWin || mainWin.isDestroyed() || !wc || wc === mainWin.webContents) return false;
+      return viewHolds(mainWin.contentView, wc);
+    } catch (e) { return false; }
+  }
+  // Why a pop-out stays opaque, or null.
+  function popoutRefusal(opener, name, o) {
+    if (active !== true) return "the main window is not transparent";
+    if (typeof name !== "string" || !name) return "no window id";
+    if (!o || typeof o !== "object" || o.show !== false) return "not the window manager's options";
+    if (!opener || typeof opener.isDestroyed !== "function" || opener.isDestroyed()) return "no opener";
+    if (!mainViewHolds(opener)) return "the opener is not the main window's view";
+    var f = opener.mainFrame;
+    if (!f || !originAllowed(f.url)) return "the opener is not on an app origin";
+    return null;
+  }
+  globalThis.__cdbWinTransPopout = function (opener, name, o) {
+    try {
+      var why = popoutRefusal(opener, name, o);
+      if (why) {
+        // Switch off / native titlebar: said once, not for every pool window.
+        if (active !== true) {
+          if (!toldInactive) { toldInactive = true; log("pop-outs stay opaque: " + why); }
+        } else log("pop-out " + name + " left opaque: " + why);
+        return o;
+      }
+      var c = {};
+      for (var k in o) c[k] = o[k];
+      c.transparent = true;
+      c.backgroundColor = "#00000000";
+      addPending(name, opener);
+      return c;
+    } catch (e) {
+      log("pop-out options hook failed: " + ((e && e.message) || e));
+      return o;
+    }
+  };
+  // did-create-window is emitted on the opener with the new BrowserWindow right
+  // after it is built, before the pop-out's about:blank document reports
+  // dom-ready (where the theme engine first reaches it), so these guards end up
+  // under the theme's overlay wrapper.
+  function onPopoutCreated(opener, win, d) {
+    var name = d && d.frameName;
+    var pend = typeof name === "string" ? popPending.get(name) : null;
+    if (!pend || pend.opener !== opener) return;
+    dropPending(name);
+    var wc = win && win.webContents;
+    var o = (d && d.options) || {};
+    var f = wc && wc.opener;
+    if (!wc || o.transparent !== true || !f || f.parent !== null || !originAllowed(f.url)) {
+      log("pop-out " + name + " not styled: the created window does not match the transparent options");
+      return;
+    }
+    var guard = guardPaint(win, o);
+    popouts.add(wc);
+    popState.set(wc, { win: win, guard: guard });
+    var framed = o.frame !== false && o.titleBarStyle !== "hidden" && o.titleBarStyle !== "hiddenInset";
+    log("pop-out " + name + " built transparent (" + (framed ? "OS frame" : "frameless") + ")");
+  }
 
   // ---- CSS -----------------------------------------------------------------
   // Tokens are the CDS/claude.ai ones also used by add_feature_custom_themes:
@@ -317,6 +476,42 @@
       // (Terminal / Diff / File, data-surface=panel) sit on .dframe-root, so
       // they go clear instead of stacking a second alpha.
       "html .dframe-root .bg-surface-1,html .dframe-root .bg-surface-2.rounded-card:not([data-cds=Dialog]),html .dframe-root [data-surface=panel]{background:transparent!important}" +
+      // The docked session rail and the other side panes sit on .cds-pane-ground
+      // (bg-surface-2, no rounded-card, so the card rule above misses them): a
+      // page-level pane on the frame's layer, so it goes clear like the other
+      // in-flow surfaces. A floating one is an elevated card and is made solid
+      // again by the rule after this one.
+      "html .dframe-root .cds-pane-ground{background:transparent!important}" +
+      // Elevated cards - the floating session rail (shadow-panel-md), large
+      // panels (shadow-panel-lg), popovers (shadow-popover) - lie over the page,
+      // so they must hide it, whatever surface class they carry. shadow-panel-sm
+      // is NOT in the list: it is on in-flow panes and chips. :not(#_) puts this
+      // above every clear rule here, whatever its specificity.
+      "html .dframe-root .bg-surface-1:is(.shadow-panel-md,.shadow-panel-lg,.shadow-popover):not(#_){background-color:var(--cds-surface-1)!important}" +
+      "html .dframe-root .bg-surface-2:is(.shadow-panel-md,.shadow-panel-lg,.shadow-popover):not(#_){background-color:var(--cds-surface-2)!important}" +
+      // Notice cards in the composer stack (usage limit and the like) sit over
+      // the scrolling transcript: they keep a solid ground like the composer.
+      "html .dframe-root .rounded-composer.bg-surface-1:not(#_){background-color:var(--cds-surface-1)!important}" +
+      // Our own panel-tabs bar is part of the one see-through layer.
+      "html .dframe-root .cdb-tabs-bar{background:transparent!important}" +
+      // The header ground of a toolbar or page header (z-index -1, behind the
+      // title row) hides the transcript scrolling under it, so like the sticky
+      // strips below it takes the page colour at the window alpha instead of
+      // upstream's own fill (85%, or 100% with opaque toolbars) - it follows
+      // the slider.
+      "html .dframe-root [data-cds=Toolbar]>[data-cds-part=toolbar-ground],html .dframe-root [data-cds=Page] [data-cds-part=page-header-ground]{--_toolbar-ground-fill:" + P + "!important;background-color:" + mix("--cds-page-bg") + "!important}" +
+      // The Code tab's content columns are tiles: each .tiles-shell paints
+      // --tile-shell-ground (a page colour upstream sets inline) behind the
+      // transcript, composer and panes, so the whole Code view stayed solid
+      // while the sidebar next to it showed the desktop. Like the page surfaces
+      // above it sits on .dframe-root, which is its backing, so it goes clear;
+      // the variable is cleared too, for the borders and corner strips that
+      // paint with it. No custom theme styles this surface.
+      // A tile being dragged (.is-moving) floats over the tiles beneath it, so it
+      // must hide them: upstream restores its ground, and it takes the page
+      // colour at the window alpha like the frame layer, to stay readable.
+      "html .dframe-root .tiles-shell:not(.is-moving){--tile-shell-ground:transparent!important;background:transparent!important}" +
+      "html .dframe-root .tiles-shell.is-moving{background-color:" + mix("--cds-page-bg") + "!important}" +
       // Panel contents with an inline opaque code-theme colour: the terminal
       // (wrapper + xterm's scroll element) and the diff CodeView. The diff's
       // sticky file headers keep a page-coloured strip so scrolled lines fade
@@ -326,6 +521,14 @@
       // the editor and its gutters in the code-theme colour.
       "html .dframe-root [data-surface=panel] .cm-editor,html .dframe-root [data-surface=panel] .cm-gutters{background-color:transparent!important}" +
       "html .dframe-root [data-surface=panel] .epitaxy-panel-subheader[data-sticky]{background-color:" + mix("--cds-page-bg") + "!important}" +
+      // Embedded documents - artifacts, MCP app views, previews, other sites -
+      // paint nothing where their own page has no background, so in a
+      // see-through window the desktop would show through behind their text.
+      // They get an opaque backing in the page colour, as in an opaque window
+      // (an iframe or webview that upstream gives a bg-* utility keeps it).
+      // Separate views (the in-app browser, WebContentsView) are opaque white
+      // by default and never get this stylesheet.
+      "html iframe:not([class*=bg-]),html webview:not([class*=bg-]){background-color:var(--cds-surface-1,Canvas)!important}" +
       "html .bg-surface-3,html .bg-surface-popover{background-color:var(--cds-surface-3)!important}" +
       "html [role=menu],html [role=listbox]{background-color:var(--cds-surface-3)!important}" +
       "html [class*=approval-dock]{background:transparent!important}" +
@@ -347,11 +550,12 @@
     return /^file:\/\/.*\/renderer\/main_window\//.test(String(rawUrl));
   }
 
-  // Only the main window is see-through. The Code and Design windows, artifact
-  // pop-ups and the 3P config window load claude.ai in BrowserWindows of their
-  // own with an opaque background; the pop-out windows the main view opens (a
-  // popped-out Code session, chat or project) are about:blank children with the
-  // React tree portaled in. Either way a claude.ai webContents that
+  // Only the main window and its transparent pop-outs are see-through. The Code
+  // and Design windows, artifact pop-ups and the 3P config window load
+  // claude.ai in BrowserWindows of their own with an opaque background; the
+  // pop-out windows the main view opens (a popped-out Code session, chat or
+  // project) are about:blank children with the React tree portaled in, styled
+  // only through the `popouts` set above. A claude.ai webContents that
   // another live window provably owns - as its own webContents or as a view in
   // its contentView tree - is left alone. Unclaimed (not attached yet, or the
   // main window's own view), no main window to tell apart, or any error: the
@@ -403,10 +607,16 @@
 
   // dom-ready: a new document, so a fresh insert (no remove - the old key is
   // not in this document).
+  // The documents the stylesheet belongs in: an app page, or the about:blank
+  // document of a transparent pop-out. Checked again right before every insert.
+  function ownDocument(wc) {
+    var url = wc.getURL() || "";
+    return originAllowed(url) || (url === "about:blank" && popouts.has(wc));
+  }
   function styleNewDocument(wc) {
     var e = entryFor(wc);
     e.chain = settle(e.chain.then(function () {
-      if (wc.isDestroyed()) return;
+      if (wc.isDestroyed() || !ownDocument(wc)) return;
       var a = wantAlpha();
       return wc.insertCSS(buildCss(a)).then(function (key) { e.key = key; e.alpha = a; });
     }));
@@ -419,6 +629,7 @@
     var e = entryFor(wc);
     e.chain = settle(e.chain.then(function () {
       if (wc.isDestroyed() || e.key === null) return;
+      if (!ownDocument(wc)) { styled.delete(wc); return; }
       var a = wantAlpha();
       if (a === e.alpha) return;
       var old = e.key;
@@ -445,14 +656,57 @@
     });
   }
 
+  // A transparent pop-out whose document is no longer ours (it navigated to
+  // another site) must not stay see-through: that page may have no background
+  // of its own, so its text would sit on the desktop. It leaves the pop-out set
+  // (and so never gets the stylesheet again), our paint guards stand down and
+  // the window is painted opaque in upstream's stock chrome colour.
+  function releasePopout(wc, url) {
+    popouts.delete(wc);
+    styled.delete(wc);
+    var st = popState.get(wc);
+    popState.delete(wc);
+    if (!st) return;
+    var win = st.win;
+    st.guard.released = true;
+    var dark = !!_electron.nativeTheme.shouldUseDarkColors;
+    var chrome = dark ? "#151515" : "#fcfcfb";
+    try { if (win && !win.isDestroyed()) win.setBackgroundColor(chrome); } catch (e) {}
+    try {
+      if (win && !win.isDestroyed() && typeof st.guard.origOverlay === "function") {
+        win.setTitleBarOverlay({ color: chrome });
+      }
+    } catch (e) {}
+    log("pop-out left the app (" + String(url).replace(/[?#].*$/, "").slice(0, 80) + ") - painted opaque " + chrome);
+  }
+
   _electron.app.on("web-contents-created", function (_ev, wc) {
+    try {
+      wc.on("did-create-window", function (win, d) {
+        try { onPopoutCreated(wc, win, d); }
+        catch (e) { log("pop-out hook failed: " + ((e && e.message) || e)); }
+      });
+    } catch (e) {}
     wc.on("dom-ready", function () {
       try {
         if (active !== true) return;
         var url = wc.getURL() || "";
-        if (originAllowed(url)) {
+        if (url !== "about:blank" && popouts.has(wc)) {
+          // A pop-out never gets a stylesheet for another document (an app
+          // page included: its window is claimed by otherWindowOwns).
+          styled.delete(wc);
+          releasePopout(wc, url);
+        } else if (originAllowed(url)) {
           if (!otherWindowOwns(wc)) styleNewDocument(wc);
-        } else if (isShell(url)) wc.insertCSS(SHELL_CSS).catch(function () {});
+        } else if (url === "about:blank" && popouts.has(wc)) {
+          styleNewDocument(wc);
+        } else {
+          // Any other document - also a styled page or pop-out that navigated
+          // to another site - is never styled: drop it from the live set, so a
+          // slider move cannot insert into it.
+          styled.delete(wc);
+          if (isShell(url)) wc.insertCSS(SHELL_CSS).catch(function () {});
+        }
       } catch (e) {}
     });
   });

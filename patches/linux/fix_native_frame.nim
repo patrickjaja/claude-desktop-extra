@@ -19,6 +19,9 @@
 #      (`o=e==="main"&&pQn()||RI(),s=n?<light/dark>:r?e0n(o):o`), so the gate
 #      is injected before `r?e0n(o):o` and Linux integrated mode takes `o`.
 #
+# A third sub-patch carries the native and bare modes to the pop-out windows
+# (see the POPOUT_MARKER block at the end of apply()).
+#
 # (A third sub-patch used to widen upstream's win32-only gate on the
 # setTitleBarOverlay theme-update call. Upstream dropped that gate in
 # v1.13576.0 - the call is unconditional, so Linux windows receive theme
@@ -104,6 +107,9 @@ const LINUX_INTEGRATED = LINUX & "&&!" & NATIVE_ON & "&&!" & BARE_ON
 # only as `(...)?`), so the idempotency check can assert it positively.
 const OVERLAY_GATE = "!(" & LINUX_INTEGRATED & ")&&"
 
+# Sub-patch 3's injection marker, unique to this patch.
+const POPOUT_MARKER = "/*__CDB_POPOUT_FRAME__*/"
+
 proc capture(s: string, pat: Regex2, name: string): string =
   ## Capture group 1 of the single match of `pat` in `s`, or raise with `name`
   ## in the message (no match, or more than one).
@@ -132,6 +138,10 @@ proc apply*(input: string): string =
     if OVERLAY_GATE notin input:
       raise newException(
         ValueError, "marker present but the overlay-color gate (patch 2) is missing"
+      )
+    if POPOUT_MARKER notin input:
+      raise newException(
+        ValueError, "marker present but the pop-out title bar gate (patch 3) is missing"
       )
     echo "  [INFO] already patched"
     return input
@@ -271,6 +281,58 @@ proc apply*(input: string): string =
   if n != 1:
     raise newException(ValueError, &"titleBarOverlay color gate: {n}/1")
   echo &"  [OK] overlay color skips the alpha blend in Linux integrated mode: {n}"
+
+  # Patch 3: pop-out windows. Upstream opens every pop-out (Code session, chat,
+  # artifact shell) as a `window.open("about:blank", ...)` child and lets the
+  # RENDERER choose its chrome: a hidden title bar + app-drawn caption buttons
+  # ("title-bar-overlay") when main reports `popoutTitleBarOverlay` supported,
+  # else a real window frame ("os-frame"). Main reports unsupported only under
+  # Wayland, so in native and bare mode the pop-outs kept the integrated
+  # buttons. Report upstream's own "unsupported" status (its shape and its
+  # unsupportedCode, captured from upstream's function) in those two modes; the
+  # renderer then picks os-frame. Bare mode is treated like native here: there
+  # is no overlay to draw, so a pop-out gets the window manager's frame.
+  # Integrated mode calls upstream's function unchanged.
+  # The schema-map entry `popoutTitleBarOverlay:A_,` has no call parens, so it
+  # does not match.
+  block:
+    let pFn =
+      re2"""function ([\w$]+)\(\)\{return [\w$]+\(\)\?\{status:["`]unsupported["`],reason:["`][^"`]*["`],unsupportedCode:["`]([\w]+)["`]\}:\{status:["`]supported["`]\}\}"""
+    let callRe = re2"""popoutTitleBarOverlay:([\w$]+)\(\),"""
+    var fns: seq[(string, string)]
+    for m in result.findAll(pFn):
+      fns.add (result[m.group(0)], result[m.group(1)])
+    var calls = 0
+    var target = ""
+    for m in result.findAll(callRe):
+      inc calls
+      target = result[m.group(0)]
+    if calls != 1:
+      raise
+        newException(ValueError, &"popoutTitleBarOverlay call site: {calls}/1 matches")
+    var code = ""
+    var found = 0
+    for (name, c) in fns:
+      if name == target:
+        inc found
+        code = c
+    if found != 1:
+      raise newException(
+        ValueError,
+        &"popoutTitleBarOverlay: upstream status function {target} not found " &
+          &"in the expected shape ({found}/1) - re-audit",
+      )
+    result = result.replace(
+      callRe,
+      proc(m: RegexMatch2, s: string): string =
+        POPOUT_MARKER & "popoutTitleBarOverlay:(" & LINUX & "&&(" & NATIVE_ON & "||" &
+          BARE_ON & "))?{status:\"unsupported\",reason:\"" &
+          "Pop-out title bar overlay is not used in the native or bare title bar mode\"," &
+          "unsupportedCode:\"" & code & "\"}:" & target & "(),",
+    )
+    if POPOUT_MARKER notin result:
+      raise newException(ValueError, "pop-out title bar gate not injected")
+    echo &"  [OK] pop-out windows follow the native and bare title bar modes: {calls}"
 
 when isMainModule:
   if paramCount() != 1:

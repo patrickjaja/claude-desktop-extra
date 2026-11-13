@@ -2751,7 +2751,7 @@
 
     var row = renderToggleRow(panel, {
       title: "Transparent window",
-      note: "Makes the main window see-through so your desktop, or the blur your compositor adds, shows through. It has no window buttons or shadow and needs the integrated titlebar. The switch takes effect after a restart; the Transparency slider applies live.",
+      note: "Makes the main window and its pop-out windows see-through so your desktop, or the blur your compositor adds, shows through. It has no window buttons or shadow and needs the integrated titlebar. The switch takes effect after a restart; the Transparency slider applies live.",
       keywords: "Hyprland KWin blur compositor X11 black sidebar chat area Alt+F4 resize edge",
       ariaLabel: "make the main window transparent",
       read: "windowTransparencyRead",

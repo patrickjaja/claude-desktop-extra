@@ -1453,6 +1453,156 @@ _kwallet_available() {
     return 1
 }
 
+# One question to the session bus through one tool, for --diagnose's
+# Secret Service lines. $1 = busctl|dbus-send|gdbus, $2 = what to ask:
+#   has     does org.freedesktop.secrets have an owner right now (true|false)
+#   pid     the process id of that owner
+#   locked  the Locked property of the default collection (true|false|nodefault)
+# Prints the normalized answer and returns 0; returns 1 when the tool did not
+# answer (cannot reach the bus, unparsable) and 2 when it ran into its timeout.
+# "has" and "pid" are addressed to org.freedesktop.DBus, which never starts
+# anything. "locked" is addressed to org.freedesktop.secrets and therefore
+# D-Bus-activates the provider when nobody owns the name: the caller must have
+# seen "has" answer true first (#330: --diagnose must not start a daemon).
+_ss_call() {
+    local _tool="$1" _what="$2" _out='' _t0=$SECONDS _re _dpath=/org/freedesktop/secrets/aliases/default
+    local -a _to=()
+    command -v timeout &>/dev/null && _to=(timeout 6)
+    command -v "$_tool" &>/dev/null || return 1
+    case "$_tool:$_what" in
+        busctl:has)
+            _out=$(${_to[@]+"${_to[@]}"} busctl --user --no-pager --auto-start=no --timeout=5 call \
+                org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus NameHasOwner s org.freedesktop.secrets 2>&1) || true
+            _re='^b (true|false)' ;;
+        busctl:pid)
+            _out=$(${_to[@]+"${_to[@]}"} busctl --user --no-pager --auto-start=no --timeout=5 call \
+                org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus GetConnectionUnixProcessID s org.freedesktop.secrets 2>&1) || true
+            _re='^u ([0-9]+)' ;;
+        busctl:locked)
+            _out=$(${_to[@]+"${_to[@]}"} busctl --user --no-pager --auto-start=no --timeout=5 get-property \
+                org.freedesktop.secrets "$_dpath" org.freedesktop.Secret.Collection Locked 2>&1) || true
+            _re='^b (true|false)' ;;
+        dbus-send:has)
+            _out=$(${_to[@]+"${_to[@]}"} dbus-send --session --print-reply --reply-timeout=5000 --dest=org.freedesktop.DBus \
+                /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner string:org.freedesktop.secrets 2>&1) || true
+            _re='^[[:space:]]*boolean (true|false)' ;;
+        dbus-send:pid)
+            _out=$(${_to[@]+"${_to[@]}"} dbus-send --session --print-reply --reply-timeout=5000 --dest=org.freedesktop.DBus \
+                /org/freedesktop/DBus org.freedesktop.DBus.GetConnectionUnixProcessID string:org.freedesktop.secrets 2>&1) || true
+            _re='^[[:space:]]*uint32 ([0-9]+)' ;;
+        dbus-send:locked)
+            _out=$(${_to[@]+"${_to[@]}"} dbus-send --session --print-reply --reply-timeout=5000 --dest=org.freedesktop.secrets \
+                "$_dpath" org.freedesktop.DBus.Properties.Get string:org.freedesktop.Secret.Collection string:Locked 2>&1) || true
+            _re='^[[:space:]]*variant[[:space:]]+boolean (true|false)' ;;
+        gdbus:has)
+            _out=$(${_to[@]+"${_to[@]}"} gdbus call --session --timeout 5 --dest org.freedesktop.DBus \
+                --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.NameHasOwner org.freedesktop.secrets 2>&1) || true
+            _re='^\((true|false),?\)' ;;
+        gdbus:pid)
+            _out=$(${_to[@]+"${_to[@]}"} gdbus call --session --timeout 5 --dest org.freedesktop.DBus \
+                --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.GetConnectionUnixProcessID org.freedesktop.secrets 2>&1) || true
+            _re='^\((uint32 )?([0-9]+),?\)' ;;
+        gdbus:locked)
+            _out=$(${_to[@]+"${_to[@]}"} gdbus call --session --timeout 5 --dest org.freedesktop.secrets \
+                --object-path "$_dpath" --method org.freedesktop.DBus.Properties.Get \
+                org.freedesktop.Secret.Collection Locked 2>&1) || true
+            _re='^\(<(true|false)>,?\)' ;;
+        *) return 1 ;;
+    esac
+    if [[ "$_out" =~ $_re ]]; then
+        printf '%s\n' "${BASH_REMATCH[${#BASH_REMATCH[@]}-1]}"
+        return 0
+    fi
+    if [[ "$_what" == locked ]] && grep -qiE 'UnknownObject|Unknown object|No such object|does not exist' <<<"$_out"; then
+        echo nodefault
+        return 0
+    fi
+    (( SECONDS - _t0 < 4 )) || return 2
+    return 1
+}
+
+# Which process owns org.freedesktop.secrets, and is its default keyring
+# locked. Sets _ss_provider and _ss_lock (the report text of the two lines) and
+# _ss_lock_state (yes|no|nodefault|other). Each tool falls through to the next
+# when it cannot answer, like _secret_service_available. Never starts a
+# provider: the lock state is read only once the name is known to have an owner.
+_ss_provider=''
+_ss_lock=''
+_ss_lock_state='other'
+_secret_service_inspect() {
+    local _tool _rc _owned='' _pid='' _exe='' _lk='' _have_tool=0 _timed_out=0
+    _ss_lock_state='other'
+    for _tool in busctl dbus-send gdbus; do
+        command -v "$_tool" &>/dev/null || continue
+        _have_tool=1
+        _rc=0; _owned=$(_ss_call "$_tool" has) || _rc=$?
+        if (( _rc == 0 )); then break; fi
+        _owned=''
+        (( _rc == 2 )) && { _timed_out=1; break; }
+    done
+    if (( ! _have_tool )); then
+        _ss_provider='unknown (no D-Bus tool)'
+        _ss_lock='unknown (no D-Bus tool)'
+        return 0
+    fi
+    if [[ -z "$_owned" ]]; then
+        _ss_provider='unknown (the session bus did not answer)'
+        (( ! _timed_out )) || _ss_provider='unknown (the session bus did not answer within 5 s)'
+        _ss_lock='not checked (provider unknown)'
+        return 0
+    fi
+    if [[ "$_owned" == false ]]; then
+        if _secret_service_available; then
+            _ss_provider='not running (activatable)'
+        else
+            _ss_provider='none'
+        fi
+        _ss_lock='not checked (provider not running)'
+        [[ "$_ss_provider" == none ]] && _ss_lock='not checked (no provider)'
+        return 0
+    fi
+    # Owned: name the owner.
+    for _tool in busctl dbus-send gdbus; do
+        _rc=0; _pid=$(_ss_call "$_tool" pid) || _rc=$?
+        (( _rc == 0 )) && break
+        _pid=''
+        (( _rc == 2 )) && break
+    done
+    if [[ -z "$_pid" ]]; then
+        _ss_provider='unknown (the bus did not tell the owner process id)'
+    else
+        _exe=$(readlink "/proc/$_pid/exe" 2>/dev/null || true)
+        _exe="${_exe% (deleted)}"
+        _exe="${_exe##*/}"
+        [[ -n "$_exe" ]] || _exe=$(cat "/proc/$_pid/comm" 2>/dev/null || true)
+        if [[ -n "$_exe" ]]; then
+            _ss_provider="$_exe"
+        else
+            _ss_provider="unknown (cannot read /proc/$_pid)"
+        fi
+    fi
+    # The name has an owner, so this read activates nothing.
+    for _tool in busctl dbus-send gdbus; do
+        _rc=0; _lk=$(_ss_call "$_tool" locked) || _rc=$?
+        (( _rc == 0 )) && break
+        _lk=''
+        (( _rc == 2 )) && break
+    done
+    case "$_lk" in
+        true)
+            _ss_lock_state=yes
+            _ss_lock='yes (the app can use it only once it is unlocked: at login through PAM, or through a prompt when the provider can show one)' ;;
+        false)
+            _ss_lock_state=no
+            _ss_lock='no' ;;
+        nodefault)
+            _ss_lock_state=nodefault
+            _ss_lock='no default keyring' ;;
+        *)
+            _ss_lock='unknown (the provider did not answer the Locked property)' ;;
+    esac
+}
+
 # The password-store decision, asked as a question so that both the launch path
 # and --diagnose get the same answer from one implementation. Sets three globals
 # rather than echoing, because the reason has to survive alongside the verdict:
@@ -2742,6 +2892,9 @@ _diagnose() {
     done
     echo "CLAUDE_PASSWORD_STORE = ${CLAUDE_PASSWORD_STORE:-(unset)}"
     echo "org.freedesktop.secrets on session bus = $(_secret_service_available && echo yes || echo no)"
+    _secret_service_inspect
+    echo "org.freedesktop.secrets provider = $_ss_provider"
+    echo "default keyring locked = $_ss_lock"
     if _diag_kwallet_may_ask "$_pw_forced"; then
         echo "kwalletd answers on session bus = $(_kwallet_available && echo yes || echo no)"
     else
@@ -2761,6 +2914,12 @@ _diagnose() {
             libsecret) echo "Verdict = --password-store=gnome-libsecret; $_pw_detail" ;;
             none)      echo "Verdict = NO KEYRING - $_pw_detail" ;;
         esac
+        # A locked (or missing) default keyring breaks the Secret Service
+        # path only; KDE with kwalletd answering does not use it.
+        if [[ "$_ss_lock_state" == yes || "$_ss_lock_state" == nodefault ]] \
+            && [[ "$_pw_state" == libsecret || ( "$_pw_state" == native && ":${XDG_CURRENT_DESKTOP,,}:" != *:kde:* ) ]]; then
+            _diag_problems+=("the Secret Service default keyring is $([[ "$_ss_lock_state" == yes ]] && echo locked || echo missing) (provider: $_ss_provider): without a prompter to unlock it the app's safeStorage reports encryption unavailable and the sign-in will not persist - unlock it at login (PAM) or create and unlock a default keyring")
+        fi
     fi
     echo
     echo '--- xdg-desktop-portal GlobalShortcuts ---'
