@@ -786,6 +786,14 @@
   border-color: color-mix(in srgb, currentColor 40%, transparent);
 }
 
+.cdbx-jira-form { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 10px; }
+.cdbx-jira-field { display: flex; flex-direction: column; gap: 4px; width: 100%; max-width: 420px; }
+.cdbx-jira-field.cdbx-jira-wide { max-width: 640px; }
+.cdbx-jira-field .cdbx-input { width: 100%; max-width: 100%; box-sizing: border-box; border-color: color-mix(in srgb, currentColor 38%, transparent); padding: 7px 9px; }
+.cdbx-jira-field .cdbx-area { width: 100%; box-sizing: border-box; font-family: monospace; }
+.cdbx-jira-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+
 .cdbx-input[disabled],
 .cdbx-select[disabled],
 .cdbx-area[disabled] {

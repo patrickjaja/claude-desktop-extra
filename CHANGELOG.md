@@ -16,6 +16,14 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 - **`app_ax_find` can wait** (at most 15 s) for a control to appear, go or change state, and can look inside one container, limit depth, list only containers (outline) or include plain text.
 - **More actions:** `app_click` can bring a control into a state (checked, unchecked, expanded, collapsed, selected) and reports when it already was; new `app_focus` and `app_scroll` (scroll into view); `app_type` sets a slider's or spin button's value from a number. A bridge without these features keeps the four earlier tools. See [Computer Use](docs/computer-use.md#read-app-controls-through-accessibility-experimental).
 
+### Jira issue tracker in the main window (opt-in)
+
+- New Community switch **Jira issue tracker** (Settings -> Extra -> Community Features -> Code, off by default). A **Jira** row in the sidebar, or Ctrl+Shift+J, opens a page over the content area: your Jira Cloud tickets (Assigned to me / Reported by me, a project filter, free JQL and named saved queries), a read-only detail panel (description, inline images and video with a zoomable viewer, attachments with **Save to Downloads**, the last five comments and a Details card), status changes from a menu, subtasks as expandable rows under their parent, Board / Backlog sections and moves from the project's Jira board, a **Board** view with drag-and-drop between the board's columns, and **Send to agent**, which starts a new Code session in a folder you pick (its own worktree in a git repository) with the ticket in the first message. Untrusted folders ask first in a native dialog.
+- Needs your Jira Cloud site, Atlassian email and an API token (classic or scoped), stored encrypted with the system keyring per profile; requests go only to your site and `api.atlassian.com`. Setup and limits: [docs/jira-tracker.md](docs/jira-tracker.md) (new patch `add_feature_jira_tracker`).
+- **Board** view: the columns of the project's Jira board; drag a card to change its status (one fitting transition runs, several ask which, none or only ones that need fields send the card back with the reason). Board and Backlog moves read Jira's backlog again until the ticket shows in its new place.
+- The page follows the claude.ai theme, custom themes included, while it is open. In light themes, secondary text is clamped to a readable lightness and opacity; dark themes keep their colours.
+- Known gaps: fixed 260 px board columns; the shared Extra settings styles of the Jira row can fall below AA contrast in light themes (separate fix); the native folder picker and trust dialog follow the system theme.
+
 ## 2026-11-12
 
 ### Computer Use: the glow and the drawn cursor on KDE Plasma and GNOME Wayland
