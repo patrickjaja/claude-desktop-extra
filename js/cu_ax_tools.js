@@ -109,13 +109,20 @@ function bridge(){
 }
 // One JSON value on stdout; exit 1 + stderr on a runtime failure. stdin always
 // gets closed - set-text writes the text there, never into argv (ps shows argv).
+// Bounded: at `ms` the bridge is killed with SIGKILL (a wedged bridge may
+// ignore SIGTERM), and a guard settles the call even when the process's
+// streams never close, so the serial queue always moves on.
+var KILL="SIGKILL";
 function run(br,args,text,ms){
+  ms=ms||10000;
   return new Promise(function(resolve,reject){
-    var c;
+    var c,done=!1,guard=null;
+    function fin(f,v){if(done)return;done=!0;if(guard)clearTimeout(guard);f(v)}
+    resolve=fin.bind(null,resolve);reject=fin.bind(null,reject);
     try{
-      c=_cp.execFile(br.bin,args,{encoding:"utf8",timeout:ms||10000,maxBuffer:8*1024*1024,env:br.env||void 0},function(err,out,se){
+      c=_cp.execFile(br.bin,args,{encoding:"utf8",timeout:ms,killSignal:KILL,maxBuffer:8*1024*1024,env:br.env||void 0},function(err,out,se){
         if(err){
-          var why=typeof err.code==="number"?"exit "+err.code:err.killed?"timed out":String(err.code||err.message||err);
+          var why=typeof err.code==="number"?"exit "+err.code:err.killed||err.signal?"timed out":typeof err.code==="string"?"spawn error":String(err.message||err);
           var line=String(se||"").trim().split("\n").pop().slice(0,200);
           // A bridge that explains itself in JSON (unavailable/error) is
           // answered like exit 0; any other non-zero exit (2 = usage, e.g.
@@ -126,9 +133,10 @@ function run(br,args,text,ms){
         }
         var s=String(out||"").trim();
         if(!s){resolve(null);return}
-        try{resolve(JSON.parse(s))}catch(pe){reject(new Error(br.name+" "+args[0]+" returned non-JSON output"))}
+        try{resolve(JSON.parse(s))}catch(pe){var ne=new Error(br.name+" "+args[0]+" returned non-JSON output");ne.axWhy="non-JSON";reject(ne)}
       });
-    }catch(se){reject(se);return}
+    }catch(se){se.axWhy="spawn error";reject(se);return}
+    guard=setTimeout(function(){try{c.kill(KILL)}catch(e){}var te=new Error(br.name+" "+args[0]+" failed (timed out)");te.axWhy="timed out";reject(te)},ms+2000);
     if(c&&c.stdin){c.stdin.on("error",function(){});c.stdin.end(text==null?"":String(text))}
   });
 }
@@ -138,36 +146,51 @@ function run(br,args,text,ms){
 // `<bridge> ax-features` prints {"ax_features":[...]}. A bridge without the
 // subcommand exits 2; that, any other failure and any other shape mean the
 // empty list: only the baseline commands and flags, used exactly as before.
-// Asked once per bridge binary path for the life of the process (the list is
-// static per build). We never pass a flag, action or stdin shape whose feature
-// is not listed, and ignore names we do not know.
+// The bridge's own answer (a list, exit 2, or any other shape) is kept per
+// bridge binary path for the life of the process (the list is static per
+// build); a failure to get an answer (timeout, spawn error, another exit) is
+// asked again after FEAT_RETRY_MS. We never pass a flag, action or stdin shape
+// whose feature is not listed, and ignore names we do not know.
 var _feat=new Map();
 function featShape(o){
   if(!o||typeof o!=="object"||Array.isArray(o)||!Array.isArray(o.ax_features))return null;
   for(var i=0;i<o.ax_features.length;i++){if(typeof o.ax_features[i]!=="string")return null}
   return o.ax_features.slice();
 }
-function featSet(list){var m={};for(var i=0;i<list.length;i++)m[list[i]]=1;return{list:list,has:function(n){return m[n]===1}}}
-var NOFEAT=featSet([]);
-function featRemember(br,list){var f=featSet(list||[]);_feat.set(br.bin,f);log("features: "+(f.list.length?f.list.join(","):"none (legacy bridge)")+" ["+br.name+"]");return f}
+function featSet(list){var m=Object.create(null);for(var i=0;i<list.length;i++)m[list[i]]=1;return{list:list,has:function(n){return m[n]===1}}}
+var NOFEAT=featSet([]),FEAT_RETRY_MS=60000;
+// why: null = the bridge answered (kept); else the failure class (retried).
+function featRemember(br,list,why){
+  var f=featSet(list||[]);
+  if(why){f.until=Date.now()+FEAT_RETRY_MS;log("features: none for now ("+why+") - asking again in "+Math.round(FEAT_RETRY_MS/1000)+" s ["+br.name+"]")}
+  else log("features: "+(f.list.length?f.list.join(","):"none (legacy bridge)")+" ["+br.name+"]");
+  _feat.set(br.bin,f);return f;
+}
+function featCached(br){var f=_feat.get(br.bin);if(f&&f.until!=null&&Date.now()>=f.until){_feat.delete(br.bin);return null}return f||null}
+// The failure class of a probe that got no answer, or null for "answered"
+// (exit 2 = legacy bridge, or output of another shape).
+function featWhy(why){return why==="exit 2"||why==="non-JSON"?null:why==="timed out"||why==="spawn error"?why:/^exit \d+$/.test(why)?why:"error"}
 // The tool list and the dispatch test are synchronous: the same probe, run
 // synchronously once when the list is built before any call asked (the
 // subcommand opens no D-Bus connection, reads no file and prints a constant).
 function featNow(){
   var br=bridge();
   if(!br)return NOFEAT;
-  if(_feat.has(br.bin))return _feat.get(br.bin);
+  var hit=featCached(br);if(hit)return hit;
+  var out=null,why=null;
+  try{out=String(_cp.execFileSync(br.bin,["ax-features"],{encoding:"utf8",timeout:3000,killSignal:KILL,maxBuffer:65536,stdio:["ignore","pipe","ignore"],env:br.env||void 0}))}
+  catch(e){why=featWhy(e&&e.code==="ETIMEDOUT"||e&&e.signal?"timed out":e&&typeof e.status==="number"?"exit "+e.status:e&&typeof e.code==="string"?"spawn error":"error")}
   var list=null;
-  try{list=featShape(JSON.parse(String(_cp.execFileSync(br.bin,["ax-features"],{encoding:"utf8",timeout:3000,maxBuffer:65536,stdio:["ignore","pipe","ignore"],env:br.env||void 0})).trim()))}catch(e){list=null}
-  return featRemember(br,list);
+  if(out!=null){try{list=featShape(JSON.parse(out.trim()))}catch(e){list=null}}
+  return featRemember(br,list,why);
 }
 // Runs inside the queue only.
 async function axFeatures(br){
   if(!br)return NOFEAT;
-  if(_feat.has(br.bin))return _feat.get(br.bin);
-  var list=null;
-  try{list=featShape(await run(br,["ax-features"],null,3000))}catch(e){list=null}
-  return featRemember(br,list);
+  var hit=featCached(br);if(hit)return hit;
+  var list=null,why=null;
+  try{list=featShape(await run(br,["ax-features"],null,3000))}catch(e){list=null;why=featWhy(e&&e.axWhy||"error")}
+  return featRemember(br,list,why);
 }
 
 // ── accessibility switch: enable once, restore on lock release/quit/start ────
@@ -241,7 +264,7 @@ hook();
 process.once("exit",function(){
   var s=_st||readState();if(!s)return;
   var br=bridge();if(!br)return;
-  try{_cp.execFileSync(br.bin,["ax-restore","--holder-pid",String(process.pid)],{timeout:3000,stdio:"ignore",env:br.env||void 0});dropState()}catch(e){}
+  try{_cp.execFileSync(br.bin,["ax-restore","--holder-pid",String(process.pid)],{timeout:3000,killSignal:KILL,stdio:"ignore",env:br.env||void 0});dropState()}catch(e){}
 });
 (function(){var p=statePath();try{if(p&&_fs.existsSync(p))setTimeout(function(){restore("startup")},0)}catch(e){}})();
 

@@ -130,6 +130,9 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
 const FAKE_BRIDGE = `#!/usr/bin/env node
 const fs=require("fs");
 const a=process.argv.slice(2);
+// CDB_FAKE_AX_HANG=<subcommand>: a wedged bridge that ignores SIGTERM (it
+// leaves by itself after 6 s, so an unbounded caller is slow, not stuck).
+if(process.env.CDB_FAKE_AX_HANG&&a[0]===process.env.CDB_FAKE_AX_HANG){process.on("SIGTERM",()=>{});try{fs.appendFileSync(process.env.CDB_FAKE_AX_LOG+".hang",process.pid+"\\n")}catch{}setTimeout(()=>process.exit(0),6000);return}
 let stdin="";
 process.stdin.on("data",d=>stdin+=d);
 process.stdin.on("end",()=>{
@@ -2266,6 +2269,84 @@ if (patchMissing || !existsSync(stubPath)) {
     }
     setFeatures(undefined);
     useFix(fixFile);
+
+    // ---------------------------------------------------------------- [15]
+    // A wedged bridge never freezes the main process or stalls the queue: the
+    // feature probe (sync and async), the exit-time restore and every bridge
+    // command are killed (SIGKILL) at their bound. The probe answer is kept
+    // for good only when the bridge answered (a list, a wrong shape, or exit 2
+    // = legacy); a timeout, a spawn error or another failure is asked again
+    // after 60 s.
+    console.log("\n[15] bounded bridge processes; feature probe caching");
+    {
+      useFix(fixFile);
+      setFeatures(ALL_FEATURES);
+      const hangLog = logFile + ".hang";
+      rmSync(hangLog, { force: true });
+      process.env.CDB_FAKE_AX_HANG = "ax-features";
+      const hc1 = axCtx("x11-bridge");
+      let t0 = Date.now();
+      r = await Promise.race([hc1.__cdbAxCall("app_ax_find", { app: "org.kde.kate" }, { sid: "h1" }), new Promise((res) => setTimeout(() => res("hung"), 9000))]);
+      const el1 = Date.now() - t0;
+      check("bridge ignoring SIGTERM: the async probe ends within its bound (~3 s)", r !== "hung" && el1 < 5500, true);
+      check("bridge ignoring SIGTERM: the call goes on as with a legacy bridge", r !== "hung" && !r.isError, true);
+      check("timed-out probe: logged as a timeout, asked again later", hc1.__diag.some((l) => /features: none for now \(timed out\)/.test(l)), true);
+      await releaseAx(hc1);
+      const hc2 = axCtx("x11-bridge");
+      t0 = Date.now();
+      hc2.__cdbAxTools({ platform: "linux" });
+      const el2 = Date.now() - t0;
+      check("bridge ignoring SIGTERM: the synchronous probe ends within its bound (~3 s)", el2 < 5500, true);
+      process.env.CDB_FAKE_AX_HANG = "ax-restore";
+      const eh = [];
+      const ec = makeCtx({ userData, exitHandlers: eh });
+      ec.__linuxExecutor = { capabilities: { platform: "linux" }, __axBridge: () => ({ bin, name: "x11-bridge" }), async __setLockHeld() {}, async __cuTaskBoundary() {} };
+      ec.__cdbCuAxElements = () => true;
+      loadAx(ec);
+      await ec.__cdbAxCall("app_ax_find", { app: "org.kde.kate" }, { sid: "h3" });
+      t0 = Date.now();
+      eh.forEach((fn) => fn());
+      const el3 = Date.now() - t0;
+      check("bridge ignoring SIGTERM: the exit-time restore ends within its bound (~3 s)", el3 < 5500, true);
+      delete process.env.CDB_FAKE_AX_HANG;
+      await releaseAx(ec);
+      for (const pid of (existsSync(hangLog) ? readFileSync(hangLog, "utf8") : "").split("\n").filter(Boolean)) {
+        try {
+          process.kill(Number(pid), "SIGKILL");
+        } catch {}
+      }
+      // Probe caching with a fake clock.
+      const clockCtx = (name, bridgeBin) => {
+        const c = axCtx(name, bridgeBin ? { executor: { __axBridge: () => ({ bin: bridgeBin, name }) } } : {});
+        c.__now = 1e12;
+        c.Date = new Proxy(Date, { get: (t, k) => (k === "now" ? () => c.__now : Reflect.get(t, k)) });
+        return c;
+      };
+      for (const [label, first, transient] of [
+        ["exit 1", "__exit1", true],
+        ["legacy (exit 2)", undefined, false],
+        ["wrong shape", '{"ax_features":"find.v1"}', false],
+      ]) {
+        rmSync(featLog, { force: true });
+        setFeatures(first);
+        const pc = clockCtx("x11-bridge");
+        await pc.__cdbAxCall("app_list_windows", { app: "org.kde.kate" }, { sid: "p8" });
+        setFeatures(ALL_FEATURES);
+        await pc.__cdbAxCall("app_list_windows", { app: "org.kde.kate" }, { sid: "p8" });
+        const n1 = featCalls().length;
+        pc.__now += 61000;
+        await pc.__cdbAxCall("app_list_windows", { app: "org.kde.kate" }, { sid: "p8" });
+        check(`probe ${label}: ${transient ? "asked again after 60 s" : "kept for good"}`, n1 + "|" + featCalls().length, transient ? "1|2" : "1|1");
+        if (transient) check(`probe ${label}: the later answer is used`, pc.__cdbAxHandles("app_focus"), true);
+        await releaseAx(pc);
+      }
+      const sp = clockCtx("x11-bridge", join(scratch, "no-such-bridge"));
+      await sp.__cdbAxCall("app_list_windows", { app: "org.kde.kate" }, { sid: "p9" });
+      check("probe spawn error: logged as such, asked again later", sp.__diag.some((l) => /features: none for now \(spawn error\)/.test(l)), true);
+      const allDiag = [...hc1.__diag, ...hc2.__diag, ...sp.__diag];
+      check("probe diag names the bridge, never its path", allDiag.some((l) => l.includes(scratch)), false);
+      setFeatures(undefined);
+    }
 
     // Every legacy-bridge call in every section above stayed within today's
     // flags, actions and stdin shapes.
