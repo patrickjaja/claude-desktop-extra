@@ -80,6 +80,14 @@ const EXPECTED_PATCHES = Number(
   /const EXPECTED_PATCHES = (\d+)/.exec(readFileSync(PATCH_SRC, "utf8"))[1]
 );
 const nodeRequire = createRequire(import.meta.url);
+// A wedged section (the suite once hung in [1]) fails the run instead of
+// hanging it; unref'd, it never keeps a finished run alive.
+const WATCHDOG_MS = Number(process.env.CDB_AX_HARNESS_WATCHDOG_MS) || 10 * 60 * 1000;
+setTimeout(() => {
+  console.log(`\nFAIL watchdog: the harness did not finish within ${WATCHDOG_MS} ms`);
+  process.exit(1);
+}, WATCHDOG_MS).unref();
+const PATCH_TIMEOUT_MS = 180000;
 
 let pass = 0;
 const failures = [];
@@ -383,7 +391,7 @@ if (patchMissing || !existsSync(stubPath)) {
 
     // ---------------------------------------------------------------- [1]
     console.log("\n[1] the compiled patch applies, 15a-15d report [OK]");
-    const r1 = spawnSync(PATCH_BIN, [staged], { encoding: "utf8" });
+    const r1 = spawnSync(PATCH_BIN, [staged], { encoding: "utf8", timeout: PATCH_TIMEOUT_MS, killSignal: "SIGKILL" });
     const out1 = String(r1.stdout || "") + String(r1.stderr || "");
     check("patch exits 0", r1.status, 0);
     check(
@@ -396,7 +404,7 @@ if (patchMissing || !existsSync(stubPath)) {
     if (r1.status !== 0) console.log(out1.split("\n").filter((l) => /FAIL|Error/.test(l)).join("\n"));
     const patchedBlob = readFileSync(staged, "utf8");
     const patched = splitParts(patchedBlob);
-    const r2 = spawnSync(PATCH_BIN, [staged], { encoding: "utf8" });
+    const r2 = spawnSync(PATCH_BIN, [staged], { encoding: "utf8", timeout: PATCH_TIMEOUT_MS, killSignal: "SIGKILL" });
     check(
       "second run: idempotent, file unchanged",
       r2.status === 0 && readFileSync(staged, "utf8") === patchedBlob,
@@ -422,7 +430,7 @@ if (patchMissing || !existsSync(stubPath)) {
       writeFileSync(f, patched.get(name));
       let ok = true;
       try {
-        execFileSync("node", ["--check", f], { stdio: "pipe" });
+        execFileSync("node", ["--check", f], { stdio: "pipe", timeout: 60000, killSignal: "SIGKILL" });
       } catch {
         ok = false;
       }
