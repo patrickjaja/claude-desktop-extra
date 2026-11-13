@@ -157,7 +157,7 @@ const UPSTREAM_OVERLAY_SENTINEL = { __upstreamOverlayValue: true };
 // `nativeTb` / `noWinCtl` install those readers (a function, or any value - the
 // patch coerces with !!). Passing undefined leaves the global genuinely ABSENT,
 // which is the fallback path sections [1]-[6] exercise.
-function evalFixture(src, { platform, env, dark = true, nativeTb, noWinCtl, waylandSession = false } = {}) {
+function evalFixture(src, { platform, env, dark = true, nativeTb, noWinCtl, waylandSession = false, transpFramed } = {}) {
   const sandbox = {
     console,
     process: { platform, env },
@@ -193,6 +193,7 @@ function evalFixture(src, { platform, env, dark = true, nativeTb, noWinCtl, wayl
   // test on the property, so the difference is the whole point.
   if (nativeTb !== undefined) sandbox.__cdbNativeTb = nativeTb;
   if (noWinCtl !== undefined) sandbox.__cdbNoWinCtl = noWinCtl;
+  if (transpFramed !== undefined) sandbox.__cdbWinTransPopoutFramed = transpFramed;
   vm.runInNewContext(
     src + "\n;globalThis.__OPTS=__cdbFixtureOptions;globalThis.__OVERLAY=a0n;globalThis.__FEATURES=__cdbFixtureFeatures;",
     vm.createContext(sandbox)
@@ -1563,6 +1564,39 @@ try {
     check("non-Linux platforms keep upstream's answer",
       JSON.stringify(evalFixture(p.patched, { platform: "win32", env: {}, nativeTb: READER(true) }).features.popoutTitleBarOverlay),
       JSON.stringify(UP_OK));
+    // a transparent main window: the window manager's frame too (the reader is
+    // js/window_transparency.js's __cdbWinTransPopoutFramed)
+    check("transparency (reader true) -> unsupported with upstream's shape",
+      shape(popout({ transpFramed: () => true })), UNSUP);
+    check("transparency -> reason names it", /while the window is transparent/.test(popout({ transpFramed: () => true }).reason), true);
+    check("transparency + native/bare modes unchanged: still unsupported",
+      shape(popout({ transpFramed: () => true, nativeTb: READER(true) })), UNSUP);
+    for (const [label, tf] of [["absent", undefined], ["false", () => false], ["not a function", true],
+        ["returns a truthy non-boolean", () => "yes"], ["throws", () => { throw new Error("boom"); }]]) {
+      check(`transparency reader ${label} -> upstream's answer`,
+        JSON.stringify(popout({ transpFramed: tf })), JSON.stringify(UP_OK));
+    }
+    {
+      const marker = { status: "supported", __identity: true };
+      for (const [label, tf] of [["absent", undefined], ["throws", () => { throw new Error("x"); }]]) {
+        const sb = { process: { platform: "linux", env: {} }, IG: 1, A_: 1, __M: marker };
+        if (tf) sb.__cdbWinTransPopoutFramed = tf;
+        vm.runInNewContext(
+          p.patched + "\n;pvi=()=>globalThis.__M;globalThis.__R=__cdbFixtureFeatures().popoutTitleBarOverlay;",
+          vm.createContext(sb)
+        );
+        check(`transparency reader ${label}: the returned object IS upstream's (identity)`, sb.__R === marker, true);
+      }
+    }
+    check("transparency on a non-Linux platform: upstream's answer",
+      JSON.stringify(evalFixture(p.patched, { platform: "win32", env: {}, transpFramed: () => true }).features.popoutTitleBarOverlay),
+      JSON.stringify(UP_OK));
+    check("the patched call guards the reader with typeof and a try",
+      p.patched.includes('typeof globalThis.__cdbWinTransPopoutFramed==="function"') && /try\{return globalThis\.__cdbWinTransPopoutFramed\(\)===!0\}catch/.test(p.patched), true);
+    // an older end state (the gate without the transparency condition) is not "already patched"
+    const old = runPatchExpectingFailure(scratch, "index-oldgate.js",
+      p.patched.replace("||(typeof globalThis.__cdbWinTransPopoutFramed===\"function\"&&(()=>{try{return globalThis.__cdbWinTransPopoutFramed()===!0}catch(_){return!1}})())", ""));
+    check("the old pop-out gate without the transparency condition fails loudly", old.status !== 0 && /without the transparent-window frame condition/.test(old.out), true);
     // refusals
     const none = runPatchExpectingFailure(scratch, "index-nopopout.js",
       fixture("!0").replace(/function pvi[^\n]*\n/, "").replace("popoutTitleBarOverlay:pvi()", "popoutTitleBarOverlay:A_"));

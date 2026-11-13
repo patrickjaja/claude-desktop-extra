@@ -208,15 +208,44 @@
   // Spread into the MAIN window's options literal, after upstream's own keys.
   var pendingMain = false;
   var mainWin = null;
-  globalThis.__cdbWinTransExtra = function () {
+  // Whether the main window is to be built transparent, decided ONCE. Two
+  // callers need the answer and must never disagree: the main window's options
+  // spread below, and __cdbWinTransPopoutFramed, which upstream's desktop
+  // features object (BG() in the bundle, evaluated afresh on every call - at
+  // ready, and each time a view's --desktop-features argument is built) reaches
+  // through patches/linux/fix_native_frame.nim, possibly before the window is
+  // constructed. The first caller resolves and memoizes it here; `active`
+  // itself is only set when the window options are asked for.
+  var decision = null;
+  function decide() {
+    if (decision !== null) return decision;
+    var on = false;
     try {
-      if (active !== null) return active ? { transparent: true, backgroundColor: "#00000000" } : {};
-      var on = wanted();
+      on = wanted();
       if (on && nativeTitlebar()) {
         // frame:true; Electron cannot make a framed window translucent.
         log("native titlebar in use - transparency skipped (it needs a frameless window)");
         on = false;
       }
+    } catch (e) {
+      log("transparency state failed, staying opaque: " + ((e && e.message) || e));
+      on = false;
+    }
+    decision = on === true;
+    return decision;
+  }
+  // True exactly when pop-outs of the main window are built transparent. They
+  // are then given the window manager's frame too (fix_native_frame answers
+  // popoutTitleBarOverlay "unsupported", so the renderer picks os-frame): a
+  // transparent frameless pop-out has no caption buttons and an empty gap
+  // where they would sit.
+  globalThis.__cdbWinTransPopoutFramed = function () {
+    try { return decide() === true; } catch (e) { return false; }
+  };
+  globalThis.__cdbWinTransExtra = function () {
+    try {
+      if (active !== null) return active ? { transparent: true, backgroundColor: "#00000000" } : {};
+      var on = decide();
       active = on;
       if (!on) return {};
       pendingMain = true;

@@ -110,6 +110,16 @@ const OVERLAY_GATE = "!(" & LINUX_INTEGRATED & ")&&"
 # Sub-patch 3's injection marker, unique to this patch.
 const POPOUT_MARKER = "/*__CDB_POPOUT_FRAME__*/"
 
+# The transparent-window reader js/window_transparency.js defines (it answers
+# true exactly when the main window is, or is about to be, built transparent):
+# a transparent pop-out gets the window manager's frame too. Guarded - absent
+# (module not loaded) or throwing means false. Basename order puts
+# add_feature_window_transparency BEFORE this patch, but nothing here keys
+# idempotency on the name; POPOUT_MARKER is the only end-state check.
+const TRANSP_FRAMED =
+  "(typeof globalThis.__cdbWinTransPopoutFramed===\"function\"&&" &
+  "(()=>{try{return globalThis.__cdbWinTransPopoutFramed()===!0}catch(_){return!1}})())"
+
 proc capture(s: string, pat: Regex2, name: string): string =
   ## Capture group 1 of the single match of `pat` in `s`, or raise with `name`
   ## in the message (no match, or more than one).
@@ -142,6 +152,11 @@ proc apply*(input: string): string =
     if POPOUT_MARKER notin input:
       raise newException(
         ValueError, "marker present but the pop-out title bar gate (patch 3) is missing"
+      )
+    if TRANSP_FRAMED notin input:
+      raise newException(
+        ValueError,
+        "pop-out gate present without the transparent-window frame condition - re-audit",
       )
     echo "  [INFO] already patched"
     return input
@@ -326,8 +341,8 @@ proc apply*(input: string): string =
       callRe,
       proc(m: RegexMatch2, s: string): string =
         POPOUT_MARKER & "popoutTitleBarOverlay:(" & LINUX & "&&(" & NATIVE_ON & "||" &
-          BARE_ON & "))?{status:\"unsupported\",reason:\"" &
-          "Pop-out title bar overlay is not used in the native or bare title bar mode\"," &
+          BARE_ON & "||" & TRANSP_FRAMED & "))?{status:\"unsupported\",reason:\"" &
+          "Pop-out title bar overlay is not used in the native or bare title bar mode or while the window is transparent\"," &
           "unsupportedCode:\"" & code & "\"}:" & target & "(),",
     )
     if POPOUT_MARKER notin result:

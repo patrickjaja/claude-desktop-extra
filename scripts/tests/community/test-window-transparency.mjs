@@ -640,6 +640,52 @@ function openPopout(r, opener, name, opts) {
   rmSync(r.dir, { recursive: true });
 }
 
+// --- __cdbWinTransPopoutFramed: pop-outs get the window manager's frame exactly
+// when the main window is transparent. Upstream evaluates its features object
+// (which fix_native_frame reaches this through) on every call, possibly before
+// the main window is built, so the answer asked first must be the decision
+// the window's options hook later follows.
+{
+  const cases = [
+    ["switch off", "{}", {}, false, false],
+    ["on", '{"windowTransparency": true}', {}, false, true],
+    ["native titlebar", '{"windowTransparency": true}', {}, true, false],
+    ["env 0 over the switch", '{"windowTransparency": true}', { CLAUDE_WINDOW_TRANSPARENCY: "0" }, false, false],
+    ["env 1", "{}", { CLAUDE_WINDOW_TRANSPARENCY: "1" }, false, true],
+  ];
+  for (const [label, json, env, native, want] of cases) {
+    for (const first of ["framed", "options"]) {
+      const dir = mkdtempSync(join(tmpdir(), "cdb-wt-"));
+      writeFileSync(join(dir, "claude-desktop-extra.json"), json);
+      const t = load(dir, env, native);
+      const F = t.sandbox.__cdbWinTransPopoutFramed;
+      ok(typeof F === "function", label + ": the reader is defined");
+      let before, opts;
+      if (first === "framed") { before = F(); opts = t.sandbox.__cdbWinTransExtra(); }
+      else { opts = t.sandbox.__cdbWinTransExtra(); before = F(); }
+      const built = opts.transparent === true;
+      ok(before === want && built === want && F() === want && t.sandbox.__cdbWinTransActive() === want,
+         label + " (asked " + first + " first): framed=" + before + ", built transparent=" + built + ", framed after=" + F() + " - one decision");
+      // The window was constructed from that decision: the hook marks the main window.
+      if (want) {
+        const shell = { isDestroyed: () => false, webContents: { getURL: () => "file:///x/renderer/main_window/index.html" }, contentView: { children: [] }, setBackgroundColor() {}, setSize() {} };
+        t.events["browser-window-created"](null, shell);
+        shell.setBackgroundColor("#262624");
+      }
+      rmSync(dir, { recursive: true });
+    }
+  }
+  // A throwing native-titlebar reader must not split the two answers.
+  const dir = mkdtempSync(join(tmpdir(), "cdb-wt-"));
+  writeFileSync(join(dir, "claude-desktop-extra.json"), '{"windowTransparency": true}');
+  const t = load(dir, {}, false);
+  t.sandbox.__cdbNativeTb = () => { throw new Error("boom"); };
+  const fr = t.sandbox.__cdbWinTransPopoutFramed();
+  ok(fr === (t.sandbox.__cdbWinTransExtra().transparent === true) && fr === t.sandbox.__cdbWinTransPopoutFramed(),
+     "a failing native-titlebar reader (read as not native): the framed answer and the window are one decision");
+  rmSync(dir, { recursive: true });
+}
+
 // --- review round: refusal reason, first overlay push of a pop-out, expiry of
 // pending opens, a pop-out that leaves our pages, and a navigated main view.
 {
