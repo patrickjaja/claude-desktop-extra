@@ -77,7 +77,9 @@ const MARKER = "__CDB_CUSTOM_MODELS__"
 const PLACEHOLDER = "\"__CDB_CM_PRELOAD_SRC__\""
 # B. The session env goes through upstream's managed-network-env helper
 # (`let d=await t.hd(r.sessionEnv)`; it fills managed proxy/CA variables the
-# env lacks, then enforces managed proxy settings). We hand that helper
+# env lacks, then enforces managed proxy settings). Since v5.11492.0 it may take
+# a second options argument (`t.wf(r.sessionEnv,f?{composed:..}:void 0)`, which
+# managed proxy keys may override); that argument is kept as is. We hand that helper
 # `{...r.sessionEnv,...cliEnv(r.sessionEnv)}` instead, so managed policy still
 # has the last word; cliEnv() sets no network variables.
 # Since v4.4212.0 the method only forwards, prepending an identity thunk:
@@ -102,7 +104,7 @@ proc identRe(name: string): string =
 proc envSiteRe(fn: string): Regex2 =
   re2(
     "(async function " & identRe(fn) &
-      """\([\w$]+,[\w$]+,([\w$]+)(?:,[\w$]+(?:=[^,(){}]+)?)*\)\{let [\w$]+=await [\w$]+(?:\.[\w$]+)?\()([\w$]+)\.sessionEnv\)"""
+      """\([\w$]+,[\w$]+,([\w$]+)(?:,[\w$]+(?:=[^,(){}]+)?)*\)\{let [\w$]+=await [\w$]+(?:\.[\w$]+)?\()([\w$]+)\.sessionEnv([,)])"""
   )
 
 # Our injected end-state, asserted positively (Rule 6): the splice, made with
@@ -110,7 +112,7 @@ proc envSiteRe(fn: string): Regex2 =
 proc envEndStateRe(fn: string): Regex2 =
   re2(
     "async function " & identRe(fn) &
-      """\([\w$]+,[\w$]+,([\w$]+)(?:,[\w$]+(?:=[^,(){}]+)?)*\)\{let [\w$]+=await [\w$]+(?:\.[\w$]+)?\(\{\.\.\.([\w$]+)\.sessionEnv,\.\.\.\(\(globalThis\.__cdbCustomModels&&globalThis\.__cdbCustomModels\.cliEnv\(([\w$]+)\.sessionEnv\)\)\|\|\{\}\)\}\)"""
+      """\([\w$]+,[\w$]+,([\w$]+)(?:,[\w$]+(?:=[^,(){}]+)?)*\)\{let [\w$]+=await [\w$]+(?:\.[\w$]+)?\(\{\.\.\.([\w$]+)\.sessionEnv,\.\.\.\(\(globalThis\.__cdbCustomModels&&globalThis\.__cdbCustomModels\.cliEnv\(([\w$]+)\.sessionEnv\)\)\|\|\{\}\)\}[,)]"""
   )
 
 # The function buildSessionEnv forwards to, or "" unless exactly one forwarder.
@@ -232,11 +234,11 @@ proc apply*(input: string): string =
         inc count
         if s[m.group(1)] != s[m.group(2)]:
           sameParam = false
-        s[m.group(0)] & envSplice(s[m.group(2)]) & ")",
+        s[m.group(0)] & envSplice(s[m.group(2)]) & s[m.group(3)],
     )
     if count != 1 or not sameParam:
       echo "  [FAIL] custom models: expected exactly 1 `async function " & envFn &
-        "(_,_,r,...){let u=await h(r.sessionEnv)`, found " & $count &
+        "(_,_,r,...){let u=await h(r.sessionEnv[,...])`, found " & $count &
         (if sameParam: "" else: " spreading another name") &
         " - the Code session env copy moved; re-audit sub-patch B"
     elif envEndStateCount(result, envFn) != 1:

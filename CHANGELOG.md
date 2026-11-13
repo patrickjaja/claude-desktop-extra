@@ -4,6 +4,11 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-13
 
+### Upstream 5.11492.0
+
+- Re-fitted for the re-minified build: allow non-Anthropic models, custom models, auto-archive grace, own-release update check and the Linux Computer Use patch. Nothing was absorbed upstream.
+- Refusal-string baseline refreshed (reworded keychain connector error, which names the Linux keyring requirement).
+
 ### Computer Use: read app controls (accessibility) - stable numbers, waiting, more actions
 
 - **Element numbers stay put.** With the experimental accessibility switch on, a control keeps its `[N]` across listings of its window for the whole task. Before acting, the control is checked to still be the one that was listed; a re-created control is found again only when that is unambiguous (same accessible id and name, or a unique role and name), otherwise the tool says so and sends nothing.

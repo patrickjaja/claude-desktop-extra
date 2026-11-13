@@ -96,9 +96,9 @@ const countRe = (hay, re) => (hay.match(new RegExp(re.source, "g")) || []).lengt
 
 // Upstream's handler (quote style may flip between releases) and our hook.
 const PRISTINE_HANDLER_RE =
-  /releaseRemoteCuLock:\(([\w$]+),([\w$]+)\)=>\{([\w$]+)\(\1\?\?void 0,\2===(["`])stop_click\4\?\4stop_click\4:\4renderer\4\)\}/;
+  /releaseRemoteCuLock:\(([\w$]+),([\w$]+)\)=>\{(?:[\w$]+\(\1,\2\),)?([\w$]+)\(\1\?\?void 0,\2===(["`])stop_click\4\?\4stop_click\4:\4renderer\4\)\}/;
 const PATCHED_HANDLER_RE =
-  /releaseRemoteCuLock:(\(([\w$]+),([\w$]+)\)=>\{try\{process\.platform==="linux"&&globalThis\.__linuxExecutor\?\.__cuTaskBoundary\?\.\(\2\?\?void 0,\3==="stop_click"\?"stop_click":"renderer",exports\.([\w$]+)\.currentHolder\)\?\.catch\?\.\([^{}]*\)\}catch\([\w$]+\)\{[^{}]*\}([\w$]+)\(\2\?\?void 0,\3===(["`])stop_click\6\?\6stop_click\6:\6renderer\6\)\})/;
+  /releaseRemoteCuLock:(\(([\w$]+),([\w$]+)\)=>\{try\{process\.platform==="linux"&&globalThis\.__linuxExecutor\?\.__cuTaskBoundary\?\.\(\2\?\?void 0,\3==="stop_click"\?"stop_click":"renderer",exports\.([\w$]+)\.currentHolder\)\?\.catch\?\.\([^{}]*\)\}catch\([\w$]+\)\{[^{}]*\}(?:([\w$]+)\(\2,\3\),)?([\w$]+)\(\2\?\?void 0,\3===(["`])stop_click\7\?\7stop_click\7:\7renderer\7\)\})/;
 const LOCK_DECL_RE = /(?<![\w$.])([\w$]+)=new class extends [\w$]+(?:\.[\w$]+)*\{/g;
 const HOLDER_GETTER = "get currentHolder(){return this.exclusiveHolder}";
 const SPLIT_RE = /\n\/\*__CDB_SPLIT__([^*\n]+?)__\*\/\n/;
@@ -169,6 +169,8 @@ function makeHandler(arrowSrc, upstreamFn, lockKey, opts) {
     __cdbDiag: (...a) => diag.push(a),
   };
   ctx[upstreamFn] = (...a) => calls.push(["upstream", ...a]);
+  // v5.11492.0: upstream's Stop listener fan-out before its release call; not under test here.
+  if (opts.preFn) ctx[opts.preFn] = () => {};
   if (opts.executor !== undefined) ctx.__linuxExecutor = opts.executor(calls);
   vm.createContext(ctx);
   const fn = vm.runInContext("(" + arrowSrc + ")", ctx);
@@ -263,7 +265,7 @@ if (patchMissing || !existsSync(stub)) {
     check("patched handler shape present once", countRe(patched, PATCHED_HANDLER_RE), 1);
     check("pristine handler shape gone", countRe(patched, PRISTINE_HANDLER_RE), 0);
     const pm = PATCHED_HANDLER_RE.exec(patched);
-    const [, arrowSrc, idP, srcP, key, upstreamFn] = pm || [];
+    const [, arrowSrc, idP, srcP, key, preFn, upstreamFn] = pm || [];
     const pristineM = PRISTINE_HANDLER_RE.exec(blob) || [];
     check("passes upstream's id param (??void 0)", idP, pristineM[1]);
     check("passes upstream's source param", srcP, pristineM[2]);
@@ -289,7 +291,7 @@ if (patchMissing || !existsSync(stub)) {
       check("patched handler extracted", false, true);
     } else {
       // a. Linux, idle edge: hook first with (id, "renderer", holder), then upstream.
-      let h = makeHandler(arrowSrc, upstreamFn, key, {
+      let h = makeHandler(arrowSrc, upstreamFn, key, { preFn,
         platform: "linux",
         holder: "cse_ABC",
         executor: recordingExecutor,
@@ -306,7 +308,7 @@ if (patchMissing || !existsSync(stub)) {
       );
 
       // b. Stop.
-      h = makeHandler(arrowSrc, upstreamFn, key, {
+      h = makeHandler(arrowSrc, upstreamFn, key, { preFn,
         platform: "linux",
         holder: "cse_ABC",
         executor: recordingExecutor,
@@ -322,7 +324,7 @@ if (patchMissing || !existsSync(stub)) {
       );
 
       // c. No id, no holder.
-      h = makeHandler(arrowSrc, upstreamFn, key, {
+      h = makeHandler(arrowSrc, upstreamFn, key, { preFn,
         platform: "linux",
         holder: undefined,
         executor: recordingExecutor,
@@ -334,7 +336,7 @@ if (patchMissing || !existsSync(stub)) {
       check("upstream still runs", h.calls.length === 2 && h.calls[1][0] === "upstream", true);
 
       // d. A throwing hook does not break upstream's call.
-      h = makeHandler(arrowSrc, upstreamFn, key, {
+      h = makeHandler(arrowSrc, upstreamFn, key, { preFn,
         platform: "linux",
         holder: "x",
         executor: () => ({
@@ -361,7 +363,7 @@ if (patchMissing || !existsSync(stub)) {
       let unhandled = 0;
       const onUnhandled = () => unhandled++;
       process.on("unhandledRejection", onUnhandled);
-      h = makeHandler(arrowSrc, upstreamFn, key, {
+      h = makeHandler(arrowSrc, upstreamFn, key, { preFn,
         platform: "linux",
         holder: "x",
         executor: () => ({ __cuTaskBoundary: async () => Promise.reject(new Error("async boom")) }),
@@ -378,7 +380,7 @@ if (patchMissing || !existsSync(stub)) {
         ["no __linuxExecutor", undefined],
         ["executor without __cuTaskBoundary", () => ({})],
       ]) {
-        h = makeHandler(arrowSrc, upstreamFn, key, { platform: "linux", holder: "x", executor });
+        h = makeHandler(arrowSrc, upstreamFn, key, { preFn, platform: "linux", holder: "x", executor });
         threw = false;
         try {
           h.fn("x", null);
@@ -390,7 +392,7 @@ if (patchMissing || !existsSync(stub)) {
 
       // g. Off Linux nothing of ours is evaluated.
       for (const platform of ["darwin", "win32"]) {
-        h = makeHandler(arrowSrc, upstreamFn, key, {
+        h = makeHandler(arrowSrc, upstreamFn, key, { preFn,
           platform,
           holder: "x",
           executor: recordingExecutor,

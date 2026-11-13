@@ -20,10 +20,12 @@
 #      or the row carries `anthropic_family_tier`). B asserts at build time
 #      that this discovery filter still calls `Zo` and that `Zo`'s
 #      gateway/mantle arm calls the guarded function.
-#   D. The `[custom-3p]` tier-pin sanitizer (`p9t`): on the gateway branch it
-#      ignores a pinned value that matches the non-Anthropic denylist ("value
-#      matches a known non-Anthropic model fragment") without going through
-#      `Zo`.
+#   D. The `[custom-3p]` tier-pin check (`pIe`, since v5.11492.0 shared by the
+#      tier-pin sanitizer and the Auto mode classifier field's warning): on a
+#      provider that is not Bedrock/Vertex/Anthropic it returns
+#      `{ok:!1,why:"not_anthropic"}` for a value matching the non-Anthropic
+#      denylist (the sanitizer then logs "value matches a known non-Anthropic
+#      model fragment") without going through `Zo`.
 #   E. The Setup window (Developer -> Configure Third-Party Inference) is the
 #      ion-dist SPA and validates its Model list in the RENDERER with the SPA's
 #      own copy of the check; add_feature_allow_non_anthropic_models_ion.nim
@@ -45,8 +47,8 @@
 # on its own and a half-patched bundle is detected exactly:
 #   B. return /*cdb-mb:validator*/GUARD||Xo(e)?{ok:!0}:{ok:!1,...}
 #      (`||` binds tighter than `?:`: a true guard accepts, else stock.)
-#   D. if(!/*cdb-mb:tier-pin*/GUARD&&PCe(r)&&!FCe(r)){WARN(...);return}
-#      (true guard skips the ignore branch and the value is returned.)
+#   D. if(!fIe(e))return!/*cdb-mb:tier-pin*/GUARD&&jDe(t)&&!MDe(t)?{ok:!1,why:"not_anthropic"}:{ok:!0,unverified:!1}
+#      (true guard skips the denylist branch and the value is accepted.)
 #   E. `--desktop-features=${JSON.stringify(/*cdb-mb:setup-window*/(GUARD?{...DH(),cdbAllowNonAnthropicModels:{status:"supported"}}:DH()))}`
 #
 #   A. js/allow_non_anthropic_models.js injected at the head of the staged
@@ -60,7 +62,7 @@
 #
 # Break risk: LOW for A (head anchor: after "use strict"; when present, else
 # prepended). B, D and E are each pinned by an upstream string next to the
-# check (the gateway validator's reason, the "known non-Anthropic model fragment" warning,
+# check (the gateway validator's reason, the `why:"not_anthropic"` result,
 # the Setup window's "Configure Third-Party Inference" title)
 # with every identifier a wildcard, so a re-minify re-fits and a reorder fails
 # loud (match count != 1).
@@ -150,18 +152,18 @@ proc apply*(input: string): string =
     quit(1)
   echo "  [OK] B gateway model validator: guard added"
 
-  # D. [custom-3p] tier-pin sanitizer, gateway branch, pinned by its warning.
+  # D. [custom-3p] tier-pin check, non-1P branch, pinned by its result tag.
   n = 0
   result = result.replace(
-    re2"""(if\(![\w$]+\)[{]if\()([\w$]+\([\w$]+\)&&![\w$]+\([\w$]+\)\)[{][\w$]+(?:\.warn)?\(["`]\[custom-3p\] \$[{][\w$]+[}]: value matches a known non-Anthropic model fragment; ignoring\.)""",
+    re2"""(if\(![\w$]+\([\w$]+\)\)return )([\w$]+\([\w$]+\)&&![\w$]+\([\w$]+\)\?[{]ok:!1,why:"not_anthropic"[}])""",
     proc(m: RegexMatch2, s: string): string =
       inc n
       s[m.group(0)] & "!" & MARK_D & GUARD & "&&" & s[m.group(1)],
   )
   if n != 1:
-    echo &"  [FAIL] allow-non-anthropic-models: D tier-pin sanitizer matched {n}/1 - re-audit"
+    echo &"  [FAIL] allow-non-anthropic-models: D tier-pin check matched {n}/1 - re-audit"
     quit(1)
-  echo "  [OK] D [custom-3p] tier-pin sanitizer: guard added"
+  echo "  [OK] D [custom-3p] tier-pin check: guard added"
 
   # E. setup-window signal for the ion-dist half
   # (add_feature_allow_non_anthropic_models_ion.nim). The Setup window

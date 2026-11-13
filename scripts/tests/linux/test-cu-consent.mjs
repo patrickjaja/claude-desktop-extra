@@ -644,7 +644,9 @@ async function perAppTruth(patched, pristineBlob) {
     const WL = { screenshotFiltering: "none", platform: "linux", hitTest: "none" };
     Object.assign(ns(ym[3]), { [ym[4]]: wayland ? WL : { screenshotFiltering: "none", platform: "linux" }, [ym[5]]: WL });
     ns(ym[3])[/\{bundleId:([\w$]+)\.([\w$]+),displayName:"Entire screen"/.exec(yeSrc)[2]] = SCREEN_ID;
-    if (yeNs) Object.assign(ns(yeNs[1]), { [yeNs[2]]: class { constructor(e) { this.explicitGrants = e; } }, u: { read: 0, click: 1, full: 2 } });
+    // The tier rank map is read from the reduce (`n.u[e]>=n.u[t]` before v5.11492.0, `n.d` since; the class took `u`).
+    const tierKey = (/([\w$]+)\.([\w$]+)\[[\w$]+\]>=\1\.\2\[/.exec(yeSrc) || [])[2] || "u";
+    if (yeNs) Object.assign(ns(yeNs[1]), { [tierKey]: { read: 0, click: 1, full: 2 }, [yeNs[2]]: class { constructor(e) { this.explicitGrants = e; } } });
     for (const c of cards) ns(c.ns)[c.key] = ns(ym[3])[ym[4]];
     vm.runInContext(suffixSrc + ";" + yeSrc, ctx);
     return {

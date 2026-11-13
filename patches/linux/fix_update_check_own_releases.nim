@@ -30,7 +30,9 @@
 # v4.16336.0 reorders the init tail to `...,TICK(),await WAIT(),POLL()}` (WAIT
 # settles the managed-settings overlay first) and the poll returns to idle
 # early when a self-hosted updates host is configured; the shapes A and B
-# rewrite are unchanged.
+# rewrite are unchanged. v5.11492.0 sends the telemetry event after an apt
+# source probe, `PROBE().then((e=>Q("desktop_update_disabled",{...,apt_source:e})))`;
+# C's anchor accepts both forms.
 #
 # where `a` is require("electron"). So the button shows whenever Anthropic's
 # apt has a newer claude-desktop than app.getVersion(). Our users update from
@@ -275,7 +277,8 @@ proc apply*(input: string): string =
   # ── C's anchor: the Linux updater init that starts the poll ──────────────
   let initPrefix =
     """[\w$]+\.info\(["`]\[updater\] Linux: in-app updater off \(updates via apt\)["`]\),""" &
-    """[\w$]+\(["`]desktop_update_disabled["`],\{reason:["`]managed_by_package_manager["`]\}\),"""
+    """(?:[\w$]+\(["`]desktop_update_disabled["`],\{reason:["`]managed_by_package_manager["`]\}\)|""" &
+    """[\w$]+\(\)\.then\(\(\(?[\w$]+\)?=>[\w$]+\(["`]desktop_update_disabled["`],\{reason:["`]managed_by_package_manager["`],apt_source:[\w$]+\}\)\)\)),"""
   # The init ends in a comma list of argument-less calls after the telemetry
   # call: `...,POLL(),TICK()}` in v3.6556.2, `...,TICK(),await WAIT(),POLL()}`
   # since v4.16336.0. The list is captured whole (group 0 = prefix, 1 = list)

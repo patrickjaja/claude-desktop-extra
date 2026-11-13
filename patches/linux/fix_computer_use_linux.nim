@@ -672,7 +672,7 @@ proc endStateMarkers(): seq[EndStateMarker] =
     ),
     rx(
       "15d.2 dispatch",
-      """\{if\(process\.platform==="linux"&&globalThis\.__cdbAxHandles\?\.\([\w$]+\)\)return await globalThis\.__cdbAxCall\([\w$]+,[\w$]+,\{sid:[\w$]+\.__cdbAxSid,ctx:[\w$]+,tier:\(__cdbA,__cdbT\)=>[\w$]+\([\w$]+,__cdbA,__cdbT\)\}\);let [\w$]+=[\w$]+\.executor\.appScoped;""",
+      """\{if\(process\.platform==="linux"&&globalThis\.__cdbAxHandles\?\.\([\w$]+\)\)return await globalThis\.__cdbAxCall\([\w$]+,[\w$]+,\{sid:[\w$]+\.__cdbAxSid,ctx:[\w$]+,tier:\(__cdbA,__cdbT\)=>[\w$]+\((?:[\w$]+,)?[\w$]+,__cdbA,__cdbT\)\}\);let [\w$]+=[\w$]+\.executor\.appScoped;""",
     ),
     rx(
       "16a prompt suffix",
@@ -893,8 +893,11 @@ proc apply*(input: string): string =
     # "frontmost" arm (the one 13a blanks on Linux) and the hitTest-keyed
     # dialog-focus refusals stay off. Upstream's own X11 executor spreads
     # LINUX into its capabilities, so LINUX itself is left untouched.
+    # v5.11492.0: `Y=!isWayland()` became the last declarator of its `var`
+    # list, so it ends in `;` instead of `,`; the separator is captured and
+    # written back as found.
     let pat =
-      re"""(?<![\w$.])([\w$]+)=([\w$]+)\(\)\?([\w$]+):([\w$]+),([\w$]+)=!\2\(\),"""
+      re"""(?<![\w$.])([\w$]+)=([\w$]+)\(\)\?([\w$]+):([\w$]+),([\w$]+)=!\2\(\)([,;])"""
     var found = 0
     var waylandPreset, nativePreset = ""
     for m in content.findIter(pat):
@@ -904,7 +907,7 @@ proc apply*(input: string): string =
     if found != 1:
       raise newException(
         ValueError,
-        &"  [FAIL] 2b PLATFORM_CAPABILITIES preset (`X=isWayland()?A:B,Y=!isWayland(),`): {found} matches, expected 1",
+        &"  [FAIL] 2b PLATFORM_CAPABILITIES preset (`X=isWayland()?A:B,Y=!isWayland()[,;]`): {found} matches, expected 1",
       )
     let nativeDecl = re(
       "(?<![\\w$.])" & escapeRe(nativePreset) &
@@ -928,7 +931,7 @@ proc apply*(input: string): string =
         let c = m.captures
         &"{c[0]}={c[1]}()?{c[2]}:process.platform===\"linux\"?" &
           "{screenshotFiltering:\"none\",platform:\"linux\"}" &
-          &":{c[3]},{c[4]}=!{c[1]}(),",
+          &":{c[3]},{c[4]}=!{c[1]}(){c[5]}",
     )
     if n != 1:
       raise newException(
@@ -1102,9 +1105,14 @@ proc apply*(input: string): string =
   # shadowed at the handler site. The lock is the `<name>=new class extends
   # ...{...get currentHolder(){return this.exclusiveHolder}` instance that
   # Patches 4b/4b.2 hook (3.6556.2: `aJ`, exported as `ZC`).
+  #
+  # v5.11492.0: the handler first fans a Stop out to its listeners
+  # (`releaseRemoteCuLock:(e,t)=>{S3o(e,t),l3a(e??void 0,...)}`, S3o: `if(t===
+  # "stop_click"&&e!=null)for(let t of x3o)try{t(e)}catch{}`); that optional
+  # leading `<fn>(id,source),` call is kept after our hook.
   block:
     let handlerPat =
-      re"""(releaseRemoteCuLock:\(([\w$]+),([\w$]+)\)=>\{)([\w$]+\(\2\?\?void 0,\3===(["`])stop_click\5\?\5stop_click\5:\5renderer\5\)\})"""
+      re"""(releaseRemoteCuLock:\(([\w$]+),([\w$]+)\)=>\{)((?:[\w$]+\(\2,\3\),)?[\w$]+\(\2\?\?void 0,\3===(["`])stop_click\5\?\5stop_click\5:\5renderer\5\)\})"""
     let handlerHits = countMatches(content, handlerPat)
     if handlerHits != 1:
       echo &"  [FAIL] 4e releaseRemoteCuLock handler: {handlerHits} matches, expected 1"
@@ -3208,8 +3216,14 @@ proc apply*(input: string): string =
   block:
     let sidPat =
       re"""(typingWaitAllowance:([\w$]+)\.getTypingWaitAllowance\?\.\(\),cuOnlyMode:\2\.cuOnlyMode)\}"""
+    # v5.11492.0: the tier check takes the session adapter first (for its
+    # isDeniedBeyondSettings), `An(adapter,ctx,bundleId,tier)`, and opens its
+    # not-granted branch with `{let i=ctx.policyDeniedBundleIds...`; before it
+    # was `Dn(ctx,bundleId,tier)` with `return ctx.policyDeniedBundleIds`.
+    # Group 2 is the optional adapter parameter; the call below passes the
+    # dispatch's adapter (qaPat group 2) only when upstream's takes one.
     let tierPat =
-      re"""function ([\w$]+)\(([\w$]+),([\w$]+),([\w$]+)\)\{let ([\w$]+)=\2\.allowedApps\.find\(\(?([\w$]+)=>\6\.bundleId===\3\)\)?;if\(!\5\)return \2\.policyDeniedBundleIds"""
+      re"""function ([\w$]+)\((?:([\w$]+),)?([\w$]+),([\w$]+),([\w$]+)\)\{let ([\w$]+)=\3\.allowedApps\.find\(\(?([\w$]+)=>\7\.bundleId===\4\)\)?;if\(!\6\)(?:return |\{let [\w$]+=)\3\.policyDeniedBundleIds"""
     let qaPat =
       re"""(async function [\w$]+\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\)\{let\{logger:[\w$]+,serverName:[\w$]+\}=\2,([\w$]+)=[\w$]+\(\5\);[\s\S]{0,1500}?,([\w$]+)=[\w$]+\(\4\);[\s\S]{0,1500}?if\(([\w$]+)\(\3\)\)\{)(let [\w$]+=\2\.executor\.appScoped;return )"""
     let nSid = countMatches(content, sidPat)
@@ -3222,6 +3236,7 @@ proc apply*(input: string): string =
       let tierM = content.find(tierPat).get()
       let qaM = content.find(qaPat).get()
       let tierFn = tierM.captures[0]
+      let tierTakesAdapter = 1 in tierM.captureBounds
       let eiFn = qaM.captures[7]
       # The app_* predicate must be upstream's: `function Ei(e){return
       # e==="app_release"||...`. And all three sites live in one chunk part:
@@ -3252,11 +3267,13 @@ proc apply*(input: string): string =
             let toolName = m.captures[2]
             let ctxVar = m.captures[5]
             let argsVar = m.captures[6]
+            let tierArgs = (if tierTakesAdapter: m.captures[1] & ","
+            else: "") & ctxVar
             m.captures[0] &
               "if(process.platform===\"linux\"&&globalThis.__cdbAxHandles?.(" & toolName &
               "))return await globalThis.__cdbAxCall(" & toolName & "," & argsVar &
               ",{sid:" & ctxVar & ".__cdbAxSid,ctx:" & ctxVar & ",tier:(__cdbA,__cdbT)=>" &
-              tierFn & "(" & ctxVar & ",__cdbA,__cdbT)});" & m.captures[8],
+              tierFn & "(" & tierArgs & ",__cdbA,__cdbT)});" & m.captures[8],
         )
         if n1 == 1 and n2 == 1:
           echo &"  [OK] 15d dispatch: Linux accessibility tools before upstream's app_* branch, tier check {tierFn} (2 sites)"

@@ -177,9 +177,13 @@ const FIXTURE = [
   'var QEe=/^(sonnet|opus|haiku|fable)(-[\\d.]+)?$/;function oDe(e){return{ok:!0}}function sDe(e){return{ok:!0}}function cDe(e){return{ok:!0}}',
   'function Mo(e,t){if(e===void 0||QEe.test(t.toLowerCase()))return{ok:!0};switch(e){case"anthropic":return{ok:!0};case"bedrock":return oDe(t);case"vertex":return sDe(t);case"foundry":return cDe(t);case"gateway":case"mantle":return HCe(t)}}',
   'function ZEn(l,a,d){let p=d===void 0?a:"gateway";return l=l.filter((e=>Mo(p,e.id).ok||e.anthropicFamilyTier)),{ok:!0,models:l}}',
-  // D: the [custom-3p] tier-pin sanitizer, gateway branch (`n` false)
-  'var warned=[];var P={warn:e=>warned.push(e)};',
-  'function san(n,t,r,l=e=>P.warn(e)){if(!n){if(PCe(r)&&!FCe(r)){l(`[custom-3p] ${t}: value matches a known non-Anthropic model fragment; ignoring.`);return}return r}return"1p:"+r}',
+  // D: the [custom-3p] tier-pin check `pIe` (v5.11492.0+) and the sanitizer
+  // that logs its verdict; the denylist branch runs for a provider that is not
+  // Bedrock/Vertex/Anthropic (`fIe` false).
+  'var warned=[];var P={warn:e=>warned.push(e)};var dIe=/^(opus-tier)$/;',
+  'function fIe(e){return e==="bedrock"||e==="vertex"||e==="anthropic"}function Bo(e,t){return FCe(t)?{ok:!0}:{ok:!1,reason:"not for provider"}}',
+  'function pIe(e,t){if(dIe.test(t.trim().toLowerCase()))return{ok:!1,why:"tier_alias"};if(!fIe(e))return PCe(t)&&!FCe(t)?{ok:!1,why:"not_anthropic"}:{ok:!0,unverified:!1};let n=Bo(e,t);return n.ok?{ok:!0,unverified:!1}:{ok:!1,why:"not_for_provider",reason:n.reason}}',
+  'function san(e,t,n,r=e=>P.warn(e)){let i=pIe(e,n);if(i.ok)return n;switch(i.why){case"tier_alias":r(`[custom-3p] ${t}: "${n}" is a tier alias, not a provider model ID; ignoring.`);break;case"not_anthropic":r(`[custom-3p] ${t}: value matches a known non-Anthropic model fragment; ignoring.`)}}',
   // E: the Setup window's BrowserWindow options (trimmed), additionalArguments
   'function DH(){return{launch:{status:"supported"}}}var X=()=>({formatMessage:e=>e.defaultMessage});var n={default:{join:(...e)=>e.join("/")}};var a={app:{getAppPath:()=>"/app"}};',
   'function setupOpts(){return{title:X().formatMessage({defaultMessage:"Configure Third-Party Inference\\u2026",id:"9GRz7bC+rr"}),webPreferences:{preload:n.default.join(a.app.getAppPath(),".vite/build/mainView.js"),additionalArguments:[`--desktop-features=${JSON.stringify(DH())}`]}}}',
@@ -200,8 +204,8 @@ function runFixture(src, flag) {
   return {
     hce: IDS.map((id) => fx.HCe(id).ok),
     disc: fx.disc(rows, "gateway").models.map((m) => m.id),
-    san: IDS.map((id) => { const v = fx.san(false, "opusModel", id); return v === undefined ? null : v; }),
-    san1p: fx.san(true, "opusModel", "melious/deepseek-v4.1-flash"),
+    san: IDS.map((id) => { const v = fx.san("gateway", "opusModel", id); return v === undefined ? null : v; }),
+    san1p: [fx.san("anthropic", "opusModel", "melious/deepseek-v4.1-flash") ?? null, fx.san("anthropic", "opusModel", "claude-opus-4") ?? null],
     warned: fx.warned.length,
     setupArgs: fx.setupOpts().webPreferences.additionalArguments
   };
@@ -230,7 +234,7 @@ if (!binRunnable) {
   ok(IDS.every((id) => on.disc.includes(id)) && on.disc.includes("acme/qwen-x"), "discovery ON (through B): keeps every row: " + JSON.stringify(on.disc));
   ok(stock.san[0] === null && stock.warned === 3, "stock tier-pin sanitizer ignores denylisted values and warns");
   ok(on.san.every((v, i) => v === IDS[i]) && on.warned === 0, "D ON: the tier-pin sanitizer returns every value, no warning");
-  ok(on.san1p === "1p:melious/deepseek-v4.1-flash" && off.san1p === on.san1p, "D: the non-gateway branch is untouched");
+  ok(JSON.stringify(on.san1p) === JSON.stringify([null, "claude-opus-4"]) && JSON.stringify(off.san1p) === JSON.stringify(on.san1p), "D: the 1P-provider branch is untouched");
   const feats = (r) => JSON.parse(r.setupArgs[0].slice("--desktop-features=".length));
   ok(off.setupArgs.length === 1 && JSON.stringify(feats(off)) === JSON.stringify(feats(stock)) && !("cdbAllowNonAnthropicModels" in feats(off)),
      "E OFF: the Setup window's --desktop-features is the stock JSON: " + off.setupArgs[0]);
@@ -328,16 +332,18 @@ if (!binRunnable) {
       ok(run(true, rows).length === 3, "discovery real: ON keeps every row (through B)");
     }
 
-    // D: the spliced gateway branch of the sanitizer, `if(!n){if(!G&&PCe(r)&&!FCe(r)){...;return}return r}`.
-    const d = /if\(!([\w$]+)\)\{if\(!\/\*cdb-mb:tier-pin\*\/\(globalThis[^)]*\(\)\)&&([\w$]+)\(([\w$]+)\)&&!([\w$]+)\(\3\)\)\{([\w$]+)(?:\.warn)?\(`\[custom-3p\] \$\{([\w$]+)\}[^`]*`\);return\}return \3\}/.exec(patched);
-    ok(!!d, "D: the real patched tier-pin branch is extractable: " + (d ? d[0].slice(0, 160) : "no match"));
+    // D: the spliced non-1P branch of the tier-pin check (v5.11492.0+),
+    // `if(!fIe(e))return!G&&PCe(t)&&!FCe(t)?{ok:!1,why:"not_anthropic"}:{ok:!0,unverified:!1}`.
+    const d = /if\(!([\w$]+)\(([\w$]+)\)\)return ?!\/\*cdb-mb:tier-pin\*\/\(globalThis[^)]*\(\)\)&&([\w$]+)\(([\w$]+)\)&&!([\w$]+)\(\4\)\?\{ok:!1,why:"not_anthropic"\}:\{ok:!0,unverified:!1\}/.exec(patched);
+    ok(!!d, "D: the real patched tier-pin check is extractable: " + (d ? d[0].slice(0, 160) : "no match"));
     if (d) {
-      const src = "(function(" + d[1] + "," + d[6] + "," + d[3] + "){" + d[0] + "return 'non-gateway'})";
-      const stubs = { [d[2]]: (r) => /deepseek|glm|qwen|gpt/.test(r.toLowerCase()), [d[4]]: (r) => /claude/.test(r.toLowerCase()), [d[5]]: Object.assign(() => {}, { warn() {} }) };
-      const san = (flag, id) => evalWith(src, flag, stubs)(false, "opusModel", id);
-      ok(san(true, "melious/deepseek-v4.1-flash") === "melious/deepseek-v4.1-flash", "D real: ON returns a non-Anthropic pin");
-      ok(san(false, "melious/deepseek-v4.1-flash") === undefined, "D real: OFF ignores it as stock");
-      ok(san(false, "anthropic/claude-opus-4") === "anthropic/claude-opus-4", "D real: OFF still returns an Anthropic pin");
+      const src = "(function(" + d[2] + "," + d[4] + "){" + d[0] + ";return 'one-p'})";
+      const stubs = { [d[1]]: (p) => p !== "gateway", [d[3]]: (r) => /deepseek|glm|qwen|gpt/.test(r.toLowerCase()), [d[5]]: (r) => /claude/.test(r.toLowerCase()) };
+      const chk = (flag, prov, id) => evalWith(src, flag, stubs)(prov, id);
+      ok(chk(true, "gateway", "melious/deepseek-v4.1-flash").ok === true, "D real: ON accepts a non-Anthropic pin");
+      ok(chk(false, "gateway", "melious/deepseek-v4.1-flash").why === "not_anthropic", "D real: OFF rejects it as stock");
+      ok(chk(false, "gateway", "anthropic/claude-opus-4").ok === true, "D real: OFF still accepts an Anthropic pin");
+      ok(chk(true, "anthropic", "melious/deepseek-v4.1-flash") === "one-p", "D real: a 1P provider skips the branch either way");
     }
 
     // E: the spliced --desktop-features template of the Setup window.

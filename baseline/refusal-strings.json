@@ -824,8 +824,8 @@
       "reason": "3P Claude in Chrome (managed mcp.claudeInChromeEnabled): upstream's Linux build compiles the platform check away; only the CLAUDE_E2E_LOCAL_PAIRING_* test override passes and the hybrid checks after it are dead code. True for the Linux build; 1P Claude in Chrome is unaffected. Re-check when upstream ships the Linux branch."
     },
     {
-      "id": "59aaa810bee9",
-      "text": "not_main_window.not_claude_page.not_served.no_press_watch.computer_use_active.starting.hourly_limit.too_soon.no_recent_press.extension_not_added.start_failed.connected_here.timed_out.replaced.window_gone.flag_off.not_macos.signed_out.account_switched.device_not_registered.device_keyless.device_lookup_failed.key_not_hardware_backed.could_not_sign.reconnect_needed.session_id_malformed.cancelled.bad_input.out_of_time.debugging_on.debugging_turned_on.not_found.credential_not_allowed.request_origin_not_allowed.device_proof_invalid.nonce_invalid.session_not_linked.turn_not_owners.account_mismatch.organization_not_served.other_workspace.no_fill_call.provenance_unwired.managers_own_site.invalid_request.rate_limited.unavailable.unreadable_answer.no_answer.unknown",
+      "id": "faa28f847d7b",
+      "text": "not_main_window.not_claude_page.not_served.no_press_watch.computer_use_active.starting.hourly_limit.too_soon.no_recent_press.extension_not_added.start_failed.connected_here.timed_out.replaced.window_gone.flag_off.not_macos.signed_out.account_switched.device_not_registered.device_keyless.device_lookup_failed.key_not_hardware_backed.could_not_sign.reconnect_needed.session_id_malformed.cancelled.bad_input.out_of_time.debugging_on.debugging_turned_on.not_found.credential_not_allowed.request_origin_not_allowed.device_proof_invalid.nonce_invalid.session_not_linked.turn_not_owners.allow_not_found.allow_lapsed.account_mismatch.organization_not_served.other_workspace.no_fill_call.provenance_unwired.managers_own_site.invalid_request.rate_limited.unavailable.unreadable_answer.no_answer.unknown",
       "status": "accepted",
       "sites": 1,
       "reason": "Log-step reason list of the 1Password connect flow, not a message; its not_macos code comes from upstream's Linux build, where the 1Password login fill is macOS-only (the platform check is compiled to return 'not_macos')."
@@ -989,11 +989,11 @@
       "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
     },
     {
-      "id": "820e7a517ea5",
-      "text": "The \"${}\" connector can't connect because Claude couldn't access the operating system's secure storage (the keychain on macOS) when it started. Retries keep failing while this run of the app lasts; access normally returns after the user quits and reopens Claude.",
+      "id": "67f10e9d0e5e",
+      "text": "The \"${}\" connector can't connect because Claude couldn't access secure storage on the user's own computer when it started (the keychain on macOS; on Linux a keyring, which must be installed and unlocked).",
       "status": "accepted",
       "sites": 1,
-      "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+      "reason": "macOS keychain wording that names the Linux requirement itself (a keyring must be installed and unlocked): on Linux the statement is true."
     },
     {
       "id": "b1e7895a094b",

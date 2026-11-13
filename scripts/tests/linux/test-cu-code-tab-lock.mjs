@@ -713,7 +713,7 @@ console.log("\n[13] Claude's own windows: clickable for the user, refused for th
   const setSession = (st) => { process.env.XDG_SESSION_TYPE = st; if (st === "x11") delete process.env.WAYLAND_DISPLAY; };
   const HOST = "com.anthropic.Claude", UPSTREAM_SELF = "Could not verify the click target \u2014 the Claude overlay intercepted the hit test. Retry.";
   const dispPart = partOf(P, (b) => b.includes("Could not verify the click target \\u2014 the Claude overlay intercepted"));
-  ok(!!dispPart && countRe(dispPart.body, /bundleId===([\w$]+)\)return [\w$]+\("Could not verify the click target \\u2014 the Claude overlay intercepted the hit test\. Retry\.","hit_test_self_intercept"\)/) === 1, "upstream's click gate refuses a target that is Claude's own window with this text (bundle)");
+  ok(!!dispPart && countRe(dispPart.body, /bundleId===([\w$]+)\)return [\w$]+\((?:[\w$]+\.getPaneReliefEnabled\?\.\(\)\?`[^`]*`:)?"Could not verify the click target \\u2014 the Claude overlay intercepted the hit test\. Retry\.","hit_test_self_intercept"\)/) === 1, "upstream's click gate refuses a target that is Claude's own window with this text (bundle)");
   for (const [st, hit] of [["x11", true], ["x11", false], ["wayland", false]]) {
     setSession(st);
     const main = mkWin(true), overlay = mkWin(false);

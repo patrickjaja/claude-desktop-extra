@@ -13,7 +13,7 @@
 #      (js/auto_archive_grace.js), bound to the native ccAutoArchiveOnPrClose pref.
 #   B  async sweep(t=!1){ -> wrapper: snapshot the delay at sweep start, run the
 #      original, then reconcile the grace ledger in `finally`.
-#   C  !n.s(d))return;  (the non-terminal return) -> report the answer to the
+#   C  !n.c(d))return;  (the non-terminal return) -> report the answer to the
 #      helper, so a positive OPEN answer clears a pending grace.
 #   D  the reopenSeen short return, right before `if(s){if(!this.takesShare(` ->
 #      the terminal gate for a confirmed MERGED/CLOSED verdict (`!_`, where `_`
@@ -165,7 +165,9 @@ proc apply*(input: string): string =
   # C: non-terminal answers reach the helper
   result = once(
     result,
-    re2"![\w$]+\.s\([\w$]+\)\)return;let [\w$]+=this\.holdReason\(",
+    # The terminal-state predicate's member re-minifies (`.s` on 5.1231.2,
+    # `.c` on 5.11492.0).
+    re2"![\w$]+\.[\w$]+\([\w$]+\)\)return;let [\w$]+=this\.holdReason\(",
     proc(m: RegexMatch2, s: string): string =
       s[m.boundaries].replace("return;", "{" & observe & "}"),
   )

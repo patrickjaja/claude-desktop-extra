@@ -155,7 +155,7 @@ try {
   // Free constants the extracted upstream code references (renamed on every
   // re-minify): on a ReferenceError, define the name from its `X=<literal>`
   // definition in the real chunk (`realChunk`), then retry. Never hardcoded.
-  let realChunk = null;
+  let realChunk = null, prOpenKey = "n";
   function defineFree(ctx, err) {
     const name = /^([\w$]+) is not defined$/.exec(err?.message || "")?.[1];
     if (!name || !realChunk || name in ctx) throw err;
@@ -172,8 +172,9 @@ try {
       return;
     }
     // Otherwise an imported namespace (`G=require("./index.chunk-...")`): identity stubs, except
-    // the PR-open predicate the module exports as `.n` (open and not dismissed).
-    vm.runInContext(`globalThis[${JSON.stringify(name)}]=new Proxy({}, {get:(_, k)=>k==="n"?(p=>p.state==="OPEN"&&!p.dismissed):(x=>x)})`, ctx);
+    // the PR-open predicate armOwnCreate calls (open and not dismissed); its export letter
+    // (`prOpenKey`) is recovered from the release's armOwnCreate, never assumed.
+    vm.runInContext(`globalThis[${JSON.stringify(name)}]=new Proxy({}, {get:(_, k)=>k===${JSON.stringify(prOpenKey)}?(p=>p.state==="OPEN"&&!p.dismissed):(x=>x)})`, ctx);
   }
   const heal = (ctx, fn) => {
     for (let i = 0; i < 20; i++) {
@@ -251,12 +252,17 @@ try {
     m.viewerMayPush = async () => { pushReads++; return push; };
     m.getPrStateByNumber = async () => { if (concurrent) concurrent(); return pr; };
     m.writeBoundPrAutoFix = (...args) => { writes.push(args); };
+    // revouch (new in 5.11492): re-checks an unvouched binding against the session's folders
+    // before the refusal read. Not an author comparison; stubbed and recorded.
+    let revouches;
+    m.revouch = async (...args) => { revouches.push(args); return true; }; // args built in the vm realm: compared via JSON
     async function run(expected) {
       writes = [];
       // healAsync retries after defining a free name; count only the attempt that completed.
-      assert.equal(await healAsync(ctx, () => { userReads = []; return m.enableAutoFixForModel("session", "org/repo", 42, "github.com"); }), expected);
+      assert.equal(await healAsync(ctx, () => { userReads = []; revouches = []; return m.enableAutoFixForModel("session", "org/repo", 42, "github.com"); }), expected);
       assert.equal(writes.length, expected === undefined ? 1 : 0);
       if (writes.length) assert.deepEqual(writes[0], ["session", "org/repo", 42, true, "github.com"]);
+      if (realChunk) assert.deepEqual(JSON.parse(JSON.stringify(revouches)), expected === "runs_elsewhere" ? [] : [["session", { prNumber: 42, repo: "org/repo", host: "github.com" }]], "model path revouches the binding once, only where Claude Code runs");
       if (expected !== "runs_elsewhere" && !refusal) assert.deepEqual(userReads, [{ host: "github.com", fresh: true }], "model path reads the gh login fresh, once, on the PR's host");
     }
     enabled = false; await run("not_author");
@@ -315,13 +321,17 @@ try {
       m.changeKeyFor = () => "key";
       let toldNoPush = 0;
       m.tellNoPush = () => { toldNoPush++; };
+      // clearUnvouched (new in 5.11492): runs right before arming; recorded, must pair with each arm.
+      let cleared = 0;
+      m.clearUnvouched = () => { cleared++; };
       m.setBoundPrAutoFix = () => { count++; held.autoFix = true; };
       async function arm(expected, change = () => {}, whileReading) {
         held = { ...binding, prNumber: 42, branch: "feature", own: true, state: "OPEN" };
         session = { prs: [held], autoFixOwnPrs: true, autoFixOwnPrsOrigin: origins[0] };
         count = 0; duringRead = whileReading; change();
-        await healAsync(ctx, () => m.armOwnCreate("session", held));
+        await healAsync(ctx, () => { cleared = 0; return m.armOwnCreate("session", held); });
         assert.equal(count, expected);
+        if (realChunk) assert.equal(cleared, expected, "an unvouched mark is cleared only when the PR is armed");
       }
       enabled = false; await arm(0);
       enabled = true; await arm(1);
@@ -362,6 +372,9 @@ try {
     const match = chunk.match(new RegExp(`function ${matchFn}\\(e,t\\)\\{[^}]+\\}`))[0];
     const arm = chunk.match(/async armOwnCreate\([^]*?\}async asGitHubNamesThem\(/)?.[0].replace(/async asGitHubNamesThem\($/, "");
     assert.ok(arm, "real automatic activation method retains its audited shape");
+    // The PR-open predicate armOwnCreate gates on, `!NS.<key>({...held,autoFix:!0,unvouched:void 0})`.
+    prOpenKey = arm.match(/![\w$]+\.([\w$]+)\(\{\.\.\.[\w$]+,autoFix:!0/)?.[1];
+    assert.ok(prOpenKey, "real automatic activation still gates on the namespace's PR-open predicate");
     // The ownership reads: by number, then by branch + head SHA (adjacent methods).
     const byNumber = chunk.match(/async getPrStateByNumberUncached\([^]*?\}(?=mergeQueueAwareTtl\()/)?.[0];
     const discovery = chunk.match(/async getPrStateForBranchUncached\([^]*?\}(?=prCacheKey\()/)?.[0];
