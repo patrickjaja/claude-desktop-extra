@@ -728,33 +728,40 @@ if (patchMissing || !existsSync(stubPath)) {
     check("stale: tells the model to find again", r.isError === true && textOf(r).includes("is gone") && textOf(r).includes("app_ax_find again"), true);
     r = await dispatch("app_click", { app: "org.kde.kate", element_index: 3 });
     check("stale: window's indexes dropped", textOf(r).includes("No element [3]"), true);
-    await dispatch("app_ax_find", { app: "org.kde.kate" });
+    // The window's numbers by name, from a listing (a re-listed window
+    // numbers above every number it showed before).
+    const kn = {};
+    const numsOf = (txt) => {
+      for (const m of txt.matchAll(/^\[(\d+)\] \w+ \([^)]*\) "([^"]*)"/gm)) kn[m[2]] = Number(m[1]);
+    };
+    numsOf(textOf(await dispatch("app_ax_find", { app: "org.kde.kate" })));
+    check("legacy stale: the re-listed window numbers above the dropped numbers", kn.Save > 11 && kn.Password > 11, true);
     // h. no action -> left_click hint with the mapped position.
-    r = await dispatch("app_click", { app: "org.kde.kate", element_index: 8 });
+    r = await dispatch("app_click", { app: "org.kde.kate", element_index: kn.Hint });
     check("no_action: left_click fallback position", r.isError === true && textOf(r).includes("no_action") && textOf(r).includes("at (325, 305)"), true);
-    r = await dispatch("app_click", { app: "org.kde.kate", element_index: 9 });
+    r = await dispatch("app_click", { app: "org.kde.kate", element_index: kn.Moved });
     check("out_of_scope: like stale, find again", r.isError === true && textOf(r).includes("is gone") && textOf(r).includes("app_ax_find again"), true);
-    await dispatch("app_ax_find", { app: "org.kde.kate" });
+    numsOf(textOf(await dispatch("app_ax_find", { app: "org.kde.kate" })));
     resetLog();
-    r = await dispatch("app_click", { app: "org.kde.kate", element_index: 10 });
+    r = await dispatch("app_click", { app: "org.kde.kate", element_index: kn.Async });
     check("dispatched (ok:null): result unknown, not an error", !r.isError && textOf(r).includes("result unknown"), true);
     check("dispatched: sent exactly once (no retry)", calls().filter((c) => c.argv[0] === "ax-action").length, 1);
-    r = await dispatch("app_type", { app: "org.kde.kate", element_index: 11, text: "pw" });
+    r = await dispatch("app_type", { app: "org.kde.kate", element_index: kn.Password, text: "pw" });
     check("password field: redacted value needs overwrite_existing", r.isError === true && textOf(r).includes("overwrite_existing"), true);
-    r = await dispatch("app_type", { app: "org.kde.kate", element_index: 11, text: "pw", overwrite_existing: true });
+    r = await dispatch("app_type", { app: "org.kde.kate", element_index: kn.Password, text: "pw", overwrite_existing: true });
     check("password field: typed with overwrite_existing", !r.isError, true);
     // i. set-text: text via stdin, never argv.
     resetLog();
-    r = await dispatch("app_type", { app: "org.kde.kate", element_index: 5, text: "hunter2 secret" });
-    check("type: done", textOf(r).startsWith("Set the text of [5]"), true);
+    r = await dispatch("app_type", { app: "org.kde.kate", element_index: kn.Search, text: "hunter2 secret" });
+    check("type: done", textOf(r).startsWith(`Set the text of [${kn.Search}]`), true);
     const st1 = calls().find((c) => c.argv[0] === "ax-action");
     check("type: argv has no text", !!st1 && st1.argv.join(" ") === "ax-action --scope sc-kate --ref :1.42/org/a11y/atspi/accessible/5 --action set-text", true);
     check("type: text on stdin", st1 && st1.stdin, "hunter2 secret");
-    r = await dispatch("app_type", { app: "org.kde.kate", element_index: 6, text: "x" });
+    r = await dispatch("app_type", { app: "org.kde.kate", element_index: kn.Title, text: "x" });
     check("type: existing text refused without overwrite_existing", r.isError === true && textOf(r).includes("overwrite_existing"), true);
-    r = await dispatch("app_type", { app: "org.kde.kate", element_index: 6, text: "x", overwrite_existing: true });
+    r = await dispatch("app_type", { app: "org.kde.kate", element_index: kn.Title, text: "x", overwrite_existing: true });
     check("type: overwrite_existing allows it", !r.isError, true);
-    r = await dispatch("app_type", { app: "org.kde.kate", element_index: 3, text: "x" });
+    r = await dispatch("app_type", { app: "org.kde.kate", element_index: kn.Save, text: "x" });
     check("type: non-text control refused", r.isError === true && textOf(r).includes("Only target TEXT fields"), true);
     resetLog();
     r = await dispatch("app_type", { app: "org.kde.kate", target: "focused", text: "y", overwrite_existing: true });
@@ -1126,6 +1133,10 @@ if (patchMissing || !existsSync(stubPath)) {
         out.push("pinned=" + c.__cuPinnedDisplay + " shot=" + JSON.stringify(c.__cuLastShot));
         // and an app the session did not approve
         const refused = await h({}, "app_ax_find", { app: "org.kde.dolphin" }, sess);
+        // Leave like a lock release: the next scenario's context must not
+        // find this one's accessibility marker at its start.
+        await exr.__setLockHeld(false);
+        for (let i = 0; i < 100 && existsSync(join(userData, "cdb-ax-state.json")); i++) await tick();
         return { out, refused };
       };
       const off = await scenario(false);
@@ -1359,7 +1370,7 @@ if (patchMissing || !existsSync(stubPath)) {
     // The full re-find after a re-creation.
     const V_B = [
       ...V_A.filter((e) => !["apply-1", "close-1", "twin-1", "gone-1", "nameless-1"].includes(e.ref)),
-      vEl(40, "push button", "Apply now", "apply-2", { accessible_id: "apply" }),
+      vEl(40, "push button", "Apply", "apply-2", { accessible_id: "apply" }),
       vEl(41, "push button", "Close", "close-2"),
       vEl(42, "push button", "Twin", "twin-2", { unique: false }),
       vEl(43, "push button", "Twin", "twin-3", { unique: false }),
@@ -1432,8 +1443,8 @@ if (patchMissing || !existsSync(stubPath)) {
       check("type: done", textOf(r).startsWith("Set the text of [5]"), true);
       resetLog();
       r = await v("app_click", { app: "org.kde.kate", element_index: 18 });
-      check("stale (not sent) + accessible id: one re-find, then the new element", argvs().join("|"), "windows|ax-action --scope sc-kate2 --ref apply-1 --action click --expect-json|ax-find --window {kate-1} --all --max-nodes 2000 --window-ref :1.42/w|ax-action --scope sc-kate2 --ref apply-2 --action click --expect-json");
-      check("re-identified: second action carries the live identity", acts()[1]?.stdin, JSON.stringify({ expect: { role: "push button", name: "Apply now", accessible_id: "apply" } }));
+      check("stale (not sent) + accessible id: one re-find, then the new element", argvs().join("|"), "windows|ax-action --scope sc-kate2 --ref apply-1 --action click --expect-json|ax-find --window {kate-1} --all --include-hidden --max-nodes 2000 --window-ref :1.42/w|ax-action --scope sc-kate2 --ref apply-2 --action click --expect-json");
+      check("re-identified: second action carries the live identity", acts()[1]?.stdin, JSON.stringify({ expect: { role: "push button", name: "Apply", accessible_id: "apply" } }));
       check("re-identified: the result says so, same [N]", !r.isError && textOf(r).startsWith("Pressed [18]") && /re-identified/.test(textOf(r)), true);
       resetLog();
       r = await v("app_click", { app: "org.kde.kate", element_index: 18 });
@@ -1983,6 +1994,184 @@ if (patchMissing || !existsSync(stubPath)) {
       setFeatures(undefined);
       useFix(fixFile);
     }
+
+    // ---------------------------------------------------------------- [13]
+    // Re-identification never retargets to a twin; numbers never come back
+    // for another control; numbers are bound to the app they were listed for.
+    console.log("\n[13] re-identification, numbering, app binding");
+    const HIDDEN = ["enabled", "sensitive"];
+    const xWin = (id, title, cls, extra = {}) => ({ id, title, resource_class: cls, stacking_order: 1, geometry: { x: 0, y: 0, width: 800, height: 600 }, ...extra });
+    const xFind = (id, elements, extra = {}) => ({ app: { name: id }, window: { id, title: id, ref: ":1.300/" + id }, coords: "window_only", scope: "sc-" + id, matched_by: "app_id", truncated: false, total_seen: 20, elements, ...extra });
+    const FIX13 = {
+      ...FIX2,
+      windows: [
+        ...FIXTURE.windows,
+        xWin("{ri-1}", "Reid", "org.example.reid"),
+        xWin("{nm-1}", "Num 1", "org.example.num"),
+        xWin("{nm-2}", "Num 2", "org.example.num"),
+        xWin("{nm-3}", "Num 3", "org.example.num"),
+      ],
+      "ax-find": {
+        ...FIX2["ax-find"],
+        "{ri-1}": xFind("{ri-1}", [
+          vEl(3, "push button", "Apply", "a-1", { accessible_id: "a-clip" }),
+          vEl(4, "push button", "Rename", "b-1", { accessible_id: "b-id" }),
+          vEl(5, "push button", "Lone", "c-1", { accessible_id: "c-id" }),
+          vEl(6, "push button", "Hidden", "d-1", { accessible_id: "d-id" }),
+          vEl(7, "push button", "Fine", "e-1", { accessible_id: "e-id" }),
+          vEl(8, "push button", "Plain", "f-1"),
+        ]),
+        "{ri-1}|all": xFind("{ri-1}", [
+          vEl(3, "push button", "Apply", "a-2", { accessible_id: "a-clip", unique: false }),
+          vEl(30, "push button", "Apply", "a-3", { accessible_id: "a-clip", unique: false, states: HIDDEN }),
+          vEl(4, "push button", "Rename it", "b-2", { accessible_id: "b-id" }),
+          vEl(5, "push button", "Lone", "c-2", { accessible_id: "c-id", unique: false }),
+          vEl(6, "push button", "Hidden", "d-2", { accessible_id: "d-id", states: HIDDEN }),
+          vEl(7, "push button", "Fine", "e-2", { accessible_id: "e-id" }),
+          vEl(8, "push button", "Plain", "f-2", { unique: false }),
+        ]),
+        "{nm-1}": xFind("{nm-1}", [vEl(3, "push button", "Alpha", "n-a"), vEl(4, "push button", "Beta", "n-b")]),
+        "{nm-1}|all": xFind("{nm-1}", [vEl(3, "push button", "Gamma", "n-g"), vEl(4, "text", "Field", "n-f", { states: ["enabled", "showing", "editable", "focused"] })]),
+        "{nm-2}": { __seq: [xFind("{nm-2}", [vEl(3, "push button", "Old", "p-old")], { app: { name: "num", pid: 100 } }), xFind("{nm-2}", [vEl(3, "push button", "New", "p-new")], { app: { name: "num", pid: 200 } })] },
+        "{nm-3}": { __seq: [xFind("{nm-3}", [vEl(3, "push button", "Old", "w-old")]), xFind("{nm-3}", [vEl(3, "push button", "New", "w-new")], { window: { id: "{nm-3}", title: "Num 3", ref: ":1.300/other-window" } })] },
+      },
+      "ax-find-app": {
+        ...FIX2["ax-find-app"],
+        "org.example.Notes|notes.txt": { app: { name: "notes" }, window: { title: "notes.txt", ref: ":1.82/w", frame_class: "unknown" }, coords: "window_only", scope: "sc-notes", matched_by: "app_id", truncated: false, total_seen: 5, elements: [vEl(4, "push button", "Delete all", "notes-del")] },
+      },
+      "ax-action": {
+        ...FIX2["ax-action"],
+        ...Object.fromEntries(["a-1", "b-1", "c-1", "d-1", "e-1", "f-1"].map((k) => [k, ST("not_sent")])),
+        "e-2": OKA("click"),
+        "n-a": OKA("click"),
+        "n-g": OKA("click"),
+        "n-f": OKA("click"),
+        "p-new": OKA("click"),
+        "w-new": OKA("click"),
+        "notes-del": OKA("click"),
+        "te-open": OKA("click"),
+        "wa-1": OKA("click"),
+        "wb-1": OKA("click"),
+      },
+    };
+    const fixFile13 = join(scratch, "fixture-review.json");
+    writeFileSync(fixFile13, JSON.stringify(FIX13));
+    {
+      useFix(fixFile13);
+      setFeatures(ALL_FEATURES);
+      const rc = axCtx("x11-bridge");
+      const q = (n, a, sid = "r1") => rc.__cdbAxCall(n, a, { sid });
+      const reidApp = "org.example.reid";
+      await q("app_ax_find", { app: reidApp });
+      resetLog();
+      r = await q("app_click", { app: reidApp, element_index: 3 });
+      check("re-find walks hidden nodes too (--include-hidden)", finds().length === 1 && finds()[0].argv.includes("--include-hidden"), true);
+      check("id twin that is clipped (not showing): ambiguous, nothing re-sent", r.isError === true && /ambiguous/i.test(textOf(r)) && /nothing was sent/i.test(textOf(r)) && acts().length === 1, true);
+      resetLog();
+      r = await q("app_click", { app: reidApp, element_index: 4 });
+      check("id match with another name: not the same control, gone, nothing re-sent", r.isError === true && /gone/.test(textOf(r)) && acts().length === 1, true);
+      resetLog();
+      r = await q("app_click", { app: reidApp, element_index: 5 });
+      check("lone id match that reports unique:false: ambiguous, nothing re-sent", r.isError === true && /ambiguous/i.test(textOf(r)) && acts().length === 1, true);
+      resetLog();
+      r = await q("app_click", { app: reidApp, element_index: 6 });
+      check("lone match that is not showing: gone, nothing re-sent", r.isError === true && /gone/.test(textOf(r)) && acts().length === 1, true);
+      resetLog();
+      r = await q("app_click", { app: reidApp, element_index: 8 });
+      check("lone role + name match that reports unique:false: ambiguous", r.isError === true && /ambiguous/i.test(textOf(r)) && acts().length === 1, true);
+      resetLog();
+      r = await q("app_click", { app: reidApp, element_index: 7 });
+      check("id + name + showing + unique: re-identified and pressed", !r.isError && /re-identified/.test(textOf(r)) && acts().map((c) => c.argv[4]).join() === "e-1,e-2", true);
+
+      // Numbers never come back for another control.
+      const numApp = "org.example.num";
+      await q("app_ax_find", { app: numApp, window_id: "{nm-1}" });
+      await rc.__linuxExecutor.__setLockHeld(false);
+      resetLog();
+      r = await q("app_click", { app: numApp, window_id: "{nm-1}", target: "focused" });
+      const fN = Number((/^Pressed \[(\d+)\]/.exec(textOf(r)) || [])[1]);
+      check("target focused after a lock release: a number above every earlier one", fN > 4, true);
+      resetLog();
+      r = await q("app_click", { app: numApp, window_id: "{nm-1}", element_index: 3 });
+      check("an old [N] after the window was listed again (focused walk): unknown, nothing sent", r.isError === true && /No element \[3\]/.test(textOf(r)) && /list the window again|app_ax_find again/.test(textOf(r)) && acts().length === 0, true);
+      await q("app_ax_find", { app: numApp, window_id: "{nm-2}" });
+      r = await q("app_ax_find", { app: numApp, window_id: "{nm-2}" });
+      check("pid change: the new process's controls get new numbers", /\[3\] AXButton \(push button\) "New"/.test(textOf(r)), false);
+      resetLog();
+      r = await q("app_click", { app: numApp, window_id: "{nm-2}", element_index: 3 });
+      check("pid change: the old [3] is unknown, nothing sent", r.isError === true && /No element \[3\]/.test(textOf(r)) && acts().length === 0, true);
+      await q("app_ax_find", { app: numApp, window_id: "{nm-3}" });
+      r = await q("app_ax_find", { app: numApp, window_id: "{nm-3}" });
+      check("new window ref: the new window's controls get new numbers", /\[3\] AXButton \(push button\) "New"/.test(textOf(r)), false);
+      resetLog();
+      r = await q("app_click", { app: numApp, window_id: "{nm-3}", element_index: 3 });
+      check("new window ref: the old [3] is unknown, nothing sent", r.isError === true && /No element \[3\]/.test(textOf(r)) && acts().length === 0, true);
+      const desc = rc.__cdbAxTools({ platform: "linux" }).find((t) => t.name === "app_ax_find").description;
+      check("app_ax_find text: numbers last until the app or window is re-created or the task ends", /stays the same/.test(desc) && /re-created/.test(desc) && /task ends/.test(desc) && /unknown number/.test(desc), true);
+      await releaseAx(rc);
+    }
+    // App binding: GNOME names windows by title, so two apps can share a
+    // window id; wlroots window ids shift between apps.
+    {
+      useFix(fixFile13);
+      setFeatures(ALL_FEATURES);
+      const gc = makeCtx({ userData });
+      gc.__linuxExecutor = { capabilities: { platform: "linux" }, __axBridge: () => ({ bin, name: "gnome-portal-bridge" }), async __setLockHeld() {}, async __cuTaskBoundary() {} };
+      gc.__cdbCuAxElements = () => true;
+      loadAx(gc);
+      const tier = (id, t) => (id === "org.example.Notes" && t !== "read" ? { error: { isError: true, content: [{ type: "text", text: 'TIER: "' + id + '" needs ' + t }] } } : null);
+      const g = (n, a) => gc.__cdbAxCall(n, a, { sid: "gb", tier });
+      r = await g("app_ax_find", { app: "org.gnome.TextEditor", window_id: "notes.txt" });
+      check("GNOME: app A's window notes.txt listed", !r.isError && /\[4\] AXButton \(push button\) "Open"/.test(textOf(r)), true);
+      resetLog();
+      r = await g("app_click", { app: "org.example.Notes", window_id: "notes.txt", element_index: 4 });
+      check("GNOME: B's call is held to B's tier (click refused for a read grant)", r.isError === true && /TIER/.test(textOf(r)) && acts().length === 0, true);
+      r = await g("app_ax_find", { app: "org.example.Notes", window_id: "notes.txt" });
+      check("GNOME: app B's window with the same title listed (read)", !r.isError && /"Delete all"/.test(textOf(r)), true);
+      const tierB = () => null;
+      resetLog();
+      r = await gc.__cdbAxCall("app_click", { app: "org.example.Notes", window_id: "notes.txt", element_index: 4 }, { sid: "gb", tier: tierB });
+      check("GNOME: B's [4] is B's own element, never A's", acts().map((c) => c.argv[4]).join(), "notes-del");
+      r = await g("app_ax_find", { app: "org.gnome.TextEditor", window_id: "notes.txt" });
+      await gc.__linuxExecutor.__setLockHeld(false);
+      await g("app_ax_find", { app: "org.example.Notes", window_id: "notes.txt" });
+      resetLog();
+      r = await gc.__cdbAxCall("app_click", { app: "org.gnome.TextEditor", window_id: "notes.txt", element_index: 4 }, { sid: "gb", tier: tierB });
+      check("GNOME: a number learned through B is not usable through A (same title)", r.isError === true && /No element \[4\]/.test(textOf(r)) && acts().length === 0, true);
+      r = await g("app_ax_find", { app: "org.gnome.TextEditor", window_id: "notes.txt" });
+      resetLog();
+      r = await g("app_click", { app: "org.example.Notes", window_id: "notes.txt", element_index: 4 });
+      check("GNOME: B's tier still applies to B after A listed the title again", r.isError === true && /TIER/.test(textOf(r)) && acts().length === 0, true);
+      await releaseAx(gc);
+    }
+    {
+      const wa = { id: "{wl-9}", title: "Alpha", desktop_file_name: "org.example.alpha", stacking_order: 1, geometry: { x: 0, y: 0, width: 800, height: 600 } };
+      const wb = { ...wa, title: "Beta", desktop_file_name: "org.example.beta" };
+      const FIXW = {
+        ...FIX13,
+        windows: { __seq: [[wa], [wb]] },
+        "ax-find": {
+          ...FIX13["ax-find"],
+          "{wl-9}": { __seq: [xFind("{wl-9}", [vEl(3, "push button", "Alpha thing", "wa-1")]), xFind("{wl-9}", [vEl(3, "push button", "Beta thing", "wb-1")])] },
+        },
+      };
+      const fixW = join(scratch, "fixture-review-wl.json");
+      writeFileSync(fixW, JSON.stringify(FIXW));
+      useFix(fixW);
+      setFeatures(ALL_FEATURES);
+      const wc2 = makeCtx({ userData });
+      wc2.__linuxExecutor = { capabilities: { platform: "linux" }, __axBridge: () => ({ bin, name: "wlroots-bridge" }), async __setLockHeld() {}, async __cuTaskBoundary() {} };
+      wc2.__cdbCuAxElements = () => true;
+      loadAx(wc2);
+      r = await wc2.__cdbAxCall("app_ax_find", { app: "org.example.alpha", window_id: "{wl-9}" }, { sid: "wb" });
+      check("wlroots: app A's window {wl-9} listed", !r.isError && /\[3\] AXButton \(push button\) "Alpha thing"/.test(textOf(r)), true);
+      resetLog();
+      r = await wc2.__cdbAxCall("app_click", { app: "org.example.beta", window_id: "{wl-9}", element_index: 3 }, { sid: "wb" });
+      check("wlroots: the id now names app B's window: A's [3] is not usable through B", r.isError === true && /No element \[3\]/.test(textOf(r)) && acts().length === 0, true);
+      await releaseAx(wc2);
+    }
+    setFeatures(undefined);
+    useFix(fixFile);
 
     // Every legacy-bridge call in every section above stayed within today's
     // flags, actions and stdin shapes.
