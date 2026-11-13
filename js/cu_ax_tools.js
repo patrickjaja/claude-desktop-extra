@@ -348,7 +348,9 @@ var _wins=new Map(),_alias=new Map(),_lastWin=new Map(),_marks=new Map();
 function remember(m,k,v,cap){m.delete(k);m.set(k,v);if(m.size>(cap||64))m.delete(m.keys().next().value)}
 // _gen counts restores and lock releases: a wait_for that sees it change stops
 // (its numbers and the accessibility service may be gone).
-var _gen=0;
+var _gen=0,_sgen=new Map();
+function genNow(sid){return{g:_gen,s:_sgen.get(sessKey(sid))||0}}
+function genSame(g0,sid){return!!g0&&g0.g===_gen&&g0.s===(_sgen.get(sessKey(sid))||0)}
 function clearTables(why){_gen++;if(_wins.size)log("element numbers cleared ("+why+")");_wins.clear();_alias.clear()}
 function wkeyOf(r,w){return r&&r.window&&typeof r.window.ref==="string"&&r.window.ref?"ref:"+r.window.ref:"id:"+String(w.id)}
 // Keys: session (sessKey), the app's matcher id (appKeyOf), then the window.
@@ -691,6 +693,7 @@ async function target(br,w,input,sid,label,feat,appK){
 function deliveryOf(r,feat){
   if(!r||typeof r!=="object")return"sent_unverified";
   if(r.__failed)return"sent_unverified";
+  if(r.__usage)return"not_sent";
   if(feat.has("action.expect")&&(r.delivery==="not_sent"||r.delivery==="sent_unverified"||r.delivery==="sent"))return r.delivery;
   if(r.unavailable)return r.unavailable==="stale_element"?"sent_unverified":"not_sent";
   if(r.error)return"not_sent";
@@ -698,8 +701,9 @@ function deliveryOf(r,feat){
 }
 // One ax-action. action.expect: --expect-json and the JSON object on stdin
 // (the element's printed identity plus text / value), else today's stdin.
-// Exit 2 (usage: nothing sent) throws as before; any other failure is
-// {__failed}: the action may have been sent.
+// Exit 2 (usage: the bridge refused the arguments or stdin before acting) is
+// {__usage}: nothing was sent; any other failure is {__failed}: the action
+// may have been sent.
 async function act(br,feat,t,ent,action,extra){
   var a=["ax-action","--scope",String(t.scope||""),"--ref",ent.ref,"--action",action],stdin=null;
   if(feat.has("action.expect")){
@@ -710,9 +714,9 @@ async function act(br,feat,t,ent,action,extra){
     stdin=JSON.stringify(o);
   }else if(extra&&typeof extra.text==="string")stdin=extra.text;
   try{return await run(br,a,stdin,10000)}
-  catch(e){if(e&&e.axWhy==="exit 2")throw e;return{__failed:e&&e.axWhy||"error"}}
+  catch(e){if(e&&e.axWhy==="exit 2")return{__usage:String(e.message||e)};return{__failed:e&&e.axWhy||"error"}}
 }
-// After stale_element (nothing sent) or element_changed: one re-find of the
+// After stale_element or element_changed with nothing sent: one re-find of the
 // same window (same ownership and pid checks as any find), then the element by
 // its accessible id, else by role + name when it was unique at capture and
 // exactly one live element matches. Never across a process change, never for
@@ -753,13 +757,34 @@ async function reidentify(br,feat,w,sid,appK,t,ent,label){
 }
 // Runs one action on ent, with one re-identification where the rule allows.
 // -> tool result
+// Between the re-find and a second action anything may have happened: the
+// user stopped screen sharing, the turn was aborted, the accessibility use
+// ended (restore, lock release, task end), or another session took the lock.
+// -> refusal text | null
+async function settled(c){
+  var o=c.opts||{},N="["+c.ent.n+"]",nt=" Nothing was sent.";
+  var sx=globalThis.__linuxExecutor;
+  try{if(sx&&typeof sx.__stoppedByUser==="function"&&sx.__stoppedByUser())return"The user stopped screen sharing for this Computer Use session, so "+c.label+" is off until this task ends."+nt}catch(e){return c.label+": the screen sharing state could not be read."+nt}
+  try{
+    var kc=kctx(o);
+    if(typeof o.aborted==="function"&&o.aborted()===!0||kc&&typeof kc.isAborted==="function"&&kc.isAborted()===!0)return c.label+" aborted (user interrupt) while "+N+" was identified again."+nt;
+  }catch(e){return c.label+" aborted (user interrupt)."+nt}
+  if(!genSame(c.g0,c.sid))return"This session's accessibility use ended (task end, lock release or idle) while "+N+" was identified again."+nt+" Call app_ax_find again to list the window again.";
+  if(typeof o.lock==="function"){var mine=!1;try{mine=await o.lock()!==!1}catch(e){mine=!1}if(!mine)return"Another Claude session is currently using the computer."+nt}
+  return null;
+}
 async function perform(c){
   var res=await act(c.br,c.feat,c.t,c.ent,c.action,c.extra),ent=c.ent,ri=null;
   var u=res&&(res.unavailable||res.error),dv=deliveryOf(res,c.feat);
-  if(c.feat.has("find.identity")&&c.feat.has("action.expect")&&(u==="element_changed"||u==="stale_element"&&dv==="not_sent")){
+  // Only an action that did not reach the app may be sent again.
+  if(c.feat.has("find.identity")&&c.feat.has("action.expect")&&(u==="element_changed"||u==="stale_element")&&dv==="not_sent"){
     ri=await reidentify(c.br,c.feat,c.w,c.sid,c.appK,c.t,ent,c.label);
     if(ri.e)return ri.e;
     ent=ri.ent;
+    var why=await settled(c);
+    if(why){log(c.action+": window="+String(c.w.id)+" re-identified, not sent (state changed)");return err(why)}
+    // The re-identified control must pass the same checks as the listed one.
+    if(typeof c.recheck==="function"){var rc=c.recheck(ent);if(rc){log(c.action+": window="+String(c.w.id)+" re-identified, refused by the recheck");return err(rc+" Nothing was sent.")}}
     res=await act(c.br,c.feat,c.t,ent,c.action,c.extra);
   }
   log(c.action+": window="+String(c.w.id)+" "+(res&&res.ok===!0?"ok":res&&res.__failed?"failed ("+res.__failed+")":res&&res.ok===null?"dispatched":"refused ("+(res&&(res.unavailable||res.error)||"not ok")+")")+(ri?" re-identified":""));
@@ -770,6 +795,7 @@ function actResult(r,t,el,c,ri){
   if(!r||typeof r!=="object")return err(label+": no answer from the bridge.");
   var rid=ri?" ("+N+" was re-created and re-identified by its "+ri.how+(ri.was!=null?"; it was ["+ri.was+"]":"")+")":"";
   if(r.__failed)return err(label+": the bridge failed ("+r.__failed+") after the action may have been sent: result not confirmed. Check with app_ax_find or a screenshot; do not repeat it blindly."+rid);
+  if(r.__usage)return err(label+" failed: "+r.__usage+". Nothing was sent."+rid);
   // `error` is the answer itself only without `ok` (a bridge explaining a
   // failure); next to ok:null it says what a read-back showed.
   var u=r.unavailable||(r.ok===void 0?r.error:null),dv=deliveryOf(r,feat);
@@ -820,16 +846,40 @@ var ENSURE={checked:1,unchecked:1,expanded:1,collapsed:1,selected:1};
 var VALUE_ROLES={slider:1,"spin button":1,"scroll bar":1,dial:1};
 var NUM_RE=/^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$/;
 var TEXT_AX={AXTextField:1,AXTextArea:1,AXSearchField:1,AXComboBox:1,AXSecureTextField:1};
+var ACTION_TOOLS={app_click:1,app_type:1,app_focus:1,app_scroll:1};
+function hasSid(opts){return!!opts&&opts.sid!=null&&String(opts.sid)!==""}
+// app_type on one element: set-value (a number on a Value control) or
+// set-text (an editable text field; text there needs overwrite_existing).
+// -> {action, value?} | {e: refusal text}
+function typePlan(el,input,feat){
+  if(VALUE_ROLES[el.role]&&feat.has("action.set_value")){
+    var tv=input.text.trim();
+    if(!NUM_RE.test(tv)||!isFinite(Number(tv)))return{e:"["+el.n+"] is a "+el.role+": app_type takes a number for it (its new value)."};
+    return{action:"set-value",value:Number(tv)};
+  }
+  if((el.states||[]).indexOf("editable")<0&&!TEXT_AX[el.ax_role])return{e:"Only target TEXT fields: ["+el.n+"] is "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+"), not editable text."};
+  if(input.overwrite_existing!==!0&&el.hasText)return{e:"["+el.n+"] already has text, and app_type replaces ALL of it. Pass overwrite_existing: true to replace it."};
+  return{action:"set-text"};
+}
 async function call(name,input,opts,obs){
   input=input&&typeof input==="object"?input:{};
   var app=input.app,sid=String(opts&&opts.sid!=null?opts.sid:"(no-session)");
   if(typeof app!=="string"||!app.trim())return err("app is required.");
+  // The accessibility generation this call started in (settled() compares).
+  var g0=genNow(sid);
   // Grants: upstream's tier check where upstream dispatches (kwin mode); in
   // regular mode the consent switch's check (opts.tier, opts.allowedApps),
   // else every app at tier full (cu_handler_injection.js).
   var grant=grantOf(app,opts);
   if(opts&&typeof opts.tier==="function"){var g=opts.tier(grant?grant.bundleId:app,TIER[name]);if(g&&g.error)return g.error}
   if(name==="app_scroll"&&(input.coordinate!==void 0||input.scroll_direction!==void 0||input.scroll_amount!==void 0||input.direction!==void 0||input.amount!==void 0||input.dx!==void 0||input.dy!==void 0))return err("app_scroll here only scrolls a control into view by element_index (from app_ax_find). To scroll at a point, use scroll with a coordinate.");
+  if(name==="app_type"&&typeof input.text!=="string")return err("text is required.");
+  // Without a session id there is no session to keep numbers for: reading
+  // works, actions and stored numbers do not.
+  if(!hasSid(opts)){
+    if(ACTION_TOOLS[name]===1)return err(name+" needs a Computer Use session, and this call has none, so nothing was sent.");
+    if(name==="app_ax_find"&&input.within!==void 0)return err("within uses a number from an earlier app_ax_find of this session, and this call has no session.");
+  }
   var ak=matcherOf(app,grant),appK=appKeyOf(ak),appId=String(grant?grant.bundleId:app).trim().replace(/\.desktop$/i,"");
   var br=bridge();
   if(!br)return err("Accessibility tools need a Computer Use bridge, and none is available in this session.");
@@ -905,7 +955,7 @@ async function call(name,input,opts,obs){
   if(w.id!=null)remember(_lastWin,sessKey(sid)+"\n"+appK,String(w.id));
   var t=await target(br,w,input,sid,name,feat,appK);
   if(t.e)return t.e;
-  var pc={br:br,feat:feat,w:w,sid:sid,app:app,appK:appK,t:t.t,ent:t.ent,label:name,fr:fr};
+  var pc={br:br,feat:feat,w:w,sid:sid,app:app,appK:appK,t:t.t,ent:t.ent,label:name,fr:fr,opts:opts||{},g0:g0};
   if(name==="app_click"||name==="app_focus"||name==="app_scroll"||name==="app_type"){if(!fr&&t.t.coords==="screen"){var c1=centerOf(t.ent.rect_screen);if(c1)pc.fr=predict(opts,c1[0],c1[1])}}
   if(name==="app_click"){
     if(input.ensure!==void 0){pc.action="ensure-"+input.ensure;pc.goal=input.ensure;pc.what="Set";pc.unknown="Change to "+input.ensure;return perform(pc)}
@@ -919,17 +969,15 @@ async function call(name,input,opts,obs){
     return perform(pc);
   }
   if(name==="app_type"){
-    if(typeof input.text!=="string")return err("text is required.");
-    var el=t.ent,stt=el.states;
-    if(VALUE_ROLES[el.role]&&feat.has("action.set_value")){
-      var tv=input.text.trim();
-      if(!NUM_RE.test(tv)||!isFinite(Number(tv)))return err("["+el.n+"] is a "+el.role+": app_type takes a number for it (its new value).");
+    var tp=typePlan(t.ent,input,feat);
+    if(tp.e)return err(tp.e);
+    // A re-identified field passes the same checks (it may have text now).
+    pc.recheck=function(ent){var p2=typePlan(ent,input,feat);return p2.e||(p2.action!==tp.action?"["+ent.n+"] is no longer the kind of control it was.":null)};
+    if(tp.action==="set-value"){
       log("set-value: window="+String(w.id));
-      pc.action="set-value";pc.extra={value:Number(tv)};pc.what="Set the value of";pc.unknown="Value";pc.showValue=!0;
+      pc.action="set-value";pc.extra={value:tp.value};pc.what="Set the value of";pc.unknown="Value";pc.showValue=!0;
       return perform(pc);
     }
-    if(stt.indexOf("editable")<0&&!TEXT_AX[el.ax_role])return err("Only target TEXT fields: ["+el.n+"] is "+(el.ax_role||"AXUnknown")+" ("+(el.role||"unknown")+"), not editable text.");
-    if(input.overwrite_existing!==!0&&el.hasText)return err("["+el.n+"] already has text, and app_type replaces ALL of it. Pass overwrite_existing: true to replace it.");
     log("set-text: window="+String(w.id)+" chars="+input.text.length);
     pc.action="set-text";pc.extra={text:input.text};pc.what="Set the text of";pc.unknown="Text";
     return perform(pc);
@@ -1009,6 +1057,7 @@ var STOP_TEXT={
 async function waitFind(input,opts){
   var sp=waitSpec(input);
   if(sp.e)return sp.e;
+  if(sp.idx!=null&&!hasSid(opts))return err("wait_for element_index uses a number from an earlier app_ax_find of this session, and this call has no session.");
   var sid=String(opts&&opts.sid!=null?opts.sid:"(no-session)");
   var base={};for(var k in input){if(Object.prototype.hasOwnProperty.call(input,k)&&k!=="wait_for")base[k]=input[k]}
   // A wait on one element walks the whole window, so the element is listed

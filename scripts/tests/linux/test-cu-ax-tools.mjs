@@ -1187,6 +1187,7 @@ if (patchMissing || !existsSync(stubPath)) {
       check("app id: .desktop stripped", calls().map((c) => c.argv.join(" ")).join("|"), "ax-find --app-id org.gnome.TextEditor --title notes.txt");
       r = await g("app_type", { app: "org.gnome.TextEditor", window_id: "notes.txt", element_index: 5, text: "x" });
       check("bridge exit 2 (usage): clean tool error, not a crash", r.isError === true && textOf(r).includes("failed (exit 2)") && textOf(r).includes("not valid UTF-8"), true);
+      check("bridge exit 2 (usage) from ax-action: says nothing was sent", /nothing was sent/i.test(textOf(r)), true);
       // Stop-sharing latch (#293): input-like AX actions refused, reading allowed.
       gctx.__linuxExecutor.__stoppedByUser = () => true;
       resetLog();
@@ -2169,6 +2170,99 @@ if (patchMissing || !existsSync(stubPath)) {
       r = await wc2.__cdbAxCall("app_click", { app: "org.example.beta", window_id: "{wl-9}", element_index: 3 }, { sid: "wb" });
       check("wlroots: the id now names app B's window: A's [3] is not usable through B", r.isError === true && /No element \[3\]/.test(textOf(r)) && acts().length === 0, true);
       await releaseAx(wc2);
+    }
+    setFeatures(undefined);
+    useFix(fixFile);
+
+    // ---------------------------------------------------------------- [14]
+    // Action safety: the second action after a re-identification runs only
+    // when nothing changed meanwhile; app_type re-checks the re-identified
+    // field; re-identification only after "nothing was sent"; no session id
+    // means no actions and no stored numbers.
+    console.log("\n[14] action safety around re-identification; calls without a session");
+    {
+      const FIX14 = {
+        ...FIX13,
+        "ax-find": {
+          ...FIX13["ax-find"],
+          "{ri-1}": xFind("{ri-1}", [
+            vEl(3, "push button", "Chg", "chg-1"),
+            vEl(4, "text", "Notes", "nt-1", { states: ["enabled", "showing", "editable"] }),
+            vEl(5, "push button", "Go", "go-1"),
+          ]),
+          "{ri-1}|all": xFind("{ri-1}", [
+            vEl(3, "push button", "Chg", "chg-2"),
+            vEl(4, "text", "Notes", "nt-2", { states: ["enabled", "showing", "editable"], value: "typed meanwhile" }),
+            vEl(5, "push button", "Go", "go-2"),
+          ]),
+        },
+        "ax-action": {
+          ...FIX13["ax-action"],
+          "chg-1": { unavailable: "element_changed", hint: "changed", delivery: "sent_unverified" },
+          "nt-1": ST("not_sent"),
+          "go-1": ST("not_sent"),
+          "go-2": OKA("click"),
+          "nt-2": { ok: true, action: "set_text", method: "set_text_contents", delivery: "sent" },
+        },
+      };
+      const fixFile14 = join(scratch, "fixture-safety.json");
+      writeFileSync(fixFile14, JSON.stringify(FIX14));
+      useFix(fixFile14);
+      setFeatures(ALL_FEATURES);
+      const app = "org.example.reid";
+      let stopAt = 0, onStop = null;
+      const sc2 = axCtx("x11-bridge", {
+        executor: {
+          __stoppedByUser() {
+            stopAt++;
+            return onStop ? onStop(stopAt) : false;
+          },
+        },
+      });
+      const q = (n, a, o = {}) => sc2.__cdbAxCall(n, { app, ...a }, { sid: "s14", ...o });
+      await q("app_ax_find", {});
+      resetLog();
+      r = await q("app_click", { element_index: 3 });
+      check("element_changed after a send (sent_unverified): never re-identified or repeated", acts().length + "|" + finds().length + "|" + /not confirmed|do not repeat/i.test(textOf(r)), "1|0|true");
+      resetLog();
+      r = await q("app_type", { element_index: 4, text: "new text" });
+      check("app_type: the re-identified field has text now: refused without overwrite_existing, nothing sent", r.isError === true && /overwrite_existing/.test(textOf(r)) && /nothing was sent/i.test(textOf(r)) && acts().length === 1, true);
+      const goOf = (txt) => Number((/\[(\d+)\] AXButton \(push button\) "Go"/.exec(txt) || [])[1]);
+      const second = async (label, o, setup) => {
+        const n = goOf(textOf(await q("app_ax_find", {})));
+        stopAt = 0;
+        onStop = null;
+        if (setup) setup();
+        resetLog();
+        const res = await q("app_click", { element_index: n }, o);
+        onStop = null;
+        check(`${label}: no second action, nothing was sent`, res.isError === true && /nothing was sent/i.test(textOf(res)) && acts().length === 1 && finds().length === 1, true);
+        return res;
+      };
+      r = await second("stop sharing during the re-find", {}, () => (onStop = (n) => n >= 2));
+      check("stop sharing during the re-find: says so", /stopped screen sharing/.test(textOf(r)), true);
+      r = await second("turn aborted during the re-find (regular mode)", { aborted: () => true });
+      check("aborted: says so", /aborted/.test(textOf(r)), true);
+      r = await second("lock taken by another session during the re-find", { lock: async () => false });
+      check("lock lost: says so", /Another Claude session/.test(textOf(r)), true);
+      r = await second("a restore (lock release) during the re-find", {}, () => (onStop = (n) => (n === 2 && sc2.__linuxExecutor.__setLockHeld(false), false)));
+      check("restore during the re-find: says the accessibility use ended", /ended|list the window again|app_ax_find again/.test(textOf(r)), true);
+      for (let i = 0; i < 100 && existsSync(statePath); i++) await tick();
+      const goN0 = goOf(textOf(await q("app_ax_find", {})));
+      resetLog();
+      r = await q("app_click", { element_index: goN0 });
+      check("nothing changed during the re-find: the second action runs", !r.isError && /re-identified/.test(textOf(r)) && acts().length === 2, true);
+      // No session id: reading works, actions and stored numbers do not.
+      const ns = (n, a) => sc2.__cdbAxCall(n, { app, ...a }, {});
+      r = await ns("app_ax_find", {});
+      check("no session id: app_ax_find works", !r.isError && /"Go"/.test(textOf(r)), true);
+      const goN = goOf(textOf(r));
+      resetLog();
+      for (const [n, a] of [["app_click", { element_index: goN }], ["app_click", { target: "focused" }], ["app_type", { element_index: 4, text: "x" }], ["app_focus", { element_index: goN }], ["app_scroll", { element_index: goN }], ["app_ax_find", { within: goN }], ["app_ax_find", { wait_for: { until: "enabled", element_index: goN, timeout_ms: 500 } }]]) {
+        r = await ns(n, a);
+        check(`no session id: ${n} ${Object.keys(a)[0]} refused, nothing spawned`, r.isError === true && /session/.test(textOf(r)) && calls().length === 0, true);
+      }
+      await releaseAx(sc2);
     }
     setFeatures(undefined);
     useFix(fixFile);
