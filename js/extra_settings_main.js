@@ -677,7 +677,7 @@
     };
   }
 
-  // The managed-config key catalog of Claude Desktop v5.1231.0 (213 keys), read out of the
+  // The managed-config key catalog of Claude Desktop v5.11492.5 (217 keys), read out of the
   // bundle's own schema (flat key, zod leaf type, scopes, title). Upstream drives
   // its 3P Setup wizard from that schema; we cannot reach it from here (it is
   // module-scoped in index.pre.js), so this is a PINNED COPY and is therefore
@@ -846,6 +846,9 @@
       label: "SSO login domain" },
     { key: "forceLoginOrgUUID", kind: "text", group: "connection", scope: "1p",
       label: "Required organization UUID" },
+    { key: "enforceConsoleSignInOrgList", kind: "bool", group: "connection", scope: "3p",
+      label: "Enforce Required organization for Claude Console sign-in",
+      note: "Only organizations in Required organization can sign in with Claude Console with the Anthropic (Claude API) provider; off or unset still allows others with a warning. Machine-wide managed configuration only (added in v5.11492.0, availableInVersion @next)." },
     { key: "importThirdPartyHistoryIntoOrgUUID", kind: "text", group: "connection", scope: "1p",
       label: "Import earlier third-party sessions into this organization",
       note: "Organization UUID that adopts the sessions a user created while the device ran in 3P mode." },
@@ -940,6 +943,9 @@
     { key: "chatAdvancedFileAnalysisEnabled", kind: "bool", group: "sandbox", scope: "3p",
       label: "Advanced file analysis in Chat" },
     { key: "autoModeEnabled", kind: "bool", group: "sandbox", scope: "3p", label: "Cowork Auto mode" },
+    { key: "autoModeClassifierModel", kind: "text", group: "sandbox", scope: "3p",
+      label: "Auto mode classifier model",
+      note: "Provider's ID for the Anthropic model that Claude Code's built-in safety check uses to review actions; unset lets Claude Code choose (added in v5.11492.0, availableInVersion @next)." },
     { key: "toolSearchEnabled", kind: "bool", group: "sandbox", scope: "3p", label: "Tool search" },
     { key: "allowedWorkspaceFolders", kind: "lines", group: "sandbox", scope: "both",
       label: "Allowed workspace folders", note: "One absolute path per line. Empty means no restriction." },
@@ -1036,6 +1042,9 @@
     { key: "builtinBrowserBlockedDomains", kind: "lines", group: "sandbox", scope: "3p",
       label: "Blocked sites in the built-in browser",
       note: "One site per line; the exceptions when the default site policy is allow." },
+    { key: "builtinBrowserClientCertificateHosts", kind: "lines", group: "sandbox", scope: "both",
+      label: "Sites allowed a client certificate in the built-in browser and preview panes",
+      note: "One site pattern per line (host, host:port, *.example.com or *) that may receive a client certificate from the device's store in the built-in browser or preview panes; machine-wide managed configuration only (added in v5.11492.0, availableInVersion @next)." },
     { key: "officeDisabledHosts", kind: "lines", group: "sandbox", scope: "3p",
       label: "Disabled Office applications",
       note: "One of sheet, slide, doc, mail per line - Office hosts where the Claude add-in for Microsoft 365 is turned off (upstream gates this @next)." },
@@ -1236,6 +1245,9 @@
     { key: "organizationAnnouncement", kind: "json", group: "appearance", scope: "3p",
       label: "Organization announcement",
       note: "JSON object { \"title\": up to 80 characters, \"body\": up to 1000 characters, \"placement\": \"inline\" (card on the start screen, default) or \"modal\" (dialog), \"id\": optional, up to 256 characters } that the app draws in its own window (added in v5.1231.0, availableInVersion @next)." },
+    { key: "deploymentLogo", kind: "text", group: "appearance", scope: "3p",
+      label: "Deployment logo",
+      note: "PNG image as a data:image/png;base64,... URI (at most 32,768 characters) shown beside the Organization announcement (added in v5.11492.0, availableInVersion @next)." },
     { key: "disableFeatureDiscovery", kind: "bool", group: "appearance", scope: "3p",
       label: "Hide feature announcements" },
     { key: "sessionStatusLine", kind: "json", group: "appearance", scope: "3p",

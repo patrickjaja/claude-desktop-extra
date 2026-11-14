@@ -614,8 +614,8 @@
       "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
     },
     {
-      "id": "a55bf553354c",
-      "text": "Exit with an error at startup if sandbox.enabled is true but the sandbox cannot start (missing dependencies or unsupported platform). When false (default), a warning is shown and commands run unsandboxed. Intended for managed-settings deployments that require sandboxing as a hard gate.",
+      "id": "35999c8ed8ce",
+      "text": "Exit with an error at startup if sandbox.enabled is true but the sandbox cannot start (missing dependencies or unsupported platform).",
       "status": "accepted",
       "sites": 1,
       "reason": "Settings schema description; documentation text."

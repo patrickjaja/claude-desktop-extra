@@ -2,6 +2,15 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-14
+
+### Upstream 5.11492.5
+
+- **Validated against 5.11492.5** (Electron 45.2.1, `@anthropic-ai/claude-agent-sdk` 0.3.325): all 74 main-bundle patches and 3 `ion-dist` patches apply cleanly; nothing was absorbed upstream.
+- **Settings -> Extra -> Deployment** lists the four new managed keys (217 total): `autoModeClassifierModel`, `builtinBrowserClientCertificateHosts`, `deploymentLogo`, and, locked (`internal-only`), `enforceConsoleSignInOrgList`.
+- The GrowthBook flag catalogue in `claude-desktop-extra.jsonc` covers 5.11492.5 (879 flags: 26 new across 5.11492.0–5.11492.5, 1 removed `4185841952`).
+- Refusal-string baseline refreshed for the expanded `failIfUnavailable` schema description; platform-gate, feature-flag, and `ion-dist` baselines updated.
+
 ## 2026-11-13
 
 ### Upstream 5.11492.0
