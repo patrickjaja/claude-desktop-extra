@@ -4,6 +4,8 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-15
 
+- **Optional message input appearance:** Extra → Themes and Community → App and window offer a rounded frosted outer panel and a compact input-field-only mode. Both apply live with themes on or off; off leaves the current message-input appearance unchanged. The outer panel follows the input field’s corner radius to avoid protruding square edges.
+
 ### Custom themes: live animated SVG backdrops, frosted glass, GTA I-VI series and 20 scene themes (#336)
 
 - **Chat backdrop input layers:** removes the opaque footer/side backings and the square blur on the outer input shell when a backdrop is active. The rounded input field keeps its glass surface, and disabling backdrops preserves the original backing.

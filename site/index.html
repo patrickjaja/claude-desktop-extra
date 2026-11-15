@@ -1166,7 +1166,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
   <p>The optional features in Settings &rarr; Extra &rarr; Community, in the same groups the app uses. Each has its own switch; all but the Theme picker start off, and off keeps Anthropic's behavior.</p>
 
   <div class="cf-search" id="cf-search" hidden>
-    <input type="search" id="cf-filter" data-count-placeholder="features" placeholder="Filter 18 features by name or description" aria-label="Filter community features" autocomplete="off">
+    <input type="search" id="cf-filter" data-count-placeholder="features" placeholder="Filter 20 features by name or description" aria-label="Filter community features" autocomplete="off">
     <button type="button" class="cf-clear" id="cf-clear" aria-label="Clear filter" hidden>&times;</button>
   </div>
 
@@ -1244,6 +1244,14 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
         <div class="cf-row">
           <div class="cf-title">Theme picker <span class="cf-hint badge-default">applies live</span></div>
           <div class="cf-note">Press Ctrl+Shift+T to open a searchable gallery of themes and apply one with a click. Applies live.</div>
+        </div>
+        <div class="cf-row">
+          <div class="cf-title">Frosted message input <span class="cf-hint badge-default">applies live</span></div>
+          <div class="cf-note">Replaces Chat's solid input backing with a rounded frosted panel. Its corners follow the input field, and approval cards keep their backgrounds. Works with themes on or off. Off restores the original appearance.</div>
+        </div>
+        <div class="cf-row">
+          <div class="cf-title">Frost only the input field <span class="cf-hint badge-default">applies live</span></div>
+          <div class="cf-note">Moves frost from the larger panel into the rounded input field. Requires Frosted message input; off keeps the rounded outer panel. Applies live.</div>
         </div>
         <div class="cf-row">
           <div class="cf-title">Developer tools <span class="cf-hint badge-default">applies live</span> <span class="cf-hint badge-exp">needs restart</span></div>
@@ -1448,7 +1456,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
       <div class="cf-list">
         <div class="cf-row pc-row" id="patch-add_feature_custom_themes" data-tier="core">
           <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/core/add_feature_custom_themes.nim">add_feature_custom_themes.nim</a> <span class="cf-hint badge-core">Core: plumbing</span></div>
-          <div class="cf-note">The theme engine: 124 bundled light/dark palettes and 34 animated SVG backdrops with frosted-glass surfaces, each with its own loading spinner, applied live across Chat, Cowork, Code and pop-out windows. Upstream has no app-wide theming beyond the light/dark toggle</div>
+          <div class="cf-note">The theme engine: 124 bundled light/dark palettes and 34 animated SVG backdrops with frosted-glass surfaces, each with its own loading spinner, applied live across Chat, Cowork, Code and pop-out windows. Optional <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/themes.md#message-input-appearance">message input appearance</a> controls add a rounded frosted Chat panel or frost only the input field, with the original appearance preserved when off. Upstream has no app-wide theming beyond the light/dark toggle</div>
         </div>
         <div class="cf-row pc-row" id="patch-add_feature_extra_settings" data-tier="core">
           <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/core/add_feature_extra_settings.nim">add_feature_extra_settings.nim</a> <span class="cf-hint badge-core">Core: plumbing</span></div>

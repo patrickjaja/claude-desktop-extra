@@ -301,5 +301,66 @@ await runSuite(async () => {
   if (!controlLines) throw new Error("the control page wrote no probe output");
   r.lines(controlLines);
 
+
+  r.section("optional transparent reply surroundings: real CSS cascade and rollback");
+  for (const [activeTheme, frostedReplyField] of ["", "nord", "braille-stars"].flatMap(theme => [[theme, false], [theme, true]])) {
+    const config = { activeTheme, themeWatch: false, transparentChatComposer: true, frostedReplyField };
+    const { themes: api, appEvents: events, userData } = installEngine({ config });
+    const view = mkWc();
+    events["web-contents-created"]({}, view); view.fire("dom-ready");
+    await settle();
+    const enabled = view.sheet();
+    r.ok(enabled && enabled.includes("transcript-bottom-backing-start"), `${activeTheme || "stock"}: option applies at startup`);
+    // The installed 5.11492.5 composer has a page fade with opaque side backing
+    // strips; the theme additionally paints the padded outer input container.
+    const baseline = enabled.slice(0, enabled.indexOf(".dframe-root :is([data-chat-input-container],[data-testid=transcript-bottom-fade]"));
+    const fixture = String.raw`<!doctype html><html><head><style>
+      .dframe-root{--bg-100:251 41.5% 8%;--cds-page-bg:#14111d;--engine-glass-opacity:.3;--engine-glass-blur:20px;--engine-glass-tint:#0a1430}
+      [data-chat-input-container]{padding:24px;background:#14111d}
+      [data-chat-input-container]::before{content:"";background:#14111d}
+      [data-testid=transcript-bottom-fade]{background:linear-gradient(to top,var(--cds-page-bg),transparent)}
+      .bg-page,[data-disclaimer]{background:var(--cds-page-bg)}
+      .rounded-composer{border-radius:14px;background:#272331;border:1px solid #aaa;padding:16px}
+      [data-approval-card-root]{background:#34303d}
+      </style><style id="optional">${enabled}</style></head><body>
+      <div class="dframe-root" data-engine-backdrop-on data-engine-glass><div data-testid="chat-column">
+      <div data-chat-input-container id="outer"><div id="shell" data-cds="ChatComposer"><div class="rounded-composer" id="editor"><div id="editable" data-cds="ChatComposerEditor" contenteditable="true">Draft kept</div></div></div>
+      <div data-approval-card-root id="approval">Allow tool?</div><button id="send">Send</button></div>
+      <div data-testid="transcript-bottom-fade" id="fade"><div class="bg-page" id="backing" data-testid="transcript-bottom-backing-start"></div></div>
+      <div data-disclaimer id="disclaimer">Claude is AI and can make mistakes.</div></div></div>
+      <div class="bg-page" id="unrelated">Unrelated surface</div><pre id="probe"></pre><script>
+      var lines=[];function ok(c,s){lines.push((c?'PASS ':'FAIL ')+s)};
+      var css=id=>getComputedStyle(document.getElementById(id));
+      var style=document.getElementById('optional'),full=style.textContent;
+      style.textContent=${JSON.stringify(baseline)};
+      var original={editor:css('editor').backgroundColor,unrelated:css('unrelated').backgroundColor,backing:css('backing').backgroundColor,fade:css('fade').backgroundImage};
+      style.textContent=full;
+      ['outer','fade','backing','disclaimer'].forEach(id=>ok(css(id).backgroundColor==='rgba(0, 0, 0, 0)' && css(id).backgroundImage==='none',id+' is transparent'));
+      ok(css('outer').backdropFilter==='none','outer blur removed');
+      ok(getComputedStyle(document.getElementById('outer'),'::before').backgroundColor==='rgba(0, 0, 0, 0)','outer pseudo backing removed');
+      ok(/0\.35\)/.test(css('editor').backgroundColor) && css('editor').borderTopWidth==='1px','rounded editor gets translucent fill and keeps its border');
+      ok(${frostedReplyField} ? css('shell').backgroundColor==='rgba(0, 0, 0, 0)' && css('shell').backdropFilter==='none' : css('shell').backdropFilter==='blur(20px) saturate(1.2)' && css('shell').borderRadius===css('editor').borderRadius,'shell matches selected frost mode and native corners');
+      ok(css('editor').backdropFilter===(${frostedReplyField} ? 'blur(20px) saturate(1.2)' : 'none'),'inner frost follows the placement toggle');
+      ok(css('approval').backgroundColor==='rgb(52, 48, 61)','approval card fill survives');
+      ok(css('unrelated').backgroundColor===original.unrelated,'unrelated surfaces survive');
+      document.getElementById('editable').focus();ok(document.activeElement.id==='editable','editor accepts focus');
+      var clicks=0;document.getElementById('send').onclick=()=>clicks++;document.getElementById('send').click();ok(clicks===1,'send button remains active');
+      style.textContent=${JSON.stringify(baseline)};
+      ok(css('backing').backgroundColor===original.backing && css('fade').backgroundImage===original.fade,'removing the sheet restores base backing and fade');
+      ok(document.getElementById('editor').textContent==='Draft kept','draft untouched');
+      document.getElementById('probe').textContent=lines.join('\n');</script></body></html>`;
+    const path = join(out, `reply-${activeTheme || "stock"}.html`);
+    writeFileSync(path, fixture);
+    const lines = readProbe(dumpDom(chromium, path), "probe");
+    if (!lines || lines.length !== 15 || lines.some(line => !/^(PASS|FAIL) /.test(line))) throw new Error("reply fixture did not execute all checks");
+    r.lines(lines);
+    writeFileSync(join(userData, "claude-desktop-extra.jsonc"), JSON.stringify({ ...config, transparentChatComposer: false }));
+    const before = view.css.length;
+    r.ok(api.reload("option off").ok, "disable reload succeeds"); await settle();
+    r.ok(activeTheme ? !view.sheet().includes("hsl(var(--bg-100)) 35%,transparent") : view.css.length === before && view.removedKeys.length > 0,
+      `${activeTheme || "stock"}: disabling removes the optional rules`);
+    api.apply(""); await settle();
+  }
+
   r.done();
 });

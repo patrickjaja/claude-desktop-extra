@@ -3817,12 +3817,48 @@
     return { refresh: function () { fetchState().then(draw); } };
   }
 
+  function renderTransparentChatComposerRow(panel) {
+    return renderToggleRow(panel, {
+      section: "Message input appearance",
+      title: "Frosted message input",
+      note: "Replace the solid strip with a rounded frosted input panel. Applies live, with themes on or off. Approval cards keep their backgrounds. Scrolling text may show behind surrounding controls.",
+      ariaLabel: "Frosted message input",
+      read: "transparentChatComposerRead", write: "transparentChatComposerSet",
+      isOn: function (r) { return r.enabled === true; },
+      writeArg: function (on) { return on; },
+      describe: function (on) { return on ? "On — rounded frosted input panel" : "Off — original message input appearance"; },
+      lockFile: "claude-desktop-extra.jsonc",
+      errorPrefix: "Could not change message input appearance: ",
+      toast: function (on) { return on ? "Frosted message input enabled" : "Original message input appearance restored"; }
+    });
+  }
+
+  function renderFrostedReplyFieldRow(panel) {
+    return renderToggleRow(panel, {
+      section: "Message input appearance",
+      sharedSection: true,
+      title: "Frost only the input field",
+      note: "Keep frost inside the rounded input field instead of the larger panel. Requires Frosted message input. Applies live; off uses the rounded outer panel.",
+      ariaLabel: "Frost only the input field",
+      read: "frostedReplyFieldRead", write: "frostedReplyFieldSet",
+      isOn: function (r) { return r.enabled === true; },
+      writeArg: function (on) { return on; },
+      describe: function (on) { return on ? "On — compact input-field frost" : "Off — outer-panel frost"; },
+      lockFile: "claude-desktop-extra.jsonc",
+      errorPrefix: "Could not change frost placement: ",
+      toast: function (on) { return on ? "Input-field frost enabled" : "Outer-panel frost restored"; }
+    });
+  }
+
   function renderThemes(panel) {
     clear(panel);
     panel.appendChild(el("div", "cdbx-h1", "Themes"));
     panel.appendChild(el("div", "cdbx-sub",
       "Every theme this build knows about: built-ins, the bundled community palettes and your own. " +
       "Colors apply live in every window; a theme's custom spinner shape needs a restart."));
+
+    renderTransparentChatComposerRow(panel);
+    renderFrostedReplyFieldRow(panel);
 
     var status = el("div", "cdbx-empty", "Loading themes...");
     panel.appendChild(status);
@@ -4019,6 +4055,8 @@
       renderWindowTransparencyRow,
       renderTrayIconRow,
       renderThemePickerRow,
+      renderTransparentChatComposerRow,
+      renderFrostedReplyFieldRow,
       renderDevToolsRow
     ] },
     { title: "Models and 3P", sub: "Extra models and gateway options", items: [

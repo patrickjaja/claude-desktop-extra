@@ -45,6 +45,18 @@
     themesList: function () {
       return ipcRenderer.invoke("cdb-extra:themes-list");
     },
+    transparentChatComposerRead: function () {
+      return ipcRenderer.invoke("cdb-chat-composer:read");
+    },
+    transparentChatComposerSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-chat-composer:set", enabled === true);
+    },
+    frostedReplyFieldRead: function () {
+      return ipcRenderer.invoke("cdb-reply-field:read");
+    },
+    frostedReplyFieldSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-reply-field:set", enabled === true);
+    },
     themesActive: function () {
       return ipcRenderer.invoke("cdb-themes:active");
     },

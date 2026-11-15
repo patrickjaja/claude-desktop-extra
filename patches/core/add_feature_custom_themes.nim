@@ -564,6 +564,22 @@ return {override:null,effective:tSpec.id,spec:tSpec,json:j2};
 }
 return {override:null,effective:null,spec:null,json:"null"};
 }
+// Opt-in Chat appearance only: leave the editor, dock cards and hit targets alone.
+// These backing/fade testids are from ion-dist v5.11492.5. Do not clear every
+// descendant's background: approval cards and the rounded input need their fill.
+function __cdb_chatComposerCss(cfg){
+if(!cfg||cfg.transparentChatComposer!==true)return "";
+var css=".dframe-root :is([data-chat-input-container],[data-testid=transcript-bottom-fade],[data-testid=transcript-bottom-backing-start],[data-testid=transcript-bottom-backing-end],[data-testid=transcript-bottom-gap],[data-testid=chat-column] [data-disclaimer]){background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
++".dframe-root [data-chat-input-container]::before,.dframe-root [data-chat-input-container]::after{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
++".dframe-root [data-chat-input-container] :is([data-composer-card-holder],.rounded-composer:has([data-cds=ChatComposer])){background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
++".dframe-root [data-chat-input-container] [data-cds=ChatComposerChin]{background:transparent!important;box-shadow:none!important}";
+if(cfg.frostedReplyField===true)return css
++".dframe-root [data-chat-input-container] [data-cds=ChatComposer]{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
++".dframe-root [data-chat-input-container] .rounded-composer:has([data-cds=ChatComposerEditor]){background:color-mix(in srgb,hsl(var(--bg-100)) 35%,transparent)!important;backdrop-filter:blur(var(--engine-glass-blur,20px)) saturate(1.2)!important;-webkit-backdrop-filter:blur(var(--engine-glass-blur,20px)) saturate(1.2)!important}";
+return css
++".dframe-root [data-chat-input-container] [data-cds=ChatComposer]{border-radius:var(--cds-radius-composer,14px)!important;background:color-mix(in srgb,hsl(var(--bg-100)) 30%,transparent)!important;backdrop-filter:blur(var(--engine-glass-blur,20px)) saturate(1.2)!important;-webkit-backdrop-filter:blur(var(--engine-glass-blur,20px)) saturate(1.2)!important}"
++".dframe-root [data-chat-input-container] .rounded-composer:has([data-cds=ChatComposerEditor]){background:color-mix(in srgb,hsl(var(--bg-100)) 35%,transparent)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}";
+}
 function __cdb_backdropCss(){
 return ""
 +".dframe-root:where([data-engine-backdrop-on]) .dframe-content,.dframe-root:where([data-engine-backdrop-on]) .dframe-main,.dframe-root:where([data-engine-backdrop-on]) main.dframe-main,.dframe-root:where([data-engine-backdrop-on]) .dframe-content-inner,.dframe-root:where([data-engine-backdrop-on]) [data-testid=\"chat-column\"],.dframe-root:where([data-engine-backdrop-on]) .epitaxy-root{background:transparent!important;background-color:transparent!important}"
@@ -593,8 +609,9 @@ return ""
 }
 function __cdb_buildBackdropOnlyCss(cfg){
 var bd=__cdb_resolveBackdrop(cfg,null);
-if(!bd.spec)return null;
-return {css:__cdb_backdropCss(),font:false,spinnerJson:"null",backdropJson:bd.json,backdrop:bd.override,effectiveBackdrop:bd.effective,overlay:null,chrome:null};
+var composerCss=__cdb_chatComposerCss(cfg);
+if(!bd.spec&&!composerCss)return null;
+return {css:(bd.spec?__cdb_backdropCss():"")+composerCss,font:false,spinnerJson:"null",backdropJson:bd.json,backdrop:bd.override,effectiveBackdrop:bd.effective,overlay:null,chrome:null};
 }
 function __cdb_buildCss(cfg,theme,name){
 theme=__cdb_effective(cfg,theme,name);
@@ -721,6 +738,7 @@ css+="svg[data-cdb-spinner].cdb-anim-flip [data-cdb-frame=\"2\"]{animation:cdbFl
 css+="@media (prefers-reduced-motion:reduce){svg[data-cdb-spinner],svg[data-cdb-spinner] [data-cdb-frame]{animation:none!important}svg[data-cdb-spinner].cdb-anim-flip [data-cdb-frame=\"2\"]{opacity:0!important}}";
 if(spinnerJson!=="null")__cdb_log("Spinner spec present ("+spinnerJson.length+" chars JSON) for '"+name+"'");
 if(bd.effective)__cdb_log("Backdrop scene '"+bd.effective+"' resolved for '"+name+"'");
+css+=__cdb_chatComposerCss(cfg);
 return {css:css,font:fontFlag,spinnerJson:spinnerJson,backdropJson:bd.json,backdrop:bd.override,effectiveBackdrop:bd.effective,overlay:overlay?overlay.name:null,chrome:{light:__cdb_chromeHex(v.light),dark:__cdb_chromeHex(v.dark),lightText:__cdb_hslHex((v.light||{})["--text-200"]),darkText:__cdb_hslHex((v.dark||{})["--text-200"])}};
 }
 // --- top-level key persistence (comment-preserving) -------------------------
@@ -1072,7 +1090,7 @@ if(!__cdb_name0){
 var __cdb_bdOnly0=__cdb_buildBackdropOnlyCss(__cdb_cfg0);
 if(__cdb_bdOnly0){
 __cdb_state={name:null,src:"",css:__cdb_bdOnly0.css,font:false,spinnerJson:"null",backdropJson:__cdb_bdOnly0.backdropJson,backdrop:__cdb_bdOnly0.backdrop,effectiveBackdrop:__cdb_bdOnly0.effectiveBackdrop,overlay:null,chrome:null,dark:__cdb_isDark()};
-__cdb_log("No activeTheme set; applied standalone backdrop '"+__cdb_bdOnly0.effectiveBackdrop+"'");
+__cdb_log("No activeTheme set; applied standalone appearance options"+(__cdb_bdOnly0.effectiveBackdrop?" (backdrop '"+__cdb_bdOnly0.effectiveBackdrop+"')":""));
 }else{
 var __cdb_bd0=__cdb_resolveBackdrop(__cdb_cfg0,null);
 __cdb_state.backdrop=__cdb_bd0.override;
@@ -1181,7 +1199,7 @@ const THEME_INJECTION_JS =
 # always-installed registry the theme picker talks to, the gaming palettes merged into
 # the built-ins, and the live spinner API the switch pushes into every window.
 const MARKERS = [
-  "__cdb_dualvariant", "globalThis.__cdbThemes=",
+  "__cdb_dualvariant", "globalThis.__cdbThemes=", "function __cdb_chatComposerCss(",
   "__cdb_builtins[__cdb_gk]=__cdb_gaming[__cdb_gk]",
   "__cdb_builtins[__cdb_sk]=__cdb_scenes[__cdb_sk]", "window.__cdbSpinnerApply",
   "window.__cdbBackdropApply", "reload:__cdb_reload", "function __cdb_effective(",
