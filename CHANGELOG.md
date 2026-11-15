@@ -2,6 +2,12 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-16
+
+### Custom models: adaptive thinking for Claude Fable 5.x, Mythos 5.x and Opus 5.5 behind a compatible endpoint
+
+- A custom model whose id is `claude-fable-5*`, `claude-mythos-5*` or `claude-opus-5-5` (a Claude model served through an Anthropic-compatible relay) now gets `thinking: {type: "adaptive"}` when the CLI asks for thinking, and no `thinking` field for mode Off, instead of `{type: "enabled", budget_tokens}` / `{type: "disabled"}`, which these models answer with `400 ... requires adaptive thinking`. Effort is forwarded unmapped (`xhigh` stays `xhigh`) unless the provider lists its own `effort` levels or `effortMap` (`js/custom_models_preload.js`).
+
 ## 2026-11-15
 
 ### Cloud Cowork device key: explain `row_pk_no_row` and `row_pk_directory` when TPM is accessible (#341)
