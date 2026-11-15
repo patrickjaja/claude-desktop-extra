@@ -2714,7 +2714,14 @@ _diag_device_key() {
     if [[ "$_diag_tpm" == denied ]]; then
         _diag_problems+=("cloud Cowork and Dispatch get no Computer Use: the device key needs $dev - Settings -> Extra -> Cowork (Linux) -> Enable TPM access, or $fix; without logind: sudo usermod -aG tss \$USER and log in again")
     elif [[ "$_diag_tpm" == ok && "$_diag_connect" == keyless ]]; then
-        _diag_problems+=("device registered keyless${_diag_connect_reason:+ ($_diag_connect_reason)} although $dev is accessible: restart Claude; if it stays keyless, attach this report to an issue")
+        case "$_diag_connect_reason" in
+            row_pk_no_row)
+                _diag_problems+=("device registered keyless (row_pk_no_row) although $dev is accessible: open the Cowork tab in Claude so claude.ai registers this computer's TPM key; if it stays keyless after a restart, attach this report to an issue") ;;
+            row_pk_directory)
+                _diag_problems+=("device registered keyless (row_pk_directory) although $dev is accessible: the device-directory lookup failed (network or TLS error in main.log); check the connection and restart Claude") ;;
+            *)
+                _diag_problems+=("device registered keyless${_diag_connect_reason:+ ($_diag_connect_reason)} although $dev is accessible: restart Claude; if it stays keyless, attach this report to an issue") ;;
+        esac
     fi
     if [[ "$_diag_tpm_link" == stale ]]; then
         _diag_problems+=("TPM access rule link points at a removed install: sudo $helper enable")

@@ -4,6 +4,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-15
 
+### Cloud Cowork device key: explain `row_pk_no_row` and `row_pk_directory` when TPM is accessible (#341)
+
+- Settings -> Extra -> Cowork (Linux), `claude-desktop --diagnose` and the Computer Use docs now explain that `claude.ai` registers a newly created TPM device key only when the **Cowork** tab (or Connected devices on `claude.ai`) loads (`row_pk_no_row` while still on Chat), and distinguish transient network/TLS lookup failures (`row_pk_directory`) from unaccessible TPM state (`js/extra_settings_main.js`, `scripts/claude-desktop-launcher.sh`, `docs/computer-use.md`, `docs/troubleshooting.md`).
+
 ### Transparent window: clear sub-2x sidebar and transcript scroll-layer backings (#340)
 
 - Clears the opaque `local` scroll-layer backgrounds (`[data-own-scroll-layers]` on `.dframe-nav-scroll`, `.own-scroll-layer`, `.own-scroll-layer-in-host` and `.epitaxy-own-scroll-layer`) that `claude.ai` paints on `< 2x` displays when no frosted-glass backdrop is active, keeping the sidebar and conversation panes see-through while dialogs, menus, popovers, elevated cards and collapsed-sidebar peek popovers stay solid (`js/window_transparency.js`).

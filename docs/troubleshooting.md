@@ -146,7 +146,7 @@ Cloud Cowork and Dispatch offer this computer's Computer Use only to a desktop t
 
 1. Check: Settings -> Extra -> Cowork (Linux), or `claude-desktop --diagnose`, or `grep 'connect frame sent' ~/.config/Claude/logs/main.log` (`device_id keyed` is good, `keyless` is the problem).
 2. Fix: click **Enable TPM access** on that page (`.deb`, `.rpm`, pacman), run the command it shows (AppImage, no logind), set `programs.claude-desktop-extra.tpmAccess.enable = true;` (NixOS), or `sudo usermod -aG tss $USER` and log in again.
-3. Restart Claude and start a new Cowork task.
+3. Restart Claude, open the **Cowork** tab so `claude.ai` registers this computer's TPM key (staying on Chat leaves the desktop at `keyless (row_pk_no_row)` even with `/dev/tpmrm0` accessible), and start a new Cowork task.
 
 No TPM 2.0 on the machine: cloud Cowork and Dispatch cannot use Computer Use there; Code sessions still can. Security implications and how to turn it off: [Computer Use in cloud Cowork and Dispatch](computer-use.md#computer-use-in-cloud-cowork-and-dispatch).
 

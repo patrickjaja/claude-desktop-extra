@@ -952,8 +952,16 @@ safe("D12", () => {
   writeFileSync(log2, readFileSync(fixture, "utf8").split("\n").filter((l) => !l.includes("12:21:03") || !l.includes("device_id keyed")).join("\n"));
   o = dk(devOk, link, log2);
   check("keyless line with reason", lines(o)[2], "last remote-device connect = keyless (row_pk_no_row) (2026-11-03 12:20:58)");
-  check("ok + keyless: the Q6 problem", problems(o)[0],
-    `device registered keyless (row_pk_no_row) although ${devOk} is accessible: restart Claude; if it stays keyless, attach this report to an issue`);
+  check("ok + keyless (row_pk_no_row): open Cowork tab problem", problems(o)[0],
+    `device registered keyless (row_pk_no_row) although ${devOk} is accessible: open the Cowork tab in Claude so claude.ai registers this computer's TPM key; if it stays keyless after a restart, attach this report to an issue`);
+  const log2dir = join(root, "main-keyless-dir.log");
+  writeFileSync(log2dir, "2026-11-03 12:30:00 [info] [remote-tools-device] connect frame sent: device_id keyless (row_pk_directory)\n");
+  check("ok + keyless (row_pk_directory): lookup failure problem", problems(dk(devOk, link, log2dir))[0],
+    `device registered keyless (row_pk_directory) although ${devOk} is accessible: the device-directory lookup failed (network or TLS error in main.log); check the connection and restart Claude`);
+  const log2enc = join(root, "main-keyless-enclave.log");
+  writeFileSync(log2enc, "2026-11-03 12:31:00 [info] [remote-tools-device] connect frame sent: device_id keyless (row_pk_enclave)\n");
+  check("ok + keyless (other reason): generic restart problem", problems(dk(devOk, link, log2enc))[0],
+    `device registered keyless (row_pk_enclave) although ${devOk} is accessible: restart Claude; if it stays keyless, attach this report to an issue`);
   const log3 = join(root, "main-none.log");
   writeFileSync(log3, "2026-11-03 13:00:00 [info] [remote-tools-device] connect frame sent: device_id none\n");
   check("none line", lines(dk(devOk, link, log3))[2], "last remote-device connect = none (2026-11-03 13:00:00)");

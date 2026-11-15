@@ -852,8 +852,18 @@ section("cloud row: this run's main.log lines (shared fixture)");
     "keyless in this run beats the earlier run's keyed line", J(c));
   setDev("ok");
   c = await cloud();
-  ok(c.status === "action" && /although the TPM is accessible - run claude-desktop --diagnose$/.test(c.fact), "keyless with the TPM accessible: the Q6 warning", J(c));
-  setDev("absent");
+  ok(c.status === "action" && c.fact === "device keyless (row_pk_no_row) - open the Cowork tab so claude.ai registers this computer's TPM key; if it stays keyless, run claude-desktop --diagnose",
+    "keyless (row_pk_no_row) with the TPM accessible points to opening the Cowork tab", J(c));
+  const tsNow = fmtTs(Date.now());
+  reset(); setDev("ok"); putLog(tsNow + " [info] [remote-tools-device] connect frame sent: device_id keyless (row_pk_directory)\n");
+  c = await cloud();
+  ok(c.status === "action" && c.fact === "device keyless (row_pk_directory) - could not reach claude.ai to look up this computer's TPM key; check the connection and restart Claude, or run claude-desktop --diagnose",
+    "keyless (row_pk_directory) with the TPM accessible points to connection/lookup failure", J(c));
+  reset(); setDev("ok"); putLog(tsNow + " [info] [remote-tools-device] connect frame sent: device_id keyless (row_pk_enclave)\n");
+  c = await cloud();
+  ok(c.status === "action" && c.fact === "device keyless (row_pk_enclave) although the TPM is accessible - run claude-desktop --diagnose",
+    "keyless with another reason and the TPM accessible keeps the generic diagnose warning", J(c));
+  reset(); setDev("absent"); putLog(noLastKeyed);
   c = await cloud();
   ok(c.status === "na" && /no TPM 2\.0/.test(c.fact), "keyless without a TPM: Not available", J(c));
   reset(); putLog(retimed(FIX, procStart + 3600 * 1000 * -2));

@@ -2979,6 +2979,12 @@
       var why = f.kind === "none" ? "no device id" : (f.reason || "no reason given");
       if (tpm.state === "absent") return __cdbEx_cusRow("na", "device keyless (" + why + ") - this computer has no TPM 2.0", "cloud");
       if (tpm.state === "ok") {
+        if (f.reason === "row_pk_no_row") {
+          return __cdbEx_cusRow("action", "device keyless (row_pk_no_row) - open the Cowork tab so claude.ai registers this computer's TPM key; if it stays keyless, run claude-desktop --diagnose", "cloud");
+        }
+        if (f.reason === "row_pk_directory") {
+          return __cdbEx_cusRow("action", "device keyless (row_pk_directory) - could not reach claude.ai to look up this computer's TPM key; check the connection and restart Claude, or run claude-desktop --diagnose", "cloud");
+        }
         return __cdbEx_cusRow("action", "device keyless (" + why + ") although the TPM is accessible - run claude-desktop --diagnose", "cloud");
       }
       return __cdbEx_cusRow("action", "device keyless (" + why + ") - TPM not accessible, see above", "cloud");
