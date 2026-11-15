@@ -239,9 +239,9 @@ Settings → Extra → **Cowork (Linux)** shows whether it works here and holds 
 
 124 dual light/dark palettes and 34 live animated SVG backdrops with frosted-glass panels across **Chat, Cowork and Code** - including **Gaming & Shows** (**Battle for Dream Island**, the **GTA I-VI** series, `mario`, `zelda`, `final-fantasy`, `warcraft`, `dragonball`, `playstation`, `gameboy`), 20 **Scenes** from Anthropic's [Claude Code interface mod examples](https://code.claude.com/docs/en/plugins/mods/interface#put-a-backdrop-behind-the-conversation) (no plugin needed), and 84 community palettes. Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> (or open Settings → Extra → Themes) to switch themes and backdrops live, or combine them with **Transparent window**. Theme files reload live for [matugen](https://github.com/InioX/matugen), pywal and wallust. The new animated backdrops are our first pass and we will keep polishing them - PRs with your own light/dark palettes, animated SVG backdrops and custom SVG spinners are very welcome! Guide: [docs/themes.md](docs/themes.md), gallery: [themes/PALETTES.md](themes/PALETTES.md).
 
-| GTA VI (Vice City neon) | Winter / Snow Pines |
-|---|---|
-| ![GTA VI theme with live animated backdrop](docs/extra/themes-gta-vi.gif) | ![Winter Snow Pines animated backdrop](docs/extra/themes-winter.gif) |
+| GTA I (1997 top-down chase) | GTA VI (Vice City neon) | Winter / Snow Pines |
+|---|---|---|
+| ![GTA I theme with live animated police-and-taxi chase](docs/extra/themes-gta-i.gif) | ![GTA VI theme with live animated backdrop](docs/extra/themes-gta-vi.gif) | ![Winter Snow Pines animated backdrop](docs/extra/themes-winter.gif) |
 
 ## Multiple Profiles
 
