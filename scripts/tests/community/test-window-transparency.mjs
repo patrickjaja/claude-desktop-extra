@@ -155,23 +155,35 @@ const sender = { sender: { getURL: () => "https://claude.ai/x", isDestroyed: () 
   } else {
     const d = mkdtempSync(join(tmpdir(), "cdb-wt-css-"));
     const f = join(d, "t.html");
-    writeFileSync(f, `<!doctype html><meta charset="utf-8"><style>
-:root{--cds-surface-0:#111;--cds-surface-1:#1a1a19;--cds-surface-2:#262624;--cds-surface-3:#333;--cds-page-bg:#111;--bg-200:0 0% 10%}
+    writeFileSync(f, `<!doctype html><html data-own-scroll-layers data-cds-fizzy-lake="color"><meta charset="utf-8"><style>
+:root{--cds-surface-0:#111;--cds-surface-1:#1a1a19;--cds-surface-2:#262624;--cds-surface-3:#333;--cds-surface-popover:#303030;--cds-page-bg:#111;--bg-200:0 0% 10%}
+.dframe-root[data-variant=web] .dframe-sidebar{--df-web-sidebar-bg:var(--cds-fizzy-lake-color-sidebar,#1f1f1f)}
+.dframe-root[data-variant=web][data-collapsed] .dframe-sidebar-body{--df-web-sidebar-bg:var(--cds-surface-popover);background-color:var(--df-web-sidebar-bg)}
+@media screen and (resolution <= 1.99x){
+  [data-own-scroll-layers]:not([data-sim-native-hole]) .own-scroll-layer:not([data-engine-backdrop-on] *, [data-engine-glass] *),
+  [data-own-scroll-layers]:not([data-sim-native-hole]) .own-scroll-layer-host .own-scroll-layer-in-host:not([data-engine-backdrop-on] *, [data-engine-glass] *){background:var(--cds-scroll-fade-strip-color,var(--cds-surface-1)) local;will-change:scroll-position}
+  [data-own-scroll-layers]:not([data-sidebar-vibrancy]) .dframe-root[data-variant=web]:not([data-engine-glass]) .dframe-sidebar .dframe-nav-scroll{background:var(--df-web-sidebar-bg) local;will-change:scroll-position}
+}
+html:not([data-sim-native-hole]) .dframe-root:not([data-engine-backdrop-on]) [data-tiles-viewport] .tiles-shell .epitaxy-own-scroll-layer{background:var(--tile-shell-ground) local;will-change:scroll-position}
 [data-tiles-line] .tiles-shell{background:var(--tile-shell-ground,transparent)}
 [data-cds=Toolbar]>[data-cds-part=toolbar-ground],[data-cds=Page] [data-cds-part=page-header-ground]{--_toolbar-ground-fill:100%;background-color:color-mix(in srgb,var(--cds-page-bg) var(--_toolbar-ground-fill),transparent)}
 .shadow-panel-md,.shadow-panel-lg,.shadow-popover,.shadow-panel-sm,.shadow-card-ring{box-shadow:0 0 0 1px #000}
 </style><style>${css}</style>
 <div id="dlg" data-cds="Dialog" class="bg-surface-2 rounded-card"></div>
 <div id="card" class="bg-surface-2 rounded-card"></div>
-<div id="ground" class="bg-surface-1" data-sim-native-ground><div id="frame" class="dframe-root">
-<aside id="side" class="dframe-sidebar"></aside>
+<div id="ground" class="bg-surface-1" data-sim-native-ground><div id="frame" class="dframe-root" data-variant="web">
+<aside id="side" class="dframe-sidebar"><div id="navscroll" class="dframe-nav-scroll"></div></aside>
 <main class="dframe-content"><div id="page" class="bg-surface-1"></div>
+<div id="ownscroll" class="own-scroll-layer"></div>
+<div class="own-scroll-layer-host"><div id="owninhost" class="own-scroll-layer-in-host"></div></div>
+<div id="menu" role="menu" class="own-scroll-layer"></div>
+<div id="elevscroll" class="bg-surface-2 rounded-card shadow-panel-lg own-scroll-layer"></div>
 <div id="panel" class="rounded-card bg-surface-2" data-surface="panel" style="background:#1a1a19">
 <div id="term" class="group/terminal" style="background-color:rgb(26,26,25)"><div id="xterm" class="xterm-scrollable-element" style="background-color:rgb(26,26,25)"></div></div>
 <div id="code" data-cds="CodeView" style="background-color:#1a1a19"></div>
 <div id="cm" class="cm-editor" style="background-color:#1a1a19"><div id="gut" class="cm-gutters" style="background-color:#1a1a19"></div></div></div>
 <div id="fdlg" data-cds="Dialog" class="bg-surface-2 rounded-card"></div>
-<div data-tiles-line style="--tile-shell-ground:#111"><div id="tiles" class="tiles-shell"><div id="corner" style="background:var(--tile-shell-ground)"></div></div></div>
+<div data-tiles-line data-tiles-viewport style="--tile-shell-ground:#111"><div id="tiles" class="tiles-shell"><div id="corner" style="background:var(--tile-shell-ground)"></div><div id="episcroll" class="epitaxy-own-scroll-layer"></div></div></div>
 <div data-cds="Toolbar"><div id="tground" data-cds-part="toolbar-ground"></div></div>
 <div data-cds="Page"><div id="hground" data-cds-part="page-header-ground"></div></div>
 <div id="elev" class="bg-surface-1 rounded-card border shadow-panel-md"></div>
@@ -182,6 +194,7 @@ const sender = { sender: { getURL: () => "https://claude.ai/x", isDestroyed: () 
 <div id="pane" class="cds-pane-ground bg-surface-2"></div>
 <div id="fpane" class="cds-pane-ground bg-surface-2 shadow-panel-md"></div>
 <iframe id="ifr" srcdoc="<body>no background</body>"></iframe><iframe id="ifw" class="bg-white"></iframe></main></div></div>
+<div class="dframe-root" id="cframe" data-variant="web" data-collapsed><aside class="dframe-sidebar"><div id="cpeek" class="dframe-sidebar-body"><div id="cnav" class="dframe-nav-scroll"></div></div></aside></div>
 <div class="epitaxy-root"><div id="pframe" class="dframe-root"><div id="pcontent" class="dframe-content" data-sim-native-ground>
 <div id="pground" class="epitaxy-root bg-surface-1" data-sim-native-ground data-popout-ground><div id="pcard" class="bg-surface-2 rounded-card"></div>
 <iframe id="pifr" srcdoc="<body>no background</body>"></iframe></div>
@@ -191,7 +204,7 @@ const sender = { sender: { getURL: () => "https://claude.ai/x", isDestroyed: () 
 <style>.dframe-root:where([data-engine-glass]) .dframe-sidebar{background-color:rgba(20,20,20,0.4)!important;backdrop-filter:blur(14px)!important}</style>
 <div class="dframe-root" id="bframe" data-engine-backdrop-on data-engine-glass><aside id="bside" class="dframe-sidebar"></aside><main class="dframe-content"><div id="bd" data-engine-backdrop="mario"><svg><rect width="100" height="100" fill="#112233"/></svg></div><div data-cds="Toolbar"><div id="btground" data-cds-part="toolbar-ground"></div></div></main></div>
 <pre id="o"></pre>
-<script>var r={};["dlg","card","ground","frame","side","page","panel","term","xterm","code","cm","gut","fdlg","ifr","ifw","pframe","pcontent","pground","pcard","pifr","tiles","corner","ptiles","pcorner","otiles","mtiles","tground","hground","elev","elev2","elev3","flow","ring","pane","fpane","bframe","bside","btground"].forEach(function(k){r[k]=getComputedStyle(document.getElementById(k)).backgroundColor});r.bdOpacity=getComputedStyle(document.getElementById("bd")).opacity;r.bsideFilter=getComputedStyle(document.getElementById("bside")).backdropFilter;r.body=getComputedStyle(document.body).backgroundColor;o.textContent="CDB-BEGIN"+JSON.stringify(r)+"CDB-END"</script>`);
+<script>var r={};["dlg","card","ground","frame","side","navscroll","ownscroll","owninhost","episcroll","menu","elevscroll","cpeek","cnav","page","panel","term","xterm","code","cm","gut","fdlg","ifr","ifw","pframe","pcontent","pground","pcard","pifr","tiles","corner","ptiles","pcorner","otiles","mtiles","tground","hground","elev","elev2","elev3","flow","ring","pane","fpane","bframe","bside","btground"].forEach(function(k){r[k]=getComputedStyle(document.getElementById(k)).backgroundColor});r.bdOpacity=getComputedStyle(document.getElementById("bd")).opacity;r.bsideFilter=getComputedStyle(document.getElementById("bside")).backdropFilter;r.body=getComputedStyle(document.body).backgroundColor;o.textContent="CDB-BEGIN"+JSON.stringify(r)+"CDB-END"</script>`);
     const dump = execFileSync(chromium, ["--headless", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=2000",
       "--dump-dom", "file://" + f], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     const m = /CDB-BEGIN(\{.*?\})CDB-END/.exec(dump.replace(/&quot;/g, '"'));
@@ -203,8 +216,15 @@ const sender = { sender: { getURL: () => "https://claude.ai/x", isDestroyed: () 
     // panel cards, terminal and CodeView inside it stay clear, so nothing stacks.
     const clear = (v) => v === "rgba(0, 0, 0, 0)";
     ok(!!got.frame && !clear(got.frame) && !/^rgb\(/.test(got.frame), "the frame root carries the alpha (" + got.frame + ")");
-    const stacked = ["body", "ground", "side", "page", "panel", "term", "xterm", "code", "cm", "gut", "tiles", "corner", "flow", "ring", "pane"].filter((k) => !clear(got[k]));
+    const stacked = ["body", "ground", "side", "navscroll", "ownscroll", "owninhost", "episcroll", "page", "panel", "term", "xterm", "code", "cm", "gut", "tiles", "corner", "flow", "ring", "pane"].filter((k) => !clear(got[k]));
     ok(stacked.length === 0, "nothing above or inside the frame adds a second layer" + (stacked.length ? ": " + stacked.map((k) => k + "=" + got[k]).join(", ") : ""));
+    ok(clear(got.navscroll) && clear(got.ownscroll) && clear(got.owninhost) && clear(got.episcroll),
+       "sub-2x own-scroll-layers (.dframe-nav-scroll, .own-scroll-layer, .own-scroll-layer-in-host, .epitaxy-own-scroll-layer) stay clear (#340): " +
+       JSON.stringify({ navscroll: got.navscroll, ownscroll: got.ownscroll, owninhost: got.owninhost, episcroll: got.episcroll }));
+    ok(got.menu === "rgb(51, 51, 51)" && got.elevscroll === "rgb(38, 38, 36)",
+       "solid menus and elevated cards carrying .own-scroll-layer stay opaque (" + got.menu + ", " + got.elevscroll + ")");
+    ok(got.cpeek === "rgb(48, 48, 48)" && clear(got.cnav),
+       "collapsed sidebar hover-peek keeps its opaque popover surface while .dframe-nav-scroll inside stays clear (" + got.cpeek + ", " + got.cnav + ")");
     ok(/^rgb\(38, 38, 36\)$/.test(got.fdlg || ""), "a Dialog inside the frame stays solid (" + got.fdlg + ")");
     // Embedded documents get an opaque backing (the page has no background of its own).
     ok(got.ifr === "rgb(26, 26, 25)", "an iframe in the frame gets an opaque surface-1 backing (" + got.ifr + ")");

@@ -4,6 +4,11 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-15
 
+### Transparent window: clear sub-2x sidebar and transcript scroll-layer backings (#340)
+
+- Clears the opaque `local` scroll-layer backgrounds (`[data-own-scroll-layers]` on `.dframe-nav-scroll`, `.own-scroll-layer`, `.own-scroll-layer-in-host` and `.epitaxy-own-scroll-layer`) that `claude.ai` paints on `< 2x` displays when no frosted-glass backdrop is active, keeping the sidebar and conversation panes see-through while dialogs, menus, popovers, elevated cards and collapsed-sidebar peek popovers stay solid (`js/window_transparency.js`).
+- Maps `--df-web-sidebar-bg` and `--cds-fizzy-lake-color-sidebar` onto `--bg-200` (`--bg-300` under `[data-darker]`) so custom themes without an animated backdrop keep their sidebar palette inside `.dframe-nav-scroll` when **Transparent window** is off (`patches/core/add_feature_custom_themes.nim`).
+
 ### Message input appearance: opt-in frosted Chat composer switches (thanks @Reymarch995, #339)
 
 - New **Frosted message input** (`transparentChatComposer`) and **Frost only the input field** (`frostedReplyField`) switches under Settings -> Extra -> Themes -> Message input appearance and Settings -> Extra -> Community Features -> App and window (both off by default, live-applied across active themes or stock, locked when set in `claude-desktop-extra.jsonc`).

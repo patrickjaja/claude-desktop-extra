@@ -491,6 +491,13 @@
       // Sidebar: two classes so a custom theme's "[data-darker] .dframe-sidebar"
       // (also !important) cannot put its solid colour back.
       "html .dframe-root .dframe-sidebar,html .dframe-root .dframe-sidebar:before{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}" +
+      // Sub-2x displays ([data-own-scroll-layers], @media (resolution <= 1.99x))
+      // give .dframe-nav-scroll and in-app .own-scroll-layer scrollers an opaque
+      // local background when [data-engine-glass] is absent (stock, Backdrop: Off,
+      // or custom themes without a backdrop - issue #340). :where() keeps this at
+      // (0,0,1) !important: beats upstream's non-!important rules while losing to
+      // every solid dialog, menu, listbox, popover and elevated-card rule here.
+      "html :where(.dframe-root) :where(.dframe-nav-scroll,.own-scroll-layer,.own-scroll-layer-in-host,.epitaxy-own-scroll-layer){background:transparent!important}" +
       "html .bg-surface-0{background-color:" + mix("--cds-surface-0") + "!important}" +
       "html .bg-surface-1{background-color:" + mix("--cds-surface-1") + "!important}" +
       "html .bg-page,html [data-cds-dock-masked] .in-data-cds-dock-masked\\:bg-page{background-color:" + mix("--cds-page-bg") + "!important}" +
