@@ -174,3 +174,26 @@ The whole desktop setup this was tested with (matugen config, GTK color template
 - [themes/PALETTES.md](../themes/PALETTES.md) - all 97 bundled palettes with swatches.
 - [contrib/matugen/README.md](../contrib/matugen/README.md) - the four matugen templates, the mode script and their setup.
 - [feature-flags.md](feature-flags.md) - the Extra → Anthropic Features panel next to the theme list.
+
+## Message input appearance
+
+Settings → Extra → Themes → Message input appearance → **Frosted message input** (also under
+Community → App and window) replaces the opaque Chat backing with a translucent,
+frosted outer input panel. The panel uses the native input corner radius, so its
+top corners follow the rounded input field. The full-width bottom fade, opaque
+side strips and controls-footer shadow are cleared. Editor behavior, approval
+cards and layout stay intact. Scrolling text may show behind surrounding
+controls. Off is the default and leaves the current message-input appearance unchanged.
+
+**Frost only the input field** selects the compact alternative: the outer panel
+becomes clear and the frost moves to the inner rounded field. This switch is off
+by default (outer-panel frost) and requires Frosted message input to be
+on. Both switches apply live and work with themes enabled or disabled.
+
+The booleans `transparentChatComposer` and `frostedReplyField` are stored in
+`claude-desktop-extra.json`. Manually set `.jsonc` values win and lock the
+corresponding UI switches. Only literal `true` enables either preference.
+The existing theme engine inserts/removes the optional stylesheet. The current
+Chat markup was checked at runtime on 5.11492.5: `data-cds=ChatComposer` is the
+outer shell and its inner `.rounded-composer` contains `ChatComposerEditor`.
+Recheck these anchors when upstream changes the Chat composer.

@@ -3678,6 +3678,52 @@
   var __cdbEx_diagSeen = {};
 
   var __cdbEx_handlers = {
+    "cdb-chat-composer:read": function () {
+      var p = __cdbEx_paths();
+      var jsonc = __cdbEx_readFileKey(p.jsonc, "transparentChatComposer");
+      var json = __cdbEx_readFileKey(p.json, "transparentChatComposer");
+      return { ok: true, enabled: (jsonc === undefined ? json : jsonc) === true,
+        lockedByJsonc: jsonc !== undefined ? true : null };
+    },
+    "cdb-chat-composer:set": function (enabled) {
+      if (typeof enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
+      var themes = globalThis.__cdbThemes;
+      if (!themes || typeof themes.reload !== "function") return { ok: false, error: "theme engine unavailable" };
+      if (__cdbEx_readFileKey(__cdbEx_paths().jsonc, "transparentChatComposer") !== undefined) {
+        return { ok: false, error: "transparentChatComposer is set in claude-desktop-extra.jsonc - edit that file to change it" };
+      }
+      var res = __cdbEx_writeCfg(function (cfg) {
+        if (enabled) cfg.transparentChatComposer = true;
+        else delete cfg.transparentChatComposer;
+      });
+      if (!res.ok) return res;
+      var applied = themes.reload("chat composer surroundings");
+      if (!applied.ok) return { ok: false, error: "saved, but could not apply: " + applied.error };
+      return { ok: true, enabled: enabled, path: res.path };
+    },
+    "cdb-reply-field:read": function () {
+      var p = __cdbEx_paths();
+      var jsonc = __cdbEx_readFileKey(p.jsonc, "frostedReplyField");
+      var json = __cdbEx_readFileKey(p.json, "frostedReplyField");
+      return { ok: true, enabled: (jsonc === undefined ? json : jsonc) === true,
+        lockedByJsonc: jsonc !== undefined ? true : null };
+    },
+    "cdb-reply-field:set": function (enabled) {
+      if (typeof enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
+      var themes = globalThis.__cdbThemes;
+      if (!themes || typeof themes.reload !== "function") return { ok: false, error: "theme engine unavailable" };
+      if (__cdbEx_readFileKey(__cdbEx_paths().jsonc, "frostedReplyField") !== undefined) {
+        return { ok: false, error: "frostedReplyField is set in claude-desktop-extra.jsonc - edit that file to change it" };
+      }
+      var res = __cdbEx_writeCfg(function (cfg) {
+        if (enabled) cfg.frostedReplyField = true;
+        else delete cfg.frostedReplyField;
+      });
+      if (!res.ok) return res;
+      var applied = themes.reload("reply frost placement");
+      if (!applied.ok) return { ok: false, error: "saved, but could not apply: " + applied.error };
+      return { ok: true, enabled: enabled, path: res.path };
+    },
     // Reduced projection of the theme registry. cdb-themes:apply / :active stay
     // owned by the theme picker patch; only this list is ours, because the full
     // entries carry every token of every palette.

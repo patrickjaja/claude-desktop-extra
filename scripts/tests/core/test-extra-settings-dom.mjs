@@ -1104,7 +1104,7 @@ async function featuresPanel(featuresItem) {
     ok(titlesIn(subGroup[0]).join("|") === "Trusted Auto-fix PR authors|Auto-fix notices: ready to merge, comments after merge|Auto-archive delay after a PR merges or closes",
        "Pull requests rows: " + titlesIn(subGroup[0]).join("|"));
     // The harness bridge has no tray or developer-tools halves, so those two rows are skipped here.
-    const appOrder = ["Hide window controls", "Native titlebar", "Transparent window", "Always use the white tray icon", "Theme picker", "Developer tools"];
+    const appOrder = ["Hide window controls", "Native titlebar", "Transparent window", "Always use the white tray icon", "Theme picker", "Frosted message input", "Frost only the input field", "Developer tools"];
     ok(titlesIn(topGroups[1]).join("|") === appOrder.filter(function (t) { return titlesIn(topGroups[1]).indexOf(t) >= 0; }).join("|") &&
        titlesIn(topGroups[1]).length >= 4,
        "App and window rows in order: " + titlesIn(topGroups[1]).join("|"));
@@ -3230,6 +3230,26 @@ async function themesPanel(themesItem) {
   themesItem.click();
   await sleep(80);
   ok(!!document.querySelector(".cdbx-sections"), "the Themes panel renders sections");
+  ok(Array.from(document.querySelectorAll('.cdbx-sec-h .cdbx-sec-t')).filter(e => e.textContent === 'Message input appearance').length === 1,
+     "both appearance controls share one Message input appearance heading");
+  const compact = document.querySelector('.cdbx-switch[aria-label="Frost only the input field"]');
+  ok(!!compact && !compact.disabled, "compact frost switch is available in Themes");
+  if (compact) {
+    const initial=compact.getAttribute("aria-checked"); compact.click(); await sleep(20);
+    ok(compact.getAttribute("aria-checked")!==initial, "compact frost toggles live");
+    compact.click(); await sleep(20);
+    ok(compact.getAttribute("aria-checked")===initial, "outer frost can be restored");
+  }
+  const reply = document.querySelector('.cdbx-switch[aria-label="Frosted message input"]');
+  ok(!!reply && !reply.disabled, "reply surroundings switch is available in Themes");
+  if (reply) {
+    const initial=reply.getAttribute("aria-checked");
+    reply.click(); await sleep(20);
+    ok(reply.getAttribute("aria-checked")!==initial, "reply surroundings can be toggled live");
+    reply.click(); await sleep(20);
+    ok(reply.getAttribute("aria-checked")===initial, "reply surroundings can be restored");
+  }
+
   ok(!document.querySelector(".cdbx-panel .cdbx-switch[aria-label=\"show the Code tab's side panels as tabs instead of a split layout\"]"),
      "the panel tabs switch is NOT in the Themes panel");
 
@@ -4064,6 +4084,10 @@ window.__cubgProbe = function (k, d) {
   return { ok: true, kind: k, display: d, running: false, supported: false, reason: "not running: Connection refused", restrictions: [] };
 };
 window.cdbExtra = {
+  frostedReplyFieldRead: function () { return Promise.resolve({ok:true, enabled:!!window.__frostedField}); },
+  frostedReplyFieldSet: function (on) { window.__frostedField=on; return Promise.resolve({ok:true}); },
+  transparentChatComposerRead: function () { return Promise.resolve({ok:true, enabled:!!window.__transparentReply}); },
+  transparentChatComposerSet: function (on) { window.__transparentReply=on; return Promise.resolve({ok:true}); },
   themesList: stub({ ok: true, entries: window.__themes, active: "mario",
     configPath: "/home/u/.config/Claude/claude-desktop-extra.jsonc",
     savePath: "/home/u/.config/Claude/claude-desktop-extra.json" }),

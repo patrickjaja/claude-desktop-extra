@@ -4,6 +4,8 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-15
 
+- **Optional message input appearance:** Extra → Themes and Community → App and window offer a rounded frosted outer panel and a compact input-field-only mode. Both apply live with themes on or off; off leaves the current message-input appearance unchanged. The outer panel follows the input field’s corner radius to avoid protruding square edges.
+
 ### Custom themes: live animated SVG backdrops, frosted glass, GTA I-VI series and 20 scene themes (#336)
 
 - **Animated SVG backdrops and frosted-glass panels across Chat, Cowork and Code:** brings the animated SVG backdrop and frosted-glass surface engine from Anthropic's [Claude Code interface mods](https://code.claude.com/docs/en/plugins/mods/interface#put-a-backdrop-behind-the-conversation) (`data-engine-backdrop`, `data-engine-glass`, `--engine-glass-*`) to the entire desktop app - Chat, Cowork, Code and pop-out windows - with no plugin required (`js/backdrop_scenes.js`, `js/backdrop_injector.js`). Animations pause automatically when the window is hidden or `prefers-reduced-motion` is active.
