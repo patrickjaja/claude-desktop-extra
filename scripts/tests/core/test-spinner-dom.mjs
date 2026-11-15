@@ -60,7 +60,29 @@ await runSuite(async () => {
   }
 
   const INJECTOR = readFileSync(join(ROOT, "js/spinner_injector.js"), "utf8");
+  const BD_INJECTOR = readFileSync(join(ROOT, "js/backdrop_injector.js"), "utf8");
+  r.ok(!/\?\?/.test(BD_INJECTOR), "backdrop_injector.js is strict ES5 (no nullish coalescing '??')");
+  r.ok(/\.cdb-anim-spin[^}]*transform-box:\s*view-box/.test(sheet),
+     "captured sheet sets transform-box: view-box on .cdb-anim-spin");
+  r.ok(/prefers-reduced-motion:\s*reduce[\s\S]*data-cdb-frame="2"/.test(sheet),
+     "captured sheet hides frame 2 of flip spinners under prefers-reduced-motion: reduce");
+  r.ok(/data-engine-glass-unsuited[\s\S]*\/\s*0\.48/.test(sheet),
+     "captured sheet uses lighter 0.48 unsuited glass veil");
+  r.ok(/\.cdb-flank-l/.test(sheet) && /\.cdb-flank-r/.test(sheet) && /\.cdb-flank-rt/.test(sheet),
+     "captured sheet ships responsive .cdb-flank-* rules");
+
   const out = mkdtempSync(join(tmpdir(), "cdb-spinner-dom-"));
+  const FLANK_SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">' +
+    '<rect x="-800" y="0" width="3200" height="1000" fill="#102030"/>' +
+    '<g class="cdb-flank-l"><rect id="fl-box" x="24" y="820" width="120" height="160" fill="#ff0"/></g>' +
+    '<g class="cdb-flank-r"><rect id="fr-box" x="1460" y="820" width="120" height="160" fill="#0ff"/></g>' +
+    '<g class="cdb-flank-rt"><rect id="frt-box" x="1420" y="62" width="140" height="44" fill="#f0f"/></g>' +
+    "</svg>";
+  const UPSTREAM_SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">' +
+    '<rect width="1600" height="1000" fill="#0a1430"/>' +
+    "</svg>";
   const page = `<!doctype html>
 <meta charset="utf-8">
 <style>${sheet}</style>
@@ -69,9 +91,16 @@ await runSuite(async () => {
   <div class="thinking"><svg viewBox="0 0 100 100" class="fill-current"><path d="${STAR_D}"/></svg></div>
   <div class="decoy"><svg viewBox="0 0 100 100"><path d="${DECOY_D}"/></svg></div>
 </div>
+<div class="dframe-root" id="bd-root" style="position:relative;width:960px;height:720px;overflow:hidden">
+  <aside class="dframe-sidebar" id="bd-sb" style="position:absolute;left:0;top:0;bottom:0;width:216px;z-index:10"></aside>
+  <div class="dframe-content" id="bd-host" style="position:absolute;inset:0;overflow:hidden"></div>
+</div>
 <pre id="out"></pre>
 <script>
 var SRC = ${JSON.stringify(INJECTOR)};
+var BD_SRC = ${JSON.stringify(BD_INJECTOR)};
+var FLANK_SPEC = ${JSON.stringify({ id: "harness-flank", svg: FLANK_SVG, glass: { blur: 12, tint: "#102030", opacity: 0.4 } })};
+var UPSTREAM_SPEC = ${JSON.stringify({ id: "harness-upstream", svg: UPSTREAM_SVG, glass: { blur: 12, tint: "#0a1430", opacity: 0.4 } })};
 var SPIN = ${JSON.stringify(SPIN)}, BOUNCE = ${JSON.stringify(BOUNCE)}, FLIP = ${JSON.stringify(FLIP)};
 var STAR_D = ${JSON.stringify(STAR_D)}, DECOY_D = ${JSON.stringify(DECOY_D)};
 var lines = [];
@@ -215,6 +244,63 @@ function run(step) {
   ok(glyphs().length === 0, "nothing is themed while the stock look is active", glyphs().length);
   ok(stars().every(function (s) { return ds(s)[0] === STAR_D || ds(s)[0] === DECOY_D; }),
      "every glyph on the page is upstream markup again");
+
+  // --- responsive sidebar-aware backdrop engine --------------------------
+  function pushBd(spec) { window.__CDB_BACKDROP_SPEC = spec; (new Function(BD_SRC))(); }
+  function checkFrame(label, expectOpen) {
+    var rootR = document.getElementById("bd-root").getBoundingClientRect();
+    var sbR = document.getElementById("bd-sb").getBoundingClientRect();
+    var flR = document.getElementById("fl-box").getBoundingClientRect();
+    var frR = document.getElementById("fr-box").getBoundingClientRect();
+    var frtR = document.getElementById("frt-box").getBoundingClientRect();
+    var minLeft = expectOpen ? sbR.right : rootR.left;
+    ok(flR.left >= minLeft - 2 && flR.right <= rootR.right,
+       label + " left flank clears sidebar & fits inside pane",
+       "flL=" + flR.left.toFixed(1) + " min=" + minLeft.toFixed(1));
+    ok(frR.right <= rootR.right + 2 && frR.left >= minLeft,
+       label + " right flank fits inside window without clipping",
+       "frR=" + frR.right.toFixed(1) + " winR=" + rootR.right.toFixed(1));
+    ok((frtR.top - rootR.top) >= 46 && frtR.right <= rootR.right + 2,
+       label + " top-right HUD clears window controls & right edge",
+       "topOff=" + (frtR.top - rootR.top).toFixed(1) + " rtR=" + frtR.right.toFixed(1));
+  }
+  pushBd(FLANK_SPEC);
+  checkFrame("960x720 open", true);
+  var svg960 = document.querySelector("[data-engine-backdrop] svg");
+  ok(svg960 && /^13[34]\\s+0\\s+1333\\s+1000$/.test(svg960.getAttribute("viewBox") || ""),
+     "960x720 flank viewBox adapts to 4:3 aspect",
+     svg960 ? svg960.getAttribute("viewBox") : "none");
+
+  var bdRoot = document.getElementById("bd-root");
+  var bdSb = document.getElementById("bd-sb");
+  bdRoot.style.width = "1280px"; bdRoot.style.height = "800px";
+  window.__cdbBackdrop.sweep();
+  ok(document.querySelector("[data-engine-backdrop] svg") === svg960,
+     "resize reuses existing <svg> DOM node so animations keep running");
+  checkFrame("1280x800 open", true);
+
+  bdSb.style.display = "none";
+  window.__cdbBackdrop.sweep();
+  ok(document.querySelector("[data-engine-backdrop] svg") === svg960,
+     "collapsing sidebar reuses existing <svg> DOM node");
+  checkFrame("1280x800 collapsed", false);
+  var collapsedLeft = document.getElementById("fl-box").getBoundingClientRect().left - bdRoot.getBoundingClientRect().left;
+  ok(collapsedLeft <= 48, "collapsed sidebar lets left flank shift to window edge", collapsedLeft.toFixed(1));
+
+  bdSb.style.display = "";
+  bdRoot.style.width = "1920px"; bdRoot.style.height = "1080px";
+  window.__cdbBackdrop.sweep();
+  checkFrame("1920x1080 open", true);
+  ok(/^[-]?\\d+\\s+0\\s+177[78]\\s+1000$/.test(svg960.getAttribute("viewBox") || ""),
+     "1920x1080 expands viewBox width horizontally while pinning height=1000",
+     svg960.getAttribute("viewBox"));
+
+  pushBd(UPSTREAM_SPEC);
+  var svgUp = document.querySelector("[data-engine-backdrop] svg");
+  ok(svgUp && svgUp.getAttribute("viewBox") === "0 0 1600 1000",
+     "upstream non-flank scene keeps exact 0 0 1600 1000 viewBox untouched",
+     svgUp ? svgUp.getAttribute("viewBox") : "none");
+
   document.getElementById("out").textContent = lines.join("\\n");
 }
 window.addEventListener("load", function () { run(0); });

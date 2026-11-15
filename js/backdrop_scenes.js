@@ -622,8 +622,14 @@ ${o}
 var __cdb_UPSTREAM_THEMES=(__cdb_upMod.exports&&__cdb_upMod.exports.THEMES)||[];
 
 var STILL = "@media (prefers-reduced-motion: reduce) { * { animation: none !important } }";
+var FLANK_CSS =
+  ".cdb-flank-l{transform-origin:0px 1000px;transform:translateX(var(--cdb-flank-lx,0px)) scale(var(--cdb-flank-scale,1))}" +
+  ".cdb-flank-r{transform-origin:1600px 1000px;transform:translateX(var(--cdb-flank-rx,0px)) scale(var(--cdb-flank-scale,1))}" +
+  ".cdb-flank-lt{transform-origin:0px 0px;transform:translate(var(--cdb-flank-lx,0px),var(--cdb-hud-top,0px)) scale(var(--cdb-flank-scale,1))}" +
+  ".cdb-flank-rt{transform-origin:1600px 0px;transform:translate(var(--cdb-flank-rx,0px),var(--cdb-hud-top,0px)) scale(var(--cdb-flank-scale,1))}" +
+  ".cdb-pane-c{transform-origin:800px 1000px;transform:translateX(var(--cdb-pane-cx,0px)) scale(var(--cdb-flank-scale,1))}";
 function openSvg(style, defs) {
-  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" font-family="monospace"><style>' + style + " " + STILL + "</style><defs>" + defs + "</defs>";
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" font-family="monospace"><style>' + FLANK_CSS + " " + style + " " + STILL + "</style><defs>" + defs + "</defs>";
 }
 function radGrad(id, color, peak) {
   return '<radialGradient id="' + id + '"><stop offset="0" stop-color="' + color + '" stop-opacity="' + peak + '"/><stop offset="1" stop-color="' + color + '" stop-opacity="0"/></radialGradient>';
@@ -664,103 +670,119 @@ function marioLightSvg() {
     '<clipPath id="mPipeClipL"><rect x="40" y="690" width="140" height="132"/></clipPath>' +
     radGrad("mSun", "#fff5b8", 0.52) + CALM_LIGHT
   ) +
-  '<rect width="1600" height="1000" fill="url(#mSky)"/>' +
-  '<circle cx="1440" cy="125" r="270" fill="url(#mSun)"/>' +
-  // Drifting SMB3 clouds with pixel eyes
-  '<g class="cloud" opacity="0.82">' +
-    '<g transform="translate(65 82)">' +
-      '<rect x="0" y="18" width="148" height="36" rx="18" fill="#ffffff" stroke="#2038ec" stroke-width="2.5"/>' +
-      '<rect x="26" y="0" width="96" height="34" rx="17" fill="#ffffff"/>' +
-      '<rect x="56" y="16" width="4" height="12" rx="2" fill="#182048"/><rect x="74" y="16" width="4" height="12" rx="2" fill="#182048"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#mSky)"/>' +
+  '<g class="cdb-flank-rt">' +
+    '<circle cx="1440" cy="140" r="270" fill="url(#mSun)"/>' +
+    '<g class="cloud" opacity="0.82">' +
+      '<g transform="translate(1305 152)">' +
+        '<rect x="0" y="18" width="164" height="38" rx="19" fill="#ffffff" stroke="#2038ec" stroke-width="2.5"/>' +
+        '<rect x="30" y="0" width="104" height="36" rx="18" fill="#ffffff"/>' +
+        '<rect x="66" y="17" width="4" height="12" rx="2" fill="#182048"/><rect x="84" y="17" width="4" height="12" rx="2" fill="#182048"/>' +
+      '</g>' +
     '</g>' +
-    '<g transform="translate(1305 140)">' +
-      '<rect x="0" y="18" width="164" height="38" rx="19" fill="#ffffff" stroke="#2038ec" stroke-width="2.5"/>' +
-      '<rect x="30" y="0" width="104" height="36" rx="18" fill="#ffffff"/>' +
-      '<rect x="66" y="17" width="4" height="12" rx="2" fill="#182048"/><rect x="84" y="17" width="4" height="12" rx="2" fill="#182048"/>' +
+    '<g class="cloud b" opacity="0.65">' +
+      '<g transform="translate(1210 76)">' +
+        '<rect x="0" y="14" width="132" height="32" rx="16" fill="#ffffff"/><rect x="24" y="0" width="84" height="28" rx="14" fill="#ffffff"/>' +
+      '</g>' +
     '</g>' +
-  '</g>' +
-  '<g class="cloud b" opacity="0.65">' +
-    '<g transform="translate(185 205)">' +
-      '<rect x="0" y="14" width="120" height="30" rx="15" fill="#ffffff"/><rect x="22" y="0" width="76" height="26" rx="13" fill="#ffffff"/>' +
-    '</g>' +
-    '<g transform="translate(1210 62)">' +
-      '<rect x="0" y="14" width="132" height="32" rx="16" fill="#ffffff"/><rect x="24" y="0" width="84" height="28" rx="14" fill="#ffffff"/>' +
-    '</g>' +
-  '</g>' +
-  // Lakitu / Paratroopa gliding in top-right sky
-  '<g class="lakitu" transform="translate(1375 255)" opacity="0.86">' +
-    '<g class="wing" style="transform-origin:12px 14px"><path d="M12 14 C-6 -6 -18 4 -8 20 Z" fill="#ffffff" stroke="#984800" stroke-width="2"/></g>' +
-    '<ellipse cx="26" cy="24" rx="16" ry="12" fill="#e40058" stroke="#780028" stroke-width="2"/>' +
-    '<circle cx="14" cy="18" r="8" fill="#ffd878"/>' +
-    '<rect x="6" y="30" width="42" height="20" rx="10" fill="#ffffff" stroke="#6898fc" stroke-width="2"/>' +
-  '</g>' +
-  // Layered SMB hills with spot patterns
-  '<path d="M90 1000 Q245 780 400 1000 Z" fill="url(#mHillFar)" opacity="0.48"/>' +
-  '<path d="M1190 1000 Q1350 760 1510 1000 Z" fill="url(#mHillFar)" opacity="0.48"/>' +
-  '<path d="M-40 1000 Q135 735 320 1000 Z" fill="url(#mHill)" opacity="0.68" stroke="#004400" stroke-width="3"/>' +
-  '<path d="M1280 1000 Q1465 725 1640 1000 Z" fill="url(#mHill)" opacity="0.68" stroke="#004400" stroke-width="3"/>' +
-  '<g class="bush" style="transform-origin:240px 995px" fill="#58d854" opacity="0.72">' +
-    '<circle cx="215" cy="984" r="22"/><circle cx="242" cy="976" r="28"/><circle cx="270" cy="984" r="22"/>' +
-  '</g>' +
-  // Animated Piranha Plant emerging from left Warp Pipe
-  '<g clip-path="url(#mPipeClipL)">' +
-    '<g class="piranha" opacity="0.88">' +
-      '<rect x="106" y="766" width="16" height="58" fill="#00a800" stroke="#004800" stroke-width="2.5"/>' +
-      '<path d="M84 786 Q106 772 106 792 Z" fill="#58d854"/><path d="M144 786 Q122 772 122 792 Z" fill="#58d854"/>' +
-      '<g class="jaw" style="transform-origin:114px 752px">' +
-        '<circle cx="114" cy="744" r="26" fill="#d82800" stroke="#680800" stroke-width="2.5"/>' +
-        '<circle cx="101" cy="735" r="5" fill="#ffffff"/><circle cx="125" cy="738" r="6" fill="#ffffff"/><circle cx="112" cy="754" r="4.5" fill="#ffffff"/>' +
-        '<polygon points="94,724 114,744 134,724" fill="#5c94fc"/>' +
-        '<polyline points="94,724 101,732 108,725 114,733 120,725 127,732 134,724" fill="none" stroke="#ffffff" stroke-width="3"/>' +
+    // Lakitu / Paratroopa gliding in top-right sky (nested so transform attribute stays safe)
+    '<g transform="translate(1375 268)">' +
+      '<g class="lakitu" opacity="0.86">' +
+        '<g class="wing" style="transform-origin:12px 14px"><path d="M12 14 C-6 -6 -18 4 -8 20 Z" fill="#ffffff" stroke="#984800" stroke-width="2"/></g>' +
+        '<ellipse cx="26" cy="24" rx="16" ry="12" fill="#e40058" stroke="#780028" stroke-width="2"/>' +
+        '<circle cx="14" cy="18" r="8" fill="#ffd878"/>' +
+        '<rect x="6" y="30" width="42" height="20" rx="10" fill="#ffffff" stroke="#6898fc" stroke-width="2"/>' +
       '</g>' +
     '</g>' +
   '</g>' +
-  // Left & Right Warp Pipes
-  '<g opacity="0.86">' +
-    '<rect x="72" y="850" width="84" height="150" fill="url(#mPipe)" stroke="#003800" stroke-width="3"/>' +
-    '<rect x="62" y="820" width="104" height="32" rx="4" fill="url(#mPipe)" stroke="#003800" stroke-width="3"/>' +
-    '<rect x="1444" y="866" width="84" height="134" fill="url(#mPipe)" stroke="#003800" stroke-width="3"/>' +
-    '<rect x="1434" y="836" width="104" height="32" rx="4" fill="url(#mPipe)" stroke="#003800" stroke-width="3"/>' +
-  '</g>' +
-  // Super Mushroom emerging and sliding along left brick row
-  '<g class="mush" transform="translate(64 388)" opacity="0.9">' +
-    '<path d="M4 22 C4 4 40 4 40 22 Z" fill="#e40058" stroke="#680018" stroke-width="2.5"/>' +
-    '<circle cx="14" cy="13" r="5" fill="#ffffff"/><circle cx="30" cy="13" r="5" fill="#ffffff"/>' +
-    '<rect x="11" y="21" width="22" height="13" rx="4" fill="#ffd8a8" stroke="#680018" stroke-width="2"/>' +
-    '<rect x="17" y="24" width="2.5" height="6" fill="#181818"/><rect x="25" y="24" width="2.5" height="6" fill="#181818"/>' +
-  '</g>' +
-  // Left brick + question block formation
-  '<g transform="translate(58 420)" opacity="0.86">' +
-    '<rect x="0" y="0" width="48" height="48" rx="4" fill="#c84c0c" stroke="#501800" stroke-width="3"/>' +
-    '<path d="M0 16 H48 M0 32 H48 M24 0 V16 M12 16 V32 M36 16 V32 M24 32 V48" stroke="#501800" stroke-width="2.5"/>' +
-    '<g class="qblock" transform="translate(48 0)">' +
-      '<rect class="qface" width="48" height="48" rx="5" fill="#f8b800" stroke="#883800" stroke-width="3"/>' +
-      '<circle cx="7" cy="7" r="2.2" fill="#883800"/><circle cx="41" cy="7" r="2.2" fill="#883800"/>' +
-      '<circle cx="7" cy="41" r="2.2" fill="#883800"/><circle cx="41" cy="41" r="2.2" fill="#883800"/>' +
-      '<text x="24" y="35" text-anchor="middle" font-size="30" font-weight="bold" fill="#fff8d8">?</text>' +
+  '<g class="cdb-flank-lt">' +
+    '<g class="cloud" opacity="0.82">' +
+      '<g transform="translate(65 86)">' +
+        '<rect x="0" y="18" width="148" height="36" rx="18" fill="#ffffff" stroke="#2038ec" stroke-width="2.5"/>' +
+        '<rect x="26" y="0" width="96" height="34" rx="17" fill="#ffffff"/>' +
+        '<rect x="56" y="16" width="4" height="12" rx="2" fill="#182048"/><rect x="74" y="16" width="4" height="12" rx="2" fill="#182048"/>' +
+      '</g>' +
     '</g>' +
-    '<rect x="96" y="0" width="48" height="48" rx="4" fill="#c84c0c" stroke="#501800" stroke-width="3"/>' +
-    '<path d="M96 16 H144 M96 32 H144 M120 0 V16 M108 16 V32 M132 16 V32 M120 32 V48" stroke="#501800" stroke-width="2.5"/>' +
-  '</g>' +
-  // Right question block + spinning coin pop
-  '<g class="coin" style="transform-origin:1460px 380px">' +
-    '<ellipse cx="1460" cy="380" rx="13" ry="19" fill="#ffd93d" stroke="#984800" stroke-width="2.5"/>' +
-    '<rect x="1457" y="369" width="6" height="22" fill="#fff8c0"/>' +
-  '</g>' +
-  '<g class="qblock b" transform="translate(1436 380)" opacity="0.86">' +
-    '<rect class="qface" width="48" height="48" rx="5" fill="#f8b800" stroke="#883800" stroke-width="3"/>' +
-    '<circle cx="7" cy="7" r="2.2" fill="#883800"/><circle cx="41" cy="7" r="2.2" fill="#883800"/>' +
-    '<circle cx="7" cy="41" r="2.2" fill="#883800"/><circle cx="41" cy="41" r="2.2" fill="#883800"/>' +
-    '<text x="24" y="35" text-anchor="middle" font-size="30" font-weight="bold" fill="#fff8d8">?</text>' +
-  '</g>' +
-  // Bouncing Super Star (Starman)
-  '<g transform="translate(80 650)">' +
-    '<g class="starman" style="transform-origin:0px 0px">' +
-      '<polygon points="0,-22 6,-7 22,-6 10,5 14,20 0,11 -14,20 -10,5 -22,-6 -6,-7" fill="#ffd93d" stroke="#984800" stroke-width="2.2"/>' +
-      '<rect x="-5" y="-5" width="3" height="7" fill="#181818"/><rect x="2" y="-5" width="3" height="7" fill="#181818"/>' +
+    '<g class="cloud b" opacity="0.65">' +
+      '<g transform="translate(185 210)">' +
+        '<rect x="0" y="14" width="120" height="30" rx="15" fill="#ffffff"/><rect x="22" y="0" width="76" height="26" rx="13" fill="#ffffff"/>' +
+      '</g>' +
     '</g>' +
   '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmL)"/></svg>';
+  // Left flank: SMB hills, bush, Piranha pipe, brick+qblock+mush, bouncing Starman
+  '<g class="cdb-flank-l">' +
+    '<path d="M90 1000 Q245 780 400 1000 Z" fill="url(#mHillFar)" opacity="0.48"/>' +
+    '<path d="M-240 1000 Q60 725 320 1000 Z" fill="url(#mHill)" opacity="0.68" stroke="#004400" stroke-width="3"/>' +
+    '<g class="bush" style="transform-origin:240px 995px" fill="#58d854" opacity="0.72">' +
+      '<circle cx="215" cy="984" r="22"/><circle cx="242" cy="976" r="28"/><circle cx="270" cy="984" r="22"/>' +
+    '</g>' +
+    '<g clip-path="url(#mPipeClipL)">' +
+      '<g class="piranha" opacity="0.88">' +
+        '<rect x="106" y="766" width="16" height="58" fill="#00a800" stroke="#004800" stroke-width="2.5"/>' +
+        '<path d="M84 786 Q106 772 106 792 Z" fill="#58d854"/><path d="M144 786 Q122 772 122 792 Z" fill="#58d854"/>' +
+        '<g class="jaw" style="transform-origin:114px 752px">' +
+          '<circle cx="114" cy="744" r="26" fill="#d82800" stroke="#680800" stroke-width="2.5"/>' +
+          '<circle cx="101" cy="735" r="5" fill="#ffffff"/><circle cx="125" cy="738" r="6" fill="#ffffff"/><circle cx="112" cy="754" r="4.5" fill="#ffffff"/>' +
+          '<polygon points="94,724 114,744 134,724" fill="#5c94fc"/>' +
+          '<polyline points="94,724 101,732 108,725 114,733 120,725 127,732 134,724" fill="none" stroke="#ffffff" stroke-width="3"/>' +
+        '</g>' +
+      '</g>' +
+    '</g>' +
+    '<g opacity="0.86">' +
+      '<rect x="72" y="850" width="84" height="150" fill="url(#mPipe)" stroke="#003800" stroke-width="3"/>' +
+      '<rect x="62" y="820" width="104" height="32" rx="4" fill="url(#mPipe)" stroke="#003800" stroke-width="3"/>' +
+    '</g>' +
+    '<g transform="translate(64 388)">' +
+      '<g class="mush" opacity="0.9">' +
+        '<path d="M4 22 C4 4 40 4 40 22 Z" fill="#e40058" stroke="#680018" stroke-width="2.5"/>' +
+        '<circle cx="14" cy="13" r="5" fill="#ffffff"/><circle cx="30" cy="13" r="5" fill="#ffffff"/>' +
+        '<rect x="11" y="21" width="22" height="13" rx="4" fill="#ffd8a8" stroke="#680018" stroke-width="2"/>' +
+        '<rect x="17" y="24" width="2.5" height="6" fill="#181818"/><rect x="25" y="24" width="2.5" height="6" fill="#181818"/>' +
+      '</g>' +
+    '</g>' +
+    '<g transform="translate(58 420)" opacity="0.86">' +
+      '<rect x="0" y="0" width="48" height="48" rx="4" fill="#c84c0c" stroke="#501800" stroke-width="3"/>' +
+      '<path d="M0 16 H48 M0 32 H48 M24 0 V16 M12 16 V32 M36 16 V32 M24 32 V48" stroke="#501800" stroke-width="2.5"/>' +
+      '<g transform="translate(48 0)">' +
+        '<g class="qblock">' +
+          '<rect class="qface" width="48" height="48" rx="5" fill="#f8b800" stroke="#883800" stroke-width="3"/>' +
+          '<circle cx="7" cy="7" r="2.2" fill="#883800"/><circle cx="41" cy="7" r="2.2" fill="#883800"/>' +
+          '<circle cx="7" cy="41" r="2.2" fill="#883800"/><circle cx="41" cy="41" r="2.2" fill="#883800"/>' +
+          '<text x="24" y="35" text-anchor="middle" font-size="30" font-weight="bold" fill="#fff8d8">?</text>' +
+        '</g>' +
+      '</g>' +
+      '<rect x="96" y="0" width="48" height="48" rx="4" fill="#c84c0c" stroke="#501800" stroke-width="3"/>' +
+      '<path d="M96 16 H144 M96 32 H144 M120 0 V16 M108 16 V32 M132 16 V32 M120 32 V48" stroke="#501800" stroke-width="2.5"/>' +
+    '</g>' +
+    '<g transform="translate(80 650)">' +
+      '<g class="starman" style="transform-origin:0px 0px">' +
+        '<polygon points="0,-22 6,-7 22,-6 10,5 14,20 0,11 -14,20 -10,5 -22,-6 -6,-7" fill="#ffd93d" stroke="#984800" stroke-width="2.2"/>' +
+        '<rect x="-5" y="-5" width="3" height="7" fill="#181818"/><rect x="2" y="-5" width="3" height="7" fill="#181818"/>' +
+      '</g>' +
+    '</g>' +
+  '</g>' +
+  // Right flank: SMB hills, Warp Pipe, question block + coin pop
+  '<g class="cdb-flank-r">' +
+    '<path d="M1190 1000 Q1350 760 1510 1000 Z" fill="url(#mHillFar)" opacity="0.48"/>' +
+    '<path d="M1280 1000 Q1540 715 1840 1000 Z" fill="url(#mHill)" opacity="0.68" stroke="#004400" stroke-width="3"/>' +
+    '<g opacity="0.86">' +
+      '<rect x="1444" y="866" width="84" height="134" fill="url(#mPipe)" stroke="#003800" stroke-width="3"/>' +
+      '<rect x="1434" y="836" width="104" height="32" rx="4" fill="url(#mPipe)" stroke="#003800" stroke-width="3"/>' +
+    '</g>' +
+    '<g class="coin" style="transform-origin:1460px 390px">' +
+      '<ellipse cx="1460" cy="390" rx="13" ry="19" fill="#ffd93d" stroke="#984800" stroke-width="2.5"/>' +
+      '<rect x="1457" y="379" width="6" height="22" fill="#fff8c0"/>' +
+    '</g>' +
+    '<g transform="translate(1436 390)">' +
+      '<g class="qblock b" opacity="0.86">' +
+        '<rect class="qface" width="48" height="48" rx="5" fill="#f8b800" stroke="#883800" stroke-width="3"/>' +
+        '<circle cx="7" cy="7" r="2.2" fill="#883800"/><circle cx="41" cy="7" r="2.2" fill="#883800"/>' +
+        '<circle cx="7" cy="41" r="2.2" fill="#883800"/><circle cx="41" cy="41" r="2.2" fill="#883800"/>' +
+        '<text x="24" y="35" text-anchor="middle" font-size="30" font-weight="bold" fill="#fff8d8">?</text>' +
+      '</g>' +
+    '</g>' +
+  '</g>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function marioDarkSvg() {
@@ -775,7 +797,7 @@ function marioDarkSvg() {
     ".boo.b{animation-delay:-6s;animation-duration:15s}" +
     ".spark{animation:mRise 24s linear infinite}" +
     "@keyframes mLava{from{opacity:0.62;transform:scaleY(0.94)}to{opacity:0.98;transform:scaleY(1.08)}}" +
-    "@keyframes mLavaShift{from{transform:translateX(0)}to{transform:translateX(-80px)}}" +
+    "@keyframes mLavaShift{from{transform:translateX(0)}to{transform:translateX(-160px)}}" +
     "@keyframes mSpinBar{to{transform:rotate(360deg)}}" +
     "@keyframes mPodoboo{0%,22%{transform:translateY(90px) scaleY(1);opacity:0}28%{opacity:1}50%{transform:translateY(-210px) scaleY(1);opacity:1}52%{transform:translateY(-210px) scaleY(-1);opacity:1}76%{transform:translateY(90px) scaleY(-1);opacity:1}82%,100%{transform:translateY(90px) scaleY(-1);opacity:0}}" +
     "@keyframes mBoo{0%{transform:translate(-18px,-10px);opacity:0.28}45%{opacity:0.82}100%{transform:translate(22px,14px);opacity:0.35}}" +
@@ -785,67 +807,87 @@ function marioDarkSvg() {
     radGrad("mLavaGlow", "#ff4d12", 0.5) +
     radGrad("mGoldGlow", "#ffd03b", 0.7) + CALM_DARK
   ) +
-  '<rect width="1600" height="1000" fill="url(#mNight)"/>' +
-  // Underground blue-brick ceiling strip along top corners
-  '<g fill="#1c2c5c" stroke="#0b1228" stroke-width="2" opacity="0.68">' +
-    '<rect x="0" y="0" width="260" height="36"/><rect x="1340" y="0" width="260" height="36"/>' +
-    '<rect x="0" y="36" width="180" height="32"/><rect x="1420" y="36" width="180" height="32"/>' +
-  '</g>' +
-  // Floating Boo ghosts in upper corners
-  '<g class="boo" transform="translate(120 180)">' +
-    '<path d="M0 -28 C18 -28 28 -14 28 4 C28 18 36 24 22 26 C14 27 8 20 0 26 C-14 26 -26 14 -26 -2 C-26 -18 -14 -28 0 -28 Z" fill="#f0f4ff"/>' +
-    '<circle cx="-8" cy="-4" r="3" fill="#141828"/><circle cx="4" cy="-4" r="3" fill="#141828"/>' +
-    '<path d="M-9 6 Q-2 16 6 6 Z" fill="#e40058"/>' +
-  '</g>' +
-  '<g class="boo b" transform="translate(1475 210) scale(-1,1)">' +
-    '<path d="M0 -28 C18 -28 28 -14 28 4 C28 18 36 24 22 26 C14 27 8 20 0 26 C-14 26 -26 14 -26 -2 C-26 -18 -14 -28 0 -28 Z" fill="#f0f4ff"/>' +
-    '<circle cx="-8" cy="-4" r="3" fill="#141828"/><circle cx="4" cy="-4" r="3" fill="#141828"/>' +
-    '<path d="M-9 6 Q-2 16 6 6 Z" fill="#e40058"/>' +
-  '</g>' +
-  // Rotating Bowser Firebars on left and right flanks
-  '<g transform="translate(135 540)" opacity="0.88">' +
-    '<rect x="-22" y="-22" width="44" height="44" rx="4" fill="#544844" stroke="#221a18" stroke-width="3"/>' +
-    '<g class="firebar">' +
-      '<circle cx="0" cy="0" r="13" fill="url(#mFireOrb)"/>' +
-      '<circle cx="0" cy="-26" r="13" fill="url(#mFireOrb)"/>' +
-      '<circle cx="0" cy="-52" r="13" fill="url(#mFireOrb)"/>' +
-      '<circle cx="0" cy="-78" r="13" fill="url(#mFireOrb)"/>' +
-      '<circle cx="0" cy="-104" r="13" fill="url(#mFireOrb)"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#mNight)"/>' +
+  '<g class="cdb-flank-lt">' +
+    // Underground brick brackets positioned safely below top window controls
+    '<g fill="#1c2c5c" stroke="#0b1228" stroke-width="2" opacity="0.68">' +
+      '<rect x="24" y="64" width="180" height="28" rx="3"/><rect x="24" y="92" width="104" height="26" rx="3"/>' +
+    '</g>' +
+    '<g transform="translate(120 205)">' +
+      '<g class="boo">' +
+        '<path d="M0 -28 C18 -28 28 -14 28 4 C28 18 36 24 22 26 C14 27 8 20 0 26 C-14 26 -26 14 -26 -2 C-26 -18 -14 -28 0 -28 Z" fill="#f0f4ff"/>' +
+        '<circle cx="-8" cy="-4" r="3" fill="#141828"/><circle cx="4" cy="-4" r="3" fill="#141828"/>' +
+        '<path d="M-9 6 Q-2 16 6 6 Z" fill="#e40058"/>' +
+      '</g>' +
     '</g>' +
   '</g>' +
-  '<g transform="translate(1465 490)" opacity="0.88">' +
-    '<rect x="-22" y="-22" width="44" height="44" rx="4" fill="#544844" stroke="#221a18" stroke-width="3"/>' +
-    '<g class="firebar rev">' +
-      '<circle cx="0" cy="0" r="13" fill="url(#mFireOrb)"/>' +
-      '<circle cx="0" cy="-26" r="13" fill="url(#mFireOrb)"/>' +
-      '<circle cx="0" cy="-52" r="13" fill="url(#mFireOrb)"/>' +
-      '<circle cx="0" cy="-78" r="13" fill="url(#mFireOrb)"/>' +
-      '<circle cx="0" cy="-104" r="13" fill="url(#mFireOrb)"/>' +
+  '<g class="cdb-flank-rt">' +
+    '<g fill="#1c2c5c" stroke="#0b1228" stroke-width="2" opacity="0.68">' +
+      '<rect x="1396" y="64" width="180" height="28" rx="3"/><rect x="1472" y="92" width="104" height="26" rx="3"/>' +
+    '</g>' +
+    '<g transform="translate(1475 225) scale(-1,1)">' +
+      '<g class="boo b">' +
+        '<path d="M0 -28 C18 -28 28 -14 28 4 C28 18 36 24 22 26 C14 27 8 20 0 26 C-14 26 -26 14 -26 -2 C-26 -18 -14 -28 0 -28 Z" fill="#f0f4ff"/>' +
+        '<circle cx="-8" cy="-4" r="3" fill="#141828"/><circle cx="4" cy="-4" r="3" fill="#141828"/>' +
+        '<path d="M-9 6 Q-2 16 6 6 Z" fill="#e40058"/>' +
+      '</g>' +
     '</g>' +
   '</g>' +
-  // Leaping Podoboo (Lava Bubbles)
-  '<g transform="translate(230 920)">' +
-    '<g class="podoboo">' +
-      '<path d="M0 -24 C14 -12 16 8 0 20 C-16 8 -14 -12 0 -24 Z" fill="url(#mFireOrb)"/>' +
-      '<circle cx="-4" cy="-4" r="2" fill="#fff"/><circle cx="4" cy="-4" r="2" fill="#fff"/>' +
+  '<rect x="-800" y="948" width="3200" height="60" fill="#120a07" opacity="0.9"/>' +
+  '<g class="lavaWave" opacity="0.78"><path d="' +
+    (function () {
+      var d = "M-800 955 Q-760 938 -720 955";
+      for (var wx = -640; wx <= 2560; wx += 80) d += " T" + wx + " 955";
+      return d + " L2560 1000 L-800 1000 Z";
+    })() +
+  '" fill="#ff5500"/></g>' +
+  // Left flank: Firebar, Podoboo, magma glow, battlement & sparks
+  '<g class="cdb-flank-l">' +
+    '<g transform="translate(135 540)" opacity="0.88">' +
+      '<rect x="-22" y="-22" width="44" height="44" rx="4" fill="#544844" stroke="#221a18" stroke-width="3"/>' +
+      '<g class="firebar">' +
+        '<circle cx="0" cy="0" r="13" fill="url(#mFireOrb)"/>' +
+        '<circle cx="0" cy="-26" r="13" fill="url(#mFireOrb)"/>' +
+        '<circle cx="0" cy="-52" r="13" fill="url(#mFireOrb)"/>' +
+        '<circle cx="0" cy="-78" r="13" fill="url(#mFireOrb)"/>' +
+        '<circle cx="0" cy="-104" r="13" fill="url(#mFireOrb)"/>' +
+      '</g>' +
     '</g>' +
-  '</g>' +
-  '<g transform="translate(1370 920)">' +
-    '<g class="podoboo b">' +
-      '<path d="M0 -24 C14 -12 16 8 0 20 C-16 8 -14 -12 0 -24 Z" fill="url(#mFireOrb)"/>' +
-      '<circle cx="-4" cy="-4" r="2" fill="#fff"/><circle cx="4" cy="-4" r="2" fill="#fff"/>' +
+    '<g transform="translate(230 920)">' +
+      '<g class="podoboo">' +
+        '<path d="M0 -24 C14 -12 16 8 0 20 C-16 8 -14 -12 0 -24 Z" fill="url(#mFireOrb)"/>' +
+        '<circle cx="-4" cy="-4" r="2" fill="#fff"/><circle cx="4" cy="-4" r="2" fill="#fff"/>' +
+      '</g>' +
     '</g>' +
+    '<g class="lava" style="transform-origin:160px 1000px"><ellipse cx="160" cy="990" rx="540" ry="340" fill="url(#mLavaGlow)"/></g>' +
+    '<path d="M-200 1000 L-200 885 L0 885 L0 912 L40 912 L40 885 L80 885 L80 912 L120 912 L120 885 L160 885 L160 912 L200 912 L200 1000 Z" fill="#120a07" opacity="0.9"/>' +
+    '<circle class="spark" cx="110" cy="980" r="10" fill="url(#mGoldGlow)" style="animation-delay:-2s"/>' +
+    '<circle class="spark" cx="220" cy="990" r="14" fill="url(#mGoldGlow)" style="animation-delay:-11s"/>' +
   '</g>' +
-  // Molten lava glow & battlements
-  '<g class="lava" style="transform-origin:160px 1000px"><ellipse cx="160" cy="990" rx="540" ry="340" fill="url(#mLavaGlow)"/></g>' +
-  '<g class="lava" style="transform-origin:1440px 1000px;animation-delay:-3.5s"><ellipse cx="1440" cy="990" rx="540" ry="340" fill="url(#mLavaGlow)"/></g>' +
-  '<g class="lavaWave" opacity="0.78"><path d="M0 955 Q40 938 80 955 T160 955 T240 955 T320 955 L320 1000 L0 1000 Z M1280 955 Q1320 938 1360 955 T1440 955 T1520 955 T1680 955 L1680 1000 L1280 1000 Z" fill="#ff5500"/></g>' +
-  '<path d="M0 1000 L0 885 L40 885 L40 912 L80 912 L80 885 L120 885 L120 912 L160 912 L160 885 L200 885 L200 948 L1400 948 L1400 885 L1440 885 L1440 912 L1480 912 L1480 885 L1520 885 L1520 912 L1560 912 L1560 885 L1600 885 L1600 1000 Z" fill="#120a07" opacity="0.9"/>' +
-  '<circle class="spark" cx="110" cy="980" r="10" fill="url(#mGoldGlow)" style="animation-delay:-2s"/>' +
-  '<circle class="spark" cx="220" cy="990" r="14" fill="url(#mGoldGlow)" style="animation-delay:-11s"/>' +
-  '<circle class="spark" cx="1390" cy="985" r="12" fill="url(#mGoldGlow)" style="animation-delay:-7s"/>' +
-  '<circle class="spark" cx="1510" cy="975" r="15" fill="url(#mGoldGlow)" style="animation-delay:-19s"/>' +
-  '<rect width="1600" height="1000" fill="url(#calmD)"/></svg>';
+  // Right flank: Reverse Firebar, Podoboo, magma glow, battlement & sparks
+  '<g class="cdb-flank-r">' +
+    '<g transform="translate(1465 490)" opacity="0.88">' +
+      '<rect x="-22" y="-22" width="44" height="44" rx="4" fill="#544844" stroke="#221a18" stroke-width="3"/>' +
+      '<g class="firebar rev">' +
+        '<circle cx="0" cy="0" r="13" fill="url(#mFireOrb)"/>' +
+        '<circle cx="0" cy="-26" r="13" fill="url(#mFireOrb)"/>' +
+        '<circle cx="0" cy="-52" r="13" fill="url(#mFireOrb)"/>' +
+        '<circle cx="0" cy="-78" r="13" fill="url(#mFireOrb)"/>' +
+        '<circle cx="0" cy="-104" r="13" fill="url(#mFireOrb)"/>' +
+      '</g>' +
+    '</g>' +
+    '<g transform="translate(1370 920)">' +
+      '<g class="podoboo b">' +
+        '<path d="M0 -24 C14 -12 16 8 0 20 C-16 8 -14 -12 0 -24 Z" fill="url(#mFireOrb)"/>' +
+        '<circle cx="-4" cy="-4" r="2" fill="#fff"/><circle cx="4" cy="-4" r="2" fill="#fff"/>' +
+      '</g>' +
+    '</g>' +
+    '<g class="lava" style="transform-origin:1440px 1000px;animation-delay:-3.5s"><ellipse cx="1440" cy="990" rx="540" ry="340" fill="url(#mLavaGlow)"/></g>' +
+    '<path d="M1400 1000 L1400 885 L1440 885 L1440 912 L1480 912 L1480 885 L1520 885 L1520 912 L1560 912 L1560 885 L1800 885 L1800 1000 Z" fill="#120a07" opacity="0.9"/>' +
+    '<circle class="spark" cx="1390" cy="985" r="12" fill="url(#mGoldGlow)" style="animation-delay:-7s"/>' +
+    '<circle class="spark" cx="1510" cy="975" r="15" fill="url(#mGoldGlow)" style="animation-delay:-19s"/>' +
+  '</g>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
 function playstationLightSvg() {
@@ -862,20 +904,28 @@ function playstationLightSvg() {
     '<linearGradient id="psBgL" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f2f4f8"/><stop offset="0.5" stop-color="#e5e8f0"/><stop offset="1" stop-color="#d7dceb"/></linearGradient>' +
     radGrad("psBlueL", "#2a5bc8", 0.22) + radGrad("psTealL", "#2fd0b4", 0.22) + CALM_LIGHT
   ) +
-  '<rect width="1600" height="1000" fill="url(#psBgL)"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#psBgL)"/>' +
   '<ellipse class="psWave" cx="240" cy="160" rx="520" ry="220" fill="url(#psBlueL)"/>' +
   '<ellipse class="psWave" cx="1380" cy="840" rx="540" ry="240" fill="url(#psTealL)" style="animation-delay:-15s"/>' +
   '<g class="psRibbon" fill="none" stroke="#2a5bc8" stroke-width="2" opacity="0.22">' +
-    '<path d="M-60 720 C360 620 1240 840 1660 700"/>' +
-    '<path d="M-60 760 C380 660 1220 880 1660 740"/>' +
-    '<path d="M-60 800 C400 700 1200 920 1660 780"/>' +
+    '<path d="M-820 720 C-100 620 1240 840 2420 700"/>' +
+    '<path d="M-820 760 C-80 660 1220 880 2420 740"/>' +
+    '<path d="M-820 800 C-60 700 1200 920 2420 780"/>' +
   '</g>' +
-  '<g class="psOrbit" style="transform-origin:1460px 250px" fill="none" stroke="#2a5bc8" stroke-width="1.5" stroke-dasharray="10 8" opacity="0.35"><circle cx="1460" cy="250" r="76"/></g>' +
-  '<g class="psSym" style="transform-origin:120px 240px" fill="none" stroke="#2fd0b4" stroke-width="6" opacity="0.75"><polygon points="120,210 148,260 92,260"/></g>' +
-  '<g class="psSym b" style="transform-origin:1460px 250px" fill="none" stroke="#ee7b52" stroke-width="6" opacity="0.75"><circle cx="1460" cy="250" r="26"/></g>' +
-  '<g class="psSym b" style="transform-origin:130px 760px" fill="none" stroke="#6d93e8" stroke-width="6" stroke-linecap="round" opacity="0.75"><path d="M108,738 L152,782 M152,738 L108,782"/></g>' +
-  '<g class="psSym" style="transform-origin:1460px 740px" fill="none" stroke="#e77cb8" stroke-width="6" opacity="0.75"><rect x="1436" y="716" width="48" height="48" rx="4"/></g>' +
-  '<rect width="1600" height="1000" fill="url(#calmL)"/></svg>';
+  '<g class="cdb-flank-lt">' +
+    '<g class="psSym" style="transform-origin:120px 240px" fill="none" stroke="#2fd0b4" stroke-width="6" opacity="0.75"><polygon points="120,210 148,260 92,260"/></g>' +
+  '</g>' +
+  '<g class="cdb-flank-l">' +
+    '<g class="psSym b" style="transform-origin:130px 760px" fill="none" stroke="#6d93e8" stroke-width="6" stroke-linecap="round" opacity="0.75"><path d="M108,738 L152,782 M152,738 L108,782"/></g>' +
+  '</g>' +
+  '<g class="cdb-flank-rt">' +
+    '<g class="psOrbit" style="transform-origin:1460px 250px" fill="none" stroke="#2a5bc8" stroke-width="1.5" stroke-dasharray="10 8" opacity="0.35"><circle cx="1460" cy="250" r="76"/></g>' +
+    '<g class="psSym b" style="transform-origin:1460px 250px" fill="none" stroke="#ee7b52" stroke-width="6" opacity="0.75"><circle cx="1460" cy="250" r="26"/></g>' +
+  '</g>' +
+  '<g class="cdb-flank-r">' +
+    '<g class="psSym" style="transform-origin:1460px 740px" fill="none" stroke="#e77cb8" stroke-width="6" opacity="0.75"><rect x="1436" y="716" width="48" height="48" rx="4"/></g>' +
+  '</g>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function playstationDarkSvg() {
@@ -893,32 +943,38 @@ function playstationDarkSvg() {
     '<linearGradient id="psTower" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4b7bec" stop-opacity="0.42"/><stop offset="1" stop-color="#14224a" stop-opacity="0.06"/></linearGradient>' +
     radGrad("psSapphire", "#4b7bec", 0.36) + radGrad("psCyan", "#2fd0b4", 0.28) + radGrad("psOrbGlow", "#7ef9ff", 0.85) + CALM_DARK
   ) +
-  '<rect width="1600" height="1000" fill="url(#psBgD)"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#psBgD)"/>' +
   '<ellipse class="psWave" cx="220" cy="180" rx="560" ry="260" fill="url(#psSapphire)"/>' +
   '<ellipse class="psWave" cx="1400" cy="820" rx="560" ry="260" fill="url(#psCyan)" style="animation-delay:-18s"/>' +
-  // XMB silk wave ribbons
   '<g class="psRibbon" fill="none" stroke="#5b8cff" stroke-width="1.8" opacity="0.28">' +
-    '<path d="M-60 680 C380 560 1220 820 1660 660"/>' +
-    '<path d="M-60 715 C400 595 1200 855 1660 695"/>' +
-    '<path d="M-60 750 C420 630 1180 890 1660 730"/>' +
+    '<path d="M-820 680 C-100 560 1220 820 2420 660"/>' +
+    '<path d="M-820 715 C-80 595 1200 855 2420 695"/>' +
+    '<path d="M-820 750 C-60 630 1180 890 2420 730"/>' +
   '</g>' +
-  // PS2 crystal memory monoliths
-  '<g fill="url(#psTower)" stroke="#5b8cff" stroke-opacity="0.25"><rect x="46" y="540" width="48" height="460" rx="4"/><rect x="108" y="630" width="42" height="370" rx="4"/><rect x="162" y="700" width="38" height="300" rx="4"/><rect x="1436" y="580" width="48" height="420" rx="4"/><rect x="1498" y="470" width="52" height="530" rx="4"/></g>' +
-  // Iconic PS2 7-orb rotating light cluster
-  '<g class="psOrbs" style="transform-origin:130px 350px">' +
-    '<circle cx="130" cy="306" r="14" fill="url(#psOrbGlow)"/>' +
-    '<circle cx="168" cy="328" r="12" fill="url(#psOrbGlow)"/>' +
-    '<circle cx="168" cy="372" r="13" fill="url(#psOrbGlow)"/>' +
-    '<circle cx="130" cy="394" r="12" fill="url(#psOrbGlow)"/>' +
-    '<circle cx="92" cy="372" r="14" fill="url(#psOrbGlow)"/>' +
-    '<circle cx="92" cy="328" r="12" fill="url(#psOrbGlow)"/>' +
-    '<circle cx="130" cy="350" r="16" fill="#ffffff" opacity="0.7"/>' +
+  '<g class="cdb-flank-lt">' +
+    '<g class="psSym" style="transform-origin:125px 180px" fill="none" stroke="#2fd0b4" stroke-width="5.5" opacity="0.82"><polygon points="125,152 153,202 97,202"/></g>' +
   '</g>' +
-  '<g class="psSym" style="transform-origin:125px 180px" fill="none" stroke="#2fd0b4" stroke-width="5.5" opacity="0.82"><polygon points="125,152 153,202 97,202"/></g>' +
-  '<g class="psSym b" style="transform-origin:1475px 210px" fill="none" stroke="#ee7b52" stroke-width="5.5" opacity="0.82"><circle cx="1475" cy="210" r="26"/></g>' +
-  '<g class="psSym b" style="transform-origin:135px 490px" fill="none" stroke="#6d93e8" stroke-width="5.5" stroke-linecap="round" opacity="0.82"><path d="M113,468 L157,512 M157,468 L113,512"/></g>' +
-  '<g class="psSym" style="transform-origin:1465px 410px" fill="none" stroke="#e77cb8" stroke-width="5.5" opacity="0.82"><rect x="1441" y="386" width="48" height="48" rx="4"/></g>' +
-  '<rect width="1600" height="1000" fill="url(#calmD)"/></svg>';
+  '<g class="cdb-flank-l">' +
+    '<g fill="url(#psTower)" stroke="#5b8cff" stroke-opacity="0.25"><rect x="46" y="540" width="48" height="460" rx="4"/><rect x="108" y="630" width="42" height="370" rx="4"/><rect x="162" y="700" width="38" height="300" rx="4"/></g>' +
+    '<g class="psOrbs" style="transform-origin:130px 350px">' +
+      '<circle cx="130" cy="306" r="14" fill="url(#psOrbGlow)"/>' +
+      '<circle cx="168" cy="328" r="12" fill="url(#psOrbGlow)"/>' +
+      '<circle cx="168" cy="372" r="13" fill="url(#psOrbGlow)"/>' +
+      '<circle cx="130" cy="394" r="12" fill="url(#psOrbGlow)"/>' +
+      '<circle cx="92" cy="372" r="14" fill="url(#psOrbGlow)"/>' +
+      '<circle cx="92" cy="328" r="12" fill="url(#psOrbGlow)"/>' +
+      '<circle cx="130" cy="350" r="16" fill="#ffffff" opacity="0.7"/>' +
+    '</g>' +
+    '<g class="psSym b" style="transform-origin:135px 490px" fill="none" stroke="#6d93e8" stroke-width="5.5" stroke-linecap="round" opacity="0.82"><path d="M113,468 L157,512 M157,468 L113,512"/></g>' +
+  '</g>' +
+  '<g class="cdb-flank-rt">' +
+    '<g class="psSym b" style="transform-origin:1475px 210px" fill="none" stroke="#ee7b52" stroke-width="5.5" opacity="0.82"><circle cx="1475" cy="210" r="26"/></g>' +
+    '<g class="psSym" style="transform-origin:1465px 410px" fill="none" stroke="#e77cb8" stroke-width="5.5" opacity="0.82"><rect x="1441" y="386" width="48" height="48" rx="4"/></g>' +
+  '</g>' +
+  '<g class="cdb-flank-r">' +
+    '<g fill="url(#psTower)" stroke="#5b8cff" stroke-opacity="0.25"><rect x="1436" y="580" width="48" height="420" rx="4"/><rect x="1498" y="470" width="52" height="530" rx="4"/></g>' +
+  '</g>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
 function gameboyLightSvg() {
@@ -926,39 +982,52 @@ function gameboyLightSvg() {
     ".tet{animation:gbFall 28s steps(28,jump-none) infinite}" +
     ".tet.b{animation-duration:36s;animation-delay:-14s}" +
     ".tet.c{animation-duration:32s;animation-delay:-22s}" +
+    ".tet.d{animation-duration:34s;animation-delay:-8s}" +
+    ".tet.e{animation-duration:30s;animation-delay:-19s}" +
     ".lineClr{animation:gbClear 6s steps(2,jump-none) infinite}" +
     ".led{animation:gbLed 3.2s ease-in-out infinite alternate}" +
-    "@keyframes gbFall{from{transform:translateY(-140px)}to{transform:translateY(1120px)}}" +
+    "@keyframes gbFall{from{transform:translateY(-110px)}to{transform:translateY(1120px)}}" +
     "@keyframes gbClear{0%,82%,100%{opacity:0.45}86%,94%{opacity:0.95;fill:#a3215c}}" +
     "@keyframes gbLed{from{opacity:0.45}to{opacity:1}}",
     '<linearGradient id="gbShell" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e6e2d6"/><stop offset="1" stop-color="#cecab8"/></linearGradient>' +
     '<pattern id="gbDotsL" width="24" height="24" patternUnits="userSpaceOnUse"><rect x="10" y="10" width="3" height="3" fill="#8b8676" opacity="0.32"/></pattern>' +
     CALM_LIGHT
   ) +
-  '<rect width="1600" height="1000" fill="url(#gbShell)"/>' +
-  '<rect x="0" y="0" width="280" height="1000" fill="url(#gbDotsL)"/>' +
-  '<rect x="1320" y="0" width="280" height="1000" fill="url(#gbDotsL)"/>' +
-  // DMG battery LED indicator + bezel rules
-  '<circle class="led" cx="42" cy="88" r="8" fill="#d92438"/>' +
-  '<path d="M24 54 H260 M1340 54 H1576" stroke="#8a1c52" stroke-width="3" opacity="0.55"/>' +
-  '<path d="M24 62 H260 M1340 62 H1576" stroke="#283578" stroke-width="3" opacity="0.55"/>' +
-  // Falling Tetrominoes (T, L, Z, I, O)
-  '<g class="tet" fill="#a3215c" opacity="0.65">' +
-    '<rect x="80" y="40" width="26" height="26" rx="2"/><rect x="108" y="40" width="26" height="26" rx="2"/><rect x="136" y="40" width="26" height="26" rx="2"/><rect x="108" y="68" width="26" height="26" rx="2"/>' +
-    '<rect x="1430" y="340" width="26" height="26" rx="2"/><rect x="1430" y="368" width="26" height="26" rx="2"/><rect x="1430" y="396" width="26" height="26" rx="2"/><rect x="1458" y="396" width="26" height="26" rx="2"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gbShell)"/>' +
+  '<g class="cdb-flank-lt">' +
+    '<circle class="led" cx="42" cy="96" r="8" fill="#d92438"/>' +
+    '<path d="M24 62 H260" stroke="#8a1c52" stroke-width="3" opacity="0.55"/>' +
+    '<path d="M24 70 H260" stroke="#283578" stroke-width="3" opacity="0.55"/>' +
   '</g>' +
-  '<g class="tet b" fill="#3d3a78" opacity="0.6">' +
-    '<rect x="140" y="480" width="26" height="26" rx="2"/><rect x="168" y="480" width="26" height="26" rx="2"/><rect x="168" y="508" width="26" height="26" rx="2"/><rect x="196" y="508" width="26" height="26" rx="2"/>' +
-    '<rect x="1380" y="80" width="26" height="26" rx="2"/><rect x="1408" y="80" width="26" height="26" rx="2"/><rect x="1380" y="108" width="26" height="26" rx="2"/><rect x="1408" y="108" width="26" height="26" rx="2"/>' +
+  '<g class="cdb-flank-rt">' +
+    '<path d="M1340 62 H1576" stroke="#8a1c52" stroke-width="3" opacity="0.55"/>' +
+    '<path d="M1340 70 H1576" stroke="#283578" stroke-width="3" opacity="0.55"/>' +
   '</g>' +
-  '<g class="tet c" fill="#4f5b48" opacity="0.58">' +
-    '<rect x="52" y="240" width="26" height="26" rx="2"/><rect x="52" y="268" width="26" height="26" rx="2"/><rect x="52" y="296" width="26" height="26" rx="2"/><rect x="52" y="324" width="26" height="26" rx="2"/>' +
+  '<g class="cdb-flank-l">' +
+    '<rect x="0" y="0" width="280" height="1000" fill="url(#gbDotsL)"/>' +
+    '<g class="tet" fill="#a3215c" opacity="0.65">' +
+      '<rect x="80" y="0" width="26" height="26" rx="2"/><rect x="108" y="0" width="26" height="26" rx="2"/><rect x="136" y="0" width="26" height="26" rx="2"/><rect x="108" y="28" width="26" height="26" rx="2"/>' +
+    '</g>' +
+    '<g class="tet b" fill="#3d3a78" opacity="0.6">' +
+      '<rect x="140" y="0" width="26" height="26" rx="2"/><rect x="168" y="0" width="26" height="26" rx="2"/><rect x="168" y="28" width="26" height="26" rx="2"/><rect x="196" y="28" width="26" height="26" rx="2"/>' +
+    '</g>' +
+    '<g class="tet c" fill="#4f5b48" opacity="0.58">' +
+      '<rect x="52" y="0" width="26" height="26" rx="2"/><rect x="52" y="28" width="26" height="26" rx="2"/><rect x="52" y="56" width="26" height="26" rx="2"/><rect x="52" y="84" width="26" height="26" rx="2"/>' +
+    '</g>' +
+    '<g class="lineClr" fill="#3d3a78">' +
+      '<rect x="52" y="940" width="26" height="26" rx="2"/><rect x="80" y="940" width="26" height="26" rx="2"/><rect x="108" y="940" width="26" height="26" rx="2"/><rect x="136" y="940" width="26" height="26" rx="2"/><rect x="164" y="940" width="26" height="26" rx="2"/><rect x="192" y="940" width="26" height="26" rx="2"/>' +
+    '</g>' +
   '</g>' +
-  // Stacked bottom row with blinking line-clear animation
-  '<g class="lineClr" fill="#3d3a78">' +
-    '<rect x="52" y="940" width="26" height="26" rx="2"/><rect x="80" y="940" width="26" height="26" rx="2"/><rect x="108" y="940" width="26" height="26" rx="2"/><rect x="136" y="940" width="26" height="26" rx="2"/><rect x="164" y="940" width="26" height="26" rx="2"/><rect x="192" y="940" width="26" height="26" rx="2"/>' +
+  '<g class="cdb-flank-r">' +
+    '<rect x="1320" y="0" width="280" height="1000" fill="url(#gbDotsL)"/>' +
+    '<g class="tet d" fill="#a3215c" opacity="0.65">' +
+      '<rect x="1430" y="0" width="26" height="26" rx="2"/><rect x="1430" y="28" width="26" height="26" rx="2"/><rect x="1430" y="56" width="26" height="26" rx="2"/><rect x="1458" y="56" width="26" height="26" rx="2"/>' +
+    '</g>' +
+    '<g class="tet e" fill="#3d3a78" opacity="0.6">' +
+      '<rect x="1380" y="0" width="26" height="26" rx="2"/><rect x="1408" y="0" width="26" height="26" rx="2"/><rect x="1380" y="28" width="26" height="26" rx="2"/><rect x="1408" y="28" width="26" height="26" rx="2"/>' +
+    '</g>' +
   '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmL)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function gameboyDarkSvg() {
@@ -966,35 +1035,45 @@ function gameboyDarkSvg() {
     ".tet{animation:gbFall 28s steps(28,jump-none) infinite}" +
     ".tet.b{animation-duration:36s;animation-delay:-14s}" +
     ".tet.c{animation-duration:32s;animation-delay:-22s}" +
+    ".tet.d{animation-duration:34s;animation-delay:-8s}" +
+    ".tet.e{animation-duration:30s;animation-delay:-19s}" +
     ".lineClr{animation:gbClearD 6s steps(2,jump-none) infinite}" +
     ".pulse{animation:gbPulse 6s ease-in-out infinite alternate}" +
-    "@keyframes gbFall{from{transform:translateY(-140px)}to{transform:translateY(1120px)}}" +
+    "@keyframes gbFall{from{transform:translateY(-110px)}to{transform:translateY(1120px)}}" +
     "@keyframes gbClearD{0%,82%,100%{opacity:0.42}86%,94%{opacity:0.95;fill:#d0f040}}" +
     "@keyframes gbPulse{from{opacity:0.35}to{opacity:0.8}}",
     '<linearGradient id="gbLcd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#071c07"/><stop offset="0.5" stop-color="#0b280b"/><stop offset="1" stop-color="#051405"/></linearGradient>' +
     '<pattern id="gbDotsD" width="24" height="24" patternUnits="userSpaceOnUse"><rect x="10" y="10" width="3" height="3" fill="#9bbc0f" opacity="0.2"/></pattern>' +
     radGrad("gbGlow", "#9bbc0f", 0.28) + CALM_DARK
   ) +
-  '<rect width="1600" height="1000" fill="url(#gbLcd)"/>' +
-  '<rect x="0" y="0" width="300" height="1000" fill="url(#gbDotsD)"/>' +
-  '<rect x="1300" y="0" width="300" height="1000" fill="url(#gbDotsD)"/>' +
-  '<ellipse class="pulse" cx="150" cy="200" rx="260" ry="200" fill="url(#gbGlow)"/>' +
-  '<ellipse class="pulse" cx="1450" cy="800" rx="260" ry="200" fill="url(#gbGlow)" style="animation-delay:-3s"/>' +
-  '<g class="tet" fill="#9bbc0f" opacity="0.68">' +
-    '<rect x="76" y="40" width="26" height="26" rx="2"/><rect x="104" y="40" width="26" height="26" rx="2"/><rect x="132" y="40" width="26" height="26" rx="2"/><rect x="104" y="68" width="26" height="26" rx="2"/>' +
-    '<rect x="1430" y="340" width="26" height="26" rx="2"/><rect x="1430" y="368" width="26" height="26" rx="2"/><rect x="1430" y="396" width="26" height="26" rx="2"/><rect x="1458" y="396" width="26" height="26" rx="2"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gbLcd)"/>' +
+  '<g class="cdb-flank-l">' +
+    '<rect x="0" y="0" width="300" height="1000" fill="url(#gbDotsD)"/>' +
+    '<ellipse class="pulse" cx="150" cy="200" rx="260" ry="200" fill="url(#gbGlow)"/>' +
+    '<g class="tet" fill="#9bbc0f" opacity="0.68">' +
+      '<rect x="76" y="0" width="26" height="26" rx="2"/><rect x="104" y="0" width="26" height="26" rx="2"/><rect x="132" y="0" width="26" height="26" rx="2"/><rect x="104" y="28" width="26" height="26" rx="2"/>' +
+    '</g>' +
+    '<g class="tet b" fill="#8bac0f" opacity="0.54">' +
+      '<rect x="140" y="0" width="26" height="26" rx="2"/><rect x="168" y="0" width="26" height="26" rx="2"/><rect x="168" y="28" width="26" height="26" rx="2"/><rect x="196" y="28" width="26" height="26" rx="2"/>' +
+    '</g>' +
+    '<g class="tet c" fill="#9bbc0f" opacity="0.5">' +
+      '<rect x="48" y="0" width="26" height="26" rx="2"/><rect x="48" y="28" width="26" height="26" rx="2"/><rect x="48" y="56" width="26" height="26" rx="2"/><rect x="48" y="84" width="26" height="26" rx="2"/>' +
+    '</g>' +
+    '<g class="lineClr" fill="#8bac0f">' +
+      '<rect x="48" y="940" width="26" height="26" rx="2"/><rect x="76" y="940" width="26" height="26" rx="2"/><rect x="104" y="940" width="26" height="26" rx="2"/><rect x="132" y="940" width="26" height="26" rx="2"/><rect x="160" y="940" width="26" height="26" rx="2"/><rect x="188" y="940" width="26" height="26" rx="2"/>' +
+    '</g>' +
   '</g>' +
-  '<g class="tet b" fill="#8bac0f" opacity="0.54">' +
-    '<rect x="140" y="480" width="26" height="26" rx="2"/><rect x="168" y="480" width="26" height="26" rx="2"/><rect x="168" y="508" width="26" height="26" rx="2"/><rect x="196" y="508" width="26" height="26" rx="2"/>' +
-    '<rect x="1380" y="80" width="26" height="26" rx="2"/><rect x="1408" y="80" width="26" height="26" rx="2"/><rect x="1380" y="108" width="26" height="26" rx="2"/><rect x="1408" y="108" width="26" height="26" rx="2"/>' +
+  '<g class="cdb-flank-r">' +
+    '<rect x="1300" y="0" width="300" height="1000" fill="url(#gbDotsD)"/>' +
+    '<ellipse class="pulse" cx="1450" cy="800" rx="260" ry="200" fill="url(#gbGlow)" style="animation-delay:-3s"/>' +
+    '<g class="tet d" fill="#9bbc0f" opacity="0.68">' +
+      '<rect x="1430" y="0" width="26" height="26" rx="2"/><rect x="1430" y="28" width="26" height="26" rx="2"/><rect x="1430" y="56" width="26" height="26" rx="2"/><rect x="1458" y="56" width="26" height="26" rx="2"/>' +
+    '</g>' +
+    '<g class="tet e" fill="#8bac0f" opacity="0.54">' +
+      '<rect x="1380" y="0" width="26" height="26" rx="2"/><rect x="1408" y="0" width="26" height="26" rx="2"/><rect x="1380" y="28" width="26" height="26" rx="2"/><rect x="1408" y="28" width="26" height="26" rx="2"/>' +
+    '</g>' +
   '</g>' +
-  '<g class="tet c" fill="#9bbc0f" opacity="0.5">' +
-    '<rect x="48" y="240" width="26" height="26" rx="2"/><rect x="48" y="268" width="26" height="26" rx="2"/><rect x="48" y="296" width="26" height="26" rx="2"/><rect x="48" y="324" width="26" height="26" rx="2"/>' +
-  '</g>' +
-  '<g class="lineClr" fill="#8bac0f">' +
-    '<rect x="48" y="940" width="26" height="26" rx="2"/><rect x="76" y="940" width="26" height="26" rx="2"/><rect x="104" y="940" width="26" height="26" rx="2"/><rect x="132" y="940" width="26" height="26" rx="2"/><rect x="160" y="940" width="26" height="26" rx="2"/><rect x="188" y="940" width="26" height="26" rx="2"/>' +
-  '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmD)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
 function finalFantasyLightSvg() {
@@ -1010,25 +1089,33 @@ function finalFantasyLightSvg() {
     '<linearGradient id="ffCryL" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#62d2ff"/><stop offset="0.5" stop-color="#2155b8"/><stop offset="1" stop-color="#192e7a"/></linearGradient>' +
     radGrad("ffAetherL", "#2155b8", 0.22) + radGrad("ffGoldL", "#d49b27", 0.28) + CALM_LIGHT
   ) +
-  '<rect width="1600" height="1000" fill="url(#ffParch)"/>' +
-  '<ellipse cx="180" cy="240" rx="340" ry="260" fill="url(#ffGoldL)"/>' +
-  '<ellipse cx="1440" cy="720" rx="360" ry="280" fill="url(#ffAetherL)"/>' +
-  '<g class="ring" style="transform-origin:1440px 260px" fill="none" stroke="#b88a28" stroke-width="1.6" stroke-dasharray="10 6" opacity="0.5"><circle cx="1440" cy="260" r="134"/></g>' +
-  '<g class="ring rev" style="transform-origin:1440px 260px" fill="none" stroke="#2155b8" stroke-width="1.4" stroke-dasharray="6 8" opacity="0.42"><circle cx="1440" cy="260" r="102"/><polygon points="1440,158 1528,311 1352,311"/></g>' +
-  '<g class="crystal" style="transform-origin:1440px 260px" opacity="0.8">' +
-    '<polygon points="1440,160 1482,260 1440,360 1398,260" fill="url(#ffCryL)"/>' +
-    '<polygon points="1440,160 1482,260 1440,260" fill="#a8eaff" opacity="0.6"/>' +
-    '<polygon points="1440,360 1482,260 1440,260" fill="#143278" opacity="0.45"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#ffParch)"/>' +
+  '<g class="cdb-flank-lt">' +
+    '<ellipse cx="180" cy="240" rx="340" ry="260" fill="url(#ffGoldL)"/>' +
   '</g>' +
-  '<g class="crystal" style="transform-origin:140px 720px;animation-delay:-3.5s" opacity="0.72">' +
-    '<polygon points="140,640 174,720 140,800 106,720" fill="url(#ffCryL)"/>' +
-    '<polygon points="140,640 174,720 140,720" fill="#a8eaff" opacity="0.6"/>' +
+  '<g class="cdb-flank-rt">' +
+    '<g class="ring" style="transform-origin:1440px 265px" fill="none" stroke="#b88a28" stroke-width="1.6" stroke-dasharray="10 6" opacity="0.5"><circle cx="1440" cy="265" r="134"/></g>' +
+    '<g class="ring rev" style="transform-origin:1440px 265px" fill="none" stroke="#2155b8" stroke-width="1.4" stroke-dasharray="6 8" opacity="0.42"><circle cx="1440" cy="265" r="102"/><polygon points="1440,163 1528,316 1352,316"/></g>' +
+    '<g class="crystal" style="transform-origin:1440px 265px" opacity="0.8">' +
+      '<polygon points="1440,165 1482,265 1440,365 1398,265" fill="url(#ffCryL)"/>' +
+      '<polygon points="1440,165 1482,265 1440,265" fill="#a8eaff" opacity="0.6"/>' +
+      '<polygon points="1440,365 1482,265 1440,265" fill="#143278" opacity="0.45"/>' +
+    '</g>' +
   '</g>' +
-  '<circle class="mote" cx="110" cy="940" r="6" fill="#2155b8" style="animation-delay:-3s"/>' +
-  '<circle class="mote" cx="170" cy="960" r="5" fill="#d49b27" style="animation-delay:-11s"/>' +
-  '<circle class="mote" cx="1420" cy="950" r="7" fill="#d49b27" style="animation-delay:-7s"/>' +
-  '<circle class="mote" cx="1490" cy="930" r="6" fill="#2155b8" style="animation-delay:-18s"/>' +
-  '<rect width="1600" height="1000" fill="url(#calmL)"/></svg>';
+  '<g class="cdb-flank-l">' +
+    '<g class="crystal" style="transform-origin:140px 720px;animation-delay:-3.5s" opacity="0.72">' +
+      '<polygon points="140,640 174,720 140,800 106,720" fill="url(#ffCryL)"/>' +
+      '<polygon points="140,640 174,720 140,720" fill="#a8eaff" opacity="0.6"/>' +
+    '</g>' +
+    '<circle class="mote" cx="110" cy="940" r="6" fill="#2155b8" style="animation-delay:-3s"/>' +
+    '<circle class="mote" cx="170" cy="960" r="5" fill="#d49b27" style="animation-delay:-11s"/>' +
+  '</g>' +
+  '<g class="cdb-flank-r">' +
+    '<ellipse cx="1440" cy="720" rx="360" ry="280" fill="url(#ffAetherL)"/>' +
+    '<circle class="mote" cx="1420" cy="950" r="7" fill="#d49b27" style="animation-delay:-7s"/>' +
+    '<circle class="mote" cx="1490" cy="930" r="6" fill="#2155b8" style="animation-delay:-18s"/>' +
+  '</g>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function finalFantasyDarkSvg() {
@@ -1046,33 +1133,38 @@ function finalFantasyDarkSvg() {
     '<linearGradient id="ffCryD" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b8f4ff"/><stop offset="0.5" stop-color="#46bdf5"/><stop offset="1" stop-color="#1b56a8"/></linearGradient>' +
     radGrad("ffLife", "#46f5c8", 0.34) + radGrad("ffCrystalGlow", "#46bdf5", 0.4) + radGrad("ffGoldD", "#f0c460", 0.6) + CALM_DARK
   ) +
-  '<rect width="1600" height="1000" fill="url(#ffWin)"/>' +
-  // Flowing Lifestream ribbons
+  '<rect x="-800" width="3200" height="1000" fill="url(#ffWin)"/>' +
   '<g class="stream">' +
     '<ellipse cx="220" cy="880" rx="520" ry="180" fill="url(#ffLife)"/>' +
     '<ellipse cx="1380" cy="900" rx="540" ry="190" fill="url(#ffCrystalGlow)"/>' +
-    '<path d="M-60 910 C320 820 1280 980 1660 870" fill="none" stroke="#46f5c8" stroke-width="2.5" opacity="0.35"/>' +
-    '<path d="M-60 945 C360 855 1240 1010 1660 905" fill="none" stroke="#7ee8ff" stroke-width="2" opacity="0.28"/>' +
+    '<path d="M-820 910 C-100 820 1280 980 2420 870" fill="none" stroke="#46f5c8" stroke-width="2.5" opacity="0.35"/>' +
+    '<path d="M-820 945 C-80 855 1240 1010 2420 905" fill="none" stroke="#7ee8ff" stroke-width="2" opacity="0.28"/>' +
   '</g>' +
-  '<ellipse cx="1440" cy="280" rx="250" ry="250" fill="url(#ffCrystalGlow)"/>' +
-  '<g class="ring" style="transform-origin:1440px 280px" fill="none" stroke="#f0c460" stroke-width="1.5" stroke-dasharray="10 6" opacity="0.45"><circle cx="1440" cy="280" r="138"/></g>' +
-  '<g class="ring rev" style="transform-origin:1440px 280px" fill="none" stroke="#46f5c8" stroke-width="1.4" stroke-dasharray="6 8" opacity="0.4"><circle cx="1440" cy="280" r="106"/></g>' +
-  '<g class="crystal" style="transform-origin:1440px 280px" opacity="0.88">' +
-    '<polygon points="1440,170 1484,280 1440,390 1396,280" fill="url(#ffCryD)"/>' +
-    '<polygon points="1440,170 1484,280 1440,280" fill="#ffffff" opacity="0.5"/>' +
-    '<polygon points="1440,390 1484,280 1440,280" fill="#0d2b68" opacity="0.5"/>' +
+  '<g class="cdb-flank-rt">' +
+    '<ellipse cx="1440" cy="280" rx="250" ry="250" fill="url(#ffCrystalGlow)"/>' +
+    '<g class="ring" style="transform-origin:1440px 280px" fill="none" stroke="#f0c460" stroke-width="1.5" stroke-dasharray="10 6" opacity="0.45"><circle cx="1440" cy="280" r="138"/></g>' +
+    '<g class="ring rev" style="transform-origin:1440px 280px" fill="none" stroke="#46f5c8" stroke-width="1.4" stroke-dasharray="6 8" opacity="0.4"><circle cx="1440" cy="280" r="106"/></g>' +
+    '<g class="crystal" style="transform-origin:1440px 280px" opacity="0.88">' +
+      '<polygon points="1440,170 1484,280 1440,390 1396,280" fill="url(#ffCryD)"/>' +
+      '<polygon points="1440,170 1484,280 1440,280" fill="#ffffff" opacity="0.5"/>' +
+      '<polygon points="1440,390 1484,280 1440,280" fill="#0d2b68" opacity="0.5"/>' +
+    '</g>' +
   '</g>' +
-  '<g class="crystal" style="transform-origin:135px 700px;animation-delay:-3.5s" opacity="0.78">' +
-    '<polygon points="135,615 170,700 135,785 100,700" fill="url(#ffCryD)"/>' +
-    '<polygon points="135,615 170,700 135,700" fill="#ffffff" opacity="0.5"/>' +
+  '<g class="cdb-flank-l">' +
+    '<g class="crystal" style="transform-origin:135px 700px;animation-delay:-3.5s" opacity="0.78">' +
+      '<polygon points="135,615 170,700 135,785 100,700" fill="url(#ffCryD)"/>' +
+      '<polygon points="135,615 170,700 135,700" fill="#ffffff" opacity="0.5"/>' +
+    '</g>' +
+    '<circle class="mote" cx="95" cy="960" r="10" fill="url(#ffGoldD)" style="animation-delay:-2s"/>' +
+    '<circle class="mote" cx="155" cy="980" r="9" fill="url(#ffLife)" style="animation-delay:-9s"/>' +
+    '<circle class="mote" cx="215" cy="970" r="8" fill="url(#ffGoldD)" style="animation-delay:-16s"/>' +
   '</g>' +
-  '<circle class="mote" cx="95" cy="960" r="10" fill="url(#ffGoldD)" style="animation-delay:-2s"/>' +
-  '<circle class="mote" cx="155" cy="980" r="9" fill="url(#ffLife)" style="animation-delay:-9s"/>' +
-  '<circle class="mote" cx="215" cy="970" r="8" fill="url(#ffGoldD)" style="animation-delay:-16s"/>' +
-  '<circle class="mote" cx="1395" cy="970" r="11" fill="url(#ffGoldD)" style="animation-delay:-6s"/>' +
-  '<circle class="mote" cx="1465" cy="950" r="9" fill="url(#ffLife)" style="animation-delay:-13s"/>' +
-  '<circle class="mote" cx="1525" cy="965" r="10" fill="url(#ffLife)" style="animation-delay:-20s"/>' +
-  '<rect width="1600" height="1000" fill="url(#calmD)"/></svg>';
+  '<g class="cdb-flank-r">' +
+    '<circle class="mote" cx="1395" cy="970" r="11" fill="url(#ffGoldD)" style="animation-delay:-6s"/>' +
+    '<circle class="mote" cx="1465" cy="950" r="9" fill="url(#ffLife)" style="animation-delay:-13s"/>' +
+    '<circle class="mote" cx="1525" cy="965" r="10" fill="url(#ffLife)" style="animation-delay:-20s"/>' +
+  '</g>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
 function zeldaLightSvg() {
@@ -1089,26 +1181,35 @@ function zeldaLightSvg() {
     '<linearGradient id="zMeadow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2f7e7"/><stop offset="0.65" stop-color="#e3edd2"/><stop offset="1" stop-color="#cedfb6"/></linearGradient>' +
     radGrad("zSun", "#f2c231", 0.38) + radGrad("zNaviL", "#2898d8", 0.55) + CALM_LIGHT
   ) +
-  '<rect width="1600" height="1000" fill="url(#zMeadow)"/>' +
-  '<ellipse cx="1440" cy="195" rx="360" ry="260" fill="url(#zSun)"/>' +
-  '<g class="rays" style="transform-origin:1440px 195px" stroke="#d4a017" stroke-width="1.5" stroke-dasharray="8 8" fill="none" opacity="0.38"><circle cx="1440" cy="195" r="108"/></g>' +
-  '<g class="tri" style="transform-origin:1440px 195px" opacity="0.84">' +
-    '<polygon points="1440,122 1478,188 1402,188" fill="#e6b422" stroke="#986c08" stroke-width="2"/>' +
-    '<polygon points="1402,188 1440,254 1364,254" fill="#e6b422" stroke="#986c08" stroke-width="2"/>' +
-    '<polygon points="1478,188 1516,254 1440,254" fill="#e6b422" stroke="#986c08" stroke-width="2"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#zMeadow)"/>' +
+  '<g class="cdb-flank-rt">' +
+    '<ellipse cx="1440" cy="205" rx="360" ry="260" fill="url(#zSun)"/>' +
+    '<g class="rays" style="transform-origin:1440px 205px" stroke="#d4a017" stroke-width="1.5" stroke-dasharray="8 8" fill="none" opacity="0.38"><circle cx="1440" cy="205" r="108"/></g>' +
+    '<g class="tri" style="transform-origin:1440px 205px" opacity="0.84">' +
+      '<polygon points="1440,132 1478,198 1402,198" fill="#e6b422" stroke="#986c08" stroke-width="2"/>' +
+      '<polygon points="1402,198 1440,264 1364,264" fill="#e6b422" stroke="#986c08" stroke-width="2"/>' +
+      '<polygon points="1478,198 1516,264 1440,264" fill="#e6b422" stroke="#986c08" stroke-width="2"/>' +
+    '</g>' +
   '</g>' +
-  '<path d="M0 1000 L0 860 Q140 810 280 1000 Z" fill="#2d7a3e" opacity="0.4"/>' +
-  '<path d="M1320 1000 Q1460 810 1600 860 L1600 1000 Z" fill="#2d7a3e" opacity="0.4"/>' +
-  // Navi with fluttering fairy wings
-  '<g class="fairy" transform="translate(150 360)">' +
-    '<g class="fwing"><ellipse cx="-14" cy="-8" rx="14" ry="7" transform="rotate(-28 -14 -8)" fill="#ffffff" opacity="0.75"/><ellipse cx="14" cy="-8" rx="14" ry="7" transform="rotate(28 14 -8)" fill="#ffffff" opacity="0.75"/></g>' +
-    '<circle cx="0" cy="0" r="28" fill="url(#zNaviL)"/><circle cx="0" cy="0" r="8" fill="#ffffff"/>' +
+  '<g class="cdb-flank-l">' +
+    '<path d="M-240 1000 L-240 860 Q40 800 280 1000 Z" fill="#2d7a3e" opacity="0.4"/>' +
+    '<g transform="translate(150 360)">' +
+      '<g class="fairy">' +
+        '<g class="fwing"><ellipse cx="-14" cy="-8" rx="14" ry="7" transform="rotate(-28 -14 -8)" fill="#ffffff" opacity="0.75"/><ellipse cx="14" cy="-8" rx="14" ry="7" transform="rotate(28 14 -8)" fill="#ffffff" opacity="0.75"/></g>' +
+        '<circle cx="0" cy="0" r="28" fill="url(#zNaviL)"/><circle cx="0" cy="0" r="8" fill="#ffffff"/>' +
+      '</g>' +
+    '</g>' +
   '</g>' +
-  '<g class="fairy b" transform="translate(1430 680)">' +
-    '<g class="fwing"><ellipse cx="-14" cy="-8" rx="14" ry="7" transform="rotate(-28 -14 -8)" fill="#ffffff" opacity="0.75"/><ellipse cx="14" cy="-8" rx="14" ry="7" transform="rotate(28 14 -8)" fill="#ffffff" opacity="0.75"/></g>' +
-    '<circle cx="0" cy="0" r="28" fill="url(#zNaviL)"/><circle cx="0" cy="0" r="8" fill="#ffffff"/>' +
+  '<g class="cdb-flank-r">' +
+    '<path d="M1320 1000 Q1560 800 1840 860 L1840 1000 Z" fill="#2d7a3e" opacity="0.4"/>' +
+    '<g transform="translate(1430 680)">' +
+      '<g class="fairy b">' +
+        '<g class="fwing"><ellipse cx="-14" cy="-8" rx="14" ry="7" transform="rotate(-28 -14 -8)" fill="#ffffff" opacity="0.75"/><ellipse cx="14" cy="-8" rx="14" ry="7" transform="rotate(28 14 -8)" fill="#ffffff" opacity="0.75"/></g>' +
+        '<circle cx="0" cy="0" r="28" fill="url(#zNaviL)"/><circle cx="0" cy="0" r="8" fill="#ffffff"/>' +
+      '</g>' +
+    '</g>' +
   '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmL)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function zeldaDarkSvg() {
@@ -1128,37 +1229,47 @@ function zeldaDarkSvg() {
     '<linearGradient id="zGrove" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b160f"/><stop offset="0.6" stop-color="#132419"/><stop offset="1" stop-color="#08110b"/></linearGradient>' +
     radGrad("zTriGlow", "#f0c419", 0.42) + radGrad("zNaviD", "#56d8ff", 0.72) + radGrad("zTatl", "#ffe066", 0.65) + radGrad("zTael", "#c878ff", 0.6) + CALM_DARK
   ) +
-  '<rect width="1600" height="1000" fill="url(#zGrove)"/>' +
-  '<ellipse cx="1440" cy="200" rx="320" ry="240" fill="url(#zTriGlow)"/>' +
-  '<g class="rays" style="transform-origin:1440px 200px" stroke="#f0c419" stroke-width="1.5" stroke-dasharray="10 7" fill="none" opacity="0.42"><circle cx="1440" cy="200" r="112"/></g>' +
-  '<g class="tri" style="transform-origin:1440px 200px" fill="#f0c419" opacity="0.88">' +
-    '<polygon points="1440,126 1478,192 1402,192"/>' +
-    '<polygon points="1402,192 1440,258 1364,258"/>' +
-    '<polygon points="1478,192 1516,258 1440,258"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#zGrove)"/>' +
+  '<g class="cdb-flank-rt">' +
+    '<ellipse cx="1440" cy="210" rx="320" ry="240" fill="url(#zTriGlow)"/>' +
+    '<g class="rays" style="transform-origin:1440px 210px" stroke="#f0c419" stroke-width="1.5" stroke-dasharray="10 7" fill="none" opacity="0.42"><circle cx="1440" cy="210" r="112"/></g>' +
+    '<g class="tri" style="transform-origin:1440px 210px" fill="#f0c419" opacity="0.88">' +
+      '<polygon points="1440,136 1478,202 1402,202"/>' +
+      '<polygon points="1402,202 1440,268 1364,268"/>' +
+      '<polygon points="1478,202 1516,268 1440,268"/>' +
+    '</g>' +
   '</g>' +
-  // Master Sword in Sacred Pedestal with gleaming blade sweep
-  '<g opacity="0.72" transform="translate(135 770)">' +
-    '<polygon points="-48,160 48,160 68,215 -68,215" fill="#253b2c" stroke="#3f624a" stroke-width="2"/>' +
-    '<rect x="-6" y="10" width="12" height="150" fill="#a8c8de"/>' +
-    '<rect class="glint" x="-6" y="10" width="12" height="22" fill="#ffffff"/>' +
-    '<polygon points="-32,8 32,8 20,24 -20,24" fill="#5268c8" stroke="#f0c419" stroke-width="1.5"/>' +
-    '<polygon points="0,10 5,18 0,26 -5,18" fill="#f0c419"/>' +
-    '<rect x="-4" y="-36" width="8" height="44" fill="#3b5998"/>' +
-    '<circle cx="0" cy="-42" r="8" fill="#f0c419"/>' +
+  '<g class="cdb-flank-l">' +
+    '<g opacity="0.72" transform="translate(135 785)">' +
+      '<polygon points="-48,160 48,160 72,215 -72,215" fill="#253b2c" stroke="#3f624a" stroke-width="2"/>' +
+      '<rect x="-6" y="10" width="12" height="150" fill="#a8c8de"/>' +
+      '<rect class="glint" x="-6" y="10" width="12" height="22" fill="#ffffff"/>' +
+      '<polygon points="-32,8 32,8 20,24 -20,24" fill="#5268c8" stroke="#f0c419" stroke-width="1.5"/>' +
+      '<polygon points="0,10 5,18 0,26 -5,18" fill="#f0c419"/>' +
+      '<rect x="-4" y="-36" width="8" height="44" fill="#3b5998"/>' +
+      '<circle cx="0" cy="-42" r="8" fill="#f0c419"/>' +
+    '</g>' +
+    '<g transform="translate(170 310)">' +
+      '<g class="fairy">' +
+        '<g class="fwing"><ellipse cx="-14" cy="-8" rx="14" ry="7" transform="rotate(-28 -14 -8)" fill="#d8f8ff" opacity="0.7"/><ellipse cx="14" cy="-8" rx="14" ry="7" transform="rotate(28 14 -8)" fill="#d8f8ff" opacity="0.7"/></g>' +
+        '<circle cx="0" cy="0" r="34" fill="url(#zNaviD)"/><circle cx="0" cy="0" r="8" fill="#ffffff"/>' +
+      '</g>' +
+    '</g>' +
   '</g>' +
-  // Navi (cyan), Tatl (gold), and Tael (violet) with fluttering wings
-  '<g class="fairy" transform="translate(170 310)">' +
-    '<g class="fwing"><ellipse cx="-14" cy="-8" rx="14" ry="7" transform="rotate(-28 -14 -8)" fill="#d8f8ff" opacity="0.7"/><ellipse cx="14" cy="-8" rx="14" ry="7" transform="rotate(28 14 -8)" fill="#d8f8ff" opacity="0.7"/></g>' +
-    '<circle cx="0" cy="0" r="34" fill="url(#zNaviD)"/><circle cx="0" cy="0" r="8" fill="#ffffff"/>' +
+  '<g class="cdb-flank-r">' +
+    '<g transform="translate(1450 690)">' +
+      '<g class="fairy b">' +
+        '<g class="fwing"><ellipse cx="-14" cy="-8" rx="14" ry="7" transform="rotate(-28 -14 -8)" fill="#fff8d0" opacity="0.7"/><ellipse cx="14" cy="-8" rx="14" ry="7" transform="rotate(28 14 -8)" fill="#fff8d0" opacity="0.7"/></g>' +
+        '<circle cx="0" cy="0" r="32" fill="url(#zTatl)"/><circle cx="0" cy="0" r="7" fill="#fffbe0"/>' +
+      '</g>' +
+    '</g>' +
+    '<g transform="translate(1360 540)">' +
+      '<g class="fairy c">' +
+        '<circle cx="0" cy="0" r="26" fill="url(#zTael)"/><circle cx="0" cy="0" r="6" fill="#f6e6ff"/>' +
+      '</g>' +
+    '</g>' +
   '</g>' +
-  '<g class="fairy b" transform="translate(1450 690)">' +
-    '<g class="fwing"><ellipse cx="-14" cy="-8" rx="14" ry="7" transform="rotate(-28 -14 -8)" fill="#fff8d0" opacity="0.7"/><ellipse cx="14" cy="-8" rx="14" ry="7" transform="rotate(28 14 -8)" fill="#fff8d0" opacity="0.7"/></g>' +
-    '<circle cx="0" cy="0" r="32" fill="url(#zTatl)"/><circle cx="0" cy="0" r="7" fill="#fffbe0"/>' +
-  '</g>' +
-  '<g class="fairy c" transform="translate(1360 540)">' +
-    '<circle cx="0" cy="0" r="26" fill="url(#zTael)"/><circle cx="0" cy="0" r="6" fill="#f6e6ff"/>' +
-  '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmD)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
 function warcraftLightSvg() {
@@ -1171,21 +1282,26 @@ function warcraftLightSvg() {
     '<linearGradient id="wcMap" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4ecda"/><stop offset="0.6" stop-color="#eadcc2"/><stop offset="1" stop-color="#dcc8a4"/></linearGradient>' +
     radGrad("wcAlliance", "#1f4aa0", 0.26) + radGrad("wcGold", "#d49b27", 0.32) + CALM_LIGHT
   ) +
-  '<rect width="1600" height="1000" fill="url(#wcMap)"/>' +
-  '<ellipse class="glow" style="transform-origin:160px 220px" cx="160" cy="220" rx="340" ry="260" fill="url(#wcAlliance)"/>' +
-  '<ellipse class="glow" style="transform-origin:1440px 760px" cx="1440" cy="760" rx="360" ry="280" fill="url(#wcGold)"/>' +
-  '<g class="rune" style="transform-origin:160px 220px" fill="none" stroke="#1f4aa0" stroke-width="2" opacity="0.48">' +
-    '<circle cx="160" cy="220" r="116"/><circle cx="160" cy="220" r="88" stroke-dasharray="12 8"/>' +
-    '<polygon points="160,110 194,220 160,330 126,220"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#wcMap)"/>' +
+  '<g class="cdb-flank-lt">' +
+    '<ellipse class="glow" style="transform-origin:160px 235px" cx="160" cy="235" rx="340" ry="260" fill="url(#wcAlliance)"/>' +
+    '<g class="rune" style="transform-origin:160px 235px" fill="none" stroke="#1f4aa0" stroke-width="2" opacity="0.48">' +
+      '<circle cx="160" cy="235" r="116"/><circle cx="160" cy="235" r="88" stroke-dasharray="12 8"/>' +
+      '<polygon points="160,125 194,235 160,345 126,235"/>' +
+    '</g>' +
+    '<g class="rune rev" style="transform-origin:160px 235px" fill="none" stroke="#d49b27" stroke-width="1.8" opacity="0.45">' +
+      '<polygon points="160,155 229,275 91,275"/><polygon points="160,315 229,195 91,195"/>' +
+    '</g>' +
   '</g>' +
-  '<g class="rune rev" style="transform-origin:160px 220px" fill="none" stroke="#d49b27" stroke-width="1.8" opacity="0.45">' +
-    '<polygon points="160,140 229,260 91,260"/><polygon points="160,300 229,180 91,180"/>' +
+  '<g class="cdb-flank-l"></g>' +
+  '<g class="cdb-flank-r">' +
+    '<ellipse class="glow" style="transform-origin:1440px 760px" cx="1440" cy="760" rx="360" ry="280" fill="url(#wcGold)"/>' +
+    '<g class="rune rev" style="transform-origin:1440px 760px" fill="none" stroke="#8a5a18" stroke-width="2" opacity="0.48">' +
+      '<circle cx="1440" cy="760" r="120"/><circle cx="1440" cy="760" r="90" stroke-dasharray="10 6"/>' +
+      '<polygon points="1440,648 1472,760 1440,872 1408,760"/>' +
+    '</g>' +
   '</g>' +
-  '<g class="rune rev" style="transform-origin:1440px 760px" fill="none" stroke="#8a5a18" stroke-width="2" opacity="0.48">' +
-    '<circle cx="1440" cy="760" r="120"/><circle cx="1440" cy="760" r="90" stroke-dasharray="10 6"/>' +
-    '<polygon points="1440,648 1472,760 1440,872 1408,760"/>' +
-  '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmL)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function warcraftDarkSvg() {
@@ -1200,25 +1316,31 @@ function warcraftDarkSvg() {
     '<linearGradient id="wcDark" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#110c08"/><stop offset="0.6" stop-color="#1c140d"/><stop offset="1" stop-color="#2b1c10"/></linearGradient>' +
     radGrad("wcFel", "#5aa832", 0.36) + radGrad("wcArcane", "#e8b93f", 0.42) + radGrad("wcSpark", "#ffbd4a", 0.78) + CALM_DARK
   ) +
-  '<rect width="1600" height="1000" fill="url(#wcDark)"/>' +
-  '<g class="hearth" style="transform-origin:150px 880px"><ellipse cx="150" cy="880" rx="440" ry="280" fill="url(#wcArcane)"/></g>' +
-  '<g class="hearth" style="transform-origin:1450px 220px;animation-delay:-3.5s"><ellipse cx="1450" cy="220" rx="420" ry="260" fill="url(#wcFel)"/></g>' +
-  '<g class="rune" style="transform-origin:1450px 220px" fill="none" stroke="#5aa832" stroke-width="2" opacity="0.58">' +
-    '<circle cx="1450" cy="220" r="118"/><circle cx="1450" cy="220" r="88" stroke-dasharray="14 7"/>' +
-    '<polygon points="1450,110 1486,220 1450,330 1414,220"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#wcDark)"/>' +
+  '<g class="cdb-flank-rt">' +
+    '<g class="hearth" style="transform-origin:1450px 235px;animation-delay:-3.5s"><ellipse cx="1450" cy="235" rx="420" ry="260" fill="url(#wcFel)"/></g>' +
+    '<g class="rune" style="transform-origin:1450px 235px" fill="none" stroke="#5aa832" stroke-width="2" opacity="0.58">' +
+      '<circle cx="1450" cy="235" r="118"/><circle cx="1450" cy="235" r="88" stroke-dasharray="14 7"/>' +
+      '<polygon points="1450,125 1486,235 1450,345 1414,235"/>' +
+    '</g>' +
+    '<g class="rune rev" style="transform-origin:1450px 235px" fill="none" stroke="#9be858" stroke-width="1.6" opacity="0.45">' +
+      '<polygon points="1450,157 1518,274 1382,274"/><polygon points="1450,313 1518,196 1382,196"/>' +
+    '</g>' +
   '</g>' +
-  '<g class="rune rev" style="transform-origin:1450px 220px" fill="none" stroke="#9be858" stroke-width="1.6" opacity="0.45">' +
-    '<polygon points="1450,142 1518,259 1382,259"/><polygon points="1450,298 1518,181 1382,181"/>' +
+  '<g class="cdb-flank-l">' +
+    '<g class="hearth" style="transform-origin:150px 880px"><ellipse cx="150" cy="880" rx="440" ry="280" fill="url(#wcArcane)"/></g>' +
+    '<g class="rune rev" style="transform-origin:150px 780px" fill="none" stroke="#e8b93f" stroke-width="2" opacity="0.58">' +
+      '<circle cx="150" cy="780" r="118"/><circle cx="150" cy="780" r="88" stroke-dasharray="14 7"/>' +
+      '<path d="M150 740 C180 740 190 780 150 780 C120 780 125 810 150 810" stroke-width="3.5"/>' +
+    '</g>' +
+    '<circle class="ember" cx="110" cy="960" r="11" fill="url(#wcSpark)" style="animation-delay:-3s"/>' +
+    '<circle class="ember" cx="195" cy="980" r="9" fill="url(#wcSpark)" style="animation-delay:-14s"/>' +
   '</g>' +
-  '<g class="rune rev" style="transform-origin:150px 780px" fill="none" stroke="#e8b93f" stroke-width="2" opacity="0.58">' +
-    '<circle cx="150" cy="780" r="118"/><circle cx="150" cy="780" r="88" stroke-dasharray="14 7"/>' +
-    '<path d="M150 740 C180 740 190 780 150 780 C120 780 125 810 150 810" stroke-width="3.5"/>' +
+  '<g class="cdb-flank-r">' +
+    '<circle class="ember" cx="1410" cy="965" r="10" fill="url(#wcFel)" style="animation-delay:-8s"/>' +
+    '<circle class="ember" cx="1495" cy="955" r="11" fill="url(#wcFel)" style="animation-delay:-19s"/>' +
   '</g>' +
-  '<circle class="ember" cx="110" cy="960" r="11" fill="url(#wcSpark)" style="animation-delay:-3s"/>' +
-  '<circle class="ember" cx="195" cy="980" r="9" fill="url(#wcSpark)" style="animation-delay:-14s"/>' +
-  '<circle class="ember" cx="1410" cy="965" r="10" fill="url(#wcFel)" style="animation-delay:-8s"/>' +
-  '<circle class="ember" cx="1495" cy="955" r="11" fill="url(#wcFel)" style="animation-delay:-19s"/>' +
-  '<rect width="1600" height="1000" fill="url(#calmD)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
 function dragonballLightSvg() {
@@ -1234,32 +1356,41 @@ function dragonballLightSvg() {
     '<radialGradient id="dbBall" cx="0.38" cy="0.35" r="0.65"><stop offset="0" stop-color="#ffe58f"/><stop offset="0.55" stop-color="#f57d0d"/><stop offset="1" stop-color="#b84200"/></radialGradient>' +
     radGrad("dbAuraL", "#ff9d2e", 0.34) + CALM_LIGHT
   ) +
-  '<rect width="1600" height="1000" fill="url(#dbSkyL)"/>' +
-  '<ellipse cx="1440" cy="240" rx="340" ry="240" fill="url(#dbAuraL)"/>' +
-  // Flying Nimbus with golden speed trail
-  '<g class="nimbus" opacity="0.84">' +
-    '<path d="M-20 168 L70 162 L70 176 Z" fill="#ffd93d" opacity="0.65"/>' +
-    '<path d="M55 182 L195 182 C220 182 230 146 202 140 C196 114 158 114 148 135 C128 118 96 135 96 158 L55 166 Z" fill="#ffd93d" stroke="#d48800" stroke-width="2"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#dbSkyL)"/>' +
+  '<g class="cdb-flank-lt">' +
+    '<g class="nimbus" opacity="0.84">' +
+      '<path d="M-20 176 L70 170 L70 184 Z" fill="#ffd93d" opacity="0.65"/>' +
+      '<path d="M55 190 L195 190 C220 190 230 154 202 148 C196 122 158 122 148 143 C128 126 96 143 96 166 L55 174 Z" fill="#ffd93d" stroke="#d48800" stroke-width="2"/>' +
+    '</g>' +
   '</g>' +
-  // 7-Dragon-Ball orbital ring in top right + featured 4-Star Ball
-  '<g class="ring" style="transform-origin:1440px 240px" opacity="0.72">' +
-    '<circle cx="1440" cy="142" r="14" fill="url(#dbBall)"/><circle cx="1516" cy="178" r="14" fill="url(#dbBall)"/>' +
-    '<circle cx="1535" cy="262" r="14" fill="url(#dbBall)"/><circle cx="1482" cy="328" r="14" fill="url(#dbBall)"/>' +
-    '<circle cx="1398" cy="328" r="14" fill="url(#dbBall)"/><circle cx="1345" cy="262" r="14" fill="url(#dbBall)"/>' +
-    '<circle cx="1364" cy="178" r="14" fill="url(#dbBall)"/>' +
+  '<g class="cdb-flank-rt">' +
+    '<ellipse cx="1440" cy="260" rx="340" ry="240" fill="url(#dbAuraL)"/>' +
+    '<g class="ring" style="transform-origin:1440px 260px" opacity="0.72">' +
+      '<circle cx="1440" cy="162" r="14" fill="url(#dbBall)"/><circle cx="1516" cy="198" r="14" fill="url(#dbBall)"/>' +
+      '<circle cx="1535" cy="282" r="14" fill="url(#dbBall)"/><circle cx="1482" cy="348" r="14" fill="url(#dbBall)"/>' +
+      '<circle cx="1398" cy="348" r="14" fill="url(#dbBall)"/><circle cx="1345" cy="282" r="14" fill="url(#dbBall)"/>' +
+      '<circle cx="1364" cy="198" r="14" fill="url(#dbBall)"/>' +
+    '</g>' +
+    '<g transform="translate(1440 260)">' +
+      '<g class="orb" opacity="0.92">' +
+        '<circle cx="0" cy="0" r="38" fill="url(#dbBall)"/>' +
+        '<polygon points="-10,-12 -7,-4 1,-4 -5,1 -3,9 -10,4 -17,9 -15,1 -21,-4 -13,-4" fill="#e3242b"/>' +
+        '<polygon points="12,-12 15,-4 23,-4 17,1 19,9 12,4 5,9 7,1 1,-4 9,-4" fill="#e3242b"/>' +
+        '<polygon points="-10,12 -7,20 1,20 -5,25 -3,33 -10,28 -17,33 -15,25 -21,20 -13,20" fill="#e3242b"/>' +
+        '<polygon points="12,12 15,20 23,20 17,25 19,33 12,28 5,33 7,25 1,20 9,20" fill="#e3242b"/>' +
+      '</g>' +
+    '</g>' +
   '</g>' +
-  '<g class="orb" transform="translate(1440 240)" opacity="0.92">' +
-    '<circle cx="0" cy="0" r="38" fill="url(#dbBall)"/>' +
-    '<polygon points="-10,-12 -7,-4 1,-4 -5,1 -3,9 -10,4 -17,9 -15,1 -21,-4 -13,-4" fill="#e3242b"/>' +
-    '<polygon points="12,-12 15,-4 23,-4 17,1 19,9 12,4 5,9 7,1 1,-4 9,-4" fill="#e3242b"/>' +
-    '<polygon points="-10,12 -7,20 1,20 -5,25 -3,33 -10,28 -17,33 -15,25 -21,20 -13,20" fill="#e3242b"/>' +
-    '<polygon points="12,12 15,20 23,20 17,25 19,33 12,28 5,33 7,25 1,20 9,20" fill="#e3242b"/>' +
+  '<g class="cdb-flank-l">' +
+    '<g transform="translate(130 740)">' +
+      '<g class="orb b" opacity="0.86">' +
+        '<circle cx="0" cy="0" r="30" fill="url(#dbBall)"/>' +
+        '<polygon points="0,-10 3,-2 11,-2 5,3 7,11 0,6 -7,11 -5,3 -11,-2 -3,-2" fill="#e3242b"/>' +
+      '</g>' +
+    '</g>' +
   '</g>' +
-  '<g class="orb b" transform="translate(130 740)" opacity="0.86">' +
-    '<circle cx="0" cy="0" r="30" fill="url(#dbBall)"/>' +
-    '<polygon points="0,-10 3,-2 11,-2 5,3 7,11 0,6 -7,11 -5,3 -11,-2 -3,-2" fill="#e3242b"/>' +
-  '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmL)"/></svg>';
+  '<g class="cdb-flank-r"></g>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function dragonballDarkSvg() {
@@ -1279,37 +1410,47 @@ function dragonballDarkSvg() {
     '<radialGradient id="dbBallD" cx="0.38" cy="0.35" r="0.65"><stop offset="0" stop-color="#ffe58f"/><stop offset="0.55" stop-color="#ff8c1a"/><stop offset="1" stop-color="#b84200"/></radialGradient>' +
     radGrad("dbAuraD", "#ff8c1a", 0.46) + radGrad("dbGoldD", "#ffd166", 0.72) + CALM_DARK
   ) +
-  '<rect width="1600" height="1000" fill="url(#dbCosmos)"/>' +
-  '<g class="ki" style="transform-origin:150px 920px"><ellipse cx="150" cy="920" rx="480" ry="320" fill="url(#dbAuraD)"/></g>' +
-  '<g class="ki" style="transform-origin:1450px 920px;animation-delay:-2.5s"><ellipse cx="1450" cy="920" rx="480" ry="320" fill="url(#dbAuraD)"/></g>' +
-  // 7-Dragon-Ball summoning ring + 4-Star centerpiece
-  '<g class="ring" style="transform-origin:1445px 250px" opacity="0.78">' +
-    '<circle cx="1445" cy="148" r="15" fill="url(#dbBallD)"/><circle cx="1524" cy="186" r="15" fill="url(#dbBallD)"/>' +
-    '<circle cx="1544" cy="272" r="15" fill="url(#dbBallD)"/><circle cx="1489" cy="342" r="15" fill="url(#dbBallD)"/>' +
-    '<circle cx="1401" cy="342" r="15" fill="url(#dbBallD)"/><circle cx="1346" cy="272" r="15" fill="url(#dbBallD)"/>' +
-    '<circle cx="1366" cy="186" r="15" fill="url(#dbBallD)"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#dbCosmos)"/>' +
+  '<g class="cdb-flank-lt">' +
+    '<g transform="translate(135 280)">' +
+      '<g class="orb b" opacity="0.88">' +
+        '<circle cx="0" cy="0" r="46" fill="url(#dbAuraD)"/>' +
+        '<circle cx="0" cy="0" r="28" fill="url(#dbBallD)"/>' +
+        '<polygon points="0,-9 3,-2 10,-2 4,3 6,10 0,5 -6,10 -4,3 -10,-2 -3,-2" fill="#e3242b"/>' +
+      '</g>' +
+    '</g>' +
   '</g>' +
-  '<g class="orb" transform="translate(1445 250)" opacity="0.94">' +
-    '<circle cx="0" cy="0" r="58" fill="url(#dbAuraD)"/>' +
-    '<circle cx="0" cy="0" r="38" fill="url(#dbBallD)"/>' +
-    '<polygon points="-10,-12 -7,-4 1,-4 -5,1 -3,9 -10,4 -17,9 -15,1 -21,-4 -13,-4" fill="#e3242b"/>' +
-    '<polygon points="12,-12 15,-4 23,-4 17,1 19,9 12,4 5,9 7,1 1,-4 9,-4" fill="#e3242b"/>' +
-    '<polygon points="-10,12 -7,20 1,20 -5,25 -3,33 -10,28 -17,33 -15,25 -21,20 -13,20" fill="#e3242b"/>' +
-    '<polygon points="12,12 15,20 23,20 17,25 19,33 12,28 5,33 7,25 1,20 9,20" fill="#e3242b"/>' +
+  '<g class="cdb-flank-rt">' +
+    '<g class="ring" style="transform-origin:1445px 265px" opacity="0.78">' +
+      '<circle cx="1445" cy="163" r="15" fill="url(#dbBallD)"/><circle cx="1524" cy="201" r="15" fill="url(#dbBallD)"/>' +
+      '<circle cx="1544" cy="287" r="15" fill="url(#dbBallD)"/><circle cx="1489" cy="357" r="15" fill="url(#dbBallD)"/>' +
+      '<circle cx="1401" cy="357" r="15" fill="url(#dbBallD)"/><circle cx="1346" cy="287" r="15" fill="url(#dbBallD)"/>' +
+      '<circle cx="1366" cy="201" r="15" fill="url(#dbBallD)"/>' +
+    '</g>' +
+    '<g transform="translate(1445 265)">' +
+      '<g class="orb" opacity="0.94">' +
+        '<circle cx="0" cy="0" r="58" fill="url(#dbAuraD)"/>' +
+        '<circle cx="0" cy="0" r="38" fill="url(#dbBallD)"/>' +
+        '<polygon points="-10,-12 -7,-4 1,-4 -5,1 -3,9 -10,4 -17,9 -15,1 -21,-4 -13,-4" fill="#e3242b"/>' +
+        '<polygon points="12,-12 15,-4 23,-4 17,1 19,9 12,4 5,9 7,1 1,-4 9,-4" fill="#e3242b"/>' +
+        '<polygon points="-10,12 -7,20 1,20 -5,25 -3,33 -10,28 -17,33 -15,25 -21,20 -13,20" fill="#e3242b"/>' +
+        '<polygon points="12,12 15,20 23,20 17,25 19,33 12,28 5,33 7,25 1,20 9,20" fill="#e3242b"/>' +
+      '</g>' +
+    '</g>' +
   '</g>' +
-  '<g class="orb b" transform="translate(135 280)" opacity="0.88">' +
-    '<circle cx="0" cy="0" r="46" fill="url(#dbAuraD)"/>' +
-    '<circle cx="0" cy="0" r="28" fill="url(#dbBallD)"/>' +
-    '<polygon points="0,-9 3,-2 10,-2 4,3 6,10 0,5 -6,10 -4,3 -10,-2 -3,-2" fill="#e3242b"/>' +
+  '<g class="cdb-flank-l">' +
+    '<g class="ki" style="transform-origin:150px 920px"><ellipse cx="150" cy="920" rx="480" ry="320" fill="url(#dbAuraD)"/></g>' +
+    '<polyline class="bolt" points="95,860 118,815 102,795 132,740 118,715 145,670" fill="none" stroke="#7ef9ff" stroke-width="2.5"/>' +
+    '<circle class="spark" cx="110" cy="960" r="10" fill="url(#dbGoldD)" style="animation-delay:-4s"/>' +
+    '<circle class="spark" cx="185" cy="975" r="9" fill="url(#dbGoldD)" style="animation-delay:-11s"/>' +
   '</g>' +
-  // Super Saiyan golden Ki bio-electricity arcs
-  '<polyline class="bolt" points="95,860 118,815 102,795 132,740 118,715 145,670" fill="none" stroke="#7ef9ff" stroke-width="2.5"/>' +
-  '<polyline class="bolt" style="animation-delay:-1.4s" points="1505,850 1480,805 1496,785 1468,735 1484,710 1455,665" fill="none" stroke="#ffd166" stroke-width="2.5"/>' +
-  '<circle class="spark" cx="110" cy="960" r="10" fill="url(#dbGoldD)" style="animation-delay:-4s"/>' +
-  '<circle class="spark" cx="185" cy="975" r="9" fill="url(#dbGoldD)" style="animation-delay:-11s"/>' +
-  '<circle class="spark" cx="1420" cy="965" r="11" fill="url(#dbGoldD)" style="animation-delay:-7s"/>' +
-  '<circle class="spark" cx="1490" cy="970" r="12" fill="url(#dbGoldD)" style="animation-delay:-15s"/>' +
-  '<rect width="1600" height="1000" fill="url(#calmD)"/></svg>';
+  '<g class="cdb-flank-r">' +
+    '<g class="ki" style="transform-origin:1450px 920px;animation-delay:-2.5s"><ellipse cx="1450" cy="920" rx="480" ry="320" fill="url(#dbAuraD)"/></g>' +
+    '<polyline class="bolt" style="animation-delay:-1.4s" points="1505,850 1480,805 1496,785 1468,735 1484,710 1455,665" fill="none" stroke="#ffd166" stroke-width="2.5"/>' +
+    '<circle class="spark" cx="1420" cy="965" r="11" fill="url(#dbGoldD)" style="animation-delay:-7s"/>' +
+    '<circle class="spark" cx="1490" cy="970" r="12" fill="url(#dbGoldD)" style="animation-delay:-15s"/>' +
+  '</g>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
 // =============================================================================
@@ -1335,74 +1476,72 @@ function gtaILightSvg() {
     '</pattern>' +
     CALM_LIGHT
   ) +
-  '<rect width="1600" height="1000" fill="url(#gta1GroundL)"/>' +
-  '<rect width="1600" height="1000" fill="url(#gta1GridL)"/>' +
-  // Left & Right top-down 8-bit pixel asphalt highways and city blocks (crispEdges)
-  '<g shape-rendering="crispEdges" opacity="0.36">' +
-    // Left flank avenue (x=168..264) + sidewalks
-    '<rect x="156" y="0" width="120" height="1000" fill="#b8b0a0" opacity="0.7"/>' +
-    '<rect x="168" y="0" width="96" height="1000" fill="#707888" opacity="0.65"/>' +
-    '<rect x="214" y="0" width="4" height="1000" fill="#d97706" stroke-dasharray="24 24" opacity="0.75"/>' +
-    // Left flank top-down pixel buildings
-    '<rect x="24" y="120" width="116" height="180" fill="#b09e86"/><rect x="32" y="128" width="100" height="164" fill="#c4b299"/>' +
-    '<rect x="44" y="144" width="24" height="24" fill="#94826a"/><rect x="88" y="220" width="32" height="32" fill="#94826a"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta1GroundL)"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta1GridL)"/>' +
+  '<g class="cdb-flank-l" shape-rendering="crispEdges" opacity="0.36">' +
+    '<rect x="156" y="-450" width="120" height="1550" fill="#b8b0a0" opacity="0.7"/>' +
+    '<rect x="168" y="-450" width="96" height="1550" fill="#707888" opacity="0.65"/>' +
+    '<rect x="214" y="-450" width="4" height="1550" fill="#d97706" stroke-dasharray="24 24" opacity="0.75"/>' +
+    '<rect x="24" y="130" width="116" height="180" fill="#b09e86"/><rect x="32" y="138" width="100" height="164" fill="#c4b299"/>' +
+    '<rect x="44" y="154" width="24" height="24" fill="#94826a"/><rect x="88" y="230" width="32" height="32" fill="#94826a"/>' +
     '<rect x="24" y="340" width="116" height="220" fill="#9ca5b4"/><rect x="32" y="348" width="100" height="204" fill="#b2bccb"/>' +
     '<rect x="48" y="372" width="68" height="40" fill="#848d9c"/><rect x="48" y="452" width="68" height="40" fill="#848d9c"/>' +
-    '<rect x="24" y="600" width="116" height="240" fill="#b88b74"/><rect x="32" y="608" width="100" height="224" fill="#cca088"/>' +
-    // Right flank avenue (x=1336..1432) + sidewalks
-    '<rect x="1324" y="0" width="120" height="1000" fill="#b8b0a0" opacity="0.7"/>' +
-    '<rect x="1336" y="0" width="96" height="1000" fill="#707888" opacity="0.65"/>' +
-    '<rect x="1382" y="0" width="4" height="1000" fill="#d97706" opacity="0.75"/>' +
-    // Right flank top-down pixel buildings
-    '<rect x="1460" y="140" width="116" height="210" fill="#9aa498"/><rect x="1468" y="148" width="100" height="194" fill="#b1bcb0"/>' +
-    '<rect x="1484" y="172" width="28" height="28" fill="#7c867a"/><rect x="1524" y="260" width="28" height="28" fill="#7c867a"/>' +
-    '<rect x="1460" y="390" width="116" height="200" fill="#b6a28a"/><rect x="1468" y="398" width="100" height="184" fill="#ccb79e"/>' +
-    '<rect x="1460" y="630" width="116" height="230" fill="#98a2b6"/><rect x="1468" y="638" width="100" height="214" fill="#b0bad0"/>' +
-    // Top-left 1997 Pixel Pager & Multiplier HUD
-    '<g transform="translate(28 32)">' +
-      '<rect x="0" y="0" width="112" height="44" fill="#8c8474"/><rect x="4" y="4" width="104" height="36" fill="#a8be98"/>' +
-      '<rect x="12" y="12" width="16" height="4" fill="#3a4434"/><rect x="12" y="16" width="4" height="16" fill="#3a4434"/><rect x="12" y="28" width="16" height="4" fill="#3a4434"/><rect x="24" y="20" width="4" height="8" fill="#3a4434"/>' +
-      '<rect x="36" y="12" width="20" height="4" fill="#3a4434"/><rect x="44" y="16" width="4" height="16" fill="#3a4434"/>' +
-      '<rect x="64" y="12" width="16" height="4" fill="#3a4434"/><rect x="64" y="16" width="4" height="16" fill="#3a4434"/><rect x="76" y="16" width="4" height="16" fill="#3a4434"/><rect x="68" y="20" width="8" height="4" fill="#3a4434"/>' +
-    '</g>' +
-    // Top-right 1997 Pixel Score & Wanted Heads
-    '<g transform="translate(1330 32)">' +
-      '<rect x="0" y="0" width="242" height="36" fill="#9e9482"/>' +
-      '<rect x="8" y="6" width="16" height="24" fill="#d97706"/><rect x="12" y="10" width="8" height="16" fill="#9e9482"/>' +
-      '<rect x="30" y="6" width="16" height="24" fill="#d97706"/><rect x="34" y="10" width="8" height="6" fill="#9e9482"/><rect x="34" y="20" width="8" height="6" fill="#9e9482"/>' +
-      '<rect x="52" y="6" width="16" height="24" fill="#d97706"/><rect x="52" y="10" width="12" height="6" fill="#9e9482"/><rect x="56" y="20" width="12" height="6" fill="#9e9482"/>' +
-      '<rect x="74" y="6" width="16" height="24" fill="#d97706"/><rect x="78" y="10" width="8" height="16" fill="#9e9482"/>' +
-      '<rect x="96" y="6" width="16" height="24" fill="#d97706"/><rect x="100" y="10" width="8" height="16" fill="#9e9482"/>' +
-      '<g class="wanted" transform="translate(132 6)">' +
-        '<rect x="0" y="0" width="22" height="24" fill="#dc2626"/><rect x="4" y="6" width="4" height="4" fill="#fff"/><rect x="14" y="6" width="4" height="4" fill="#fff"/>' +
-        '<rect x="28" y="0" width="22" height="24" fill="#dc2626"/><rect x="32" y="6" width="4" height="4" fill="#fff"/><rect x="42" y="6" width="4" height="4" fill="#fff"/>' +
-        '<rect x="56" y="0" width="22" height="24" fill="#dc2626"/><rect x="60" y="6" width="4" height="4" fill="#fff"/><rect x="70" y="6" width="4" height="4" fill="#fff"/>' +
-        '<rect x="84" y="0" width="22" height="24" fill="#dc2626"/><rect x="88" y="6" width="4" height="4" fill="#fff"/><rect x="98" y="6" width="4" height="4" fill="#fff"/>' +
-      '</g>' +
-    '</g>' +
-    // Animated top-down pixel cars on avenues
-    '<g class="cab" transform="translate(180 0)">' +
+    '<rect x="24" y="600" width="116" height="260" fill="#b88b74"/><rect x="32" y="608" width="100" height="244" fill="#cca088"/>' +
+    '<g transform="translate(180 0)"><g class="cab">' +
       '<rect x="0" y="0" width="28" height="52" fill="#475569"/>' +
       '<rect x="2" y="4" width="24" height="44" fill="#eab308"/>' +
       '<rect x="4" y="14" width="20" height="10" fill="#38bdf8"/>' +
       '<rect x="8" y="26" width="12" height="6" fill="#475569"/>' +
-    '</g>' +
-    '<g class="racer" transform="translate(1396 0)">' +
+    '</g></g>' +
+  '</g>' +
+  '<g class="cdb-flank-r" shape-rendering="crispEdges" opacity="0.36">' +
+    '<rect x="1324" y="-450" width="120" height="1550" fill="#b8b0a0" opacity="0.7"/>' +
+    '<rect x="1336" y="-450" width="96" height="1550" fill="#707888" opacity="0.65"/>' +
+    '<rect x="1382" y="-450" width="4" height="1550" fill="#d97706" opacity="0.75"/>' +
+    '<rect x="1460" y="140" width="116" height="210" fill="#9aa498"/><rect x="1468" y="148" width="100" height="194" fill="#b1bcb0"/>' +
+    '<rect x="1484" y="172" width="28" height="28" fill="#7c867a"/><rect x="1524" y="260" width="28" height="28" fill="#7c867a"/>' +
+    '<rect x="1460" y="390" width="116" height="200" fill="#b6a28a"/><rect x="1468" y="398" width="100" height="184" fill="#ccb79e"/>' +
+    '<rect x="1460" y="630" width="116" height="240" fill="#98a2b6"/><rect x="1468" y="638" width="100" height="224" fill="#b0bad0"/>' +
+    '<g transform="translate(1396 0)"><g class="racer">' +
       '<rect x="0" y="0" width="28" height="54" fill="#475569"/>' +
       '<rect x="2" y="4" width="24" height="46" fill="#ffab00"/>' +
       '<rect x="12" y="4" width="4" height="46" fill="#475569"/>' +
       '<rect x="4" y="14" width="20" height="10" fill="#38bdf8"/>' +
-    '</g>' +
-    '<g class="cop" transform="translate(1396 110)">' +
+    '</g></g>' +
+    '<g transform="translate(1396 110)"><g class="cop">' +
       '<rect x="0" y="0" width="28" height="54" fill="#475569"/>' +
       '<rect x="2" y="4" width="24" height="16" fill="#334155"/>' +
       '<rect x="2" y="20" width="24" height="16" fill="#f8fafc"/>' +
       '<rect x="2" y="36" width="24" height="14" fill="#334155"/>' +
       '<rect class="sirenR" x="4" y="24" width="10" height="6" fill="#ef4444"/>' +
       '<rect class="sirenB" x="14" y="24" width="10" height="6" fill="#3b82f6"/>' +
+    '</g></g>' +
+  '</g>' +
+  '<g class="cdb-flank-lt" shape-rendering="crispEdges" opacity="0.36">' +
+    '<g transform="translate(28 62)">' +
+      '<rect x="0" y="0" width="112" height="44" fill="#8c8474"/><rect x="4" y="4" width="104" height="36" fill="#a8be98"/>' +
+      '<rect x="12" y="12" width="16" height="4" fill="#3a4434"/><rect x="12" y="16" width="4" height="16" fill="#3a4434"/><rect x="12" y="28" width="16" height="4" fill="#3a4434"/><rect x="24" y="20" width="4" height="8" fill="#3a4434"/>' +
+      '<rect x="36" y="12" width="20" height="4" fill="#3a4434"/><rect x="44" y="16" width="4" height="16" fill="#3a4434"/>' +
+      '<rect x="64" y="12" width="16" height="4" fill="#3a4434"/><rect x="64" y="16" width="4" height="16" fill="#3a4434"/><rect x="76" y="16" width="4" height="16" fill="#3a4434"/><rect x="68" y="20" width="8" height="4" fill="#3a4434"/>' +
     '</g>' +
   '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmL)"/></svg>';
+  '<g class="cdb-flank-rt" shape-rendering="crispEdges" opacity="0.36">' +
+    '<g transform="translate(1330 62)">' +
+      '<rect x="0" y="0" width="242" height="36" fill="#9e9482"/>' +
+      '<rect x="8" y="6" width="16" height="24" fill="#d97706"/><rect x="12" y="10" width="8" height="16" fill="#9e9482"/>' +
+      '<rect x="30" y="6" width="16" height="24" fill="#d97706"/><rect x="34" y="10" width="8" height="6" fill="#9e9482"/><rect x="34" y="20" width="8" height="6" fill="#9e9482"/>' +
+      '<rect x="52" y="6" width="16" height="24" fill="#d97706"/><rect x="52" y="10" width="12" height="6" fill="#9e9482"/><rect x="56" y="20" width="12" height="6" fill="#9e9482"/>' +
+      '<rect x="74" y="6" width="16" height="24" fill="#d97706"/><rect x="78" y="10" width="8" height="16" fill="#9e9482"/>' +
+      '<rect x="96" y="6" width="16" height="24" fill="#d97706"/><rect x="100" y="10" width="8" height="16" fill="#9e9482"/>' +
+      '<g transform="translate(132 6)"><g class="wanted">' +
+        '<rect x="0" y="0" width="22" height="24" fill="#dc2626"/><rect x="4" y="6" width="4" height="4" fill="#fff"/><rect x="14" y="6" width="4" height="4" fill="#fff"/>' +
+        '<rect x="28" y="0" width="22" height="24" fill="#dc2626"/><rect x="32" y="6" width="4" height="4" fill="#fff"/><rect x="42" y="6" width="4" height="4" fill="#fff"/>' +
+        '<rect x="56" y="0" width="22" height="24" fill="#dc2626"/><rect x="60" y="6" width="4" height="4" fill="#fff"/><rect x="70" y="6" width="4" height="4" fill="#fff"/>' +
+        '<rect x="84" y="0" width="22" height="24" fill="#dc2626"/><rect x="88" y="6" width="4" height="4" fill="#fff"/><rect x="98" y="6" width="4" height="4" fill="#fff"/>' +
+      '</g></g>' +
+    '</g>' +
+  '</g>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function gtaIDarkSvg() {
@@ -1428,82 +1567,86 @@ function gtaIDarkSvg() {
     radGrad("gta1Lamp", "#ffab00", 0.22) +
     CALM_DARK
   ) +
-  '<rect width="1600" height="1000" fill="url(#gta1GroundD)"/>' +
-  '<rect width="1600" height="1000" fill="url(#gta1GridD)"/>' +
-  '<g shape-rendering="crispEdges" opacity="0.65">' +
-    // Left flank dark pixel road & buildings
-    '<rect x="156" y="0" width="120" height="1000" fill="#1c222e"/>' +
-    '<rect x="168" y="0" width="96" height="1000" fill="#11151d"/>' +
-    '<rect x="214" y="0" width="4" height="1000" fill="#ffab00" opacity="0.65"/>' +
-    '<rect x="24" y="120" width="116" height="180" fill="#161b24"/><rect x="32" y="128" width="100" height="164" fill="#1e2530"/>' +
-    '<rect x="40" y="140" width="12" height="12" fill="#ffab00"/><rect x="64" y="140" width="12" height="12" fill="#38bdf8"/><rect x="104" y="240" width="12" height="12" fill="#ffab00"/>' +
-    '<rect x="24" y="340" width="116" height="220" fill="#141820"/><rect x="32" y="348" width="100" height="204" fill="#1b212c"/>' +
-    '<rect x="44" y="368" width="12" height="12" fill="#ffab00"/><rect x="96" y="420" width="12" height="12" fill="#ffab00"/><rect x="52" y="500" width="12" height="12" fill="#38bdf8"/>' +
-    '<rect x="24" y="600" width="116" height="240" fill="#171b22"/><rect x="32" y="608" width="100" height="224" fill="#202630"/>' +
-    '<rect x="48" y="632" width="12" height="12" fill="#ffab00"/><rect x="88" y="740" width="12" height="12" fill="#ffab00"/>' +
-    // Right flank dark pixel road & buildings
-    '<rect x="1324" y="0" width="120" height="1000" fill="#1c222e"/>' +
-    '<rect x="1336" y="0" width="96" height="1000" fill="#11151d"/>' +
-    '<rect x="1382" y="0" width="4" height="1000" fill="#ffab00" opacity="0.65"/>' +
-    '<rect x="1460" y="140" width="116" height="210" fill="#151a22"/><rect x="1468" y="148" width="100" height="194" fill="#1d2430"/>' +
-    '<rect x="1480" y="164" width="12" height="12" fill="#ffab00"/><rect x="1532" y="220" width="12" height="12" fill="#38bdf8"/>' +
-    '<rect x="1460" y="390" width="116" height="200" fill="#171c26"/><rect x="1468" y="398" width="100" height="184" fill="#202734"/>' +
-    '<rect x="1484" y="420" width="12" height="12" fill="#ffab00"/><rect x="1524" y="510" width="12" height="12" fill="#ffab00"/>' +
-    '<rect x="1460" y="630" width="116" height="230" fill="#141922"/><rect x="1468" y="638" width="100" height="214" fill="#1c2330"/>' +
-    '<rect x="1490" y="670" width="12" height="12" fill="#38bdf8"/><rect x="1530" y="780" width="12" height="12" fill="#ffab00"/>' +
-    // Top-left 1997 Pixel Pager
-    '<g transform="translate(28 32)">' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta1GroundD)"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta1GridD)"/>' +
+  '<g class="cdb-flank-l">' +
+    '<g shape-rendering="crispEdges" opacity="0.65">' +
+      '<rect x="156" y="-450" width="120" height="1550" fill="#1c222e"/>' +
+      '<rect x="168" y="-450" width="96" height="1550" fill="#11151d"/>' +
+      '<rect x="214" y="-450" width="4" height="1550" fill="#ffab00" opacity="0.65"/>' +
+      '<rect x="24" y="130" width="116" height="180" fill="#161b24"/><rect x="32" y="138" width="100" height="164" fill="#1e2530"/>' +
+      '<rect x="40" y="150" width="12" height="12" fill="#ffab00"/><rect x="64" y="150" width="12" height="12" fill="#38bdf8"/><rect x="104" y="250" width="12" height="12" fill="#ffab00"/>' +
+      '<rect x="24" y="340" width="116" height="220" fill="#141820"/><rect x="32" y="348" width="100" height="204" fill="#1b212c"/>' +
+      '<rect x="44" y="368" width="12" height="12" fill="#ffab00"/><rect x="96" y="420" width="12" height="12" fill="#ffab00"/><rect x="52" y="500" width="12" height="12" fill="#38bdf8"/>' +
+      '<rect x="24" y="600" width="116" height="260" fill="#171b22"/><rect x="32" y="608" width="100" height="244" fill="#202630"/>' +
+      '<rect x="48" y="632" width="12" height="12" fill="#ffab00"/><rect x="88" y="740" width="12" height="12" fill="#ffab00"/>' +
+      '<g transform="translate(180 0)"><g class="cab">' +
+        '<polygon points="2,52 -12,110 40,110 26,52" fill="#fef08a" opacity="0.18"/>' +
+        '<rect x="0" y="0" width="28" height="52" fill="#05070a"/>' +
+        '<rect x="2" y="4" width="24" height="44" fill="#eab308"/>' +
+        '<rect x="4" y="14" width="20" height="10" fill="#38bdf8"/>' +
+        '<rect x="4" y="48" width="6" height="4" fill="#fef08a"/><rect x="18" y="48" width="6" height="4" fill="#fef08a"/>' +
+      '</g></g>' +
+    '</g>' +
+    '<circle cx="156" cy="220" r="64" fill="url(#gta1Lamp)"/><circle cx="156" cy="540" r="64" fill="url(#gta1Lamp)"/><circle cx="156" cy="840" r="64" fill="url(#gta1Lamp)"/>' +
+  '</g>' +
+  '<g class="cdb-flank-r">' +
+    '<g shape-rendering="crispEdges" opacity="0.65">' +
+      '<rect x="1324" y="-450" width="120" height="1550" fill="#1c222e"/>' +
+      '<rect x="1336" y="-450" width="96" height="1550" fill="#11151d"/>' +
+      '<rect x="1382" y="-450" width="4" height="1550" fill="#ffab00" opacity="0.65"/>' +
+      '<rect x="1460" y="140" width="116" height="210" fill="#151a22"/><rect x="1468" y="148" width="100" height="194" fill="#1d2430"/>' +
+      '<rect x="1480" y="164" width="12" height="12" fill="#ffab00"/><rect x="1532" y="220" width="12" height="12" fill="#38bdf8"/>' +
+      '<rect x="1460" y="390" width="116" height="200" fill="#171c26"/><rect x="1468" y="398" width="100" height="184" fill="#202734"/>' +
+      '<rect x="1484" y="420" width="12" height="12" fill="#ffab00"/><rect x="1524" y="510" width="12" height="12" fill="#ffab00"/>' +
+      '<rect x="1460" y="630" width="116" height="240" fill="#141922"/><rect x="1468" y="638" width="100" height="224" fill="#1c2330"/>' +
+      '<rect x="1490" y="670" width="12" height="12" fill="#38bdf8"/><rect x="1530" y="780" width="12" height="12" fill="#ffab00"/>' +
+      '<g transform="translate(1396 0)"><g class="racer">' +
+        '<polygon points="2,0 -14,-64 42,-64 26,0" fill="#fef08a" opacity="0.22"/>' +
+        '<rect x="0" y="0" width="28" height="54" fill="#05070a"/>' +
+        '<rect x="2" y="4" width="24" height="46" fill="#ffab00"/>' +
+        '<rect x="12" y="4" width="4" height="46" fill="#05070a"/>' +
+        '<rect x="4" y="14" width="20" height="10" fill="#38bdf8"/>' +
+        '<rect x="4" y="0" width="6" height="4" fill="#fef08a"/><rect x="18" y="0" width="6" height="4" fill="#fef08a"/>' +
+      '</g></g>' +
+      '<g transform="translate(1396 110)"><g class="cop">' +
+        '<circle class="sirenR" cx="6" cy="26" r="56" fill="url(#gta1SirenR)"/>' +
+        '<circle class="sirenB" cx="22" cy="26" r="56" fill="url(#gta1SirenB)"/>' +
+        '<rect x="0" y="0" width="28" height="54" fill="#05070a"/>' +
+        '<rect x="2" y="4" width="24" height="16" fill="#111827"/>' +
+        '<rect x="2" y="20" width="24" height="16" fill="#f8fafc"/>' +
+        '<rect x="2" y="36" width="24" height="14" fill="#111827"/>' +
+        '<rect class="sirenR" x="4" y="24" width="10" height="6" fill="#ef4444"/>' +
+        '<rect class="sirenB" x="14" y="24" width="10" height="6" fill="#3b82f6"/>' +
+      '</g></g>' +
+    '</g>' +
+    '<circle cx="1444" cy="260" r="64" fill="url(#gta1Lamp)"/><circle cx="1444" cy="580" r="64" fill="url(#gta1Lamp)"/><circle cx="1444" cy="860" r="64" fill="url(#gta1Lamp)"/>' +
+  '</g>' +
+  '<g class="cdb-flank-lt" shape-rendering="crispEdges" opacity="0.94">' +
+    '<g transform="translate(28 62)">' +
       '<rect x="0" y="0" width="112" height="44" fill="#05070a"/><rect x="4" y="4" width="104" height="36" fill="#1f3322"/>' +
       '<rect x="12" y="12" width="16" height="4" fill="#4ade80"/><rect x="12" y="16" width="4" height="16" fill="#4ade80"/><rect x="12" y="28" width="16" height="4" fill="#4ade80"/><rect x="24" y="20" width="4" height="8" fill="#4ade80"/>' +
       '<rect x="36" y="12" width="20" height="4" fill="#4ade80"/><rect x="44" y="16" width="4" height="16" fill="#4ade80"/>' +
       '<rect x="64" y="12" width="16" height="4" fill="#4ade80"/><rect x="64" y="16" width="4" height="16" fill="#4ade80"/><rect x="76" y="16" width="4" height="16" fill="#4ade80"/><rect x="68" y="20" width="8" height="4" fill="#4ade80"/>' +
     '</g>' +
-    // Top-right 1997 Arcade Score & Wanted Stars
-    '<g transform="translate(1330 32)">' +
+  '</g>' +
+  '<g class="cdb-flank-rt" shape-rendering="crispEdges" opacity="0.94">' +
+    '<g transform="translate(1330 62)">' +
       '<rect x="0" y="0" width="242" height="36" fill="#05070a"/>' +
       '<rect x="8" y="6" width="16" height="24" fill="#ffab00"/><rect x="12" y="10" width="8" height="16" fill="#05070a"/>' +
       '<rect x="30" y="6" width="16" height="24" fill="#ffab00"/><rect x="34" y="10" width="8" height="6" fill="#05070a"/><rect x="34" y="20" width="8" height="6" fill="#05070a"/>' +
       '<rect x="52" y="6" width="16" height="24" fill="#ffab00"/><rect x="52" y="10" width="12" height="6" fill="#05070a"/><rect x="56" y="20" width="12" height="6" fill="#05070a"/>' +
       '<rect x="74" y="6" width="16" height="24" fill="#ffab00"/><rect x="78" y="10" width="8" height="16" fill="#05070a"/>' +
       '<rect x="96" y="6" width="16" height="24" fill="#ffab00"/><rect x="100" y="10" width="8" height="16" fill="#05070a"/>' +
-      '<g class="wanted" transform="translate(132 6)">' +
+      '<g transform="translate(132 6)"><g class="wanted">' +
         '<rect x="0" y="0" width="22" height="24" fill="#ffab00"/><rect x="4" y="6" width="4" height="4" fill="#ef4444"/><rect x="14" y="6" width="4" height="4" fill="#ef4444"/>' +
         '<rect x="28" y="0" width="22" height="24" fill="#ffab00"/><rect x="32" y="6" width="4" height="4" fill="#ef4444"/><rect x="42" y="6" width="4" height="4" fill="#ef4444"/>' +
         '<rect x="56" y="0" width="22" height="24" fill="#ffab00"/><rect x="60" y="6" width="4" height="4" fill="#ef4444"/><rect x="70" y="6" width="4" height="4" fill="#ef4444"/>' +
         '<rect x="84" y="0" width="22" height="24" fill="#ffab00"/><rect x="88" y="6" width="4" height="4" fill="#ef4444"/><rect x="98" y="6" width="4" height="4" fill="#ef4444"/>' +
-      '</g>' +
-    '</g>' +
-    // Animated top-down pixel cars with headlight beams & police sirens
-    '<g class="cab" transform="translate(180 0)">' +
-      '<polygon points="2,52 -12,110 40,110 26,52" fill="#fef08a" opacity="0.18"/>' +
-      '<rect x="0" y="0" width="28" height="52" fill="#05070a"/>' +
-      '<rect x="2" y="4" width="24" height="44" fill="#eab308"/>' +
-      '<rect x="4" y="14" width="20" height="10" fill="#38bdf8"/>' +
-      '<rect x="4" y="48" width="6" height="4" fill="#fef08a"/><rect x="18" y="48" width="6" height="4" fill="#fef08a"/>' +
-    '</g>' +
-    '<g class="racer" transform="translate(1396 0)">' +
-      '<polygon points="2,0 -14,-64 42,-64 26,0" fill="#fef08a" opacity="0.22"/>' +
-      '<rect x="0" y="0" width="28" height="54" fill="#05070a"/>' +
-      '<rect x="2" y="4" width="24" height="46" fill="#ffab00"/>' +
-      '<rect x="12" y="4" width="4" height="46" fill="#05070a"/>' +
-      '<rect x="4" y="14" width="20" height="10" fill="#38bdf8"/>' +
-      '<rect x="4" y="0" width="6" height="4" fill="#fef08a"/><rect x="18" y="0" width="6" height="4" fill="#fef08a"/>' +
-    '</g>' +
-    '<g class="cop" transform="translate(1396 110)">' +
-      '<circle class="sirenR" cx="6" cy="26" r="56" fill="url(#gta1SirenR)"/>' +
-      '<circle class="sirenB" cx="22" cy="26" r="56" fill="url(#gta1SirenB)"/>' +
-      '<rect x="0" y="0" width="28" height="54" fill="#05070a"/>' +
-      '<rect x="2" y="4" width="24" height="16" fill="#111827"/>' +
-      '<rect x="2" y="20" width="24" height="16" fill="#f8fafc"/>' +
-      '<rect x="2" y="36" width="24" height="14" fill="#111827"/>' +
-      '<rect class="sirenR" x="4" y="24" width="10" height="6" fill="#ef4444"/>' +
-      '<rect class="sirenB" x="14" y="24" width="10" height="6" fill="#3b82f6"/>' +
+      '</g></g>' +
     '</g>' +
   '</g>' +
-  // Streetlamp glow pools along sidewalks
-  '<circle cx="156" cy="220" r="64" fill="url(#gta1Lamp)"/><circle cx="156" cy="540" r="64" fill="url(#gta1Lamp)"/><circle cx="156" cy="840" r="64" fill="url(#gta1Lamp)"/>' +
-  '<circle cx="1444" cy="260" r="64" fill="url(#gta1Lamp)"/><circle cx="1444" cy="580" r="64" fill="url(#gta1Lamp)"/><circle cx="1444" cy="860" r="64" fill="url(#gta1Lamp)"/>' +
-  '<rect width="1600" height="1000" fill="url(#calmD)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
 // =============================================================================
@@ -1525,36 +1668,46 @@ function gtaIILightSvg() {
     '</pattern>' +
     CALM_LIGHT
   ) +
-  '<rect width="1600" height="1000" fill="url(#gta2SkyL)"/>' +
-  '<rect width="1600" height="1000" fill="url(#gta2ScanL)"/>' +
-  '<g shape-rendering="crispEdges" opacity="0.36">' +
-    // Anywhere City industrial steel pixel sectors on left/right flanks
-    '<rect x="164" y="0" width="92" height="1000" fill="#64748b" opacity="0.55"/>' +
-    '<rect x="208" y="0" width="4" height="1000" fill="#d97706" opacity="0.7"/>' +
-    '<rect x="1344" y="0" width="92" height="1000" fill="#64748b" opacity="0.55"/>' +
-    '<rect x="1388" y="0" width="4" height="1000" fill="#d97706" opacity="0.7"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta2SkyL)"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta2ScanL)"/>' +
+  '<g class="cdb-flank-l" shape-rendering="crispEdges" opacity="0.36">' +
+    '<rect x="164" y="-450" width="92" height="1550" fill="#64748b" opacity="0.55"/>' +
+    '<rect x="208" y="-450" width="4" height="1550" fill="#d97706" opacity="0.7"/>' +
     '<rect x="24" y="180" width="124" height="240" fill="#94a3b8"/><rect x="32" y="188" width="108" height="224" fill="#cbd5e1"/>' +
     '<rect x="24" y="460" width="124" height="260" fill="#94a3b8"/><rect x="32" y="468" width="108" height="244" fill="#bac4d4"/>' +
+    '<g transform="translate(148 780)">' +
+      '<rect x="-8" y="-8" width="16" height="16" fill="#16a34a"/>' +
+      '<rect class="ring" x="-18" y="-18" width="36" height="36" fill="none" stroke="#16a34a" stroke-width="3" style="transform-origin:0 0"/>' +
+    '</g>' +
+  '</g>' +
+  '<g class="cdb-flank-r" shape-rendering="crispEdges" opacity="0.36">' +
+    '<rect x="1344" y="-450" width="92" height="1550" fill="#64748b" opacity="0.55"/>' +
+    '<rect x="1388" y="-450" width="4" height="1550" fill="#d97706" opacity="0.7"/>' +
     '<rect x="1452" y="160" width="124" height="250" fill="#94a3b8"/><rect x="1460" y="168" width="108" height="234" fill="#cbd5e1"/>' +
     '<rect x="1452" y="450" width="124" height="270" fill="#94a3b8"/><rect x="1460" y="458" width="108" height="254" fill="#bac4d4"/>' +
-    // Top-left Iconic 3-Gang Respect-o-Meter Pixel HUD (Zaibatsu Red, Loonies Green, Yakuza Cyan)
-    '<g transform="translate(28 28)">' +
+    '<g transform="translate(1356 0)"><g class="ztype">' +
+      '<rect x="0" y="0" width="28" height="56" fill="#475569"/>' +
+      '<rect x="2" y="4" width="24" height="48" fill="#64748b"/>' +
+      '<rect x="8" y="22" width="12" height="12" fill="#f5b82e"/>' +
+      '<rect x="4" y="12" width="20" height="8" fill="#38bdf8"/>' +
+    '</g></g>' +
+  '</g>' +
+  '<g class="cdb-flank-lt" shape-rendering="crispEdges" opacity="0.36">' +
+    '<g transform="translate(28 62)">' +
       '<rect x="0" y="0" width="212" height="84" fill="#94a3b8"/>' +
-      // Zaibatsu row
       '<rect x="8" y="8" width="20" height="20" fill="#b02a30"/><rect x="12" y="12" width="12" height="4" fill="#f5b82e"/><rect x="12" y="20" width="12" height="4" fill="#f5b82e"/>' +
       '<rect x="34" y="10" width="168" height="16" fill="#cbd5e1"/>' +
       '<rect class="meter" x="36" y="12" width="144" height="12" fill="#e0353c"/>' +
-      // Loonies row
       '<rect x="8" y="32" width="20" height="20" fill="#15803d"/><rect x="14" y="36" width="8" height="12" fill="#fef08a"/>' +
       '<rect x="34" y="34" width="168" height="16" fill="#cbd5e1"/>' +
       '<rect class="meter" x="36" y="36" width="112" height="12" fill="#22c55e"/>' +
-      // Yakuza row
       '<rect x="8" y="56" width="20" height="20" fill="#0369a1"/><rect x="14" y="60" width="8" height="12" fill="#e0f2fe"/>' +
       '<rect x="34" y="58" width="168" height="16" fill="#cbd5e1"/>' +
       '<rect class="meter" x="36" y="60" width="128" height="12" fill="#06b6d4"/>' +
     '</g>' +
-    // Top-right GTA 2 crimson numeral & Zaibatsu badge
-    '<g transform="translate(1456 28)">' +
+  '</g>' +
+  '<g class="cdb-flank-rt" shape-rendering="crispEdges" opacity="0.36">' +
+    '<g transform="translate(1456 62)">' +
       '<rect x="0" y="0" width="116" height="68" fill="#94a3b8"/>' +
       '<rect x="12" y="10" width="44" height="10" fill="#b02a30"/>' +
       '<rect x="44" y="20" width="12" height="12" fill="#b02a30"/>' +
@@ -1563,20 +1716,8 @@ function gtaIILightSvg() {
       '<rect x="12" y="48" width="44" height="10" fill="#b02a30"/>' +
       '<rect x="68" y="14" width="36" height="8" fill="#d97706"/><rect x="86" y="22" width="12" height="12" fill="#d97706"/><rect x="74" y="34" width="12" height="12" fill="#d97706"/><rect x="68" y="46" width="36" height="8" fill="#d97706"/>' +
     '</g>' +
-    // Ringing pixel payphones on sidewalks
-    '<g transform="translate(148 760)">' +
-      '<rect x="-8" y="-8" width="16" height="16" fill="#16a34a"/>' +
-      '<rect class="ring" x="-18" y="-18" width="36" height="36" fill="none" stroke="#16a34a" stroke-width="3" style="transform-origin:0 0"/>' +
-    '</g>' +
-    // Zaibatsu Z-Type pixel car with gold Z roof emblem
-    '<g class="ztype" transform="translate(1356 0)">' +
-      '<rect x="0" y="0" width="28" height="56" fill="#475569"/>' +
-      '<rect x="2" y="4" width="24" height="48" fill="#64748b"/>' +
-      '<rect x="8" y="22" width="12" height="12" fill="#f5b82e"/>' +
-      '<rect x="4" y="12" width="20" height="8" fill="#38bdf8"/>' +
-    '</g>' +
   '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmL)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function gtaIIDarkSvg() {
@@ -1598,27 +1739,45 @@ function gtaIIDarkSvg() {
     radGrad("gta2CyanGlow", "#06b6d4", 0.28) +
     CALM_DARK
   ) +
-  '<rect width="1600" height="1000" fill="url(#gta2SkyD)"/>' +
-  // GTA 2 signature colored dusk dynamic light pools on the flanks
-  '<circle cx="150" cy="300" r="160" fill="url(#gta2RedGlow)"/>' +
-  '<circle cx="150" cy="760" r="140" fill="url(#gta2GreenGlow)"/>' +
-  '<circle cx="1450" cy="320" r="160" fill="url(#gta2CyanGlow)"/>' +
-  '<circle cx="1450" cy="740" r="160" fill="url(#gta2RedGlow)"/>' +
-  '<g shape-rendering="crispEdges" opacity="0.65">' +
-    '<rect x="164" y="0" width="92" height="1000" fill="#101520"/>' +
-    '<rect x="208" y="0" width="4" height="1000" fill="#f5b82e" opacity="0.65"/>' +
-    '<rect x="1344" y="0" width="92" height="1000" fill="#101520"/>' +
-    '<rect x="1388" y="0" width="4" height="1000" fill="#f5b82e" opacity="0.65"/>' +
-    '<rect x="24" y="180" width="124" height="240" fill="#131926"/><rect x="32" y="188" width="108" height="224" fill="#1a2233"/>' +
-    '<rect x="44" y="208" width="16" height="16" fill="#e0353c"/><rect x="104" y="340" width="16" height="16" fill="#f5b82e"/>' +
-    '<rect x="24" y="460" width="124" height="260" fill="#111722"/><rect x="32" y="468" width="108" height="244" fill="#182030"/>' +
-    '<rect x="48" y="500" width="16" height="16" fill="#22c55e"/><rect x="100" y="640" width="16" height="16" fill="#22c55e"/>' +
-    '<rect x="1452" y="160" width="124" height="250" fill="#131926"/><rect x="1460" y="168" width="108" height="234" fill="#1a2233"/>' +
-    '<rect x="1480" y="196" width="16" height="16" fill="#06b6d4"/><rect x="1532" y="320" width="16" height="16" fill="#06b6d4"/>' +
-    '<rect x="1452" y="450" width="124" height="270" fill="#111722"/><rect x="1460" y="458" width="108" height="254" fill="#182030"/>' +
-    '<rect x="1480" y="490" width="16" height="16" fill="#e0353c"/><rect x="1528" y="650" width="16" height="16" fill="#f5b82e"/>' +
-    // Top-left Iconic 3-Gang Respect-o-Meter Pixel HUD
-    '<g transform="translate(28 28)">' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta2SkyD)"/>' +
+  '<g class="cdb-flank-l">' +
+    '<circle cx="150" cy="300" r="160" fill="url(#gta2RedGlow)"/>' +
+    '<circle cx="150" cy="760" r="140" fill="url(#gta2GreenGlow)"/>' +
+    '<g shape-rendering="crispEdges" opacity="0.65">' +
+      '<rect x="164" y="-450" width="92" height="1550" fill="#101520"/>' +
+      '<rect x="208" y="-450" width="4" height="1550" fill="#f5b82e" opacity="0.65"/>' +
+      '<rect x="24" y="180" width="124" height="240" fill="#131926"/><rect x="32" y="188" width="108" height="224" fill="#1a2233"/>' +
+      '<rect x="44" y="208" width="16" height="16" fill="#e0353c"/><rect x="104" y="340" width="16" height="16" fill="#f5b82e"/>' +
+      '<rect x="24" y="460" width="124" height="260" fill="#111722"/><rect x="32" y="468" width="108" height="244" fill="#182030"/>' +
+      '<rect x="48" y="500" width="16" height="16" fill="#22c55e"/><rect x="100" y="640" width="16" height="16" fill="#22c55e"/>' +
+      '<g transform="translate(148 780)">' +
+        '<rect x="-8" y="-8" width="16" height="16" fill="#22c55e"/>' +
+        '<rect class="ring" x="-20" y="-20" width="40" height="40" fill="none" stroke="#4ade80" stroke-width="3" style="transform-origin:0 0"/>' +
+      '</g>' +
+    '</g>' +
+  '</g>' +
+  '<g class="cdb-flank-r">' +
+    '<circle cx="1450" cy="320" r="160" fill="url(#gta2CyanGlow)"/>' +
+    '<circle cx="1450" cy="740" r="160" fill="url(#gta2RedGlow)"/>' +
+    '<g shape-rendering="crispEdges" opacity="0.65">' +
+      '<rect x="1344" y="-450" width="92" height="1550" fill="#101520"/>' +
+      '<rect x="1388" y="-450" width="4" height="1550" fill="#f5b82e" opacity="0.65"/>' +
+      '<rect x="1452" y="160" width="124" height="250" fill="#131926"/><rect x="1460" y="168" width="108" height="234" fill="#1a2233"/>' +
+      '<rect x="1480" y="196" width="16" height="16" fill="#06b6d4"/><rect x="1532" y="320" width="16" height="16" fill="#06b6d4"/>' +
+      '<rect x="1452" y="450" width="124" height="270" fill="#111722"/><rect x="1460" y="458" width="108" height="254" fill="#182030"/>' +
+      '<rect x="1480" y="490" width="16" height="16" fill="#e0353c"/><rect x="1528" y="650" width="16" height="16" fill="#f5b82e"/>' +
+      '<g transform="translate(1356 0)"><g class="ztype">' +
+        '<polygon points="2,0 -18,-80 46,-80 26,0" fill="#f5b82e" opacity="0.22"/>' +
+        '<rect x="0" y="0" width="28" height="56" fill="#05070b"/>' +
+        '<rect x="2" y="4" width="24" height="48" fill="#1e293b"/>' +
+        '<rect x="8" y="22" width="12" height="12" fill="#f5b82e"/>' +
+        '<rect x="4" y="12" width="20" height="8" fill="#38bdf8"/>' +
+        '<rect x="4" y="0" width="6" height="4" fill="#f5b82e"/><rect x="18" y="0" width="6" height="4" fill="#f5b82e"/>' +
+      '</g></g>' +
+    '</g>' +
+  '</g>' +
+  '<g class="cdb-flank-lt" shape-rendering="crispEdges" opacity="0.65">' +
+    '<g transform="translate(28 62)">' +
       '<rect x="0" y="0" width="212" height="84" fill="#06080d"/>' +
       '<rect x="8" y="8" width="20" height="20" fill="#e0353c"/><rect x="12" y="12" width="12" height="4" fill="#f5b82e"/><rect x="12" y="20" width="12" height="4" fill="#f5b82e"/>' +
       '<rect x="34" y="10" width="168" height="16" fill="#261014"/>' +
@@ -1630,8 +1789,9 @@ function gtaIIDarkSvg() {
       '<rect x="34" y="58" width="168" height="16" fill="#0a2233"/>' +
       '<rect class="meter" x="36" y="60" width="134" height="12" fill="#06b6d4"/>' +
     '</g>' +
-    // Top-right GTA 2 crimson numeral & Zaibatsu Z badge
-    '<g transform="translate(1456 28)">' +
+  '</g>' +
+  '<g class="cdb-flank-rt" shape-rendering="crispEdges" opacity="0.65">' +
+    '<g transform="translate(1456 62)">' +
       '<rect x="0" y="0" width="116" height="68" fill="#06080d"/>' +
       '<rect x="12" y="10" width="44" height="10" fill="#e0353c"/>' +
       '<rect x="44" y="20" width="12" height="12" fill="#e0353c"/>' +
@@ -1640,23 +1800,9 @@ function gtaIIDarkSvg() {
       '<rect x="12" y="48" width="44" height="10" fill="#e0353c"/>' +
       '<rect x="68" y="14" width="36" height="8" fill="#f5b82e"/><rect x="86" y="22" width="12" height="12" fill="#f5b82e"/><rect x="74" y="34" width="12" height="12" fill="#f5b82e"/><rect x="68" y="46" width="36" height="8" fill="#f5b82e"/>' +
     '</g>' +
-    // Ringing neon green payphone on left sidewalk
-    '<g transform="translate(148 760)">' +
-      '<rect x="-8" y="-8" width="16" height="16" fill="#22c55e"/>' +
-      '<rect class="ring" x="-20" y="-20" width="40" height="40" fill="none" stroke="#4ade80" stroke-width="3" style="transform-origin:0 0"/>' +
-    '</g>' +
-    // Zaibatsu Z-Type pixel car with sweeping headlight cones
-    '<g class="ztype" transform="translate(1356 0)">' +
-      '<polygon points="2,0 -18,-80 46,-80 26,0" fill="#f5b82e" opacity="0.22"/>' +
-      '<rect x="0" y="0" width="28" height="56" fill="#05070b"/>' +
-      '<rect x="2" y="4" width="24" height="48" fill="#1e293b"/>' +
-      '<rect x="8" y="22" width="12" height="12" fill="#f5b82e"/>' +
-      '<rect x="4" y="12" width="20" height="8" fill="#38bdf8"/>' +
-      '<rect x="4" y="0" width="6" height="4" fill="#f5b82e"/><rect x="18" y="0" width="6" height="4" fill="#f5b82e"/>' +
-    '</g>' +
   '</g>' +
-  '<rect width="1600" height="1000" fill="url(#gta2ScanD)"/>' +
-  '<rect width="1600" height="1000" fill="url(#calmD)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta2ScanD)"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
 // =============================================================================
@@ -1665,49 +1811,74 @@ function gtaIIDarkSvg() {
 function gtaIIILightSvg() {
   return openSvg(
     '.rain{animation:gta3Rain 3.2s linear infinite}' +
+    '.rain.b{animation-delay:-1.6s}' +
     '.sweep{animation:gta3Sweep 8s linear infinite}' +
     '.fog{animation:gta3Fog 28s ease-in-out infinite alternate}' +
-    '@keyframes gta3Rain{from{transform:translate(40px,-120px)}to{transform:translate(-60px,1120px)}}' +
+    '@keyframes gta3Rain{from{transform:translate(40px,-160px)}to{transform:translate(-60px,1160px)}}' +
     '@keyframes gta3Sweep{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}' +
     '@keyframes gta3Fog{from{transform:translateX(-45px)}to{transform:translateX(45px)}}',
     '<linearGradient id="gta3SkyL" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#e5ecea"/><stop offset="0.6" stop-color="#d2ddda"/><stop offset="1" stop-color="#bac8c5"/>' +
     '</linearGradient>' +
     radGrad("gta3TealL", "#1b6b5c", 0.22) +
+    radGrad("gta3FogL", "#eef3f2", 0.52) +
     CALM_LIGHT
   ) +
-  '<rect width="1600" height="1000" fill="url(#gta3SkyL)"/>' +
-  // Liberty City Portland & Callahan Bridge silhouettes on flanks
-  '<g fill="#7c908d" opacity="0.38">' +
-    '<rect x="0" y="420" width="70" height="580"/><rect x="78" y="340" width="85" height="660"/><rect x="172" y="460" width="68" height="540"/>' +
-    '<rect x="1360" y="440" width="72" height="560"/><rect x="1440" y="320" width="90" height="680"/><rect x="1536" y="410" width="64" height="590"/>' +
-    // Callahan Bridge tower left & right
-    '<path d="M250 950 V380 H282 V950 Z M240 460 H292 V480 H240 Z M240 620 H292 V640 H240 Z"/>' +
-    '<path d="M282 400 Q420 580 520 660" fill="none" stroke="#647a77" stroke-width="5"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta3SkyL)"/>' +
+  '<g class="cdb-flank-l">' +
+    '<g fill="#7c908d" opacity="0.38">' +
+      '<rect x="-120" y="420" width="190" height="600"/><rect x="78" y="340" width="85" height="680"/><rect x="172" y="460" width="68" height="560"/>' +
+      '<path d="M250 1010 V380 H282 V1010 Z M240 460 H292 V480 H240 Z M240 620 H292 V640 H240 Z"/>' +
+      '<path d="M282 400 Q420 580 520 660" fill="none" stroke="#647a77" stroke-width="5"/>' +
+    '</g>' +
+    '<g class="fog"><ellipse cx="260" cy="680" rx="340" ry="95" fill="url(#gta3FogL)"/></g>' +
+    '<g class="rain" stroke="#52706c" stroke-width="1.5" opacity="0.35">' +
+      '<line x1="120" y1="0" x2="96" y2="70"/><line x1="220" y1="220" x2="196" y2="290"/><line x1="90" y1="500" x2="66" y2="570"/>' +
+    '</g>' +
+    '<g class="rain b" stroke="#52706c" stroke-width="1.5" opacity="0.35">' +
+      '<line x1="170" y1="0" x2="146" y2="70"/><line x1="60" y1="260" x2="36" y2="330"/><line x1="210" y1="540" x2="186" y2="610"/>' +
+    '</g>' +
+    '<g transform="translate(136 864)" opacity="0.38">' +
+      '<circle cx="0" cy="0" r="78" fill="#b4c8c4" stroke="#1b6b5c" stroke-width="5"/>' +
+      '<path d="M-74 -12 H74 M-18 -74 V74 M32 -68 V68" stroke="#64827e" stroke-width="4" fill="none"/>' +
+      '<g class="sweep" style="transform-origin:0 0"><path d="M0 0 L0 -72 A72 72 0 0 1 52 -50 Z" fill="#1b6b5c" opacity="0.28"/></g>' +
+      '<circle cx="-26" cy="-22" r="5" fill="#ec1757"/><circle cx="32" cy="18" r="5" fill="#d97706"/>' +
+      '<polygon points="0,-8 6,7 -6,7" fill="#102022"/>' +
+    '</g>' +
   '</g>' +
-  '<g class="fog" opacity="0.45"><ellipse cx="260" cy="680" rx="340" ry="70" fill="#eef3f2"/><ellipse cx="1340" cy="720" rx="340" ry="70" fill="#eef3f2"/></g>' +
-  // Liberty City diagonal rain lines
-  '<g class="rain" stroke="#52706c" stroke-width="1.5" opacity="0.35">' +
-    '<line x1="120" y1="40" x2="96" y2="110"/><line x1="220" y1="260" x2="196" y2="330"/><line x1="90" y1="540" x2="66" y2="610"/>' +
-    '<line x1="1420" y1="90" x2="1396" y2="160"/><line x1="1510" y1="380" x2="1486" y2="450"/><line x1="1380" y1="640" x2="1356" y2="710"/>' +
+  '<g class="cdb-flank-r">' +
+    '<g fill="#7c908d" opacity="0.38">' +
+      '<rect x="1360" y="440" width="72" height="580"/><rect x="1440" y="320" width="90" height="700"/><rect x="1536" y="410" width="180" height="610"/>' +
+    '</g>' +
+    '<g class="fog"><ellipse cx="1340" cy="720" rx="340" ry="95" fill="url(#gta3FogL)"/></g>' +
+    '<g class="rain" stroke="#52706c" stroke-width="1.5" opacity="0.35">' +
+      '<line x1="1420" y1="40" x2="1396" y2="110"/><line x1="1510" y1="330" x2="1486" y2="400"/><line x1="1380" y1="590" x2="1356" y2="660"/>' +
+    '</g>' +
+    '<g class="rain b" stroke="#52706c" stroke-width="1.5" opacity="0.35">' +
+      '<line x1="1470" y1="20" x2="1446" y2="90"/><line x1="1390" y1="310" x2="1366" y2="380"/><line x1="1530" y1="560" x2="1506" y2="630"/>' +
+    '</g>' +
   '</g>' +
-  // Classic GTA III bottom-left circular teal radar
-  '<g transform="translate(136 864)" opacity="0.38">' +
-    '<circle cx="0" cy="0" r="78" fill="#b4c8c4" stroke="#1b6b5c" stroke-width="5"/>' +
-    '<path d="M-74 -12 H74 M-18 -74 V74 M32 -68 V68" stroke="#64827e" stroke-width="4" fill="none"/>' +
-    '<g class="sweep" style="transform-origin:0 0"><path d="M0 0 L0 -72 A72 72 0 0 1 52 -50 Z" fill="#1b6b5c" opacity="0.28"/></g>' +
-    '<circle cx="-26" cy="-22" r="5" fill="#ec1757"/><circle cx="32" cy="18" r="5" fill="#d97706"/>' +
-    '<polygon points="0,-8 6,7 -6,7" fill="#102022"/>' +
+  '<g class="cdb-flank-rt" opacity="0.38">' +
+    '<g transform="translate(1340 62)">' +
+      '<rect x="60" y="0" width="164" height="28" rx="6" fill="#d2ddda" stroke="#1b6b5c" stroke-width="2"/>' +
+      '<rect x="70" y="8" width="64" height="12" fill="#1b6b5c"/><rect x="144" y="8" width="70" height="12" fill="#ec1757"/>' +
+      '<g fill="#d97706" transform="translate(44 42)">' +
+        '<polygon points="12,0 15,8 24,8 17,13 19,22 12,17 5,22 7,13 0,8 9,8"/>' +
+        '<polygon points="42,0 45,8 54,8 47,13 49,22 42,17 35,22 37,13 30,8 39,8"/>' +
+        '<polygon points="72,0 75,8 84,8 77,13 79,22 72,17 65,22 67,13 60,8 69,8"/>' +
+      '</g>' +
+    '</g>' +
   '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmL)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function gtaIIIDarkSvg() {
   return openSvg(
     '.rain{animation:gta3RainD 2.8s linear infinite}' +
+    '.rain.b{animation-delay:-1.4s}' +
     '.sweep{animation:gta3SweepD 7.5s linear infinite}' +
     '.star{animation:gta3StarD 1.6s ease-in-out infinite alternate}' +
-    '@keyframes gta3RainD{from{transform:translate(40px,-120px)}to{transform:translate(-60px,1120px)}}' +
+    '@keyframes gta3RainD{from{transform:translate(40px,-160px)}to{transform:translate(-60px,1160px)}}' +
     '@keyframes gta3SweepD{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}' +
     '@keyframes gta3StarD{from{opacity:0.45}to{opacity:1}}',
     '<linearGradient id="gta3SkyD" x1="0" y1="0" x2="0" y2="1">' +
@@ -1717,45 +1888,56 @@ function gtaIIIDarkSvg() {
     radGrad("gta3TealD", "#5ec4b6", 0.25) +
     CALM_DARK
   ) +
-  '<rect width="1600" height="1000" fill="url(#gta3SkyD)"/>' +
-  // Sodium-vapor streetlamp halos in Liberty City rain fog
-  '<circle cx="180" cy="680" r="190" fill="url(#gta3AmberD)"/>' +
-  '<circle cx="1430" cy="700" r="190" fill="url(#gta3AmberD)"/>' +
-  // Liberty City skyline & Callahan Bridge silhouettes on flanks
-  '<g fill="#070c0e" stroke="#1b3136" stroke-width="1">' +
-    '<rect x="0" y="420" width="74" height="580"/><rect x="80" y="330" width="88" height="670"/><rect x="174" y="460" width="68" height="540"/>' +
-    '<rect x="1358" y="430" width="74" height="570"/><rect x="1438" y="310" width="92" height="690"/><rect x="1536" y="400" width="64" height="600"/>' +
-    '<path d="M252 960 V360 H286 V960 Z M240 450 H298 V470 H240 Z M240 610 H298 V630 H240 Z"/>' +
-    '<path d="M286 380 Q410 560 510 650" fill="none" stroke="#254247" stroke-width="4"/>' +
-  '</g>' +
-  // Rain streaks
-  '<g class="rain" stroke="#8ab8b4" stroke-width="1.4" opacity="0.28">' +
-    '<line x1="110" y1="40" x2="86" y2="120"/><line x1="210" y1="240" x2="186" y2="320"/><line x1="85" y1="520" x2="61" y2="600"/><line x1="240" y1="740" x2="216" y2="820"/>' +
-    '<line x1="1410" y1="80" x2="1386" y2="160"/><line x1="1520" y1="360" x2="1496" y2="440"/><line x1="1380" y1="620" x2="1356" y2="700"/><line x1="1490" y1="800" x2="1466" y2="880"/>' +
-  '</g>' +
-  // Top-right GTA III HUD: amber stars & teal status bars
-  '<g transform="translate(1340 42)" opacity="0.86">' +
-    '<rect x="60" y="0" width="164" height="28" rx="6" fill="#070c0e" stroke="#5ec4b6" stroke-width="2"/>' +
-    '<rect x="70" y="8" width="64" height="12" fill="#5ec4b6"/><rect x="144" y="8" width="70" height="12" fill="#ec1757"/>' +
-    '<g class="star" fill="#f09436" transform="translate(44 46)">' +
-      '<polygon points="12,0 15,8 24,8 17,13 19,22 12,17 5,22 7,13 0,8 9,8"/>' +
-      '<polygon points="42,0 45,8 54,8 47,13 49,22 42,17 35,22 37,13 30,8 39,8"/>' +
-      '<polygon points="72,0 75,8 84,8 77,13 79,22 72,17 65,22 67,13 60,8 69,8"/>' +
-      '<polygon points="102,0 105,8 114,8 107,13 109,22 102,17 95,22 97,13 90,8 99,8" opacity="0.3"/>' +
-      '<polygon points="132,0 135,8 144,8 137,13 139,22 132,17 125,22 127,13 120,8 129,8" opacity="0.3"/>' +
-      '<polygon points="162,0 165,8 174,8 167,13 169,22 162,17 155,22 157,13 150,8 159,8" opacity="0.3"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta3SkyD)"/>' +
+  '<g class="cdb-flank-l">' +
+    '<circle cx="180" cy="680" r="190" fill="url(#gta3AmberD)"/>' +
+    '<g fill="#070c0e" stroke="#1b3136" stroke-width="1">' +
+      '<rect x="-120" y="420" width="194" height="600"/><rect x="80" y="330" width="88" height="690"/><rect x="174" y="460" width="68" height="560"/>' +
+      '<path d="M252 1010 V360 H286 V1010 Z M240 450 H298 V470 H240 Z M240 610 H298 V630 H240 Z"/>' +
+      '<path d="M286 380 Q410 560 510 650" fill="none" stroke="#254247" stroke-width="4"/>' +
+    '</g>' +
+    '<g class="rain" stroke="#8ab8b4" stroke-width="1.4" opacity="0.28">' +
+      '<line x1="110" y1="0" x2="86" y2="80"/><line x1="210" y1="200" x2="186" y2="280"/><line x1="85" y1="480" x2="61" y2="560"/><line x1="240" y1="700" x2="216" y2="780"/>' +
+    '</g>' +
+    '<g class="rain b" stroke="#8ab8b4" stroke-width="1.4" opacity="0.28">' +
+      '<line x1="165" y1="30" x2="141" y2="110"/><line x1="65" y1="280" x2="41" y2="360"/><line x1="200" y1="540" x2="176" y2="620"/><line x1="115" y1="760" x2="91" y2="840"/>' +
+    '</g>' +
+    '<g transform="translate(136 864)">' +
+      '<circle cx="0" cy="0" r="96" fill="url(#gta3TealD)"/>' +
+      '<circle cx="0" cy="0" r="78" fill="#070d0f" stroke="#5ec4b6" stroke-width="5"/>' +
+      '<path d="M-74 -12 H74 M-18 -74 V74 M32 -68 V68" stroke="#183236" stroke-width="6" fill="none"/>' +
+      '<g class="sweep" style="transform-origin:0 0"><path d="M0 0 L0 -72 A72 72 0 0 1 54 -48 Z" fill="#5ec4b6" opacity="0.28"/></g>' +
+      '<circle cx="-28" cy="-24" r="5.5" fill="#ec1757"/><circle cx="30" cy="20" r="5.5" fill="#f09436"/>' +
+      '<polygon points="0,-9 6,7 -6,7" fill="#ffffff"/>' +
     '</g>' +
   '</g>' +
-  // Bottom-left GTA III circular teal radar
-  '<g transform="translate(136 864)">' +
-    '<circle cx="0" cy="0" r="96" fill="url(#gta3TealD)"/>' +
-    '<circle cx="0" cy="0" r="78" fill="#070d0f" stroke="#5ec4b6" stroke-width="5"/>' +
-    '<path d="M-74 -12 H74 M-18 -74 V74 M32 -68 V68" stroke="#183236" stroke-width="6" fill="none"/>' +
-    '<g class="sweep" style="transform-origin:0 0"><path d="M0 0 L0 -72 A72 72 0 0 1 54 -48 Z" fill="#5ec4b6" opacity="0.28"/></g>' +
-    '<circle cx="-28" cy="-24" r="5.5" fill="#ec1757"/><circle cx="30" cy="20" r="5.5" fill="#f09436"/>' +
-    '<polygon points="0,-9 6,7 -6,7" fill="#ffffff"/>' +
+  '<g class="cdb-flank-r">' +
+    '<circle cx="1430" cy="700" r="190" fill="url(#gta3AmberD)"/>' +
+    '<g fill="#070c0e" stroke="#1b3136" stroke-width="1">' +
+      '<rect x="1358" y="430" width="74" height="590"/><rect x="1438" y="310" width="92" height="710"/><rect x="1536" y="400" width="180" height="620"/>' +
+    '</g>' +
+    '<g class="rain" stroke="#8ab8b4" stroke-width="1.4" opacity="0.28">' +
+      '<line x1="1410" y1="40" x2="1386" y2="120"/><line x1="1520" y1="320" x2="1496" y2="400"/><line x1="1380" y1="580" x2="1356" y2="660"/><line x1="1490" y1="760" x2="1466" y2="840"/>' +
+    '</g>' +
+    '<g class="rain b" stroke="#8ab8b4" stroke-width="1.4" opacity="0.28">' +
+      '<line x1="1475" y1="20" x2="1451" y2="100"/><line x1="1385" y1="290" x2="1361" y2="370"/><line x1="1510" y1="530" x2="1486" y2="610"/><line x1="1420" y1="790" x2="1396" y2="870"/>' +
+    '</g>' +
   '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmD)"/></svg>';
+  '<g class="cdb-flank-rt" opacity="0.86">' +
+    '<g transform="translate(1340 62)">' +
+      '<rect x="60" y="0" width="164" height="28" rx="6" fill="#070c0e" stroke="#5ec4b6" stroke-width="2"/>' +
+      '<rect x="70" y="8" width="64" height="12" fill="#5ec4b6"/><rect x="144" y="8" width="70" height="12" fill="#ec1757"/>' +
+      '<g transform="translate(44 42)"><g class="star" fill="#f09436">' +
+        '<polygon points="12,0 15,8 24,8 17,13 19,22 12,17 5,22 7,13 0,8 9,8"/>' +
+        '<polygon points="42,0 45,8 54,8 47,13 49,22 42,17 35,22 37,13 30,8 39,8"/>' +
+        '<polygon points="72,0 75,8 84,8 77,13 79,22 72,17 65,22 67,13 60,8 69,8"/>' +
+        '<polygon points="102,0 105,8 114,8 107,13 109,22 102,17 95,22 97,13 90,8 99,8" opacity="0.3"/>' +
+        '<polygon points="132,0 135,8 144,8 137,13 139,22 132,17 125,22 127,13 120,8 129,8" opacity="0.3"/>' +
+        '<polygon points="162,0 165,8 174,8 167,13 169,22 162,17 155,22 157,13 150,8 159,8" opacity="0.3"/>' +
+      '</g></g>' +
+    '</g>' +
+  '</g>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
 // =============================================================================
@@ -1774,27 +1956,39 @@ function gtaIVLightSvg() {
     radGrad("gta4GoldL", "#c47d14", 0.22) +
     CALM_LIGHT
   ) +
-  '<rect width="1600" height="1000" fill="url(#gta4SkyL)"/>' +
-  // Broker Bridge gothic stone tower & stay cables on right flank, Algonquin spire on left
-  '<g fill="#737d8c" opacity="0.38">' +
-    '<rect x="44" y="240" width="68" height="760"/><polygon points="78,140 52,240 104,240"/>' +
-    '<rect x="124" y="380" width="76" height="620"/><rect x="210" y="450" width="58" height="550"/>' +
-    // Broker Bridge gothic pier on right flank
-    '<path d="M1380 960 V280 H1510 V960 H1476 V620 H1414 V960 Z M1406 340 A38 55 0 0 1 1484 340 V540 H1406 Z"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta4SkyL)"/>' +
+  '<g class="cdb-flank-l">' +
+    '<g fill="#737d8c" opacity="0.38">' +
+      '<rect x="44" y="240" width="68" height="780"/><polygon points="78,140 52,240 104,240"/>' +
+      '<rect x="124" y="380" width="76" height="640"/><rect x="210" y="450" width="58" height="570"/>' +
+    '</g>' +
+    '<g class="bokeh"><circle cx="180" cy="640" r="80" fill="url(#gta4GoldL)"/></g>' +
+    '<g transform="translate(136 864)" opacity="0.38"><g class="pulse">' +
+      '<circle cx="0" cy="0" r="74" fill="#bcc5d1"/>' +
+      '<path d="M0 -80 A80 80 0 0 0 0 80" fill="none" stroke="#16a34a" stroke-width="5"/>' +
+      '<path d="M0 -80 A80 80 0 0 1 0 80" fill="none" stroke="#2563eb" stroke-width="5"/>' +
+      '<circle cx="0" cy="0" r="5" fill="#181c24"/>' +
+    '</g></g>' +
   '</g>' +
-  '<g stroke="#646e7d" stroke-width="2" opacity="0.35">' +
-    '<line x1="1380" y1="300" x2="1180" y2="620"/><line x1="1380" y1="340" x2="1220" y2="620"/><line x1="1380" y1="380" x2="1260" y2="620"/>' +
-    '<line x1="1510" y1="300" x2="1600" y2="480"/><line x1="1510" y1="340" x2="1600" y2="540"/>' +
+  '<g class="cdb-flank-r">' +
+    '<g fill="#737d8c" opacity="0.38">' +
+      '<path d="M1380 1010 V280 H1510 V1010 H1476 V620 H1414 V1010 Z M1406 340 A38 55 0 0 1 1484 340 V540 H1406 Z"/>' +
+    '</g>' +
+    '<g stroke="#646e7d" stroke-width="2" opacity="0.35">' +
+      '<line x1="1380" y1="300" x2="1180" y2="620"/><line x1="1380" y1="340" x2="1220" y2="620"/><line x1="1380" y1="380" x2="1260" y2="620"/>' +
+      '<line x1="1510" y1="300" x2="1600" y2="480"/><line x1="1510" y1="340" x2="1600" y2="540"/>' +
+    '</g>' +
+    '<g class="bokeh"><circle cx="1420" cy="580" r="95" fill="url(#gta4GoldL)"/></g>' +
   '</g>' +
-  '<g class="bokeh"><circle cx="180" cy="640" r="80" fill="url(#gta4GoldL)"/><circle cx="1420" cy="580" r="95" fill="url(#gta4GoldL)"/></g>' +
-  // GTA IV minimalist circular radar with split health/armor ring
-  '<g class="pulse" transform="translate(136 864)" opacity="0.38">' +
-    '<circle cx="0" cy="0" r="74" fill="#bcc5d1"/>' +
-    '<path d="M0 -80 A80 80 0 0 0 0 80" fill="none" stroke="#16a34a" stroke-width="5"/>' +
-    '<path d="M0 -80 A80 80 0 0 1 0 80" fill="none" stroke="#2563eb" stroke-width="5"/>' +
-    '<circle cx="0" cy="0" r="5" fill="#181c24"/>' +
+  '<g class="cdb-flank-rt" opacity="0.38">' +
+    '<g transform="translate(1448 62)"><g class="pulse">' +
+      '<rect x="0" y="0" width="88" height="88" rx="16" fill="#3a414c" stroke="#c47d14" stroke-width="3"/>' +
+      '<rect x="5" y="5" width="78" height="78" rx="12" fill="#d99622"/>' +
+      '<path d="M20 18 L13 56 H25 L28 42 H37 C41 42 42 44 41 49 L40 56 H52 L53 47 C54 42 51 39 48 38 C53 36 57 32 58 26 C59 20 53 18 43 18 Z M30 26 H40 C44 26 45 28 44 30 C43 33 41 34 38 34 H28 Z" fill="#181c24"/>' +
+      '<polygon points="62,42 65,52 76,52 67,58 70,69 62,62 53,69 56,58 48,52 59,52" fill="#ffffff" stroke="#181c24" stroke-width="2"/>' +
+    '</g></g>' +
   '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmL)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function gtaIVDarkSvg() {
@@ -1811,41 +2005,42 @@ function gtaIVDarkSvg() {
     radGrad("gta4TailD", "#ef4444", 0.24) +
     CALM_DARK
   ) +
-  '<rect width="1600" height="1000" fill="url(#gta4SkyD)"/>' +
-  // Algonquin & Broker Bridge silhouettes
-  '<g fill="#0a0c10" stroke="#232936" stroke-width="1">' +
-    '<rect x="44" y="240" width="68" height="760"/><polygon points="78,140 52,240 104,240"/>' +
-    '<rect x="124" y="380" width="76" height="620"/><rect x="210" y="450" width="58" height="550"/>' +
-    '<path d="M1380 960 V280 H1510 V960 H1476 V620 H1414 V960 Z"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta4SkyD)"/>' +
+  '<g class="cdb-flank-l">' +
+    '<g fill="#0a0c10" stroke="#232936" stroke-width="1">' +
+      '<rect x="44" y="240" width="68" height="780"/><polygon points="78,140 52,240 104,240"/>' +
+      '<rect x="124" y="380" width="76" height="640"/><rect x="210" y="450" width="58" height="570"/>' +
+    '</g>' +
+    '<g class="bokeh"><circle cx="160" cy="620" r="85" fill="url(#gta4GoldD)"/><circle cx="240" cy="640" r="65" fill="url(#gta4TailD)"/></g>' +
+    '<g class="bokeh b"><circle cx="110" cy="650" r="55" fill="url(#gta4GoldD)"/></g>' +
+    '<g transform="translate(136 864)">' +
+      '<circle cx="0" cy="0" r="74" fill="#0c0f14" stroke="#262c3a" stroke-width="3"/>' +
+      '<path d="M-74 -10 H74 M-12 -74 V74" stroke="#1b212d" stroke-width="5"/>' +
+      '<path d="M0 -80 A80 80 0 0 0 0 80" fill="none" stroke="#4ade80" stroke-width="5.5"/>' +
+      '<path d="M0 -80 A80 80 0 0 1 0 80" fill="none" stroke="#60a5fa" stroke-width="5.5"/>' +
+      '<polygon points="0,-8 6,7 -6,7" fill="#ffffff"/>' +
+    '</g>' +
   '</g>' +
-  '<g stroke="#2e3646" stroke-width="2" opacity="0.6">' +
-    '<line x1="1380" y1="300" x2="1180" y2="620"/><line x1="1380" y1="340" x2="1220" y2="620"/><line x1="1380" y1="380" x2="1260" y2="620"/>' +
-    '<line x1="1510" y1="300" x2="1600" y2="480"/><line x1="1510" y1="340" x2="1600" y2="540"/>' +
+  '<g class="cdb-flank-r">' +
+    '<g fill="#0a0c10" stroke="#232936" stroke-width="1">' +
+      '<path d="M1380 1010 V280 H1510 V1010 H1476 V620 H1414 V1010 Z"/>' +
+    '</g>' +
+    '<g stroke="#2e3646" stroke-width="2" opacity="0.6">' +
+      '<line x1="1380" y1="300" x2="1180" y2="620"/><line x1="1380" y1="340" x2="1220" y2="620"/><line x1="1380" y1="380" x2="1260" y2="620"/>' +
+      '<line x1="1510" y1="300" x2="1600" y2="480"/><line x1="1510" y1="340" x2="1600" y2="540"/>' +
+    '</g>' +
+    '<g class="bokeh"><circle cx="1360" cy="610" r="95" fill="url(#gta4GoldD)"/><circle cx="1460" cy="625" r="70" fill="url(#gta4TailD)"/></g>' +
+    '<g class="bokeh b"><circle cx="1410" cy="590" r="60" fill="url(#gta4GoldD)"/></g>' +
   '</g>' +
-  // Out-of-focus Liberty City traffic headlight/taillight bokeh across Broker Bridge
-  '<g class="bokeh">' +
-    '<circle cx="160" cy="620" r="85" fill="url(#gta4GoldD)"/><circle cx="240" cy="640" r="65" fill="url(#gta4TailD)"/>' +
-    '<circle cx="1360" cy="610" r="95" fill="url(#gta4GoldD)"/><circle cx="1460" cy="625" r="70" fill="url(#gta4TailD)"/>' +
+  '<g class="cdb-flank-rt" opacity="0.88">' +
+    '<g transform="translate(1448 62)"><g class="pulse">' +
+      '<rect x="0" y="0" width="88" height="88" rx="16" fill="#040301" stroke="#ffab00" stroke-width="3"/>' +
+      '<rect x="5" y="5" width="78" height="78" rx="12" fill="#ffab00"/>' +
+      '<path d="M20 18 L13 56 H25 L28 42 H37 C41 42 42 44 41 49 L40 56 H52 L53 47 C54 42 51 39 48 38 C53 36 57 32 58 26 C59 20 53 18 43 18 Z M30 26 H40 C44 26 45 28 44 30 C43 33 41 34 38 34 H28 Z" fill="#040301"/>' +
+      '<polygon points="62,42 65,52 76,52 67,58 70,69 62,62 53,69 56,58 48,52 59,52" fill="#ffffff" stroke="#040301" stroke-width="2"/>' +
+    '</g></g>' +
   '</g>' +
-  '<g class="bokeh b">' +
-    '<circle cx="110" cy="650" r="55" fill="url(#gta4GoldD)"/><circle cx="1410" cy="590" r="60" fill="url(#gta4GoldD)"/>' +
-  '</g>' +
-  // Top-right Rockstar NYC Gold Bevel Crest
-  '<g class="pulse" transform="translate(1448 44)" opacity="0.88">' +
-    '<rect x="0" y="0" width="88" height="88" rx="16" fill="#040301" stroke="#ffab00" stroke-width="3"/>' +
-    '<rect x="5" y="5" width="78" height="78" rx="12" fill="#ffab00"/>' +
-    '<path d="M20 18 L13 56 H25 L28 42 H37 C41 42 42 44 41 49 L40 56 H52 L53 47 C54 42 51 39 48 38 C53 36 57 32 58 26 C59 20 53 18 43 18 Z M30 26 H40 C44 26 45 28 44 30 C43 33 41 34 38 34 H28 Z" fill="#040301"/>' +
-    '<polygon points="62,42 65,52 76,52 67,58 70,69 62,62 53,69 56,58 48,52 59,52" fill="#ffffff" stroke="#040301" stroke-width="2"/>' +
-  '</g>' +
-  // Bottom-left GTA IV circular radar with split health (green) and armor (blue) ring
-  '<g transform="translate(136 864)">' +
-    '<circle cx="0" cy="0" r="74" fill="#0c0f14" stroke="#262c3a" stroke-width="3"/>' +
-    '<path d="M-74 -10 H74 M-12 -74 V74" stroke="#1b212d" stroke-width="5"/>' +
-    '<path d="M0 -80 A80 80 0 0 0 0 80" fill="none" stroke="#4ade80" stroke-width="5.5"/>' +
-    '<path d="M0 -80 A80 80 0 0 1 0 80" fill="none" stroke="#60a5fa" stroke-width="5.5"/>' +
-    '<polygon points="0,-8 6,7 -6,7" fill="#ffffff"/>' +
-  '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmD)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
 // =============================================================================
@@ -1853,53 +2048,70 @@ function gtaIVDarkSvg() {
 // =============================================================================
 function gtaVLightSvg() {
   return openSvg(
-    '.palm{transform-origin:50% 100%;animation:gta5Palm 9s ease-in-out infinite alternate}' +
-    '.palm.b{animation-duration:12s;animation-direction:alternate-reverse}' +
-    '.heli{animation:gta5Heli 14s ease-in-out infinite alternate}' +
+    '.palm{transform-origin:117px 1000px;animation:gta5Palm 9s ease-in-out infinite alternate}' +
+    '.palm.b{transform-origin:1486px 1000px;animation-duration:12s;animation-direction:alternate-reverse}' +
+    '.wheel{animation:gta5WheelL 6s ease-in-out infinite alternate}' +
     '@keyframes gta5Palm{from{transform:rotate(-2.5deg)}to{transform:rotate(2.5deg)}}' +
-    '@keyframes gta5Heli{from{transform:rotate(-8deg)}to{transform:rotate(10deg)}}',
+    '@keyframes gta5WheelL{from{opacity:0.32}to{opacity:0.46}}',
     '<linearGradient id="gta5SkyL" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#f7f2e4"/><stop offset="0.55" stop-color="#efe4cc"/><stop offset="1" stop-color="#dfd0b0"/>' +
     '</linearGradient>' +
     radGrad("gta5SunL", "#f5a623", 0.25) +
     CALM_LIGHT
   ) +
-  '<rect width="1600" height="1000" fill="url(#gta5SkyL)"/>' +
-  '<circle cx="1420" cy="220" r="240" fill="url(#gta5SunL)"/>' +
-  // Mount Chiliad & Vinewood Hills horizon silhouette on flanks
-  '<path d="M0 780 L140 620 L290 710 L420 780 L0 780 Z M1180 780 L1350 610 L1490 670 L1600 590 L1600 780 Z" fill="#8fa38c" opacity="0.28"/>' +
-  // Los Santos Washingtonia Palm silhouettes on left & right flanks
-  '<g class="palm" fill="#4a6e54" opacity="0.32">' +
-    '<path d="M110 1000 Q118 680 136 420 L146 420 Q130 680 124 1000 Z"/>' +
-    '<path d="M140 420 Q70 390 36 435 Q85 420 140 430 Z"/>' +
-    '<path d="M140 420 Q80 350 48 370 Q95 380 140 420 Z"/>' +
-    '<path d="M140 420 Q200 350 236 375 Q185 380 140 420 Z"/>' +
-    '<path d="M140 420 Q210 395 244 440 Q190 420 140 430 Z"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta5SkyL)"/>' +
+  '<g class="cdb-flank-rt">' +
+    '<circle cx="1420" cy="230" r="240" fill="url(#gta5SunL)"/>' +
+    '<g transform="translate(1380 62)" fill="#d97706" opacity="0.4">' +
+      '<polygon points="12,0 15,8 24,8 17,13 19,22 12,17 5,22 7,13 0,8 9,8"/>' +
+      '<polygon points="44,0 47,8 56,8 49,13 51,22 44,17 37,22 39,13 32,8 41,8"/>' +
+      '<polygon points="76,0 79,8 88,8 81,13 83,22 76,17 69,22 71,13 64,8 73,8"/>' +
+      '<polygon points="108,0 111,8 120,8 113,13 115,22 108,17 101,22 103,13 96,8 105,8"/>' +
+      '<polygon points="140,0 143,8 152,8 145,13 147,22 140,17 133,22 135,13 128,8 137,8"/>' +
+    '</g>' +
   '</g>' +
-  '<g class="palm b" fill="#4a6e54" opacity="0.32">' +
-    '<path d="M1480 1000 Q1470 690 1452 440 L1462 440 Q1480 690 1492 1000 Z"/>' +
-    '<path d="M1456 440 Q1390 410 1354 455 Q1405 440 1456 450 Z"/>' +
-    '<path d="M1456 440 Q1400 370 1368 390 Q1415 400 1456 440 Z"/>' +
-    '<path d="M1456 440 Q1516 370 1552 395 Q1505 400 1456 440 Z"/>' +
-    '<path d="M1456 440 Q1526 415 1560 460 Q1506 440 1456 450 Z"/>' +
+  '<g class="cdb-flank-l">' +
+    '<path d="M-240 780 L-120 690 L140 620 L290 710 L420 780 Z" fill="#8fa38c" opacity="0.28"/>' +
+    '<g class="palm" fill="#4a6e54" opacity="0.32">' +
+      '<path d="M108 1020 Q118 680 136 420 L146 420 Q130 680 124 1020 Z"/>' +
+      '<path d="M140 420 Q70 390 36 435 Q85 420 140 430 Z"/>' +
+      '<path d="M140 420 Q80 350 48 370 Q95 380 140 420 Z"/>' +
+      '<path d="M140 420 Q200 350 236 375 Q185 380 140 420 Z"/>' +
+      '<path d="M140 420 Q210 395 244 440 Q190 420 140 430 Z"/>' +
+    '</g>' +
+    '<g transform="translate(44 820)" opacity="0.38">' +
+      '<rect x="0" y="0" width="210" height="132" rx="4" fill="#d2cbb8" stroke="#1f7a3a" stroke-width="2.5"/>' +
+      '<path d="M0 48 H210 M74 0 V116 M148 0 V116" stroke="#a8a08c" stroke-width="4"/>' +
+      '<rect x="4" y="118" width="98" height="10" fill="#359a47"/>' +
+      '<rect x="106" y="118" width="50" height="10" fill="#3b82f6"/>' +
+      '<rect x="160" y="118" width="46" height="10" fill="#d97706"/>' +
+    '</g>' +
   '</g>' +
-  // GTA V Rectangular Minimap with Green/Blue/Yellow status bar in bottom-left
-  '<g transform="translate(44 820)" opacity="0.38">' +
-    '<rect x="0" y="0" width="210" height="132" rx="4" fill="#d2cbb8" stroke="#1f7a3a" stroke-width="2.5"/>' +
-    '<path d="M0 48 H210 M74 0 V116 M148 0 V116" stroke="#a8a08c" stroke-width="4"/>' +
-    '<rect x="4" y="118" width="98" height="10" fill="#359a47"/>' +
-    '<rect x="106" y="118" width="50" height="10" fill="#3b82f6"/>' +
-    '<rect x="160" y="118" width="46" height="10" fill="#d97706"/>' +
+  '<g class="cdb-flank-r">' +
+    '<path d="M1180 780 L1350 610 L1490 670 L1640 590 L1840 780 Z" fill="#8fa38c" opacity="0.28"/>' +
+    '<g class="palm b" fill="#4a6e54" opacity="0.32">' +
+      '<path d="M1480 1020 Q1470 690 1452 440 L1462 440 Q1480 690 1492 1020 Z"/>' +
+      '<path d="M1456 440 Q1390 410 1354 455 Q1405 440 1456 450 Z"/>' +
+      '<path d="M1456 440 Q1400 370 1368 390 Q1415 400 1456 440 Z"/>' +
+      '<path d="M1456 440 Q1516 370 1552 395 Q1505 400 1456 440 Z"/>' +
+      '<path d="M1456 440 Q1526 415 1560 460 Q1506 440 1456 450 Z"/>' +
+    '</g>' +
+    '<g transform="translate(1488 888)"><g class="wheel">' +
+      '<circle cx="0" cy="0" r="44" fill="#d2cbb8" stroke="#8fa38c" stroke-width="3"/>' +
+      '<path d="M0 -38 A38 38 0 0 1 33 19" fill="none" stroke="#359a47" stroke-width="7"/>' +
+      '<path d="M33 19 A38 38 0 0 1 -33 19" fill="none" stroke="#d97706" stroke-width="7"/>' +
+      '<path d="M-33 19 A38 38 0 0 1 0 -38" fill="none" stroke="#3b82f6" stroke-width="7"/>' +
+    '</g></g>' +
   '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmL)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function gtaVDarkSvg() {
   return openSvg(
-    '.palm{transform-origin:50% 100%;animation:gta5PalmD 9s ease-in-out infinite alternate}' +
-    '.palm.b{animation-duration:12s;animation-direction:alternate-reverse}' +
-    '.beam{transform-origin:1480px 60px;animation:gta5BeamD 13s ease-in-out infinite alternate}' +
-    '.beamL{transform-origin:120px 60px;animation:gta5BeamD 16s ease-in-out infinite alternate-reverse}' +
+    '.palm{transform-origin:117px 1000px;animation:gta5PalmD 9s ease-in-out infinite alternate}' +
+    '.palm.b{transform-origin:1486px 1000px;animation-duration:12s;animation-direction:alternate-reverse}' +
+    '.beam{transform-origin:1480px 62px;animation:gta5BeamD 13s ease-in-out infinite alternate}' +
+    '.beamL{transform-origin:120px 62px;animation:gta5BeamD 16s ease-in-out infinite alternate-reverse}' +
     '.wheel{animation:gta5WheelD 6s ease-in-out infinite alternate}' +
     '@keyframes gta5PalmD{from{transform:rotate(-2.5deg)}to{transform:rotate(2.5deg)}}' +
     '@keyframes gta5BeamD{from{transform:rotate(-14deg)}to{transform:rotate(12deg)}}' +
@@ -1914,52 +2126,55 @@ function gtaVDarkSvg() {
     radGrad("gta5GoldD", "#f5a623", 0.22) +
     CALM_DARK
   ) +
-  '<rect width="1600" height="1000" fill="url(#gta5SkyD)"/>' +
-  // Sweeping LSPD Helicopter Searchlights from upper corners
-  '<polygon class="beamL" points="120,60 -40,820 260,820" fill="url(#gta5Cone)"/>' +
-  '<polygon class="beam" points="1480,60 1320,820 1640,820" fill="url(#gta5Cone)"/>' +
-  '<circle cx="1450" cy="820" r="220" fill="url(#gta5GoldD)"/>' +
-  '<circle cx="150" cy="850" r="200" fill="url(#gta5GreenD)"/>' +
-  // Swaying Los Santos Palm Silhouettes
-  '<g class="palm" fill="#070c09">' +
-    '<path d="M110 1000 Q118 680 136 420 L146 420 Q130 680 124 1000 Z"/>' +
-    '<path d="M140 420 Q70 390 36 435 Q85 420 140 430 Z"/>' +
-    '<path d="M140 420 Q80 350 48 370 Q95 380 140 420 Z"/>' +
-    '<path d="M140 420 Q200 350 236 375 Q185 380 140 420 Z"/>' +
-    '<path d="M140 420 Q210 395 244 440 Q190 420 140 430 Z"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta5SkyD)"/>' +
+  '<g class="cdb-flank-lt">' +
+    '<polygon class="beamL" points="120,62 -40,820 260,820" fill="url(#gta5Cone)"/>' +
   '</g>' +
-  '<g class="palm b" fill="#070c09">' +
-    '<path d="M1480 1000 Q1470 690 1452 440 L1462 440 Q1480 690 1492 1000 Z"/>' +
-    '<path d="M1456 440 Q1390 410 1354 455 Q1405 440 1456 450 Z"/>' +
-    '<path d="M1456 440 Q1400 370 1368 390 Q1415 400 1456 440 Z"/>' +
-    '<path d="M1456 440 Q1516 370 1552 395 Q1505 400 1456 440 Z"/>' +
-    '<path d="M1456 440 Q1526 415 1560 460 Q1506 440 1456 450 Z"/>' +
+  '<g class="cdb-flank-rt">' +
+    '<polygon class="beam" points="1480,62 1320,820 1640,820" fill="url(#gta5Cone)"/>' +
+    '<g transform="translate(1380 62)" fill="#f5a623" opacity="0.9">' +
+      '<polygon points="12,0 15,8 24,8 17,13 19,22 12,17 5,22 7,13 0,8 9,8"/>' +
+      '<polygon points="44,0 47,8 56,8 49,13 51,22 44,17 37,22 39,13 32,8 41,8"/>' +
+      '<polygon points="76,0 79,8 88,8 81,13 83,22 76,17 69,22 71,13 64,8 73,8"/>' +
+      '<polygon points="108,0 111,8 120,8 113,13 115,22 108,17 101,22 103,13 96,8 105,8"/>' +
+      '<polygon points="140,0 143,8 152,8 145,13 147,22 140,17 133,22 135,13 128,8 137,8"/>' +
+    '</g>' +
   '</g>' +
-  // Top-right 5-Star Wanted Row
-  '<g transform="translate(1380 42)" fill="#f5a623" opacity="0.9">' +
-    '<polygon points="12,0 15,8 24,8 17,13 19,22 12,17 5,22 7,13 0,8 9,8"/>' +
-    '<polygon points="44,0 47,8 56,8 49,13 51,22 44,17 37,22 39,13 32,8 41,8"/>' +
-    '<polygon points="76,0 79,8 88,8 81,13 83,22 76,17 69,22 71,13 64,8 73,8"/>' +
-    '<polygon points="108,0 111,8 120,8 113,13 115,22 108,17 101,22 103,13 96,8 105,8"/>' +
-    '<polygon points="140,0 143,8 152,8 145,13 147,22 140,17 133,22 135,13 128,8 137,8"/>' +
+  '<g class="cdb-flank-l">' +
+    '<circle cx="150" cy="850" r="200" fill="url(#gta5GreenD)"/>' +
+    '<g class="palm" fill="#070c09">' +
+      '<path d="M108 1020 Q118 680 136 420 L146 420 Q130 680 124 1020 Z"/>' +
+      '<path d="M140 420 Q70 390 36 435 Q85 420 140 430 Z"/>' +
+      '<path d="M140 420 Q80 350 48 370 Q95 380 140 420 Z"/>' +
+      '<path d="M140 420 Q200 350 236 375 Q185 380 140 420 Z"/>' +
+      '<path d="M140 420 Q210 395 244 440 Q190 420 140 430 Z"/>' +
+    '</g>' +
+    '<g transform="translate(44 820)">' +
+      '<rect x="0" y="0" width="210" height="132" rx="4" fill="#09100c" stroke="#359a47" stroke-width="2.5"/>' +
+      '<path d="M0 48 H210 M74 0 V116 M148 0 V116" stroke="#182a20" stroke-width="5"/>' +
+      '<polygon points="105,50 112,66 98,66" fill="#ffffff"/>' +
+      '<rect x="4" y="118" width="98" height="10" fill="#4ec962"/>' +
+      '<rect x="106" y="118" width="50" height="10" fill="#5db6e5"/>' +
+      '<rect x="160" y="118" width="46" height="10" fill="#f5a623"/>' +
+    '</g>' +
   '</g>' +
-  // Bottom-left GTA V Rectangular Radar with Health Green / Armor Blue / Special Gold strip
-  '<g transform="translate(44 820)">' +
-    '<rect x="0" y="0" width="210" height="132" rx="4" fill="#09100c" stroke="#359a47" stroke-width="2.5"/>' +
-    '<path d="M0 48 H210 M74 0 V116 M148 0 V116" stroke="#182a20" stroke-width="5"/>' +
-    '<polygon points="105,50 112,66 98,66" fill="#ffffff"/>' +
-    '<rect x="4" y="118" width="98" height="10" fill="#4ec962"/>' +
-    '<rect x="106" y="118" width="50" height="10" fill="#5db6e5"/>' +
-    '<rect x="160" y="118" width="46" height="10" fill="#f5a623"/>' +
+  '<g class="cdb-flank-r">' +
+    '<circle cx="1450" cy="820" r="220" fill="url(#gta5GoldD)"/>' +
+    '<g class="palm b" fill="#070c09">' +
+      '<path d="M1480 1020 Q1470 690 1452 440 L1462 440 Q1480 690 1492 1020 Z"/>' +
+      '<path d="M1456 440 Q1390 410 1354 455 Q1405 440 1456 450 Z"/>' +
+      '<path d="M1456 440 Q1400 370 1368 390 Q1415 400 1456 440 Z"/>' +
+      '<path d="M1456 440 Q1516 370 1552 395 Q1505 400 1456 440 Z"/>' +
+      '<path d="M1456 440 Q1526 415 1560 460 Q1506 440 1456 450 Z"/>' +
+    '</g>' +
+    '<g transform="translate(1488 888)"><g class="wheel">' +
+      '<circle cx="0" cy="0" r="44" fill="#09100c" stroke="#26382c" stroke-width="3"/>' +
+      '<path d="M0 -38 A38 38 0 0 1 33 19" fill="none" stroke="#4ec962" stroke-width="7"/>' +
+      '<path d="M33 19 A38 38 0 0 1 -33 19" fill="none" stroke="#f5a623" stroke-width="7"/>' +
+      '<path d="M-33 19 A38 38 0 0 1 0 -38" fill="none" stroke="#5db6e5" stroke-width="7"/>' +
+    '</g></g>' +
   '</g>' +
-  // Bottom-right 3-Protagonist Character Wheel (Franklin Green, Michael Blue, Trevor Orange)
-  '<g class="wheel" transform="translate(1488 888)">' +
-    '<circle cx="0" cy="0" r="44" fill="#09100c" stroke="#26382c" stroke-width="3"/>' +
-    '<path d="M0 -38 A38 38 0 0 1 33 19" fill="none" stroke="#4ec962" stroke-width="7"/>' +
-    '<path d="M33 19 A38 38 0 0 1 -33 19" fill="none" stroke="#f5a623" stroke-width="7"/>' +
-    '<path d="M-33 19 A38 38 0 0 1 0 -38" fill="none" stroke="#5db6e5" stroke-width="7"/>' +
-  '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmD)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
 // =============================================================================
@@ -1967,13 +2182,15 @@ function gtaVDarkSvg() {
 // =============================================================================
 function gtaVILightSvg() {
   return openSvg(
-    '.palm{transform-origin:50% 100%;animation:gta6Palm 8.5s ease-in-out infinite alternate}' +
-    '.palm.b{animation-duration:11s;animation-direction:alternate-reverse}' +
+    '.palm{transform-origin:142px 1000px;animation:gta6Palm 8.5s ease-in-out infinite alternate}' +
+    '.palm.b{transform-origin:1458px 1000px;animation-duration:11s;animation-direction:alternate-reverse}' +
     '.wave{animation:gta6Wave 14s ease-in-out infinite alternate}' +
     '.blimp{animation:gta6Blimp 60s linear infinite alternate}' +
+    '.neon{animation:gta6NeonL 4.2s ease-in-out infinite alternate}' +
     '@keyframes gta6Palm{from{transform:rotate(-3deg)}to{transform:rotate(3deg)}}' +
     '@keyframes gta6Wave{from{transform:translateX(-30px)}to{transform:translateX(30px)}}' +
-    '@keyframes gta6Blimp{from{transform:translateX(-60px)}to{transform:translateX(60px)}}',
+    '@keyframes gta6Blimp{from{transform:translateX(-60px)}to{transform:translateX(60px)}}' +
+    '@keyframes gta6NeonL{from{opacity:0.34}to{opacity:0.48}}',
     '<linearGradient id="gta6SkyL" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#fdebf4"/><stop offset="0.5" stop-color="#f9d5e8"/><stop offset="0.82" stop-color="#fce0c8"/><stop offset="1" stop-color="#ccf2f7"/>' +
     '</linearGradient>' +
@@ -1982,48 +2199,62 @@ function gtaVILightSvg() {
     '</linearGradient>' +
     CALM_LIGHT
   ) +
-  '<rect width="1600" height="1000" fill="url(#gta6SkyL)"/>' +
-  '<circle cx="1450" cy="125" r="130" fill="url(#gta6SunL)"/>' +
-  // Vice City blimp silhouette
-  '<g class="blimp" transform="translate(190 140)" fill="#9d3478" opacity="0.24">' +
-    '<ellipse cx="0" cy="0" rx="46" ry="16"/><polygon points="-42,0 -56,-10 -56,10"/><rect x="-12" y="15" width="20" height="5"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta6SkyL)"/>' +
+  '<rect x="-800" y="905" width="3200" height="100" fill="#baeef5" opacity="0.52"/>' +
+  '<g class="cdb-flank-lt">' +
+    '<g transform="translate(190 140)"><g class="blimp" fill="#9d3478" opacity="0.24">' +
+      '<ellipse cx="0" cy="0" rx="46" ry="16"/><polygon points="-42,0 -56,-10 -56,10"/><rect x="-12" y="15" width="20" height="5"/>' +
+    '</g></g>' +
   '</g>' +
-  // Ocean Drive Art Deco pastel hotels on flanks
-  '<g opacity="0.34">' +
-    '<rect x="18" y="470" width="110" height="440" fill="#f4b8d4"/><rect x="34" y="440" width="78" height="30" fill="#2fd8ff"/>' +
-    '<rect x="28" y="490" width="8" height="380" fill="#d91b7a"/><rect x="112" y="490" width="8" height="380" fill="#06b6d4"/>' +
-    '<rect x="1472" y="460" width="110" height="450" fill="#b8ecf4"/><rect x="1488" y="430" width="78" height="30" fill="#ff4cb9"/>' +
-    '<rect x="1482" y="480" width="8" height="390" fill="#d91b7a"/><rect x="1566" y="480" width="8" height="390" fill="#06b6d4"/>' +
+  '<g class="cdb-flank-rt">' +
+    '<circle cx="1450" cy="145" r="130" fill="url(#gta6SunL)"/>' +
+    '<g transform="translate(1410 62)"><g class="neon" opacity="0.42">' +
+      '<circle cx="60" cy="60" r="52" fill="url(#gta6SunL)"/>' +
+      '<path d="M16 24 L46 94 L76 24 H60 L46 64 L32 24 Z" fill="#f9eaf2" stroke="#0891b2" stroke-width="2.5"/>' +
+      '<rect x="82" y="24" width="18" height="70" fill="#f9eaf2" stroke="#d97706" stroke-width="2.5"/>' +
+    '</g></g>' +
   '</g>' +
-  // Swaying Florida Palm Silhouettes
-  '<g class="palm" fill="#8a3d7c" opacity="0.28">' +
-    '<path d="M135 1000 Q145 710 165 460 L175 460 Q158 710 150 1000 Z"/>' +
-    '<path d="M170 460 Q95 425 58 470 Q112 455 170 468 Z"/>' +
-    '<path d="M170 460 Q105 385 72 405 Q122 418 170 460 Z"/>' +
-    '<path d="M170 460 Q235 385 272 410 Q220 418 170 460 Z"/>' +
-    '<path d="M170 460 Q245 430 280 475 Q225 455 170 468 Z"/>' +
+  '<g class="cdb-flank-l">' +
+    '<g opacity="0.34">' +
+      '<rect x="18" y="470" width="110" height="550" fill="#f4b8d4"/><rect x="34" y="440" width="78" height="30" fill="#2fd8ff"/>' +
+      '<rect x="28" y="490" width="8" height="420" fill="#d91b7a"/><rect x="112" y="490" width="8" height="420" fill="#06b6d4"/>' +
+    '</g>' +
+    '<g class="palm" fill="#8a3d7c" opacity="0.28">' +
+      '<path d="M135 1020 Q145 710 165 460 L175 460 Q158 710 150 1020 Z"/>' +
+      '<path d="M170 460 Q95 425 58 470 Q112 455 170 468 Z"/>' +
+      '<path d="M170 460 Q105 385 72 405 Q122 418 170 460 Z"/>' +
+      '<path d="M170 460 Q235 385 272 410 Q220 418 170 460 Z"/>' +
+      '<path d="M170 460 Q245 430 280 475 Q225 455 170 468 Z"/>' +
+    '</g>' +
+    '<g class="wave" opacity="0.38">' +
+      '<rect x="40" y="925" width="260" height="5" rx="2.5" fill="#d91b7a"/>' +
+      '<rect x="80" y="945" width="220" height="5" rx="2.5" fill="#06b6d4"/>' +
+    '</g>' +
   '</g>' +
-  '<g class="palm b" fill="#8a3d7c" opacity="0.28">' +
-    '<path d="M1465 1000 Q1455 710 1435 460 L1425 460 Q1442 710 1450 1000 Z"/>' +
-    '<path d="M1430 460 Q1355 425 1318 470 Q1372 455 1430 468 Z"/>' +
-    '<path d="M1430 460 Q1365 385 1332 405 Q1382 418 1430 460 Z"/>' +
-    '<path d="M1430 460 Q1495 385 1532 410 Q1480 418 1430 460 Z"/>' +
-    '<path d="M1430 460 Q1505 430 1540 475 Q1485 455 1430 468 Z"/>' +
+  '<g class="cdb-flank-r">' +
+    '<g opacity="0.34">' +
+      '<rect x="1472" y="460" width="110" height="560" fill="#b8ecf4"/><rect x="1488" y="430" width="78" height="30" fill="#ff4cb9"/>' +
+      '<rect x="1482" y="480" width="8" height="430" fill="#d91b7a"/><rect x="1566" y="480" width="8" height="430" fill="#06b6d4"/>' +
+    '</g>' +
+    '<g class="palm b" fill="#8a3d7c" opacity="0.28">' +
+      '<path d="M1465 1020 Q1455 710 1435 460 L1425 460 Q1442 710 1450 1020 Z"/>' +
+      '<path d="M1430 460 Q1355 425 1318 470 Q1372 455 1430 468 Z"/>' +
+      '<path d="M1430 460 Q1365 385 1332 405 Q1382 418 1430 460 Z"/>' +
+      '<path d="M1430 460 Q1495 385 1532 410 Q1480 418 1430 460 Z"/>' +
+      '<path d="M1430 460 Q1505 430 1540 475 Q1485 455 1430 468 Z"/>' +
+    '</g>' +
+    '<g class="wave" opacity="0.38">' +
+      '<rect x="1300" y="925" width="260" height="5" rx="2.5" fill="#d91b7a"/>' +
+      '<rect x="1280" y="945" width="240" height="5" rx="2.5" fill="#06b6d4"/>' +
+    '</g>' +
   '</g>' +
-  // Shimmering Vice Beach neon water lines at bottom
-  '<g class="wave" opacity="0.38">' +
-    '<rect x="40" y="925" width="260" height="5" rx="2.5" fill="#d91b7a"/>' +
-    '<rect x="80" y="945" width="220" height="5" rx="2.5" fill="#06b6d4"/>' +
-    '<rect x="1300" y="925" width="260" height="5" rx="2.5" fill="#d91b7a"/>' +
-    '<rect x="1280" y="945" width="240" height="5" rx="2.5" fill="#06b6d4"/>' +
-  '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmL)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function gtaVIDarkSvg() {
   return openSvg(
-    '.palm{transform-origin:50% 100%;animation:gta6PalmD 8.5s ease-in-out infinite alternate}' +
-    '.palm.b{animation-duration:11s;animation-direction:alternate-reverse}' +
+    '.palm{transform-origin:142px 1000px;animation:gta6PalmD 8.5s ease-in-out infinite alternate}' +
+    '.palm.b{transform-origin:1458px 1000px;animation-duration:11s;animation-direction:alternate-reverse}' +
     '.wave{animation:gta6WaveD 12s ease-in-out infinite alternate}' +
     '.neon{animation:gta6NeonD 4.2s ease-in-out infinite alternate}' +
     '@keyframes gta6PalmD{from{transform:rotate(-3deg)}to{transform:rotate(3deg)}}' +
@@ -2040,55 +2271,419 @@ function gtaVIDarkSvg() {
     radGrad("gta6GoldGlow", "#ffbc24", 0.18) +
     CALM_DARK
   ) +
-  '<rect width="1600" height="1000" fill="url(#gta6SkyD)"/>' +
-  // Vice City Synthwave Sunset Glows on the flanks
-  '<circle cx="190" cy="680" r="240" fill="url(#gta6PinkGlow)"/>' +
-  '<circle cx="1410" cy="680" r="240" fill="url(#gta6CyanGlow)"/>' +
-  '<circle cx="1450" cy="120" r="170" fill="url(#gta6GoldGlow)"/>' +
-  // GTA VI Sunset Crest in upper-right sky
-  '<g class="neon" transform="translate(1410 54)" opacity="0.65">' +
-    '<circle cx="60" cy="60" r="52" fill="url(#gta6SunD)" opacity="0.68"/>' +
-    '<path d="M16 24 L46 94 L76 24 H60 L46 64 L32 24 Z" fill="#160526" stroke="#2fd8ff" stroke-width="2.5"/>' +
-    '<rect x="82" y="24" width="18" height="70" fill="#160526" stroke="#ffbc24" stroke-width="2.5"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#gta6SkyD)"/>' +
+  '<rect x="-800" y="900" width="3200" height="110" fill="#090214"/>' +
+  '<g class="cdb-flank-rt">' +
+    '<circle cx="1450" cy="140" r="170" fill="url(#gta6GoldGlow)"/>' +
+    '<g transform="translate(1410 62)"><g class="neon" opacity="0.68">' +
+      '<circle cx="60" cy="60" r="52" fill="url(#gta6SunD)" opacity="0.68"/>' +
+      '<path d="M16 24 L46 94 L76 24 H60 L46 64 L32 24 Z" fill="#160526" stroke="#2fd8ff" stroke-width="2.5"/>' +
+      '<rect x="82" y="24" width="18" height="70" fill="#160526" stroke="#ffbc24" stroke-width="2.5"/>' +
+    '</g></g>' +
   '</g>' +
-  // Ocean Drive Art Deco Hotel Silhouettes with Glowing Neon Tubes on Left & Right Flanks
-  '<g fill="#120520">' +
-    '<rect x="14" y="460" width="118" height="440"/><rect x="30" y="428" width="86" height="32"/>' +
-    '<rect x="1468" y="450" width="118" height="450"/><rect x="1484" y="418" width="86" height="32"/>' +
+  '<g class="cdb-flank-l">' +
+    '<circle cx="190" cy="680" r="240" fill="url(#gta6PinkGlow)"/>' +
+    '<g fill="#120520">' +
+      '<rect x="14" y="460" width="118" height="560"/><rect x="30" y="428" width="86" height="32"/>' +
+    '</g>' +
+    '<g class="neon">' +
+      '<rect x="26" y="440" width="5" height="450" rx="2.5" fill="#ff2b90"/>' +
+      '<rect x="114" y="440" width="5" height="450" rx="2.5" fill="#2fd8ff"/>' +
+      '<rect x="38" y="434" width="70" height="4" rx="2" fill="#ffbc24"/>' +
+    '</g>' +
+    '<g class="palm" fill="#1a072e" stroke="#ff2b90" stroke-opacity="0.42" stroke-width="1.5" stroke-linejoin="round">' +
+      '<path d="M135 1020 Q145 710 165 450 L176 450 Q158 710 150 1020 Z"/>' +
+      '<path d="M170 450 Q90 415 50 465 Q110 445 170 460 Z"/>' +
+      '<path d="M170 450 Q100 370 64 395 Q118 408 170 450 Z"/>' +
+      '<path d="M170 450 Q240 370 278 398 Q224 408 170 450 Z"/>' +
+      '<path d="M170 450 Q250 420 288 468 Q228 445 170 460 Z"/>' +
+    '</g>' +
+    '<g class="wave" opacity="0.82">' +
+      '<rect x="30" y="918" width="250" height="5" rx="2.5" fill="#ff2b90"/>' +
+      '<rect x="65" y="936" width="210" height="5" rx="2.5" fill="#2fd8ff"/>' +
+      '<rect x="45" y="954" width="180" height="4" rx="2" fill="#ffbc24"/>' +
+    '</g>' +
   '</g>' +
-  '<g class="neon">' +
-    '<rect x="26" y="440" width="5" height="420" rx="2.5" fill="#ff2b90"/>' +
-    '<rect x="114" y="440" width="5" height="420" rx="2.5" fill="#2fd8ff"/>' +
-    '<rect x="38" y="434" width="70" height="4" rx="2" fill="#ffbc24"/>' +
-    '<rect x="1480" y="430" width="5" height="430" rx="2.5" fill="#2fd8ff"/>' +
-    '<rect x="1568" y="430" width="5" height="430" rx="2.5" fill="#ff2b90"/>' +
-    '<rect x="1492" y="424" width="70" height="4" rx="2" fill="#ff4cb9"/>' +
+  '<g class="cdb-flank-r">' +
+    '<circle cx="1410" cy="680" r="240" fill="url(#gta6CyanGlow)"/>' +
+    '<g fill="#120520">' +
+      '<rect x="1468" y="450" width="118" height="570"/><rect x="1484" y="418" width="86" height="32"/>' +
+    '</g>' +
+    '<g class="neon">' +
+      '<rect x="1480" y="430" width="5" height="460" rx="2.5" fill="#2fd8ff"/>' +
+      '<rect x="1568" y="430" width="5" height="460" rx="2.5" fill="#ff2b90"/>' +
+      '<rect x="1492" y="424" width="70" height="4" rx="2" fill="#ff4cb9"/>' +
+    '</g>' +
+    '<g class="palm b" fill="#1a072e" stroke="#2fd8ff" stroke-opacity="0.42" stroke-width="1.5" stroke-linejoin="round">' +
+      '<path d="M1465 1020 Q1455 710 1435 450 L1424 450 Q1442 710 1450 1020 Z"/>' +
+      '<path d="M1430 450 Q1350 415 1312 465 Q1370 445 1430 460 Z"/>' +
+      '<path d="M1430 450 Q1360 370 1324 395 Q1378 408 1430 450 Z"/>' +
+      '<path d="M1430 450 Q1500 370 1538 398 Q1484 408 1430 450 Z"/>' +
+      '<path d="M1430 450 Q1510 420 1548 468 Q1488 445 1430 460 Z"/>' +
+    '</g>' +
+    '<g class="wave" opacity="0.82">' +
+      '<rect x="1310" y="918" width="250" height="5" rx="2.5" fill="#2fd8ff"/>' +
+      '<rect x="1285" y="936" width="220" height="5" rx="2.5" fill="#ff2b90"/>' +
+      '<rect x="1340" y="954" width="190" height="4" rx="2" fill="#ffbc24"/>' +
+    '</g>' +
   '</g>' +
-  // Lush Florida Palm Silhouettes framing left & right
-  '<g class="palm" fill="#0d0318">' +
-    '<path d="M135 1000 Q145 710 165 450 L176 450 Q158 710 150 1000 Z"/>' +
-    '<path d="M170 450 Q90 415 50 465 Q110 445 170 460 Z"/>' +
-    '<path d="M170 450 Q100 370 64 395 Q118 408 170 450 Z"/>' +
-    '<path d="M170 450 Q240 370 278 398 Q224 408 170 450 Z"/>' +
-    '<path d="M170 450 Q250 420 288 468 Q228 445 170 460 Z"/>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
+}
+
+function bfdiLightSvg() {
+  return openSvg(
+    ".cloud{animation:bDrift 62s ease-in-out infinite alternate}" +
+    ".cloud.b{animation-duration:82s;animation-direction:alternate-reverse}" +
+    ".puff{animation:bBob 5.6s ease-in-out infinite alternate}" +
+    ".announcer{animation:bHover 4.8s ease-in-out infinite alternate}" +
+    ".led{animation:bLed 1.8s steps(2,jump-none) infinite}" +
+    ".tree{animation:bSway 6.4s ease-in-out infinite alternate}" +
+    ".mist{animation:bMist 5.4s ease-out infinite}" +
+    ".tokenBob{animation:bBob 4.2s ease-in-out infinite alternate}" +
+    ".leafDrift{animation:bLeaf 11s ease-in-out infinite alternate}" +
+    ".spark{animation:bSpark 2.8s ease-in-out infinite alternate}" +
+    ".gateGlow{animation:bGlow 4.6s ease-in-out infinite alternate}" +
+    "@keyframes bDrift{from{transform:translateX(-46px)}to{transform:translateX(54px)}}" +
+    "@keyframes bBob{from{transform:translateY(0)}to{transform:translateY(-13px)}}" +
+    "@keyframes bHover{from{transform:translateY(-4px)}to{transform:translateY(7px)}}" +
+    "@keyframes bLed{0%,49%{opacity:1}50%,100%{opacity:0.25}}" +
+    "@keyframes bSway{from{transform:rotate(-2.2deg)}to{transform:rotate(2.2deg)}}" +
+    "@keyframes bMist{0%{transform:translate(0,0) scale(0.75);opacity:0}22%{opacity:0.85}100%{transform:translate(28px,-42px) scale(1.25);opacity:0}}" +
+    "@keyframes bLeaf{0%{transform:translate(-16px,-14px) rotate(-12deg)}100%{transform:translate(18px,14px) rotate(14deg)}}" +
+    "@keyframes bSpark{from{transform:scale(0.82);opacity:0.62}to{transform:scale(1.18);opacity:1}}" +
+    "@keyframes bGlow{from{opacity:0.24}to{opacity:0.52}}",
+    '<linearGradient id="bSkyL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#62c3f7"/><stop offset="0.58" stop-color="#9adfff"/><stop offset="1" stop-color="#dcf5ff"/></linearGradient>' +
+    '<linearGradient id="bHillFarL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8be668"/><stop offset="1" stop-color="#5cc84b"/></linearGradient>' +
+    '<linearGradient id="bHillNearL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#72d751"/><stop offset="0.55" stop-color="#55cd55"/><stop offset="1" stop-color="#4cbb17"/></linearGradient>' +
+    '<linearGradient id="bPuff" x1="0.2" y1="0.1" x2="0.8" y2="0.9"><stop offset="0" stop-color="#ffd1f1"/><stop offset="0.55" stop-color="#ff9fe0"/><stop offset="1" stop-color="#e96bc2"/></linearGradient>' +
+    '<linearGradient id="bGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe57f"/><stop offset="0.55" stop-color="#f5b82e"/><stop offset="1" stop-color="#c98b14"/></linearGradient>' +
+    radGrad("bSunL", "#fff7be", 0.56) + radGrad("bGateHalo", "#ffe16b", 0.52) + CALM_LIGHT
+  ) +
+  '<rect x="-800" width="3200" height="1000" fill="url(#bSkyL)"/>' +
+  // Full-bleed distant Goiky horizon keeping center low and calm
+  '<path d="M-800 1030 L-800 845 Q-320 795 160 855 Q520 905 820 885 Q1160 855 1520 835 Q1960 805 2400 845 L2400 1030 Z" fill="url(#bHillFarL)" opacity="0.55"/>' +
+  '<path d="M-800 1040 L-800 905 Q-220 875 240 915 Q680 950 1120 925 Q1620 885 2400 910 L2400 1040 Z" fill="url(#bHillNearL)" opacity="0.48"/>' +
+  // Top-left Goiky clouds + Puffball
+  '<g class="cdb-flank-lt">' +
+    '<g class="cloud" opacity="0.88">' +
+      '<g transform="translate(52 74)">' +
+        '<path d="M22 46 C4 46 -2 24 14 14 C22 0 48 -4 62 10 C78 -2 108 4 114 22 C132 24 134 46 114 46 Z" fill="#ffffff" stroke="#85ccee" stroke-width="2.5" stroke-linejoin="round"/>' +
+        '<path d="M18 40 H116" stroke="#c8ecff" stroke-width="5" stroke-linecap="round"/>' +
+      '</g>' +
+    '</g>' +
+    '<g class="cloud b" opacity="0.72">' +
+      '<g transform="translate(178 148)">' +
+        '<path d="M16 34 C2 34 -2 18 10 10 C18 -2 40 -2 50 10 C64 2 84 8 86 22 C98 24 98 34 84 34 Z" fill="#ffffff" stroke="#99d7f5" stroke-width="2"/>' +
+      '</g>' +
+    '</g>' +
+    // Puffball floating cheerily
+    '<g transform="translate(198 205)">' +
+      '<g class="puff" opacity="0.92">' +
+        '<circle cx="28" cy="24" r="19" fill="url(#bPuff)" stroke="#d957b2" stroke-width="2"/>' +
+        '<circle cx="12" cy="20" r="10" fill="url(#bPuff)"/><circle cx="44" cy="21" r="10" fill="url(#bPuff)"/>' +
+        '<circle cx="20" cy="9" r="10" fill="url(#bPuff)"/><circle cx="37" cy="10" r="9" fill="url(#bPuff)"/>' +
+        '<circle cx="28" cy="25" r="17" fill="url(#bPuff)"/>' +
+        '<circle cx="22" cy="23" r="2.1" fill="#2a1122"/><circle cx="34" cy="23" r="2.1" fill="#2a1122"/>' +
+        '<path d="M24 29 Q28 33 32 29" fill="none" stroke="#2a1122" stroke-width="1.8" stroke-linecap="round"/>' +
+      '</g>' +
+    '</g>' +
   '</g>' +
-  '<g class="palm b" fill="#0d0318">' +
-    '<path d="M1465 1000 Q1455 710 1435 450 L1424 450 Q1442 710 1450 1000 Z"/>' +
-    '<path d="M1430 450 Q1350 415 1312 465 Q1370 445 1430 460 Z"/>' +
-    '<path d="M1430 450 Q1360 370 1324 395 Q1378 408 1430 450 Z"/>' +
-    '<path d="M1430 450 Q1500 370 1538 398 Q1484 408 1430 450 Z"/>' +
-    '<path d="M1430 450 Q1510 420 1548 468 Q1488 445 1430 460 Z"/>' +
+  // Top-right sun + Announcer Speaker Box + 2763 cloud sign (all >= y 62)
+  '<g class="cdb-flank-rt">' +
+    '<circle cx="1465" cy="128" r="250" fill="url(#bSunL)"/>' +
+    '<g class="cloud b" opacity="0.78">' +
+      '<g transform="translate(1228 84)">' +
+        '<path d="M18 38 C2 38 -2 20 12 12 C20 -2 46 -2 58 10 C72 2 96 8 100 24 C114 26 112 38 96 38 Z" fill="#ffffff" stroke="#85ccee" stroke-width="2"/>' +
+      '</g>' +
+    '</g>' +
+    // Announcer Speaker Box hovering in Goiky sky
+    '<g transform="translate(1366 74)">' +
+      '<g class="announcer" opacity="0.94">' +
+        '<rect x="0" y="0" width="76" height="76" rx="8" fill="#524b4b" stroke="#2f2929" stroke-width="2.5"/>' +
+        '<rect x="6" y="6" width="64" height="64" rx="5" fill="#6b6363"/>' +
+        '<circle cx="38" cy="38" r="25" fill="#d4d4d4" stroke="#453e3e" stroke-width="2"/>' +
+        '<circle cx="38" cy="38" r="15" fill="#8f8787" stroke="#524b4b" stroke-width="1.5"/>' +
+        '<circle cx="38" cy="38" r="6" fill="#453e3e"/>' +
+        '<circle class="led" cx="63" cy="13" r="3" fill="#39ff14"/>' +
+      '</g>' +
+    '</g>' +
+    '<g opacity="0.46" transform="translate(1468 188)">' +
+      '<rect x="0" y="0" width="70" height="26" rx="13" fill="#ffffff" stroke="#62c3f7" stroke-width="1.8"/>' +
+      '<text x="35" y="17" text-anchor="middle" font-size="13" font-weight="bold" fill="#236ea8">2763</text>' +
+    '</g>' +
   '</g>' +
-  // Shimmering Neon Pink, Cyan, and Sunset Gold Water Reflections on Vice Bay
-  '<g class="wave" opacity="0.82">' +
-    '<rect x="30" y="918" width="250" height="5" rx="2.5" fill="#ff2b90"/>' +
-    '<rect x="65" y="936" width="210" height="5" rx="2.5" fill="#2fd8ff"/>' +
-    '<rect x="45" y="954" width="180" height="4" rx="2" fill="#ffbc24"/>' +
-    '<rect x="1310" y="918" width="250" height="5" rx="2.5" fill="#2fd8ff"/>' +
-    '<rect x="1285" y="936" width="220" height="5" rx="2.5" fill="#ff2b90"/>' +
-    '<rect x="1340" y="954" width="190" height="4" rx="2" fill="#ffbc24"/>' +
+  // Left flank: Goiky Grasslands, BFB split-shade tree, Fork Repellent, Lollipop (BFB), Leafy silhouette
+  '<g class="cdb-flank-l">' +
+    '<path d="M-260 1040 Q25 690 360 1040 Z" fill="url(#bHillFarL)" opacity="0.72" stroke="#3aa835" stroke-width="3"/>' +
+    '<path d="M-240 1040 Q85 770 355 1040 Z" fill="url(#bHillNearL)" stroke="#2b8224" stroke-width="3.5"/>' +
+    // BFB split-shade rounded tree behind Lollipop
+    '<g class="tree" style="transform-origin:244px 898px">' +
+      '<rect x="234" y="758" width="20" height="145" rx="4" fill="#7a4c25" stroke="#4f3016" stroke-width="2.5"/>' +
+      '<path d="M244 758 L244 900 L254 900 L254 758 Z" fill="#5b3719"/>' +
+      '<circle cx="244" cy="726" r="56" fill="#3b8e3b" stroke="#245d24" stroke-width="3"/>' +
+      '<path d="M244 670 A56 56 0 0 1 244 782 Z" fill="#2e753b"/>' +
+      '<circle cx="206" cy="744" r="32" fill="#3b8e3b" stroke="#245d24" stroke-width="2.5"/>' +
+      '<circle cx="282" cy="742" r="30" fill="#2e753b" stroke="#245d24" stroke-width="2.5"/>' +
+    '</g>' +
+    // Floating Leafy silhouette drifting gently above Lollipop & tree
+    '<g transform="translate(178 524)">' +
+      '<g class="leafDrift" opacity="0.88">' +
+        '<path d="M0 32 Q6 6 34 0 Q38 28 14 40 Q4 44 0 32 Z" fill="#45d839" stroke="#228b22" stroke-width="2.5" stroke-linejoin="round"/>' +
+        '<path d="M4 34 L28 8" stroke="#2ca822" stroke-width="2" stroke-linecap="round"/>' +
+      '</g>' +
+    '</g>' +
+    // Fork Repellent spray bottle with twinkling anti-fork mist
+    '<g transform="translate(214 824)">' +
+      '<g class="mist"><circle cx="-6" cy="-8" r="3.5" fill="#d9f9ff"/><circle cx="-18" cy="-16" r="2.5" fill="#ffffff"/><circle cx="-26" cy="-5" r="2" fill="#a6e3e9"/></g>' +
+      '<rect x="0" y="14" width="34" height="58" rx="6" fill="#a6e3e9" stroke="#285870" stroke-width="2.5"/>' +
+      '<rect x="5" y="28" width="24" height="24" rx="3" fill="#ffffff"/>' +
+      '<path d="M12 35 L22 45 M22 35 L12 45" stroke="#c92a2a" stroke-width="2.8" stroke-linecap="round"/>' +
+      '<path d="M8 14 L10 3 H24 L26 14 Z" fill="#5bc0eb" stroke="#285870" stroke-width="2"/>' +
+      '<path d="M10 6 L1 8 L3 13 L10 11" fill="#ffffff" stroke="#285870" stroke-width="2"/>' +
+    '</g>' +
+    // Lollipop (BFB) — spherical grape Dum-Dums candy (#CD78FB, #E1AEFC highlight, #9049BA outline, white stick, armless)
+    '<g transform="translate(116 688)">' +
+      // Legs planted on meadow ridge
+      '<path d="M-8 146 V174 H-22" fill="none" stroke="#000000" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M14 146 V176 H28" fill="none" stroke="#000000" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+      // Candy Stick
+      '<rect x="-7" y="48" width="14" height="104" rx="5" fill="#ffffff" stroke="#bfb3bf" stroke-width="2.5"/>' +
+      '<rect x="1" y="50" width="5" height="100" rx="2" fill="#dbcddb"/>' +
+      // Equator candy band + Heliotrope sphere
+      '<ellipse cx="0" cy="4" rx="56" ry="15" fill="#cd78fb" stroke="#9049ba" stroke-width="3"/>' +
+      '<circle cx="0" cy="0" r="52" fill="#cd78fb" stroke="#9049ba" stroke-width="3.5"/>' +
+      '<path d="M-40 -22 A46 46 0 0 1 12 -43 A40 40 0 0 0 -30 -8 Z" fill="#e1aefc" opacity="0.88"/>' +
+      '<path d="M36 -18 A48 48 0 0 1 -24 44 A42 42 0 0 0 38 -8 Z" fill="#bb70fb" opacity="0.78"/>' +
+      '<path d="M-53 2 Q0 15 53 2" fill="none" stroke="#e1aefc" stroke-width="4" stroke-linecap="round" opacity="0.85"/>' +
+      // Classic BFB sassy half-lidded eyes + smirk
+      '<circle cx="-17" cy="-6" r="5" fill="#000000"/><circle cx="17" cy="-6" r="5" fill="#000000"/>' +
+      '<path d="M-25 -10 H-9 M9 -10 H25" stroke="#cd78fb" stroke-width="4" stroke-linecap="round"/>' +
+      '<line x1="-25" y1="-8" x2="-9" y2="-8" stroke="#000000" stroke-width="2.5" stroke-linecap="round"/>' +
+      '<line x1="9" y1="-8" x2="25" y2="-8" stroke="#000000" stroke-width="2.5" stroke-linecap="round"/>' +
+      '<path d="M-12 14 Q2 21 16 11" fill="none" stroke="#000000" stroke-width="3" stroke-linecap="round"/>' +
+    '</g>' +
+    // Meadow flowers & tufts
+    '<g opacity="0.9"><circle cx="48" cy="912" r="6" fill="#ffeb3b" stroke="#c7a008" stroke-width="1.5"/><circle cx="192" cy="924" r="5" fill="#ff6b81" stroke="#b02a40" stroke-width="1.5"/></g>' +
   '</g>' +
-  '<rect width="1600" height="1000" fill="url(#calmD)"/></svg>';
+  // Right flank: Dream Island Golden Gates, Emerald Win Token, Upright Pin (#E51400 / #C0C0C0 straight up at 12 o'clock)
+  '<g class="cdb-flank-r">' +
+    '<path d="M1240 1040 Q1515 700 1860 1040 Z" fill="url(#bHillFarL)" opacity="0.72" stroke="#3aa835" stroke-width="3"/>' +
+    '<path d="M1245 1040 Q1500 778 1840 1040 Z" fill="url(#bHillNearL)" stroke="#2b8224" stroke-width="3.5"/>' +
+    // Dream Island Golden Gates + glow halo
+    '<g transform="translate(1418 656)">' +
+      '<circle class="gateGlow" cx="62" cy="96" r="95" fill="url(#bGateHalo)"/>' +
+      '<path d="M18 190 V78 A44 44 0 0 1 106 78 V190" fill="none" stroke="url(#bGold)" stroke-width="16"/>' +
+      '<path d="M18 190 V78 A44 44 0 0 1 106 78 V190" fill="none" stroke="#9e6709" stroke-width="2.5"/>' +
+      '<rect x="6" y="176" width="24" height="20" rx="3" fill="url(#bGold)" stroke="#9e6709" stroke-width="2"/>' +
+      '<rect x="94" y="176" width="24" height="20" rx="3" fill="url(#bGold)" stroke="#9e6709" stroke-width="2"/>' +
+      '<path d="M32 186 V84 M48 186 V62 M62 186 V54 M76 186 V62 M92 186 V84" stroke="#f5b82e" stroke-width="4" stroke-linecap="round"/>' +
+      '<polygon points="62,22 72,34 62,46 52,34" fill="#2ee84a" stroke="#188c27" stroke-width="2"/>' +
+    '</g>' +
+    // Floating Emerald Win Token
+    '<g transform="translate(1492 544)">' +
+      '<g class="tokenBob">' +
+        '<ellipse cx="26" cy="26" rx="22" ry="22" fill="#2ee84a" stroke="#188c27" stroke-width="3"/>' +
+        '<ellipse cx="23" cy="23" rx="16" ry="16" fill="#5cf273"/>' +
+        '<text x="26" y="32" text-anchor="middle" font-size="18" font-weight="bold" fill="#0e5e18">W</text>' +
+      '</g>' +
+    '</g>' +
+    // Pin — red pushpin pointing STRAIGHT UP at 12 o'clock (#E51400 body, #C0C0C0 upright tip)
+    '<g transform="translate(1372 722)">' +
+      // Legs & expressive BFDI arms
+      '<path d="M-12 126 V158 H-26" fill="none" stroke="#000000" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M12 126 V158 H26" fill="none" stroke="#000000" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M-28 96 Q-48 86 -52 68" fill="none" stroke="#000000" stroke-width="4" stroke-linecap="round"/>' +
+      '<path d="M28 96 Q48 82 54 66" fill="none" stroke="#000000" stroke-width="4" stroke-linecap="round"/>' +
+      // Pin Base Collar
+      '<rect x="-32" y="106" width="64" height="22" rx="11" fill="#e51400" stroke="#883531" stroke-width="3"/>' +
+      '<rect x="-26" y="109" width="24" height="14" rx="7" fill="#f25f4c" opacity="0.72"/>' +
+      '<path d="M8 108 H24 A8 8 0 0 1 24 125 H8 Z" fill="#a8140a"/>' +
+      // Pin Main Cylinder
+      '<rect x="-26" y="64" width="52" height="46" rx="10" fill="#e51400" stroke="#883531" stroke-width="3"/>' +
+      '<rect x="-20" y="68" width="16" height="38" rx="6" fill="#f25f4c" opacity="0.75"/>' +
+      '<rect x="10" y="68" width="12" height="38" rx="4" fill="#a8140a"/>' +
+      // Pin Top Rim
+      '<rect x="-31" y="54" width="62" height="16" rx="8" fill="#e51400" stroke="#883531" stroke-width="3"/>' +
+      '<rect x="-25" y="57" width="22" height="9" rx="4" fill="#f25f4c" opacity="0.75"/>' +
+      // Upright Metallic Cone Tip pointing STRAIGHT UP at 12 o'clock
+      '<polygon points="-13,54 0,0 13,54" fill="#c0c0c0" stroke="#7d7d7d" stroke-width="2.8" stroke-linejoin="round"/>' +
+      '<polygon points="-10,52 0,4 -1,52" fill="#e8e8e8"/>' +
+      '<polygon points="1,4 10,52 1,52" fill="#9a9a9a"/>' +
+      // Glinting tip sparkle
+      '<g transform="translate(0 -4)"><path class="spark" style="transform-origin:0px 0px" d="M0 -11 L3 -3 L11 0 L3 3 L0 11 L-3 3 L-11 0 L-3 -3 Z" fill="#fff7b8" stroke="#f5b82e" stroke-width="1"/></g>' +
+      // Pin Eyes & Smile
+      '<circle cx="-10" cy="82" r="4.2" fill="#000000"/><circle cx="10" cy="82" r="4.2" fill="#000000"/>' +
+      '<path d="M-8 94 Q0 101 8 94" fill="none" stroke="#000000" stroke-width="2.8" stroke-linecap="round"/>' +
+    '</g>' +
+    '<g opacity="0.9"><circle cx="1518" cy="910" r="6" fill="#ffeb3b" stroke="#c7a008" stroke-width="1.5"/></g>' +
+  '</g>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
+}
+
+function bfdiDarkSvg() {
+  return openSvg(
+    ".star{animation:yTwinkle 4.4s ease-in-out infinite alternate}" +
+    ".star.b{animation-duration:6.1s;animation-delay:-2.1s}" +
+    ".shoot{animation:yShoot 15s linear infinite}" +
+    ".cloud{animation:yCloud 74s ease-in-out infinite alternate}" +
+    ".beacon{animation:yBeacon 2.4s ease-in-out infinite alternate}" +
+    ".berryPulse{animation:yBerry 3.8s ease-in-out infinite alternate}" +
+    ".spore{animation:ySpore 6.5s ease-out infinite}" +
+    ".spore.b{animation-delay:-2.2s;animation-duration:7.6s}" +
+    ".spore.c{animation-delay:-4.4s;animation-duration:5.8s}" +
+    ".tree{animation:ySway 7s ease-in-out infinite alternate}" +
+    ".spark{animation:ySpark 2.8s ease-in-out infinite alternate}" +
+    "@keyframes yTwinkle{from{opacity:0.28}to{opacity:0.98}}" +
+    "@keyframes yShoot{0%,72%{transform:translate(-60px,-24px);opacity:0}76%{opacity:0.95}90%{transform:translate(230px,96px);opacity:0}100%{transform:translate(230px,96px);opacity:0}}" +
+    "@keyframes yCloud{from{transform:translateX(-40px)}to{transform:translateX(46px)}}" +
+    "@keyframes yBeacon{from{opacity:0.35;transform:scale(0.88)}to{opacity:1;transform:scale(1.22)}}" +
+    "@keyframes yBerry{from{opacity:0.58}to{opacity:1}}" +
+    "@keyframes ySpore{0%{transform:translate(0,12px);opacity:0}20%{opacity:0.92}100%{transform:translate(-18px,-58px);opacity:0}}" +
+    "@keyframes ySway{from{transform:rotate(-1.8deg)}to{transform:rotate(1.8deg)}}" +
+    "@keyframes ySpark{from{transform:scale(0.84);opacity:0.65}to{transform:scale(1.18);opacity:1}}",
+    '<linearGradient id="ySkyD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#090517"/><stop offset="0.48" stop-color="#170e30"/><stop offset="1" stop-color="#2c174d"/></linearGradient>' +
+    '<linearGradient id="yHillFarD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4e1e7a"/><stop offset="1" stop-color="#2a0d47"/></linearGradient>' +
+    '<linearGradient id="yHillNearD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6e2ea8"/><stop offset="0.58" stop-color="#4e1e7a"/><stop offset="1" stop-color="#2e0f4d"/></linearGradient>' +
+    '<linearGradient id="yMtn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4b3275"/><stop offset="1" stop-color="#22143a"/></linearGradient>' +
+    '<linearGradient id="yIce" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8e0ff"/><stop offset="1" stop-color="#a894d8"/></linearGradient>' +
+    radGrad("yMoonGlow", "#9e7bff", 0.34) + radGrad("yBerryGlow", "#ba53ff", 0.44) + CALM_DARK
+  ) +
+  '<rect x="-800" width="3200" height="1000" fill="url(#ySkyD)"/>' +
+  // Starfield across full 3200 span
+  '<g class="star" fill="#f3eaff">' +
+    '<circle cx="-540" cy="110" r="2"/><circle cx="-310" cy="210" r="2.5"/><circle cx="-120" cy="84" r="2"/>' +
+    '<circle cx="95" cy="145" r="2.2"/><circle cx="285" cy="90" r="2.6"/><circle cx="480" cy="160" r="1.8"/>' +
+    '<circle cx="710" cy="76" r="2.4"/><circle cx="940" cy="135" r="2"/><circle cx="1185" cy="112" r="2.5"/>' +
+    '<circle cx="1410" cy="165" r="2.2"/><circle cx="1760" cy="120" r="2.4"/><circle cx="2040" cy="195" r="2"/>' +
+  '</g>' +
+  '<g class="star b" fill="#d4b3ff">' +
+    '<circle cx="-420" cy="290" r="2"/><circle cx="-190" cy="340" r="1.8"/><circle cx="165" cy="260" r="2.3"/>' +
+    '<circle cx="380" cy="235" r="2"/><circle cx="845" cy="215" r="1.8"/><circle cx="1095" cy="240" r="2.2"/>' +
+    '<circle cx="1325" cy="295" r="2"/><circle cx="1635" cy="275" r="2.2"/><circle cx="1910" cy="95" r="2.5"/>' +
+  '</g>' +
+  // Shooting star
+  '<g transform="translate(880 120)"><g class="shoot"><line x1="0" y1="0" x2="64" y2="26" stroke="#f0d9ff" stroke-width="2.5" stroke-linecap="round"/><circle cx="64" cy="26" r="3.5" fill="#ffffff"/></g></g>' +
+  // Distant purple Yoyleland horizon keeping center calm
+  '<path d="M-800 1030 L-800 845 Q-300 800 180 860 Q540 905 840 888 Q1180 860 1560 840 Q1980 808 2400 845 L2400 1030 Z" fill="url(#yHillFarD)" opacity="0.62"/>' +
+  '<path d="M-800 1040 L-800 910 Q-200 882 260 920 Q700 952 1140 928 Q1640 890 2400 916 L2400 1040 Z" fill="url(#yHillNearD)" opacity="0.54"/>' +
+  // Top-left crescent moon & drifting night clouds
+  '<g class="cdb-flank-lt">' +
+    '<circle cx="122" cy="130" r="185" fill="url(#yMoonGlow)"/>' +
+    '<path d="M132 88 A44 44 0 1 0 156 160 A36 36 0 1 1 132 88 Z" fill="#efe6ff"/>' +
+    '<g class="cloud" opacity="0.56">' +
+      '<g transform="translate(46 212)"><path d="M18 36 C2 36 -2 18 12 10 C20 -2 48 -2 58 10 C74 4 94 10 96 24 C108 26 106 36 92 36 Z" fill="#321d58" stroke="#53338a" stroke-width="2"/></g>' +
+    '</g>' +
+  '</g>' +
+  // Top-right twilight cloud (y >= 62)
+  '<g class="cdb-flank-rt">' +
+    '<g class="cloud" opacity="0.52">' +
+      '<g transform="translate(1210 102)"><path d="M16 32 C2 32 -2 16 10 10 C18 -2 42 -2 52 10 C64 4 82 10 84 22 C96 24 94 32 82 32 Z" fill="#321d58" stroke="#53338a" stroke-width="2"/></g>' +
+    '</g>' +
+  '</g>' +
+  // Left flank: Purple Yoyle bushes & trees, glowing Yoyleberries, Lollipop (BFB)
+  '<g class="cdb-flank-l">' +
+    '<path d="M-260 1040 Q28 692 360 1040 Z" fill="url(#yHillFarD)" stroke="#3e1563" stroke-width="3"/>' +
+    '<path d="M-240 1040 Q88 770 355 1040 Z" fill="url(#yHillNearD)" stroke="#2c0b47" stroke-width="3.5"/>' +
+    // Purple Yoyletree
+    '<g class="tree" style="transform-origin:244px 898px">' +
+      '<rect x="234" y="756" width="20" height="145" rx="4" fill="#462261" stroke="#28113a" stroke-width="2.5"/>' +
+      '<circle cx="244" cy="724" r="56" fill="#5c2294" stroke="#2d0c4d" stroke-width="3"/>' +
+      '<path d="M244 668 A56 56 0 0 1 244 780 Z" fill="#42166e"/>' +
+      '<circle cx="206" cy="742" r="31" fill="#5c2294" stroke="#2d0c4d" stroke-width="2.5"/>' +
+      '<circle cx="282" cy="740" r="29" fill="#42166e" stroke="#2d0c4d" stroke-width="2.5"/>' +
+      // Glowing Yoyleberries in tree canopy
+      '<circle cx="222" cy="714" r="6.5" fill="#9900ff" stroke="#53008c" stroke-width="1.5"/>' +
+      '<circle cx="220" cy="712" r="2.2" fill="#d99bff"/>' +
+      '<circle cx="262" cy="738" r="6" fill="#9900ff" stroke="#53008c" stroke-width="1.5"/>' +
+      '<circle cx="260" cy="736" r="2" fill="#d99bff"/>' +
+    '</g>' +
+    // Yoyleberry bush foreground with luminous berries & rising violet spores
+    '<g transform="translate(226 842)">' +
+      '<circle class="berryPulse" cx="26" cy="20" r="46" fill="url(#yBerryGlow)"/>' +
+      '<circle cx="14" cy="28" r="22" fill="#541d88" stroke="#2b0c47" stroke-width="2.5"/>' +
+      '<circle cx="38" cy="26" r="24" fill="#42166e" stroke="#2b0c47" stroke-width="2.5"/>' +
+      '<circle cx="26" cy="16" r="20" fill="#63269c" stroke="#2b0c47" stroke-width="2.5"/>' +
+      '<circle cx="14" cy="22" r="5.5" fill="#9900ff"/><circle cx="12" cy="20" r="2" fill="#e1aefc"/>' +
+      '<circle cx="34" cy="14" r="6" fill="#ba53ff"/><circle cx="32" cy="12" r="2" fill="#ffffff"/>' +
+      '<circle cx="42" cy="30" r="5.5" fill="#9900ff"/>' +
+      '<circle class="spore" cx="12" cy="0" r="2.6" fill="#e1aefc"/>' +
+      '<circle class="spore b" cx="30" cy="6" r="2.2" fill="#ba53ff"/>' +
+      '<circle class="spore c" cx="44" cy="-2" r="2.5" fill="#e1aefc"/>' +
+    '</g>' +
+    // Lollipop (BFB) at night (lavender-violet glow rim)
+    '<g transform="translate(116 688)">' +
+      '<path d="M-8 146 V174 H-22" fill="none" stroke="#08040f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M14 146 V176 H28" fill="none" stroke="#08040f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<rect x="-7" y="48" width="14" height="104" rx="5" fill="#eae2f5" stroke="#9d8fb8" stroke-width="2.5"/>' +
+      '<rect x="1" y="50" width="5" height="100" rx="2" fill="#c7bad9"/>' +
+      '<ellipse cx="0" cy="4" rx="56" ry="15" fill="#cd78fb" stroke="#7e38ab" stroke-width="3"/>' +
+      '<circle cx="0" cy="0" r="52" fill="#cd78fb" stroke="#7e38ab" stroke-width="3.5"/>' +
+      '<path d="M-40 -22 A46 46 0 0 1 12 -43 A40 40 0 0 0 -30 -8 Z" fill="#e8bfff" opacity="0.9"/>' +
+      '<path d="M36 -18 A48 48 0 0 1 -24 44 A42 42 0 0 0 38 -8 Z" fill="#9e50dc" opacity="0.82"/>' +
+      '<path d="M-53 2 Q0 15 53 2" fill="none" stroke="#e1aefc" stroke-width="4" stroke-linecap="round" opacity="0.82"/>' +
+      '<circle cx="-17" cy="-6" r="5" fill="#000000"/><circle cx="17" cy="-6" r="5" fill="#000000"/>' +
+      '<path d="M-25 -10 H-9 M9 -10 H25" stroke="#cd78fb" stroke-width="4" stroke-linecap="round"/>' +
+      '<line x1="-25" y1="-8" x2="-9" y2="-8" stroke="#000000" stroke-width="2.5" stroke-linecap="round"/>' +
+      '<line x1="9" y1="-8" x2="25" y2="-8" stroke="#000000" stroke-width="2.5" stroke-linecap="round"/>' +
+      '<path d="M-12 14 Q2 21 16 11" fill="none" stroke="#000000" stroke-width="3" stroke-linecap="round"/>' +
+    '</g>' +
+  '</g>' +
+  // Right flank: Yoyle Needy grounded behind Yoyle Mountain snow peaks, Yoyleite crystal, 2763 km sign, Upright Pin
+  '<g class="cdb-flank-r">' +
+    // Yoyle Needy landmark tower grounded behind Yoyle Mountain
+    '<g transform="translate(1484 290)" opacity="0.9">' +
+      '<line x1="48" y1="6" x2="48" y2="34" stroke="#9aa6bf" stroke-width="3"/>' +
+      '<circle class="beacon" style="transform-origin:48px 6px" cx="48" cy="6" r="6" fill="#c77dff"/>' +
+      '<path d="M16 42 Q48 26 80 42 L72 52 H24 Z" fill="#7f8ba6" stroke="#454d63" stroke-width="2"/>' +
+      '<rect x="20" y="37" width="56" height="6" rx="3" fill="#ba53ff" opacity="0.68"/>' +
+      '<polygon points="36,52 60,52 72,520 24,520" fill="#515a70" stroke="#363d4f" stroke-width="2"/>' +
+      '<path d="M40 70 L56 120 M56 70 L40 120 M38 135 L58 195 M58 135 L38 195 M36 210 L60 275 M60 210 L36 275 M33 290 L63 360 M63 290 L33 360" stroke="#78849e" stroke-width="1.8"/>' +
+    '</g>' +
+    // Snow-capped Yoyle Mountain
+    '<polygon points="1220,920 1445,515 1690,920" fill="url(#yMtn)" stroke="#1b0f30" stroke-width="3"/>' +
+    '<polygon points="1445,515 1445,920 1690,920" fill="#23153d" opacity="0.72"/>' +
+    '<polygon points="1395,606 1445,515 1495,606 1468,588 1445,612 1422,590" fill="url(#yIce)"/>' +
+    // Foreground purple Yoyleland hill
+    '<path d="M1245 1040 Q1500 778 1840 1040 Z" fill="url(#yHillNearD)" stroke="#2c0b47" stroke-width="3.5"/>' +
+    // Glowing Yoyleite crystal formation
+    '<g transform="translate(1485 776)">' +
+      '<circle class="berryPulse" cx="20" cy="36" r="52" fill="url(#yBerryGlow)"/>' +
+      '<polygon points="10,64 22,8 34,64" fill="#c06eff" stroke="#4f1e78" stroke-width="2.2"/>' +
+      '<polygon points="22,8 22,64 34,64" fill="#8d36d1"/>' +
+      '<polygon points="30,66 44,24 52,66" fill="#e1aefc" stroke="#4f1e78" stroke-width="2"/>' +
+      '<polygon points="-4,66 6,30 16,66" fill="#a84de8" stroke="#4f1e78" stroke-width="2"/>' +
+      '<circle class="spore" cx="20" cy="10" r="2.5" fill="#f0d9ff"/>' +
+      '<circle class="spore b" cx="38" cy="24" r="2.2" fill="#d99bff"/>' +
+    '</g>' +
+    // 2763 km sign
+    '<g transform="translate(1254 818)" opacity="0.9">' +
+      '<rect x="24" y="24" width="8" height="66" fill="#3a2559" stroke="#1e1033" stroke-width="2"/>' +
+      '<rect x="0" y="0" width="58" height="28" rx="4" fill="#4f2d7f" stroke="#a879e6" stroke-width="2"/>' +
+      '<text x="29" y="18" text-anchor="middle" font-size="11" font-weight="bold" fill="#f2e6ff">2763km</text>' +
+    '</g>' +
+    // Pin standing upright on Yoyle hill (tip points STRAIGHT UP at 12 o'clock)
+    '<g transform="translate(1372 722)">' +
+      '<path d="M-12 126 V158 H-26" fill="none" stroke="#08040f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M12 126 V158 H26" fill="none" stroke="#08040f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M-28 96 Q-48 86 -52 68" fill="none" stroke="#08040f" stroke-width="4" stroke-linecap="round"/>' +
+      '<path d="M28 96 Q48 82 54 66" fill="none" stroke="#08040f" stroke-width="4" stroke-linecap="round"/>' +
+      '<rect x="-32" y="106" width="64" height="22" rx="11" fill="#e51400" stroke="#751d1a" stroke-width="3"/>' +
+      '<rect x="-26" y="109" width="24" height="14" rx="7" fill="#f25f4c" opacity="0.72"/>' +
+      '<path d="M8 108 H24 A8 8 0 0 1 24 125 H8 Z" fill="#911008"/>' +
+      '<rect x="-26" y="64" width="52" height="46" rx="10" fill="#e51400" stroke="#751d1a" stroke-width="3"/>' +
+      '<rect x="-20" y="68" width="16" height="38" rx="6" fill="#f25f4c" opacity="0.72"/>' +
+      '<rect x="10" y="68" width="12" height="38" rx="4" fill="#911008"/>' +
+      '<rect x="-31" y="54" width="62" height="16" rx="8" fill="#e51400" stroke="#751d1a" stroke-width="3"/>' +
+      '<rect x="-25" y="57" width="22" height="9" rx="4" fill="#f25f4c" opacity="0.72"/>' +
+      '<polygon points="-13,54 0,0 13,54" fill="#c0c0c0" stroke="#6c7385" stroke-width="2.8" stroke-linejoin="round"/>' +
+      '<polygon points="-10,52 0,4 -1,52" fill="#eef2fa"/>' +
+      '<polygon points="1,4 10,52 1,52" fill="#8b92a4"/>' +
+      '<g transform="translate(0 -4)"><path class="spark" style="transform-origin:0px 0px" d="M0 -11 L3 -3 L11 0 L3 3 L0 11 L-3 3 L-11 0 L-3 -3 Z" fill="#fff7b8" stroke="#c77dff" stroke-width="1"/></g>' +
+      '<circle cx="-10" cy="82" r="4.2" fill="#000000"/><circle cx="10" cy="82" r="4.2" fill="#000000"/>' +
+      '<path d="M-8 94 Q0 101 8 94" fill="none" stroke="#000000" stroke-width="2.8" stroke-linecap="round"/>' +
+    '</g>' +
+  '</g>' +
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
 var GAMING_SCENES = [
@@ -2221,9 +2816,20 @@ var GAMING_SCENES = [
     glass: { blur: 16, tint: "#160526", lightTint: "#f9eaf2", opacity: 0.58 },
     lightScene: gtaVILightSvg,
     darkScene: gtaVIDarkSvg
+  },
+  {
+    id: "bfdi",
+    title: "Goiky & Yoyleland",
+    blurb: "Goiky plains with Lollipop, Pin, Dream Island's golden gates, and Puffball by day; starry purple Yoyleland and Yoyleite by night.",
+    window: "both",
+    category: "gaming",
+    glass: { blur: 15, tint: "#180d2e", lightTint: "#e3f5fc", opacity: 0.44 },
+    lightScene: bfdiLightSvg,
+    darkScene: bfdiDarkSvg
   }
 ];
 
+var __cdb_DEFAULT_TWINS={"honu-lagoon":"night-reef","night-reef":"honu-lagoon"};
 var __cdb_sceneMap={};
 var __cdb_sceneOrder=[];
 var __cdb_svgCache={};
@@ -2237,7 +2843,7 @@ for(__cdb_i=0;__cdb_i<__cdb_UPSTREAM_THEMES.length;__cdb_i++){
     title:__cdb_u.title||__cdb_u.id,
     blurb:__cdb_u.blurb||"",
     window:__cdb_u.window||"dark",
-    twin:__cdb_u.twin||"",
+    twin:__cdb_u.twin||__cdb_DEFAULT_TWINS[__cdb_u.id]||"",
     category:"scenes",
     glass:{
       blur:typeof(__cdb_u.glass&&__cdb_u.glass.blur)==="number"?__cdb_u.glass.blur:14,
@@ -2326,6 +2932,7 @@ function __cdb_buildSpec(raw){
     return {
       id:s.id,
       title:s.title,
+      twin:s.twin||"",
       svg:s.svg,
       lightSvg:s.lightSvg||null,
       darkSvg:s.darkSvg||null,
@@ -2353,6 +2960,7 @@ function __cdb_buildSpec(raw){
     return {
       id:baseId||"custom",
       title:(base&&base.title)||baseId||"Custom backdrop",
+      twin:(typeof raw.twin==="string"&&raw.twin)||(base&&base.twin)||"",
       svg:svg,
       lightSvg:lSvg,
       darkSvg:dSvg,

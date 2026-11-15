@@ -3245,15 +3245,15 @@ async function themesPanel(themesItem) {
     ok(!h.classList.contains("cdbx-sheen-play"), "animationend removes it again");
   }
   const secs = sections();
-  ok(labels() === "Your themes:1 | Gaming:3 | Common:5 | More:1",
+  ok(labels() === "Your themes:1 | Gaming & Shows:3 | Common:5 | More:1",
      "section order and counts: " + labels());
   ok(secs.length === 4, "four sections for this list (" + secs.length + ")");
 
   const gaming = secs[1];
-  ok(gaming.cards.indexOf("Mario") >= 0, "the built-in mario is under Gaming, not lost in Common");
-  ok(gaming.cards.indexOf("Zelda") >= 0, "a community gaming palette is under Gaming");
-  ok(gaming.cards.indexOf("My-neon") >= 0, "a user gaming theme is under Gaming");
-  ok(gaming.cards.join(",") === "Mario,My-neon,Zelda", "Gaming is alphabetical: " + gaming.cards.join(","));
+  ok(gaming.cards.indexOf("Mario") >= 0, "the built-in mario is under Gaming & Shows, not lost in Common");
+  ok(gaming.cards.indexOf("Zelda") >= 0, "a community gaming palette is under Gaming & Shows");
+  ok(gaming.cards.indexOf("My-neon") >= 0, "a user gaming theme is under Gaming & Shows");
+  ok(gaming.cards.join(",") === "Mario,My-neon,Zelda", "Gaming & Shows is alphabetical: " + gaming.cards.join(","));
   ok(secs[0].cards.join(",") === "My-own", "Your themes holds the non-gaming custom theme only");
   // Built-in and community share one section: the packaging tier is not
   // something a user picks a theme by.
@@ -3276,12 +3276,14 @@ async function themesPanel(themesItem) {
   await type("nord");
   ok(labels() === "Common:1", "filtering to one theme leaves one section: " + labels());
   await type("gaming");
-  ok(labels() === "Gaming:3", "the filter also matches the category: " + labels());
+  ok(labels() === "Gaming & Shows:3", "the filter also matches the category: " + labels());
+  await type("shows");
+  ok(labels() === "Gaming & Shows:3", "the filter also matches 'shows' for Gaming & Shows: " + labels());
   await type("zzzz");
   ok(labels() === "", "no section heading survives a filter that matches nothing");
   ok(!!document.querySelector(".cdbx-panel .cdbx-empty"), "the empty message is shown instead");
   await type("");
-  ok(labels() === "Your themes:1 | Gaming:3 | Common:5 | More:1",
+  ok(labels() === "Your themes:1 | Gaming & Shows:3 | Common:5 | More:1",
      "clearing the filter brings every section back");
 
   // The config file we write is a link, not just text - and it must be the file
@@ -3316,7 +3318,7 @@ async function themesPanel(themesItem) {
   await sleep(40);
   ok(window.__revealCalls.indexOf("config-jsonc:open") >= 0,
      "and the link follows it too: " + window.__revealCalls.join(","));
-  ok(labels() === "Your themes:1 | Gaming:3 | Common:5 | More:1",
+  ok(labels() === "Your themes:1 | Gaming & Shows:3 | Common:5 | More:1",
      "the sections survive a re-render after apply");
 
   // The overlay row: what themeOverlay merges over the picked theme, above the
@@ -3366,7 +3368,7 @@ async function themesPanel(themesItem) {
     ok(!!row && row.querySelector(".cdbx-id").textContent === "Overlay: My-own",
        "the row names the new overlay: " + (row ? row.querySelector(".cdbx-id").textContent : "no row"));
     ok(/active \+ overlay/.test(activeBadge()), "and the badge is back: " + activeBadge());
-    ok(labels() === "Your themes:1 | Gaming:3 | Common:5 | More:1",
+    ok(labels() === "Your themes:1 | Gaming & Shows:3 | Common:5 | More:1",
        "the sections survive the overlay re-render");
   }
 }

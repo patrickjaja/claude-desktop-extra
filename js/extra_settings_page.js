@@ -1089,7 +1089,7 @@
   var THEME_SECTIONS = [
     { key: "custom", label: "Your themes" },
     { key: "scenes", label: "Scenes" },
-    { key: "gaming", label: "Gaming" },
+    { key: "gaming", label: "Gaming & Shows" },
     { key: "common", label: "Common" },
     { key: "other", label: "More" }
   ];
@@ -1100,7 +1100,7 @@
   function themeBucket(entry) {
     var cat = entry.category || "";
     if (cat === "scenes") return "scenes";
-    if (cat === "gaming") return "gaming";
+    if (cat === "gaming" || cat === "shows") return "gaming";
     var source = entry.source || "";
     if (source === "custom") return "custom";
     if (source === "builtin" || source === "community") return "common";
@@ -3774,7 +3774,7 @@
       var scenesGroup = el("optgroup");
       scenesGroup.label = "Animated Scenes";
       var gamingGroup = el("optgroup");
-      gamingGroup.label = "Gaming Scenes";
+      gamingGroup.label = "Gaming & Show Scenes";
       state.entries.forEach(function (e) {
         var opt = el("option", null, e.displayName || e.id);
         opt.value = e.id;
@@ -3927,6 +3927,7 @@
               (entry.displayName || "").toLowerCase().indexOf(needle) < 0 &&
               (entry.name || "").toLowerCase().indexOf(needle) < 0 &&
               (entry.category || "").toLowerCase().indexOf(needle) < 0 &&
+              !((entry.category === "gaming" || entry.category === "shows") && "gaming & shows".indexOf(needle) >= 0) &&
               (entry.backdrop || "").toLowerCase().indexOf(needle) < 0 &&
               (entry.blurb || "").toLowerCase().indexOf(needle) < 0) return;
           var key = themeBucket(entry);

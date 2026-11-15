@@ -381,7 +381,7 @@ kbd{
       <div class="grid" id="grid-custom"></div>
     </section>
     <section id="sec-gaming" class="section-split" hidden>
-      <h2 class="eyebrow">Gaming <span class="badge" id="count-gaming">0</span></h2>
+      <h2 class="eyebrow">Gaming &amp; Shows <span class="badge" id="count-gaming">0</span></h2>
       <div class="grid" id="grid-gaming"></div>
     </section>
     <section id="sec-common" hidden>
@@ -403,7 +403,7 @@ kbd{
 (function () {
   var SWATCH = ["--bg-000", "--text-000", "--accent-brand", "--accent-pro-100", "--danger-100", "--warning-100", "--success-100"];
   var SECTIONS = ["custom", "scenes", "gaming", "common"];
-  var LABEL = { custom: "Your themes", scenes: "Scenes", gaming: "Gaming", common: "Common" };
+  var LABEL = { custom: "Your themes", scenes: "Scenes", gaming: "Gaming & Shows", common: "Common" };
   var state = { entries: [], active: null, cards: [], overlay: null, overlays: [], backdrop: "", backdropEffective: null, backdrops: [] };
   var toastTimer = null;
 
@@ -453,7 +453,9 @@ kbd{
     b.setAttribute("aria-pressed", "false");
     b.dataset.name = entry.name;
     b.dataset.hay = (entry.displayName + " " + entry.name + " " + entry.source +
-                     " " + (entry.category || "") + " " + (entry.backdrop || "") + " " + (entry.blurb || "")).toLowerCase();
+                     " " + (entry.category || "") +
+                     (entry.category === "gaming" || entry.category === "shows" ? " gaming shows" : "") +
+                     " " + (entry.backdrop || "") + " " + (entry.blurb || "")).toLowerCase();
 
     var head = el("span", "card-head");
     head.appendChild(el("span", "card-title", entry.displayName));
@@ -684,7 +686,7 @@ kbd{
     var scenesGroup = el("optgroup");
     scenesGroup.label = "Animated Scenes";
     var gamingGroup = el("optgroup");
-    gamingGroup.label = "Gaming Scenes";
+    gamingGroup.label = "Gaming & Show Scenes";
     for (var i = 0; i < state.backdrops.length; i++) {
       var b = state.backdrops[i];
       var opt = el("option", null, b.displayName || b.id);
@@ -854,7 +856,7 @@ kbd{
   function bucketOf(entry) {
     if (entry.source === "stock") return "stock";
     if (entry.category === "scenes") return "scenes";
-    if (entry.category === "gaming") return "gaming";
+    if (entry.category === "gaming" || entry.category === "shows") return "gaming";
     if (entry.source === "custom") return "custom";
     return "common";
   }

@@ -1,20 +1,23 @@
 # Palette catalog
 
-Every palette bundled with the package - **97** of them: the **7 curated built-in
-themes**, the **6 gaming palettes** and the **84 community palettes**. Nothing here needs
-a `themes` block in your config - each one is a complete dual light/dark token set that
-lives inside the package, so the app's own light/dark toggle (Settings -> Appearance)
-keeps working whichever you pick.
+Every palette bundled with the package - **124** of them: the **7 curated built-in
+themes**, **13 gaming & show palettes** (`js/gaming_themes.json`), **20 animated Scene
+palettes** (`js/scene_themes.json`), and **84 community palettes** (`104` swatch cards below).
+Nothing here needs a `themes` block in your config - each one is a complete dual
+light/dark token set that lives inside the package, so the app's own light/dark toggle
+(Settings -> Appearance) keeps working whichever you pick.
 
 **Every one of them also ships a custom loading spinner**, drawn from the palette's name
-or colors: Claude's brand star becomes a stag for Everdeer, a great-wave curl for the
-Kanagawa family, a curled cat for the Catppuccins, a d-pad for Game Boy. Switching theme
-reshapes the glyph immediately, in every open window. The shapes and their spec format
-are catalogued in [baseline/SPINNER_SHAPES.md](../baseline/SPINNER_SHAPES.md).
+or colors: Claude's brand star becomes Lollipop & Pin for BFDI, a stag for Everdeer, a
+great-wave curl for the Kanagawa family, a curled cat for the Catppuccins, a d-pad for
+Game Boy. Switching theme reshapes the glyph immediately, in every open window. The
+shapes and their spec format are catalogued in
+[baseline/SPINNER_SHAPES.md](../baseline/SPINNER_SHAPES.md).
 
 Mario ships as one of the seven built-ins but carries the gaming category, so the app
-groups it with the gaming palettes - and so does this catalog: the Gaming section below
-has seven cards.
+groups it into the **Gaming & Shows** section - and so does this catalog: the section
+below has fourteen cards (`mario`, `playstation`, `gameboy`, `final-fantasy`, `zelda`,
+`warcraft`, `dragonball`, `gta-i`..`gta-vi`, and `bfdi`).
 
 ## How to activate a palette
 
@@ -45,7 +48,7 @@ surface, text, primary accent, secondary accent, error, warning, success, border
 
 **Built-in:** [Sweet](#sweet) · [Nord](#nord) · [Catppuccin Mocha](#catppuccin-mocha) · [Catppuccin Macchiato](#catppuccin-macchiato) · [Catppuccin Frappe](#catppuccin-frappe) · [Catppuccin Latte](#catppuccin-latte)
 
-**Gaming:** [Mario](#mario) · [PlayStation](#playstation) · [Game Boy](#game-boy) · [Final Fantasy](#final-fantasy) · [Zelda](#zelda) · [Warcraft](#warcraft) · [Dragon Ball](#dragon-ball)
+**Gaming & Shows:** [Mario](#mario) · [PlayStation](#playstation) · [Game Boy](#game-boy) · [Final Fantasy](#final-fantasy) · [Zelda](#zelda) · [Warcraft](#warcraft) · [Dragon Ball](#dragon-ball) · [GTA I](#gta-i) · [GTA II](#gta-ii) · [GTA III](#gta-iii) · [GTA IV](#gta-iv) · [GTA V](#gta-v) · [GTA VI](#gta-vi) · [Battle for Dream Island](#battle-for-dream-island)
 
 **Community:**
 
@@ -74,7 +77,7 @@ surface, text, primary accent, secondary accent, error, warning, success, border
 
 The curated themes, each with a hand-drawn loading spinner. Details and the spinner spec
 are in [README.md](README.md#built-in-themes-dual-variant). Mario is the seventh; it is
-catalogued under [Gaming](#gaming-themes).
+catalogued under [Gaming & Shows](#gaming--shows-themes).
 
 ### Sweet
 
@@ -112,12 +115,14 @@ catalogued under [Gaming](#gaming-themes).
 
 ![Catppuccin Latte palette](palettes/catppuccin-latte.svg)
 
-## Gaming themes
+## Gaming & Shows themes
 
-Seven palettes drawn from games, each with a spinner built for it. They get their own
-divider-separated section in the <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> picker and
-in Settings -> Extra -> Themes. All seven resolve at built-in rank, so `activeTheme` plus
-the slug is all a config needs; the six besides Mario are authored in
+Fourteen palettes drawn from games and shows, each with a custom spinner and dual-mode
+animated SVG backdrop. They get their own divider-separated **Gaming & Shows** section
+in the <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> picker and in Settings -> Extra ->
+Themes. All fourteen resolve at built-in rank, so `activeTheme` plus the slug is all a
+config needs; the thirteen besides Mario (`playstation`, `gameboy`, `final-fantasy`,
+`zelda`, `warcraft`, `dragonball`, `gta-i`..`gta-vi`, `bfdi`) are authored in
 `js/gaming_themes.json`.
 
 ### Mario
@@ -161,6 +166,48 @@ the slug is all a config needs; the six besides Mario are authored in
 `"activeTheme": "dragonball"` - white over a sky backdrop with an orange accent (light) / deep blue with bright orange (dark). Spinner: the 4-star dragon ball, spinning - its orange and red are pinned, so the ball keeps its own colors in both variants
 
 ![Dragon Ball palette](palettes/dragonball.svg)
+
+### GTA I
+
+`"activeTheme": "gta-i"` - 1997 Liberty beige paper (light) / neon pager asphalt (dark), cruiser `flip` spinner.
+
+![GTA I palette](palettes/gta-i.svg)
+
+### GTA II
+
+`"activeTheme": "gta-ii"` - steel concrete (light) / Anywhere City cyber-noir (dark), `II` badge `flip` spinner.
+
+![GTA II palette](palettes/gta-ii.svg)
+
+### GTA III
+
+`"activeTheme": "gta-iii"` - rain concrete (light) / Callahan night radar (dark), radar `III` `flip` spinner.
+
+![GTA III palette](palettes/gta-iii.svg)
+
+### GTA IV
+
+`"activeTheme": "gta-iv"` - Broker overcast steel (light) / HD noir asphalt (dark), Rockstar gold `flip` spinner.
+
+![GTA IV palette](palettes/gta-iv.svg)
+
+### GTA V
+
+`"activeTheme": "gta-v"` - Los Santos daylight (light) / Pacific harbor night (dark), banknote V `flip` spinner.
+
+![GTA V palette](palettes/gta-v.svg)
+
+### GTA VI
+
+`"activeTheme": "gta-vi"` - Leonida rose sky (light) / Vice synthwave sunset (dark), neon VI `flip` spinner.
+
+![GTA VI palette](palettes/gta-vi.svg)
+
+### Battle for Dream Island
+
+`"activeTheme": "bfdi"` - Goiky sunlit cyan sky with Heliotrope violet accent (light) / starry Yoyleland indigo-purple night with Yoyleberry violet accent (dark). Spinner: Lollipop & upright Pin duo (`flip`).
+
+![Battle for Dream Island palette](palettes/bfdi.svg)
 
 ## Community palettes
 

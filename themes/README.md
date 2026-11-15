@@ -131,35 +131,42 @@ Notes:
   logs a **loud** line listing the valid built-in names and how many themes each
   source offers, then applies nothing - it never silently succeeds.
 - `mario` carries `"category": "gaming"`, so the picker and Settings -> Extra -> Themes
-  list it in the Gaming section below. It still resolves as a built-in.
+  list it in the **Gaming & Shows** section below. It still resolves as a built-in.
 
-## Gaming themes
+## Gaming & Shows themes
 
-Six more palettes ship as a **Gaming** category, authored in `js/gaming_themes.json` and
-merged into the built-ins at startup - same resolution rank, own divider-separated section
-in the picker and in Settings -> Extra -> Themes (where `mario` joins them, making seven
-cards). Each has a spinner built for it:
+Thirteen more palettes ship in `js/gaming_themes.json` under the `"gaming"` category and
+merge into the built-ins at startup - same resolution rank, own divider-separated
+**Gaming & Shows** section in the picker and in Settings -> Extra -> Themes (where `mario` joins
+them, making fourteen cards, and user themes with `"category": "gaming"` or `"shows"`
+also land there). Each has a custom spinner and dual-mode animated SVG backdrop built
+for it:
 
 | `activeTheme` | Light identity | Dark identity | Spinner |
 |---------------|----------------|---------------|---------|
-| `playstation` | PS1 console gray, PlayStation-blue accent | charcoal blue-black, bright blue accent | the four controller button symbols (`spin`) |
-| `gameboy` | DMG shell gray with magenta buttons | pea-green LCD, pea-green accent | d-pad (`pulse`) |
-| `final-fantasy` | parchment cream, menu-blue accent | classic menu blue, crystal-gold accent | faceted crystal (`pulse`) |
+| `playstation` | PS1 console gray, PlayStation-blue accent | charcoal blue-black, bright blue accent | controller button symbols (`flip`) |
+| `gameboy` | DMG shell gray with magenta buttons | pea-green LCD, pea-green accent | d-pad (`flip`) |
+| `final-fantasy` | parchment cream, menu-blue accent | classic menu blue, crystal-gold accent | faceted crystal (`flip`) |
 | `zelda` | pale parchment green, forest-green accent | deep forest green, gold accent | walking hero silhouette (`flip`) |
 | `warcraft` | parchment gold, Alliance-blue accent | dark brown with gold, orc-green success | peon swinging a pick (`flip`) |
-| `dragonball` | white on a sky backdrop, orange accent | deep blue, bright orange accent | 4-star dragon ball (`spin`) |
+| `dragonball` | white on a sky backdrop, orange accent | deep blue, bright orange accent | 4-star dragon ball (`flip`) |
+| `gta-i` | Liberty daylight beige, pager gold accent | midnight asphalt, neon yellow-orange | retro top-down pager/cruiser (`flip`) |
+| `gta-ii` | cool steel asphalt, crimson-teal meters | cyber-noir slate, Zaibatsu crimson & teal | classic II neon badge (`flip`) |
+| `gta-iii` | rain-washed concrete, teal HUD accent | midnight Liberty rain, classic teal-crimson | Liberty radar pill (`flip`) |
+| `gta-iv` | overcast Broker steel, warm amber | HD noir charcoal, Rockstar gold bevel | Rockstar NYC gold badge (`flip`) |
+| `gta-v` | Los Santos warm daylight, emerald banknote | twilight harbor, banknote green & sky | Vinewood banknote V crest (`flip`) |
+| `gta-vi` | Leonida pastel sky, magenta accent | Vice sunset synthwave, pink & cyan neon | Vice City VI neon emblem (`flip`) |
+| `bfdi` | Goiky daylight meadows, grape heliotrope accent | starry Yoyleland indigo-purple, Yoyleberry violet | crossed Lollipop & Pin duo (`flip`) |
 
-`playstation` also borrows its status colors from the controller's button symbols
-(circle-red danger, triangle-green success). `dragonball`'s spinner pins its orange and
-red, so the ball keeps its own colors in both variants; every other gaming spinner follows
-the theme accent.
+`playstation`, `dragonball`, `warcraft`, `gta-i..vi` and `bfdi` keep characteristic palette fills on their spinners (checked against both variants' surfaces); custom monochrome shapes follow the theme accent.
 
-A theme of your own can join that section too: give it `"category": "gaming"` alongside
-its `light`/`dark` blocks.
+A theme of your own can join that section too: give it `"category": "gaming"` or `"category": "shows"` alongside its `light`/`dark` blocks.
 
-## Community palettes
+## Scene & Community palettes
 
-Alongside the built-ins, the patch bundles **84 community palettes** converted from
+Twenty **Scenes** palettes (`js/scene_themes.json`) bundle Anthropic's upstream animated backdrops (`honu-lagoon`, `koi-mosaic`, `halftone-dawn`, `halftone-dusk`, `plotter-tide`, `plotter-tide-night`, `dither-dunes`, `dither-dunes-night`, `paper-garden`, `paper-garden-kraft`, `night-reef`, `snow-pines`, `braille-stars`, `teletext-clouds`, `vector-range`, `departure-board`, `blueprint`, `deep-water`, `aurora`, `ember`), each with its own bespoke centered monochrome spinner glyph.
+
+Alongside them and the built-ins, the patch bundles **84 community palettes** converted from
 the [noctalia community-palettes](https://github.com/noctalia-dev/community-palettes)
 collection - Rose Pine, Gruvbox, Solarized, Everforest, Tokyo Night, the Catppuccin
 accent variants, and many more. They need no `themes` block: set `activeTheme` to a
@@ -177,9 +184,9 @@ slugs, because families share a shape on purpose. The glyphs are curated in
 `scripts/community-spinners.json` and merged into the palettes by
 `scripts/generate-community-themes.mjs`, so refreshing the collection stays one command.
 
-A visual catalog of every bundled palette - all 97, the 84 community ones plus the 7
-built-ins and the 6 gaming palettes, each with its swatch card and slug - is in
-[PALETTES.md](PALETTES.md).
+A visual catalog of 104 generated palette swatches (the 84 community palettes plus the 7
+built-ins and 13 gaming & show palettes in `js/gaming_themes.json`; 124 bundled themes
+total with the 20 Scenes palettes) is in [PALETTES.md](PALETTES.md).
 
 Resolution order is **your themes > built-ins > community palettes**, so defining a
 theme under `themes` with the same slug as a community palette overrides it rather

@@ -172,8 +172,8 @@ await runSuite(async () => {
 
   r.section("[11] animated SVG backdrops + scene themes");
   const backdrops = T.backdrops();
-  r.ok(Array.isArray(backdrops) && backdrops.length === 33,
-     "backdrops() lists all 33 scenes (20 upstream + 13 gaming)",
+  r.ok(Array.isArray(backdrops) && backdrops.length === 34,
+     "backdrops() lists all 34 scenes (20 upstream + 14 gaming)",
      String(backdrops && backdrops.length));
   const sceneReg = globalThis.__cdbBackdropScenes;
   r.ok(backdrops.every((b) => {
@@ -185,15 +185,115 @@ await runSuite(async () => {
              s.lightSvg !== s.darkSvg;
     }
     return true;
-  }), "all 33 scenes evaluate valid <svg> markup, and all 13 gaming scenes have distinct lightSvg + darkSvg");
+  }), "all 34 scenes evaluate valid <svg> markup, and all 14 gaming scenes have distinct lightSvg + darkSvg");
+  function findTransformAnimCollisions(svg) {
+    const styleMatch = /<style>([\s\S]*?)<\/style>/.exec(svg);
+    if (!styleMatch) return [];
+    const css = styleMatch[1];
+    const transformFrames = new Set();
+    const kfRe = /@keyframes\s+([\w-]+)\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g;
+    let m;
+    while ((m = kfRe.exec(css)) !== null) {
+      if (/\btransform\s*:/.test(m[2])) transformFrames.add(m[1]);
+    }
+    const transformClasses = new Set();
+    const ruleRe = /\.([\w-]+)\s*\{([^}]*)\}/g;
+    while ((m = ruleRe.exec(css)) !== null) {
+      const animMatch = /animation(?:-name)?\s*:([^;]+)/.exec(m[2]);
+      if (animMatch) {
+        for (const kf of transformFrames) {
+          if (new RegExp("\\b" + kf + "\\b").test(animMatch[1])) {
+            transformClasses.add(m[1]);
+          }
+        }
+      }
+    }
+    const hits = [];
+    const tagRe = /<[A-Za-z][\w:-]*\b([^>]*)>/g;
+    while ((m = tagRe.exec(svg)) !== null) {
+      const attrs = m[1];
+      if (!/\btransform\s*=/.test(attrs)) continue;
+      const clsMatch = /\bclass\s*=\s*["']([^"']+)["']/.exec(attrs);
+      if (!clsMatch) continue;
+      for (const cls of clsMatch[1].trim().split(/\s+/)) {
+        if (transformClasses.has(cls)) hits.push(cls);
+      }
+    }
+    return hits;
+  }
+  const transformCollisions = [];
+  for (const b of backdrops.filter((x) => x.category === "gaming")) {
+    const s = sceneReg && sceneReg.get && sceneReg.get(b.id);
+    if (!s) continue;
+    for (const variant of ["svg", "lightSvg", "darkSvg"]) {
+      if (typeof s[variant] !== "string") continue;
+      const bad = findTransformAnimCollisions(s[variant]);
+      if (bad.length) transformCollisions.push(b.id + ":" + variant + "(" + bad.join(",") + ")");
+    }
+  }
+  r.ok(transformCollisions.length === 0,
+     "no gaming scene mixes SVG transform attribute with a transform-animating CSS class",
+     transformCollisions.join("; "));
+  const gamingBackdropGaps = [];
+  for (const b of backdrops.filter((x) => x.category === "gaming")) {
+    const s = sceneReg && sceneReg.get && sceneReg.get(b.id);
+    for (const variant of ["lightSvg", "darkSvg"]) {
+      const svg = s && s[variant];
+      if (typeof svg !== "string") {
+        gamingBackdropGaps.push(b.id + ":" + variant + "(missing)");
+        continue;
+      }
+      if (!/\bcdb-flank-l\b/.test(svg)) gamingBackdropGaps.push(b.id + ":" + variant + "(no cdb-flank-l)");
+      if (!/\bcdb-flank-r\b/.test(svg)) gamingBackdropGaps.push(b.id + ":" + variant + "(no cdb-flank-r)");
+      if (!/width=["']3200["']/.test(svg)) gamingBackdropGaps.push(b.id + ":" + variant + "(no width=3200 bleed)");
+      const tagRe2 = /<[A-Za-z][\w:-]*\b([^>]*)>/g;
+      let tm;
+      while ((tm = tagRe2.exec(svg)) !== null) {
+        if (/\bclass\s*=\s*["'][^"']*\bcdb-(?:flank-(?:l|r|lt|rt)|pane-c)\b/.test(tm[1]) &&
+            /\btransform\s*=/.test(tm[1])) {
+          gamingBackdropGaps.push(b.id + ":" + variant + "(flank tag also has SVG transform)");
+        }
+      }
+    }
+  }
+  r.ok(gamingBackdropGaps.length === 0,
+     "all gaming scenes include .cdb-flank-l, .cdb-flank-r, and width=3200 full-bleed layers in both lightSvg and darkSvg",
+     gamingBackdropGaps.join("; "));
+  const honuScene = sceneReg && sceneReg.get && sceneReg.get("honu-lagoon");
+  const reefScene = sceneReg && sceneReg.get && sceneReg.get("night-reef");
+  const honuSpec = sceneReg && typeof sceneReg.buildSpec === "function" && sceneReg.buildSpec("honu-lagoon");
+  r.ok(Boolean(honuScene && honuScene.twin === "night-reef" &&
+               reefScene && reefScene.twin === "honu-lagoon" &&
+               honuSpec && honuSpec.twin === "night-reef"),
+     "honu-lagoon and night-reef wire symmetrical twin metadata through get() and buildSpec()",
+     JSON.stringify({ honu: honuScene && honuScene.twin, reef: reefScene && reefScene.twin, spec: honuSpec && honuSpec.twin }));
   const gtaIds = ["gta-i", "gta-ii", "gta-iii", "gta-iv", "gta-v", "gta-vi"];
   r.ok(gtaIds.every((id) => T.list().some((e) => e.name === id && e.category === "gaming" && e.backdrop === id)),
      "list() includes all 6 GTA gaming themes (gta-i..gta-vi) paired with their backdrop scenes");
+  const bfdiEntry = T.list().find((e) => e.name === "bfdi");
+  r.ok(Boolean(bfdiEntry && bfdiEntry.displayName === "Battle for Dream Island" &&
+               bfdiEntry.category === "gaming" && bfdiEntry.backdrop === "bfdi"),
+     "list() includes BFDI with displayName='Battle for Dream Island', category='gaming', backdrop='bfdi'",
+     bfdiEntry && JSON.stringify({ displayName: bfdiEntry.displayName, category: bfdiEntry.category, backdrop: bfdiEntry.backdrop }));
+  const flipIds = ["bfdi", "gta-iii", "gta-iv", "gta-v", "gta-vi"];
+  r.ok(flipIds.every((id) => gaming[id] && gaming[id].spinner && gaming[id].spinner.animation === "flip" &&
+                             Array.isArray(gaming[id].spinner.paths2) && gaming[id].spinner.paths2.length > 0),
+     "bfdi and gta-iii..gta-vi ship 2-frame flip spinners with paths2");
   const sceneThemes = T.list().filter((e) => e.category === "scenes");
   r.ok(sceneThemes.length === 20, "list() includes all 20 category='scenes' themes",
      String(sceneThemes.length));
   r.ok(sceneThemes.every((e) => e.backdrop === e.name && !!e.blurb),
      "every scene theme is paired with its own backdrop scene and blurb");
+  const sceneJson = readJson("js/scene_themes.json");
+  const sceneSpinnerSigs = new Set(Object.values(sceneJson).map((t) => JSON.stringify(t.spinner && t.spinner.paths)));
+  const sceneSpinnersOk = Object.values(sceneJson).every((t) =>
+    t.spinner && t.spinner.viewBox === "0 0 100 100" &&
+    Array.isArray(t.spinner.paths) && t.spinner.paths.length > 0 &&
+    t.spinner.paths.every((p) => typeof p.d === "string" && !("fill" in p))
+  );
+  r.ok(sceneSpinnerSigs.size === 20 && sceneSpinnersOk,
+     "all 20 scene themes ship unique monochrome 0 0 100 100 spinners (no fill attribute)",
+     sceneSpinnerSigs.size + "/20 unique");
 
   // Applying a scene theme or gaming theme pushes its paired backdrop spec via __cdbBackdropApply
   T.apply("honu-lagoon");

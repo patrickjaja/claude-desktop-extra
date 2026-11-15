@@ -73,8 +73,8 @@ function check() {
      "the non-gaming built-in and community palettes share Common", names("grid-common"));
   ok($("count-gaming").textContent === "4", "the Gaming badge counts 4", $("count-gaming").textContent);
   var sec = $("sec-gaming");
-  ok(!sec.hidden, "the Gaming section is visible");
-  ok(sec.querySelector(".eyebrow").textContent.indexOf("Gaming") === 0, "it has its own heading",
+  ok(!sec.hidden, "the Gaming & Shows section is visible");
+  ok(sec.querySelector(".eyebrow").textContent.indexOf("Gaming & Shows") === 0, "it has its own heading",
      sec.querySelector(".eyebrow").textContent.trim());
   var cs = getComputedStyle(sec);
   ok(cs.borderTopStyle === "solid" && parseFloat(cs.borderTopWidth) >= 1,
@@ -90,8 +90,12 @@ function check() {
   var s = $("search");
   s.value = "gaming"; s.dispatchEvent(new Event("input"));
   ok($("count-gaming").textContent === "4" && $("sec-common").hidden && $("sec-custom").hidden,
-     'filtering by "gaming" leaves only the Gaming section',
+     'filtering by "gaming" leaves only the Gaming & Shows section',
      "gaming=" + $("count-gaming").textContent);
+  s.value = "shows"; s.dispatchEvent(new Event("input"));
+  ok($("count-gaming").textContent === "4" && $("sec-common").hidden && $("sec-custom").hidden,
+     'filtering by "shows" also leaves only the Gaming & Shows section',
+     "shows=" + $("count-gaming").textContent);
   s.value = "nord"; s.dispatchEvent(new Event("input"));
   ok($("sec-gaming").hidden && !$("sec-common").hidden, "an unrelated filter hides Gaming again");
   s.value = ""; s.dispatchEvent(new Event("input"));

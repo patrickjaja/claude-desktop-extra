@@ -37,6 +37,11 @@
     spec: null,
     moDoc: null,
     moBody: null,
+    ro: null,
+    roHost: null,
+    roSidebar: null,
+    visHandler: null,
+    resizeHandler: null,
     rafId: 0,
     lastMode: "",
     lastSvgKey: ""
@@ -107,10 +112,9 @@
       if (typeof window.getComputedStyle === "function") {
         var cs = window.getComputedStyle(df || html);
         if (cs && typeof cs.getPropertyValue === "function") {
-          var bgL =
-            parseHslLightness(cs.getPropertyValue("--cdb-bg-100")) ??
-            parseHslLightness(cs.getPropertyValue("--bg-100")) ??
-            parseHslLightness(cs.getPropertyValue("--bg-000"));
+          var l1 = parseHslLightness(cs.getPropertyValue("--cdb-bg-100"));
+          var l2 = l1 !== null ? l1 : parseHslLightness(cs.getPropertyValue("--bg-100"));
+          var bgL = l2 !== null ? l2 : parseHslLightness(cs.getPropertyValue("--bg-000"));
           if (typeof bgL === "number" && !isNaN(bgL)) {
             return bgL < 50;
           }
@@ -221,11 +225,25 @@
       } catch (e) {}
       state.moBody = null;
     }
+    if (state.ro) {
+      try {
+        state.ro.disconnect();
+      } catch (e) {}
+      state.ro = null;
+      state.roHost = null;
+      state.roSidebar = null;
+    }
     if (state.visHandler && typeof document !== "undefined" && document.removeEventListener) {
       try {
         document.removeEventListener("visibilitychange", state.visHandler);
       } catch (e) {}
       state.visHandler = null;
+    }
+    if (state.resizeHandler && typeof window !== "undefined" && window.removeEventListener) {
+      try {
+        window.removeEventListener("resize", state.resizeHandler);
+      } catch (e) {}
+      state.resizeHandler = null;
     }
     if (state.rafId && typeof cancelAnimationFrame === "function") {
       cancelAnimationFrame(state.rafId);
@@ -271,6 +289,60 @@
         }
       } catch (e) {}
     }
+  }
+
+  function syncViewport(container, host) {
+    if (!container || !host || typeof host.getBoundingClientRect !== "function") return;
+    var svg = container.querySelector ? container.querySelector("svg") : null;
+    if (!svg) return;
+    var hasFlanks = !!(
+      svg.querySelector &&
+      svg.querySelector(".cdb-flank-l, .cdb-flank-r, .cdb-flank-lt, .cdb-flank-rt, .cdb-pane-c")
+    );
+    if (!hasFlanks) return;
+
+    var hr = host.getBoundingClientRect();
+    var W = hr.width;
+    var H = hr.height;
+    if (!(W > 40 && H > 40)) return;
+
+    var sidebarPx = 0;
+    if (typeof document !== "undefined") {
+      var sb = document.querySelector(".dframe-sidebar");
+      if (sb && typeof sb.getBoundingClientRect === "function") {
+        var sr = sb.getBoundingClientRect();
+        if (
+          sr.width > 24 &&
+          sr.height > H * 0.4 &&
+          sr.left <= hr.left + 16 &&
+          sr.right > hr.left + 24 &&
+          sr.right < hr.right - 160
+        ) {
+          sidebarPx = Math.max(0, sr.right - hr.left);
+        }
+      }
+    }
+
+    var aspect = clamp(W / H, 0.6, 3.0);
+    var vw = Math.round(1000 * aspect);
+    var vx = Math.round((1600 - vw) / 2);
+    setAttrIfNeeded(svg, "viewBox", vx + " 0 " + vw + " 1000");
+
+    var unitPerPx = vw / W;
+    var sidebarUnits = Math.round(sidebarPx * unitPerPx);
+    var paneLeft = vx + sidebarUnits;
+    var paneRight = vx + vw;
+    var paneWidth = Math.max(320, paneRight - paneLeft);
+    var paneCenter = Math.round((paneLeft + paneRight) / 2);
+    var fScale = clamp(paneWidth / 1180, 0.56, 1.0);
+    var topSafeUnits = Math.round(52 * unitPerPx);
+    var hudTop = Math.max(0, Math.round(topSafeUnits - fScale * 56));
+
+    setStylePropIfNeeded(svg, "--cdb-flank-lx", paneLeft + "px");
+    setStylePropIfNeeded(svg, "--cdb-flank-rx", (paneRight - 1600) + "px");
+    setStylePropIfNeeded(svg, "--cdb-pane-cx", (paneCenter - 800) + "px");
+    setStylePropIfNeeded(svg, "--cdb-flank-scale", fScale.toFixed(3));
+    setStylePropIfNeeded(svg, "--cdb-hud-top", hudTop + "px");
   }
 
   function sweep() {
@@ -328,6 +400,8 @@
     }
 
     syncPauseState(existing);
+    syncViewport(existing, host);
+    syncResizeObservers(host);
 
     setAttrIfNeeded(root, "data-engine-backdrop-on", "");
     var g = spec.glass;
@@ -376,6 +450,32 @@
     }
   }
 
+  function syncResizeObservers(host) {
+    if (typeof ResizeObserver !== "function" || !state.spec) return;
+    if (!state.ro) {
+      state.ro = new ResizeObserver(function () {
+        scheduleSweep();
+      });
+    }
+    if (host && host !== state.roHost) {
+      if (state.roHost) {
+        try { state.ro.unobserve(state.roHost); } catch (e) {}
+      }
+      state.roHost = host;
+      try { state.ro.observe(host); } catch (e) {}
+    }
+    var sb = typeof document !== "undefined" ? document.querySelector(".dframe-sidebar") : null;
+    if (sb !== state.roSidebar) {
+      if (state.roSidebar) {
+        try { state.ro.unobserve(state.roSidebar); } catch (e) {}
+      }
+      state.roSidebar = sb;
+      if (sb) {
+        try { state.ro.observe(sb); } catch (e) {}
+      }
+    }
+  }
+
   function ensureObservers() {
     if (typeof document !== "undefined" && !state.visHandler && document.addEventListener) {
       state.visHandler = function () {
@@ -383,6 +483,13 @@
       };
       document.addEventListener("visibilitychange", state.visHandler);
     }
+    if (typeof window !== "undefined" && !state.resizeHandler && window.addEventListener) {
+      state.resizeHandler = function () {
+        scheduleSweep();
+      };
+      window.addEventListener("resize", state.resizeHandler);
+    }
+    syncResizeObservers(findBackdropHost());
     if (typeof MutationObserver !== "function" || typeof document === "undefined") return;
     if (!state.moDoc && document.documentElement) {
       state.moDoc = new MutationObserver(function () {
@@ -409,7 +516,13 @@
         }
         for (var i = 0; i < mutations.length; i++) {
           var t = mutations[i].target;
-          if (t && t.classList && (t.classList.contains("dframe-root") || t.classList.contains("dframe-content"))) {
+          if (
+            t &&
+            t.classList &&
+            (t.classList.contains("dframe-root") ||
+              t.classList.contains("dframe-content") ||
+              t.classList.contains("dframe-sidebar"))
+          ) {
             scheduleSweep();
             return;
           }
@@ -419,7 +532,7 @@
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["style", "data-mode"]
+        attributeFilter: ["style", "class", "data-mode"]
       });
     }
   }

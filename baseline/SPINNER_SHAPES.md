@@ -7,8 +7,9 @@ theme authors see it).
 This doc catalogs the spinner SVG shapes shipped per theme: what each shape is, its path
 data, its color strategy, and how to swap/test one live in the running app.
 
-**Every bundled palette ships a spinner.** All 97 - the 7 curated built-ins, the 6 gaming
-palettes, and the 84 community palettes - replace claude.ai's brand star with a glyph
+**Every bundled palette ships a spinner.** All 124 - the 7 curated built-ins, the 13 gaming & show
+palettes (`js/gaming_themes.json`), the 20 scene palettes (`js/scene_themes.json`), and the 84
+community palettes (`js/community_themes.json`) - replace claude.ai's brand star with a glyph
 drawn for that palette's name or colors.
 
 - **Runtime engine:** `js/spinner_injector.js` (a self-guarding ES5 IIFE that installs
@@ -17,9 +18,10 @@ drawn for that palette's name or colors.
   | Tier | Spec source |
   |------|-------------|
   | curated built-ins (7) | inline in `patches/core/add_feature_custom_themes.nim` |
-  | gaming (6) | `js/gaming_themes.json` |
+  | gaming & shows (13) | `js/gaming_themes.json` |
+  | scenes (20) | `js/scene_themes.json` |
   | community (84) | curated in `scripts/community-spinners.json`, merged into `js/community_themes.json` by `scripts/generate-community-themes.mjs` |
-  | your own themes | the `spinner` key of your theme in `claude-desktop-bin.jsonc` |
+  | your own themes | the `spinner` key of your theme in `claude-desktop-extra.jsonc` |
 - **How it runs:** the Nim patch prepends `var __CDB_SPINNER_SPEC = <json|null>;` to the
   injector and evaluates it through the same `wc.executeJavaScript(...)` that injects
   theme CSS - on `dom-ready` **and again on every theme switch**. The injector finds the
@@ -53,8 +55,8 @@ drawn for that palette's name or colors.
 ```
 
 A theme object may also carry a top-level **`category`** string. `"category": "gaming"`
-puts the theme in the Gaming section of the picker and of Settings -> Extra -> Themes,
-independently of which tier it resolves from.
+(or `"shows"`) puts the theme in the **Gaming & Shows** section of the picker and of
+Settings -> Extra -> Themes, independently of which tier it resolves from.
 
 **Color strategy:** a path with **no `fill`** (or `fill: "currentColor"`) inherits the
 theme accent through the `<svg>`'s `fill-current` class (which resolves `currentColor`
@@ -188,32 +190,46 @@ M23 54 L65 54 L60 84 L28 84 Z M22 87 L66 87 L61 91 L27 91 Z M65 57 A 13 13 0 1 1
 
 ---
 
-## The 6 gaming shapes
+## The 13 gaming & show shapes (`js/gaming_themes.json`)
 
 Defined in `js/gaming_themes.json` next to their palettes; each carries
-`"category": "gaming"`.
+`"category": "gaming"`. (Mario is the 14th entry in **Gaming & Shows**, inline built-in.)
 
 | Theme | Shape | Frames | Color | Animation |
 |-------|-------|--------|-------|-----------|
-| `playstation` | the four controller button glyphs - triangle, circle, cross, square - in a diamond | 1 (7 subpaths) | currentColor | `spin` |
-| `gameboy` | d-pad: a plus with four rounded lobes and a center pivot | 1 (6 subpaths) | currentColor | `pulse` |
-| `final-fantasy` | faceted crystal, pointed base, facet lines | 1 (6 subpaths) | currentColor | `pulse` |
-| `zelda` | hero silhouette mid-step, sword raised | 2 (10 subpaths each) | currentColor | `flip` |
-| `warcraft` | peon silhouette swinging a pick | 2 (14 subpaths each) | currentColor | `flip` |
-| `dragonball` | 4-star dragon ball: orange sphere, four red stars | 5 | multi-color (`#f57c1f`, `#c62828`) | `spin` |
+| `playstation` | controller glyphs (triangle, circle, cross, square) | 2 | multi-color | `flip` |
+| `gameboy` | DMG d-pad with A/B pulse | 2 | multi-color | `flip` |
+| `final-fantasy` | faceted crystal pulse | 2 | multi-color | `flip` |
+| `zelda` | hero silhouette mid-step, sword raised | 2 | currentColor / accent | `flip` |
+| `warcraft` | peon swinging a pick (`#c24b3c` rim >= 3.5:1) | 2 | multi-color | `flip` |
+| `dragonball` | 4-star dragon ball: orange sphere, four red stars | 2 | multi-color | `flip` |
+| `gta-i` | top-down cruiser / arcade grid badge | 2 | multi-color | `flip` |
+| `gta-ii` | cyber-noir `II` respect badge | 2 | multi-color | `flip` |
+| `gta-iii` | Liberty City radar pill & `III` bars (sweeping arc) | 2 | multi-color | `flip` |
+| `gta-iv` | Rockstar NYC `R*` gold badge (shimmering star) | 2 | multi-color | `flip` |
+| `gta-v` | Vinewood banknote `V` crest (3-character ribbon shimmer) | 2 | multi-color | `flip` |
+| `gta-vi` | Vice City synthwave `VI` neon crest (palm gleam) | 2 | multi-color | `flip` |
+| `bfdi` | Battle for Dream Island: crossed Lollipop (BFB) + upright Pin (smug wink + star tip glint) | 2 | multi-color (`#cd78fb`, `#e51400`, `#c0c0c0`, `#fff3b0`) | `flip` |
 
-Notes on the two-frame pair:
+Every `flip` outer rim clears >= 2.6:1 contrast against both its light and dark `--bg-100`
+surface so dark-mode sidebars/headers never lose the glyph contour. Every multi-path pair
+keeps identical outer-rim geometry across `paths` and `paths2` so the sprite toggles
+without edge jitter.
 
-- **`zelda`** frames differ only in the legs and the sword arm - frame 1 plants the left
-  leg forward, frame 2 swaps them, so the `flip` cycle reads as walking.
-- **`warcraft`** frames differ in the pick's angle over the shoulder, so it reads as a
-  swing rather than a hop.
-- Both frames must draw the same silhouette anchor (head, body) at identical coordinates;
-  if the torso moves between frames the flip looks like a jitter instead of a stride.
+---
 
-`dragonball` is the second multi-color shape: the sphere and the stars are pinned so the
-ball stays orange-and-red in every variant, and `spin` rotates the whole ball. Its fills
-clear the 2.5:1 contrast gate against both variants' backgrounds.
+## The 20 bespoke scene shapes (`js/scene_themes.json`)
+
+Each of the 20 upstream-adapted **Scenes** palettes ships its own unique centered
+(`viewBox "0 0 100 100"`, bounding-box center within `47..53`) monochrome `currentColor`
+spinner matching its landscape (`honu-lagoon` sea turtle, `koi-mosaic` twin koi,
+`halftone-dawn` horizon sun, `halftone-dusk` 8-ray sunburst, `plotter-tide` triple wave,
+`plotter-tide-night` 3-arm swirl, `dither-dunes` stepped pyramid, `dither-dunes-night`
+desert crescent, `paper-garden` origami flower, `paper-garden-kraft` botanical sprig,
+`night-reef` coral fan, `snow-pines` hexagonal crystal, `braille-stars` dot cluster,
+`teletext-clouds` stepped block cloud, `vector-range` twin peaks, `departure-board`
+split-flap tile, `blueprint` drafting reticle, `deep-water` abyssal jellyfish, `aurora`
+geomagnetic arcs, `ember` campfire flame).
 
 ---
 

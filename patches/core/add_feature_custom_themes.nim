@@ -576,7 +576,12 @@ return ""
 +".dframe-root:where([data-engine-backdrop-on]) [data-cds=Toolbar]>[data-cds-part=toolbar-ground],.dframe-root:where([data-engine-backdrop-on]) [data-cds=Page] [data-cds-part=page-header-ground]{background-color:transparent!important;background-image:none!important}"
 +".dframe-root:where([data-engine-glass]):not([data-engine-glass-unsuited]){--cdb-glass-fill:color-mix(in srgb,var(--engine-glass-tint,hsl(var(--bg-100))) calc(var(--engine-glass-opacity,0.38) * 100%),transparent);--cdb-glass-fill-elevated:color-mix(in srgb,var(--engine-glass-tint,hsl(var(--bg-000))) calc(min(var(--engine-glass-opacity,0.38) + 0.16,0.9) * 100%),transparent);--cdb-glass-filter:blur(var(--engine-glass-blur,14px)) saturate(1.2)}"
 +".dframe-root:where([data-engine-glass])[data-engine-glass-unsuited]{--cdb-glass-fill:color-mix(in srgb,hsl(var(--bg-100)) calc(var(--engine-glass-opacity,0.38) * 100%),transparent);--cdb-glass-fill-elevated:color-mix(in srgb,hsl(var(--bg-000)) calc(min(var(--engine-glass-opacity,0.38) + 0.16,0.9) * 100%),transparent);--cdb-glass-filter:blur(var(--engine-glass-blur,14px)) saturate(1.2)}"
-+".dframe-root:where([data-engine-backdrop-on])[data-engine-glass-unsuited] [data-engine-backdrop]::after{content:\"\";position:absolute;inset:0;background:hsl(var(--bg-100) / 0.72);pointer-events:none}"
++".dframe-root:where([data-engine-backdrop-on])[data-engine-glass-unsuited] [data-engine-backdrop]::after{content:\"\";position:absolute;inset:0;background:hsl(var(--bg-100) / 0.48);pointer-events:none}"
++".dframe-root:where([data-engine-backdrop-on]) [data-engine-backdrop] svg .cdb-flank-l{transform-origin:0px 1000px;transform:translateX(var(--cdb-flank-lx,0px)) scale(var(--cdb-flank-scale,1))}"
++".dframe-root:where([data-engine-backdrop-on]) [data-engine-backdrop] svg .cdb-flank-r{transform-origin:1600px 1000px;transform:translateX(var(--cdb-flank-rx,0px)) scale(var(--cdb-flank-scale,1))}"
++".dframe-root:where([data-engine-backdrop-on]) [data-engine-backdrop] svg .cdb-flank-lt{transform-origin:0px 0px;transform:translate(var(--cdb-flank-lx,0px),var(--cdb-hud-top,0px)) scale(var(--cdb-flank-scale,1))}"
++".dframe-root:where([data-engine-backdrop-on]) [data-engine-backdrop] svg .cdb-flank-rt{transform-origin:1600px 0px;transform:translate(var(--cdb-flank-rx,0px),var(--cdb-hud-top,0px)) scale(var(--cdb-flank-scale,1))}"
++".dframe-root:where([data-engine-backdrop-on]) [data-engine-backdrop] svg .cdb-pane-c{transform-origin:800px 1000px;transform:translateX(var(--cdb-pane-cx,0px)) scale(var(--cdb-flank-scale,1))}"
 +".dframe-root:where([data-engine-glass]) .dframe-sidebar,:where([data-darker]) .dframe-root:where([data-engine-glass]) .dframe-sidebar,.dframe-root:where([data-engine-glass]):where([data-darker]) .dframe-sidebar{background-color:var(--cdb-glass-fill)!important;background-image:none!important;backdrop-filter:var(--cdb-glass-filter)!important;-webkit-backdrop-filter:var(--cdb-glass-filter)!important}"
 +".dframe-root:where([data-engine-glass]) :where([data-user-message-bubble],[data-chat-input-container],[data-testid=\"start-card-environments\"],[data-testid=\"start-card-setup\"],.rounded-composer:has([data-cds=ChatComposerEditor])){background-color:var(--cdb-glass-fill-elevated)!important;backdrop-filter:var(--cdb-glass-filter)!important;-webkit-backdrop-filter:var(--cdb-glass-filter)!important}";
 }
@@ -702,11 +707,12 @@ css+="@keyframes cdbBounce{0%,100%{transform:translateY(0)}50%{transform:transla
 css+="@keyframes cdbPulse{0%,100%{opacity:1}50%{opacity:.45}}";
 css+="@keyframes cdbFlipA{from{opacity:1}to{opacity:0}}";
 css+="@keyframes cdbFlipB{from{opacity:0}to{opacity:1}}";
-css+="svg[data-cdb-spinner].cdb-anim-spin{animation:cdbSpin 1s linear infinite;transform-origin:50% 50%;transform-box:fill-box}";
+css+="svg[data-cdb-spinner].cdb-anim-spin{animation:cdbSpin 1s linear infinite;transform-origin:50% 50%;transform-box:view-box}";
 css+="svg[data-cdb-spinner].cdb-anim-bounce{animation:cdbBounce .8s ease-in-out infinite;transform-origin:50% 50%;transform-box:fill-box}";
 css+="svg[data-cdb-spinner].cdb-anim-pulse{animation:cdbPulse 1.2s ease-in-out infinite}";
 css+="svg[data-cdb-spinner].cdb-anim-flip [data-cdb-frame=\"1\"]{animation:cdbFlipA 1s steps(2,jump-none) infinite}";
 css+="svg[data-cdb-spinner].cdb-anim-flip [data-cdb-frame=\"2\"]{animation:cdbFlipB 1s steps(2,jump-none) infinite}";
+css+="@media (prefers-reduced-motion:reduce){svg[data-cdb-spinner],svg[data-cdb-spinner] [data-cdb-frame]{animation:none!important}svg[data-cdb-spinner].cdb-anim-flip [data-cdb-frame=\"2\"]{opacity:0!important}}";
 if(spinnerJson!=="null")__cdb_log("Spinner spec present ("+spinnerJson.length+" chars JSON) for '"+name+"'");
 if(bd.effective)__cdb_log("Backdrop scene '"+bd.effective+"' resolved for '"+name+"'");
 return {css:css,font:fontFlag,spinnerJson:spinnerJson,backdropJson:bd.json,backdrop:bd.override,effectiveBackdrop:bd.effective,overlay:overlay?overlay.name:null,chrome:{light:__cdb_chromeHex(v.light),dark:__cdb_chromeHex(v.dark),lightText:__cdb_hslHex((v.light||{})["--text-200"]),darkText:__cdb_hslHex((v.dark||{})["--text-200"])}};
