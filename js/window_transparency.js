@@ -483,9 +483,14 @@
       // panels, one layer more, ~0.99. Pages without the frame keep body.
       "html :is(body,.bg-surface-0,.bg-surface-1,.bg-surface-2,.bg-page):has(.dframe-root){background:transparent!important}" +
       "html .dframe-root{background-color:" + mix("--cds-page-bg") + "!important}" +
+      // When an animated SVG backdrop is mounted inside .dframe-content, that
+      // layer carries the window alpha instead of .dframe-root so the two never
+      // stack.
+      "html .dframe-root[data-engine-backdrop-on]{background-color:transparent!important}" +
+      "html .dframe-root [data-engine-backdrop]{opacity:" + A + "!important}" +
       // Sidebar: two classes so a custom theme's "[data-darker] .dframe-sidebar"
       // (also !important) cannot put its solid colour back.
-      "html .dframe-root .dframe-sidebar{background:transparent!important}" +
+      "html .dframe-root .dframe-sidebar,html .dframe-root .dframe-sidebar:before{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}" +
       "html .bg-surface-0{background-color:" + mix("--cds-surface-0") + "!important}" +
       "html .bg-surface-1{background-color:" + mix("--cds-surface-1") + "!important}" +
       "html .bg-page,html [data-cds-dock-masked] .in-data-cds-dock-masked\\:bg-page{background-color:" + mix("--cds-page-bg") + "!important}" +
@@ -529,6 +534,7 @@
       // upstream's own fill (85%, or 100% with opaque toolbars) - it follows
       // the slider.
       "html .dframe-root [data-cds=Toolbar]>[data-cds-part=toolbar-ground],html .dframe-root [data-cds=Page] [data-cds-part=page-header-ground]{--_toolbar-ground-fill:" + P + "!important;background-color:" + mix("--cds-page-bg") + "!important}" +
+      "html .dframe-root[data-engine-backdrop-on] [data-cds=Toolbar]>[data-cds-part=toolbar-ground],html .dframe-root[data-engine-backdrop-on] [data-cds=Page] [data-cds-part=page-header-ground]{background:transparent!important}" +
       // The Code tab's content columns are tiles: each .tiles-shell paints
       // --tile-shell-ground (a page colour upstream sets inline) behind the
       // transcript, composer and panes, so the whole Code view stayed solid

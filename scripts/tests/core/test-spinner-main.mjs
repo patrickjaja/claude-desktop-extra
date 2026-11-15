@@ -170,5 +170,60 @@ await runSuite(async () => {
   r.ok(diag.every((m) => m.startsWith("[CustomThemes]")), "every line is tagged [CustomThemes]",
      diag.length + " lines");
 
+  r.section("[11] animated SVG backdrops + scene themes");
+  const backdrops = T.backdrops();
+  r.ok(Array.isArray(backdrops) && backdrops.length === 33,
+     "backdrops() lists all 33 scenes (20 upstream + 13 gaming)",
+     String(backdrops && backdrops.length));
+  const sceneReg = globalThis.__cdbBackdropScenes;
+  r.ok(backdrops.every((b) => {
+    const s = sceneReg && sceneReg.get && sceneReg.get(b.id);
+    if (!s || typeof s.svg !== "string" || !s.svg.startsWith("<svg")) return false;
+    if (b.category === "gaming") {
+      return typeof s.lightSvg === "string" && s.lightSvg.startsWith("<svg") &&
+             typeof s.darkSvg === "string" && s.darkSvg.startsWith("<svg") &&
+             s.lightSvg !== s.darkSvg;
+    }
+    return true;
+  }), "all 33 scenes evaluate valid <svg> markup, and all 13 gaming scenes have distinct lightSvg + darkSvg");
+  const gtaIds = ["gta-i", "gta-ii", "gta-iii", "gta-iv", "gta-v", "gta-vi"];
+  r.ok(gtaIds.every((id) => T.list().some((e) => e.name === id && e.category === "gaming" && e.backdrop === id)),
+     "list() includes all 6 GTA gaming themes (gta-i..gta-vi) paired with their backdrop scenes");
+  const sceneThemes = T.list().filter((e) => e.category === "scenes");
+  r.ok(sceneThemes.length === 20, "list() includes all 20 category='scenes' themes",
+     String(sceneThemes.length));
+  r.ok(sceneThemes.every((e) => e.backdrop === e.name && !!e.blurb),
+     "every scene theme is paired with its own backdrop scene and blurb");
+
+  // Applying a scene theme or gaming theme pushes its paired backdrop spec via __cdbBackdropApply
+  T.apply("honu-lagoon");
+  await settle();
+  r.ok(T.backdrop() === "", "backdrop() defaults to '' (follow theme)");
+  r.ok(T.effectiveBackdrop() === "honu-lagoon", "effectiveBackdrop() resolves to the active theme's paired scene");
+  const lastBackdropCall = wc.js.filter((s) => s.includes("__cdbBackdropApply")).slice(-1)[0] || "";
+  r.ok(lastBackdropCall.includes('"honu-lagoon"'), "applying honu-lagoon pushed its animated SVG backdrop to the renderer");
+
+  // Overriding activeBackdrop to another scene works over any theme (or stock)
+  const setRes = T.setBackdrop("zelda");
+  await settle();
+  r.ok(setRes && setRes.ok === true && T.backdrop() === "zelda" && T.effectiveBackdrop() === "zelda",
+     "setBackdrop('zelda') pins the Zelda backdrop over the current theme");
+  const zeldaCall = wc.js.filter((s) => s.includes("__cdbBackdropApply")).slice(-1)[0] || "";
+  r.ok(zeldaCall.includes('"zelda"'), "setBackdrop('zelda') pushed the Zelda SVG backdrop to the renderer");
+
+  // Turning backdrop off pushes null
+  const offRes = T.setBackdrop("off");
+  await settle();
+  r.ok(offRes && offRes.ok === true && T.backdrop() === "off" && T.effectiveBackdrop() === null,
+     "setBackdrop('off') disables backdrops even when the theme has a paired scene");
+  const offCall = wc.js.filter((s) => s.includes("__cdbBackdropApply")).slice(-1)[0] || "";
+  r.ok(offCall.includes("__CDB_BACKDROP_SPEC=null"), "setBackdrop('off') pushed null to tear down the backdrop");
+
+  // Resetting to follow theme ("") restores the active theme's paired scene
+  T.setBackdrop("");
+  await settle();
+  r.ok(T.backdrop() === "" && T.effectiveBackdrop() === "honu-lagoon",
+     "setBackdrop('') restores Follow theme");
+
   r.done();
 });

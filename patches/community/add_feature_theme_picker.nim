@@ -134,6 +134,9 @@ var __cdbPk_chans={
 "cdb-themes:overlay":function(){var a=__cdbPk_api();if(!a)return __cdbPk_noEngine();if(typeof a.overlay!=="function")return __cdbPk_noOverlay();try{return {ok:true,overlay:a.overlay()||null}}catch(e){return {ok:false,error:e.message}}},
 "cdb-themes:overlays":function(){var a=__cdbPk_api();if(!a)return __cdbPk_noEngine();if(typeof a.overlays!=="function")return __cdbPk_noOverlay();try{return {ok:true,entries:a.overlays()||[]}}catch(e){return {ok:false,error:e.message}}},
 "cdb-themes:set-overlay":function(_e,name){var a=__cdbPk_api();if(!a)return __cdbPk_noEngine();if(typeof a.setOverlay!=="function")return __cdbPk_noOverlay();try{return a.setOverlay(typeof name==="string"?name:"")}catch(e){return {ok:false,error:e.message}}},
+"cdb-themes:backdrop":function(){var a=__cdbPk_api();if(!a)return __cdbPk_noEngine();if(typeof a.backdrop!=="function")return __cdbPk_noOverlay();try{return {ok:true,backdrop:a.backdrop()||null,effectiveBackdrop:(typeof a.effectiveBackdrop==="function"?a.effectiveBackdrop():null)||null}}catch(e){return {ok:false,error:e.message}}},
+"cdb-themes:backdrops":function(){var a=__cdbPk_api();if(!a)return __cdbPk_noEngine();if(typeof a.backdrops!=="function")return __cdbPk_noOverlay();try{return {ok:true,entries:a.backdrops()||[]}}catch(e){return {ok:false,error:e.message}}},
+"cdb-themes:set-backdrop":function(_e,name){var a=__cdbPk_api();if(!a)return __cdbPk_noEngine();if(typeof a.setBackdrop!=="function")return __cdbPk_noOverlay();try{return a.setBackdrop(typeof name==="string"?name:"")}catch(e){return {ok:false,error:e.message}}},
 "cdb-themes:close":function(){__cdbPk_close();return {ok:true}}
 };
 if(_ipc){
@@ -169,11 +172,12 @@ const PICKER_JS =
 const EXPECTED_PATCHES = 1
 
 # Positive end-state markers (Rule 6): the build tag, the exported opener, the
-# apply and set-overlay channels the page calls, and the opt-out gate on the
-# hotkey. An "already applied" run must find all five.
+# apply, set-overlay and set-backdrop channels the page calls, and the opt-out
+# gate on the hotkey. An "already applied" run must find all six.
 const MARKERS = [
   "__cdb_theme_picker", "globalThis.__cdbOpenThemePicker=", "\"cdb-themes:apply\"",
-  "\"cdb-themes:set-overlay\"", "if(!__cdbPk_enabled())return;",
+  "\"cdb-themes:set-overlay\"", "\"cdb-themes:set-backdrop\"",
+  "if(!__cdbPk_enabled())return;",
 ]
 
 proc markersPresent(s: string): int =

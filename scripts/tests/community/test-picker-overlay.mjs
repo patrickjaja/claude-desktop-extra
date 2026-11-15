@@ -201,13 +201,17 @@ await runSuite(async () => {
   r.section("preload + patch");
   const preload = readFileSync(join(ROOT, "js/theme_picker_preload.js"), "utf8");
   const patch = readFileSync(join(ROOT, "patches/community/add_feature_theme_picker.nim"), "utf8");
-  for (const [fn, ch] of [["overlay", "cdb-themes:overlay"], ["overlays", "cdb-themes:overlays"], ["setOverlay", "cdb-themes:set-overlay"]]) {
+  for (const [fn, ch] of [
+    ["overlay", "cdb-themes:overlay"], ["overlays", "cdb-themes:overlays"], ["setOverlay", "cdb-themes:set-overlay"],
+    ["backdrop", "cdb-themes:backdrop"], ["backdrops", "cdb-themes:backdrops"], ["setBackdrop", "cdb-themes:set-backdrop"]
+  ]) {
     r.ok(new RegExp("\\b" + fn + ": function").test(preload) && preload.includes('"' + ch + '"'),
          "the preload exposes " + fn + "() over " + ch);
     r.ok(patch.includes('"' + ch + '":function'), "the patch registers the " + ch + " handler");
   }
   r.ok(patch.includes('"not supported by this build"'), "the patch guards an engine without overlay support");
   r.ok(patch.includes('"\\"cdb-themes:set-overlay\\""'), "set-overlay is an end-state marker of the patch");
+  r.ok(patch.includes('"\\"cdb-themes:set-backdrop\\""'), "set-backdrop is an end-state marker of the patch");
 
   if (KEEP) r.note("pages kept at " + out);
   else rmSync(out, { recursive: true, force: true });

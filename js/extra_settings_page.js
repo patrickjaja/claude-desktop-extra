@@ -1088,6 +1088,7 @@
   // so a source tier we do not know yet is still shown instead of dropped.
   var THEME_SECTIONS = [
     { key: "custom", label: "Your themes" },
+    { key: "scenes", label: "Scenes" },
     { key: "gaming", label: "Gaming" },
     { key: "common", label: "Common" },
     { key: "other", label: "More" }
@@ -1097,7 +1098,9 @@
   // from. An entry with no category (or from a registry that does not report one
   // yet) is bucketed by source exactly as before.
   function themeBucket(entry) {
-    if ((entry.category || "") === "gaming") return "gaming";
+    var cat = entry.category || "";
+    if (cat === "scenes") return "scenes";
+    if (cat === "gaming") return "gaming";
     var source = entry.source || "";
     if (source === "custom") return "custom";
     if (source === "builtin" || source === "community") return "common";
@@ -3691,6 +3694,129 @@
     fetchState().then(draw);
   }
 
+  // --- the theme backdrop row -----------------------------------------------
+  // `activeBackdrop` chooses the animated SVG backdrop + frosted glass behind
+  // Chat, Cowork and Code: "" (follow active theme's paired scene), "off"
+  // (solid surfaces), or any scene id from the 27-scene library.
+  function renderBackdropRow(panel, before) {
+    if (!api || typeof api.themesBackdrop !== "function" ||
+        typeof api.themesBackdrops !== "function" || typeof api.themesSetBackdrop !== "function") return null;
+
+    var head = el("div", "cdbx-sec-h cdbx-hide");
+    head.appendChild(el("span", "cdbx-sec-t", "Backdrop"));
+    var host = el("div", "cdbx-list cdbx-hide");
+    panel.insertBefore(head, before);
+    panel.insertBefore(host, before);
+
+    var state = { backdrop: "", effective: null, entries: [] };
+
+    function entryOf(id) {
+      for (var i = 0; i < state.entries.length; i++) {
+        if (state.entries[i].id === id) return state.entries[i];
+      }
+      return null;
+    }
+
+    function fetchState() {
+      return Promise.all([api.themesBackdrop(), api.themesBackdrops()]).then(function (res) {
+        var b = res[0], l = res[1];
+        state.backdrop = (!failed(b) && typeof b.backdrop === "string") ? b.backdrop : "";
+        state.effective = (!failed(b) && b.effective) ? String(b.effective) : null;
+        state.entries = (!failed(l) && Array.isArray(l.entries)) ? l.entries : [];
+      }, function () {
+        state.backdrop = "";
+        state.effective = null;
+        state.entries = [];
+      });
+    }
+
+    function draw() {
+      clear(host);
+      var show = state.entries.length > 0;
+      head.classList.toggle("cdbx-hide", !show);
+      host.classList.toggle("cdbx-hide", !show);
+      if (!show) return;
+
+      var node = el("div", "cdbx-row cdbx-backdrop-row");
+      var main = el("div", "cdbx-row-main");
+      var aside = el("div", "cdbx-row-aside");
+      node.appendChild(main);
+      node.appendChild(aside);
+      host.appendChild(node);
+
+      var eff = state.effective ? entryOf(state.effective) : null;
+      var titleText = state.backdrop === "off"
+        ? "Animated backdrop: Off"
+        : state.backdrop
+          ? "Animated backdrop: " + ((eff && eff.displayName) || state.backdrop)
+          : "Animated backdrop" + (eff ? " (" + eff.displayName + ")" : "");
+      main.appendChild(el("div", "cdbx-id", titleText));
+      main.appendChild(el("div", "cdbx-note",
+        eff && eff.blurb
+          ? eff.blurb + " — animated SVG backdrop and frosted glass across Chat, Cowork and Code."
+          : "Animated SVG backdrop and frosted glass behind Chat, Cowork and Code. Follow the active theme's paired scene, pick any scene over your current palette, or turn backdrops off for solid surfaces."));
+      var stateDesc = state.backdrop === "off"
+        ? "off - solid surfaces"
+        : state.backdrop
+          ? "pinned to " + ((eff && eff.displayName) || state.backdrop)
+          : (eff ? "following active theme (" + eff.displayName + ")" : "following active theme (no scene paired)");
+      main.appendChild(el("div", "cdbx-state", stateDesc));
+
+      var select = el("select", "cdbx-select");
+      select.setAttribute("aria-label", "animated backdrop scene");
+      var follow = el("option", null, "Follow theme");
+      follow.value = "";
+      select.appendChild(follow);
+      var off = el("option", null, "Off (solid surfaces)");
+      off.value = "off";
+      select.appendChild(off);
+
+      var scenesGroup = el("optgroup");
+      scenesGroup.label = "Animated Scenes";
+      var gamingGroup = el("optgroup");
+      gamingGroup.label = "Gaming Scenes";
+      state.entries.forEach(function (e) {
+        var opt = el("option", null, e.displayName || e.id);
+        opt.value = e.id;
+        if (e.category === "gaming") gamingGroup.appendChild(opt);
+        else scenesGroup.appendChild(opt);
+      });
+      if (scenesGroup.children.length) select.appendChild(scenesGroup);
+      if (gamingGroup.children.length) select.appendChild(gamingGroup);
+      select.value = state.backdrop || "";
+
+      select.addEventListener("change", function () {
+        var val = select.value;
+        select.disabled = true;
+        api.themesSetBackdrop(val).then(function (r) {
+          if (failed(r)) {
+            select.disabled = false;
+            toast("Could not change the backdrop: " + reason(r), true);
+            return;
+          }
+          fetchState().then(function () {
+            draw();
+            var where = r.saved || "the config file";
+            var chosen = state.effective ? entryOf(state.effective) : null;
+            var msg = state.backdrop === "off"
+              ? "Backdrop off - saved to " + where
+              : state.backdrop
+                ? "Backdrop " + ((chosen && chosen.displayName) || state.backdrop) + " - saved to " + where
+                : "Backdrop follows theme - saved to " + where;
+            toast(msg);
+          });
+        }, function (err) {
+          select.disabled = false;
+          toast("Could not change the backdrop: " + (err && err.message ? err.message : String(err)), true);
+        });
+      });
+      aside.appendChild(select);
+    }
+
+    fetchState().then(draw);
+    return { refresh: function () { fetchState().then(draw); } };
+  }
+
   function renderThemes(panel) {
     clear(panel);
     panel.appendChild(el("div", "cdbx-h1", "Themes"));
@@ -3718,8 +3844,8 @@
       var host = el("div", "cdbx-sections");
       panel.appendChild(host);
 
-      // The overlay row sits above the filter. Its callback re-draws the grid so
-      // the active card's badge says "overlay" exactly while one is merged.
+      // The backdrop and overlay rows sit above the filter.
+      var backdropCtrl = renderBackdropRow(panel, search);
       var overlayName = null;
       renderOverlayRow(panel, search, function (name) {
         if (name === overlayName) return;
@@ -3773,6 +3899,7 @@
             }
             active = entry.name;
             draw(search.value);
+            if (backdropCtrl && typeof backdropCtrl.refresh === "function") backdropCtrl.refresh();
             // The engine reports the file it actually wrote; if that is not the
             // one we predicted, the row follows it rather than staying wrong.
             if (res.saved && res.saved !== savePath) {
@@ -3799,7 +3926,9 @@
           if (needle &&
               (entry.displayName || "").toLowerCase().indexOf(needle) < 0 &&
               (entry.name || "").toLowerCase().indexOf(needle) < 0 &&
-              (entry.category || "").toLowerCase().indexOf(needle) < 0) return;
+              (entry.category || "").toLowerCase().indexOf(needle) < 0 &&
+              (entry.backdrop || "").toLowerCase().indexOf(needle) < 0 &&
+              (entry.blurb || "").toLowerCase().indexOf(needle) < 0) return;
           var key = themeBucket(entry);
           if (!buckets[key]) buckets[key] = [];
           buckets[key].push(entry);

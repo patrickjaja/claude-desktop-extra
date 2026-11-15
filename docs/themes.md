@@ -6,7 +6,7 @@ From picking a bundled palette to recoloring the app from your wallpaper, in ord
 |------|--------------|
 | [1. Pick a theme](#1-pick-a-theme) | a new look in two keystrokes, no file |
 | [2. Set it in the config file](#2-set-it-in-the-config-file) | one line, survives reinstalls |
-| [3. Themes that ship with the app](#3-themes-that-ship-with-the-app) | 97 palettes to choose from |
+| [3. Themes that ship with the app](#3-themes-that-ship-with-the-app) | 123 palettes and 33 animated SVG backdrops to choose from |
 | [4. Tweak a theme with `extends`](#4-tweak-a-theme-with-extends) | a bundled theme with your accent |
 | [5. Write your own theme](#5-write-your-own-theme) | full control over every color |
 | [6. Dynamic themes from your wallpaper](#6-dynamic-themes-from-your-wallpaper-matugen-pywal-wallust) | wallpaper accents on any theme, live |
@@ -49,9 +49,11 @@ The Mario theme ships a **light "overworld"** and a **dark "underground"** varia
 | `catppuccin-frappe` | Latte | Frappe | cat |
 | `catppuccin-latte` | Latte | Mocha | coffee cup |
 
-**6 gaming palettes** form their own **Gaming** section in the picker and in Settings → Extra → Themes, with Mario joining them: `playstation` (PS1 console gray / charcoal, button-symbol status colors, spinning button glyphs), `gameboy` (DMG shell / pea-green LCD, d-pad), `final-fantasy` (parchment / menu blue, crystal), `zelda` (forest green and gold, a two-frame walking hero), `warcraft` (parchment gold / dark brown, a two-frame peon at work) and `dragonball` (sky and white / deep blue, a spinning 4-star ball). They resolve at built-in rank, so `"activeTheme": "zelda"` is enough.
+**12 gaming palettes** form their own **Gaming** section in the picker and in Settings → Extra → Themes, with Mario joining them (13 total, each paired with a bespoke dual-mode animated SVG backdrop): `gta-i` (top-down neon pager grid), `gta-ii` (dusk Zaibatsu respect meters), `gta-iii` (Liberty City pager & radar rain), `gta-iv` (Broker Bridge fog & bowling pins), `gta-v` (Los Santos sunset palms & HUD wheel), `gta-vi` (Vice City pink-cyan neon palms), `playstation` (PS1 console gray / charcoal, button-symbol status colors, floating △○✕□ symbols), `gameboy` (DMG shell / pea-green LCD, d-pad), `final-fantasy` (parchment / menu blue, spinning crystal & Lifestream motes), `zelda` (forest green and gold, Triforce & Lost Woods fairies), `warcraft` (parchment gold / dark brown, arcane runes & forge embers) and `dragonball` (sky and white / deep blue, flying Nimbus, Shenron & 7 Dragon Balls). They resolve at built-in rank, so `"activeTheme": "gta-vi"` is enough.
 
-**84 community palettes** ship alongside them, converted from the [Noctalia community-palettes](https://github.com/noctalia-dev/community-palettes) collection - Rose Pine, Gruvbox, Everforest, Kanagawa, Solarized, Tokyo Night, the Catppuccin accent variants and more. Each is a full dual light/dark set, so `"activeTheme": "<slug>"` is all it takes, and each carries a spinner glyph drawn from its name or colors. Browse all 97 with their swatches in **[themes/PALETTES.md](../themes/PALETTES.md)**.
+**20 animated scene palettes** form the **Animated Scenes** section, adapted from Anthropic's [Claude Code interface mod examples](https://code.claude.com/docs/en/plugins/mods/interface#put-a-backdrop-behind-the-conversation) (`honu-lagoon`, `snow-pines`, `aurora`, `campfire`, `neon-rain`, `sakura-drift`, `zen-sand`, `halftone-dawn`, `paper-garden`, `paper-garden-kraft`, `braille-stars`, `teletext-clouds`, `tide-pool`, `contour-dunes`, `night-reef`, `vinyl-groove`, `stained-glass`, `kaleidoscope`, `ascii-aquarium`, `festival-lanterns`) - working across Chat, Cowork and Code without installing any plugin. Any backdrop scene can be pinned over any theme (or turned off with `"activeBackdrop": "off"`) from the **Backdrop** selector in <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> and Settings → Extra → Themes, and works together with **Transparent window**.
+
+**84 community palettes** ship alongside them, converted from the [Noctalia community-palettes](https://github.com/noctalia-dev/community-palettes) collection - Rose Pine, Gruvbox, Everforest, Kanagawa, Solarized, Tokyo Night, the Catppuccin accent variants and more. Each is a full dual light/dark set, so `"activeTheme": "<slug>"` is all it takes, and each carries a spinner glyph and a default animated backdrop scene. Browse the palettes in **[themes/PALETTES.md](../themes/PALETTES.md)**.
 
 ## 4. Tweak a theme with `extends`
 

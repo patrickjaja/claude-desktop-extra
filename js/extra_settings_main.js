@@ -3694,6 +3694,8 @@
           // absent entirely in builds whose registry predates the field - the
           // page treats both the same way.
           category: e.category || "",
+          blurb: e.blurb || "",
+          backdrop: e.backdrop || "",
           light: __cdbEx_dots(e.light),
           dark: __cdbEx_dots(e.dark)
         };

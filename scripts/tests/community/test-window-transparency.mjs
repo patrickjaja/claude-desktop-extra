@@ -188,8 +188,10 @@ const sender = { sender: { getURL: () => "https://claude.ai/x", isDestroyed: () 
 <div data-tiles-line style="--tile-shell-ground:#111"><div id="ptiles" class="tiles-shell"><div id="pcorner" style="background:var(--tile-shell-ground)"></div></div></div></div></div></div>
 <div data-tiles-line style="--tile-shell-ground:#111"><div id="otiles" class="tiles-shell"></div></div>
 <div class="dframe-root" id="mframe"><div data-tiles-line style="--tile-shell-ground:#111"><div id="mtiles" class="tiles-shell is-moving"></div></div></div>
+<style>.dframe-root:where([data-engine-glass]) .dframe-sidebar{background-color:rgba(20,20,20,0.4)!important;backdrop-filter:blur(14px)!important}</style>
+<div class="dframe-root" id="bframe" data-engine-backdrop-on data-engine-glass><aside id="bside" class="dframe-sidebar"></aside><main class="dframe-content"><div id="bd" data-engine-backdrop="mario"><svg><rect width="100" height="100" fill="#112233"/></svg></div><div data-cds="Toolbar"><div id="btground" data-cds-part="toolbar-ground"></div></div></main></div>
 <pre id="o"></pre>
-<script>var r={};["dlg","card","ground","frame","side","page","panel","term","xterm","code","cm","gut","fdlg","ifr","ifw","pframe","pcontent","pground","pcard","pifr","tiles","corner","ptiles","pcorner","otiles","mtiles","tground","hground","elev","elev2","elev3","flow","ring","pane","fpane"].forEach(function(k){r[k]=getComputedStyle(document.getElementById(k)).backgroundColor});r.body=getComputedStyle(document.body).backgroundColor;o.textContent="CDB-BEGIN"+JSON.stringify(r)+"CDB-END"</script>`);
+<script>var r={};["dlg","card","ground","frame","side","page","panel","term","xterm","code","cm","gut","fdlg","ifr","ifw","pframe","pcontent","pground","pcard","pifr","tiles","corner","ptiles","pcorner","otiles","mtiles","tground","hground","elev","elev2","elev3","flow","ring","pane","fpane","bframe","bside","btground"].forEach(function(k){r[k]=getComputedStyle(document.getElementById(k)).backgroundColor});r.bdOpacity=getComputedStyle(document.getElementById("bd")).opacity;r.bsideFilter=getComputedStyle(document.getElementById("bside")).backdropFilter;r.body=getComputedStyle(document.body).backgroundColor;o.textContent="CDB-BEGIN"+JSON.stringify(r)+"CDB-END"</script>`);
     const dump = execFileSync(chromium, ["--headless", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=2000",
       "--dump-dom", "file://" + f], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     const m = /CDB-BEGIN(\{.*?\})CDB-END/.exec(dump.replace(/&quot;/g, '"'));
@@ -228,6 +230,9 @@ const sender = { sender: { getURL: () => "https://claude.ai/x", isDestroyed: () 
        "the toolbar and page-header grounds are the page colour at the window alpha, not clear and not opaque (" + got.tground + ", " + got.hground + " vs frame " + got.frame + ")");
     ok(got.otiles === "rgb(17, 17, 17)", "a .tiles-shell outside any frame keeps its ground (" + got.otiles + ")");
     ok(!!got.mtiles && !clear(got.mtiles) && !/^rgb\(/.test(got.mtiles), "a moving .tiles-shell is not cleared: it carries the page colour at the window alpha (" + got.mtiles + ")");
+    ok(clear(got.bframe) && clear(got.bside) && clear(got.btground) && got.bdOpacity === "0.8" && got.bsideFilter === "none",
+       "with an animated SVG backdrop active, [data-engine-backdrop] carries the window alpha while the frame, sidebar and toolbar ground go clear (" +
+       JSON.stringify({ bframe: got.bframe, bside: got.bside, btground: got.btground, bdOpacity: got.bdOpacity, bsideFilter: got.bsideFilter }) + ")");
     rmSync(d, { recursive: true });
   }
 }

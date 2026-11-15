@@ -2,6 +2,17 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-15
+
+### Custom themes: live animated SVG backdrops, frosted glass, GTA I-VI series and 20 scene themes (#336)
+
+- **Animated SVG backdrops and frosted-glass panels across Chat, Cowork and Code:** brings the animated SVG backdrop and frosted-glass surface engine from Anthropic's [Claude Code interface mods](https://code.claude.com/docs/en/plugins/mods/interface#put-a-backdrop-behind-the-conversation) (`data-engine-backdrop`, `data-engine-glass`, `--engine-glass-*`) to the entire desktop app - Chat, Cowork, Code and pop-out windows - with no plugin required (`js/backdrop_scenes.js`, `js/backdrop_injector.js`). Animations pause automatically when the window is hidden or `prefers-reduced-motion` is active.
+- **6 new GTA themes (`gta-i` through `gta-vi`) + reworked Gaming backdrops:** adds `gta-i`, `gta-ii`, `gta-iii`, `gta-iv`, `gta-v` and `gta-vi` (Vice City pink-cyan neon) to the **Gaming** section, each with dual light/dark palettes, custom SVG spinners and bespoke dual-mode animated SVG scenes. Existing gaming themes (`mario`, `playstation`, `gameboy`, `final-fantasy`, `zelda`, `warcraft`, `dragonball`) now also carry their own dual-mode animated SVG backdrops (`js/gaming_themes.json`).
+- **20 new Animated Scene themes (`js/scene_themes.json`):** bundles all 20 scenes from Anthropic's `theme-examples` (`honu-lagoon`, `snow-pines`, `aurora`, `campfire`, `neon-rain`, `sakura-drift`, `zen-sand`, `halftone-dawn`, `paper-garden`, `paper-garden-kraft`, `braille-stars`, `teletext-clouds`, `tide-pool`, `contour-dunes`, `night-reef`, `vinyl-groove`, `stained-glass`, `kaleidoscope`, `ascii-aquarium`, `festival-lanterns`) as full dual light/dark themes with matching spinners, and pairs all built-in and 84 community themes with fitting default scenes (123 bundled themes and 33 backdrop scenes in total).
+- **Live Backdrop selector in `Ctrl+Shift+T` and Settings -> Extra -> Themes:** a new **Backdrop** bar (`activeBackdrop` in `claude-desktop-extra.jsonc`) lets you follow the active theme's scene (`""`), turn backdrops off (`"off"`) while keeping your color palette, or mix and match any of the 33 animated scenes over any theme live.
+- **Works together with Transparent window:** when both an animated backdrop and the **Transparent window** Community switch are active, `[data-engine-backdrop]` carries the window alpha (`1 - windowTransparencyLevel`, updating live with the Transparency slider) while `.dframe-root`, `.dframe-sidebar` and header grounds stay clear so alpha layers never stack (`js/window_transparency.js`).
+- **Community contributions welcome:** these animated backdrops are our first pass and we will keep polishing them over upcoming releases - feel free to build your own themes (dual light/dark palettes, animated SVG backdrops, custom SVG spinners) and open a PR!
+
 ## 2026-11-14
 
 ### Upstream 5.11492.5

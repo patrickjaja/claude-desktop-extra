@@ -1,1214 +1,2244 @@
 {
- "playstation": {
-  "name": "PlayStation",
-  "category": "gaming",
-  "light": {
-   "--bg-000": "220 13.0% 96.6%",
-   "--bg-100": "220 13.0% 91.0%",
-   "--bg-200": "220 13.0% 88.0%",
-   "--bg-300": "220 13.0% 85.4%",
-   "--bg-400": "220 13.0% 82.6%",
-   "--bg-500": "220 13.0% 79.1%",
-   "--text-000": "222 15.6% 12.5%",
-   "--text-100": "222 15.6% 12.5%",
-   "--text-200": "221 12.6% 24.7%",
-   "--text-300": "221 12.6% 24.7%",
-   "--text-400": "220 9.6% 36.9%",
-   "--text-500": "220 9.6% 36.9%",
-   "--accent-brand": "221 65.3% 47.5%",
-   "--accent-000": "221 65.3% 50.5%",
-   "--accent-100": "221 65.3% 47.5%",
-   "--accent-200": "221 65.3% 47.5%",
-   "--accent-900": "221 39.2% 90.0%",
-   "--accent-pro-000": "314 52.7% 46.1%",
-   "--accent-pro-100": "314 52.7% 43.1%",
-   "--accent-pro-200": "314 52.7% 43.1%",
-   "--accent-pro-900": "314 31.6% 90.0%",
-   "--brand-000": "221 65.3% 50.5%",
-   "--brand-100": "221 65.3% 47.5%",
-   "--brand-200": "221 65.3% 47.5%",
-   "--brand-900": "0 0% 0%",
-   "--border-100": "218 13.3% 26.0%",
-   "--border-200": "218 13.3% 26.0%",
-   "--border-300": "218 13.3% 26.0%",
-   "--border-400": "218 13.3% 26.0%",
-   "--danger-000": "351 64.8% 45.7%",
-   "--danger-100": "351 64.8% 57.7%",
-   "--danger-200": "351 64.8% 45.7%",
-   "--danger-900": "351 38.9% 90.0%",
-   "--warning-000": "40 100.0% 29.0%",
-   "--warning-100": "40 100.0% 41.0%",
-   "--warning-200": "40 100.0% 29.0%",
-   "--warning-900": "40 60.0% 90.0%",
-   "--success-000": "143 57.4% 30.4%",
-   "--success-100": "143 57.4% 42.4%",
-   "--success-200": "143 57.4% 30.4%",
-   "--success-900": "143 34.5% 90.0%",
-   "--oncolor-100": "0 0.0% 100.0%",
-   "--oncolor-200": "0 0.0% 100.0%",
-   "--oncolor-300": "0 0.0% 100.0%",
-   "--pictogram-100": "222 15.6% 12.5%",
-   "--pictogram-200": "221 12.6% 24.7%",
-   "--pictogram-300": "220 9.6% 36.9%",
-   "--pictogram-400": "220 13.0% 85.4%",
-   "--claude-accent-clay": "#2a5bc8",
-   "--claude-foreground-color": "#1b1e25",
-   "--claude-background-color": "#e5e7eb",
-   "--claude-secondary-color": "#555b67",
-   "--claude-border": "#2a5bc818",
-   "--claude-border-300": "#2a5bc830",
-   "--claude-border-300-more": "#2a5bc855",
-   "--claude-text-100": "#1b1e25",
-   "--claude-text-200": "#373c47",
-   "--claude-text-400": "#555b67",
-   "--claude-text-500": "#555b67",
-   "--claude-description-text": "#3d424e"
-  },
-  "dark": {
-   "--bg-000": "222 15.2% 17.8%",
-   "--bg-100": "222 15.2% 12.9%",
-   "--bg-200": "222 15.2% 10.0%",
-   "--bg-300": "222 15.2% 7.5%",
-   "--bg-400": "222 15.2% 4.7%",
-   "--bg-500": "222 15.2% 2.3%",
-   "--text-000": "222 29.4% 93.3%",
-   "--text-100": "222 29.4% 93.3%",
-   "--text-200": "221 22.8% 82.0%",
-   "--text-300": "221 22.8% 82.0%",
-   "--text-400": "219 12.8% 64.9%",
-   "--text-500": "219 12.8% 64.9%",
-   "--accent-brand": "221 100.0% 71.8%",
-   "--accent-000": "221 100.0% 76.8%",
-   "--accent-100": "221 100.0% 71.8%",
-   "--accent-200": "221 100.0% 71.8%",
-   "--accent-900": "221 55.0% 24.0%",
-   "--accent-pro-000": "314 62.2% 72.8%",
-   "--accent-pro-100": "314 62.2% 67.8%",
-   "--accent-pro-200": "314 62.2% 67.8%",
-   "--accent-pro-900": "314 34.2% 24.0%",
-   "--brand-000": "221 100.0% 76.8%",
-   "--brand-100": "221 100.0% 71.8%",
-   "--brand-200": "221 100.0% 71.8%",
-   "--brand-900": "0 0% 0%",
-   "--border-100": "218 20.1% 74.0%",
-   "--border-200": "218 20.1% 74.0%",
-   "--border-300": "218 20.1% 74.0%",
-   "--border-400": "218 20.1% 74.0%",
-   "--danger-000": "352 100.0% 75.8%",
-   "--danger-100": "352 100.0% 68.8%",
-   "--danger-200": "352 100.0% 68.8%",
-   "--danger-900": "352 55.0% 24.0%",
-   "--warning-000": "39 100.0% 75.0%",
-   "--warning-100": "39 100.0% 68.0%",
-   "--warning-200": "39 100.0% 68.0%",
-   "--warning-900": "39 55.0% 24.0%",
-   "--success-000": "136 57.6% 67.2%",
-   "--success-100": "136 57.6% 60.2%",
-   "--success-200": "136 57.6% 60.2%",
-   "--success-900": "136 31.7% 24.0%",
-   "--oncolor-100": "220 48.8% 8.4%",
-   "--oncolor-200": "220 48.8% 8.4%",
-   "--oncolor-300": "220 48.8% 8.4%",
-   "--pictogram-100": "222 29.4% 93.3%",
-   "--pictogram-200": "221 22.8% 82.0%",
-   "--pictogram-300": "219 12.8% 64.9%",
-   "--pictogram-400": "222 15.2% 18.9%",
-   "--claude-accent-clay": "#6f9dff",
-   "--claude-foreground-color": "#e9ecf3",
-   "--claude-background-color": "#1c1f26",
-   "--claude-secondary-color": "#9aa2b1",
-   "--claude-border": "#6f9dff18",
-   "--claude-border-300": "#6f9dff30",
-   "--claude-border-300-more": "#6f9dff55",
-   "--claude-text-100": "#e9ecf3",
-   "--claude-text-200": "#c7cddb",
-   "--claude-text-400": "#9aa2b1",
-   "--claude-text-500": "#9aa2b1",
-   "--claude-description-text": "#b7bece"
-  },
-  "spinner": {
-   "viewBox": "0 0 20 20",
-   "animation": "flip",
-   "paths": [
-    {
-     "d": "M4 0h1v1h-1zM3 1h3v1h-3zM2 2h5v1h-5zM2 3h5v1h-5zM1 4h7v1h-7zM1 5h7v1h-7zM0 6h9v1h-9zM0 7h9v1h-9z",
-     "fill": "#2FD0B4"
+  "playstation": {
+    "name": "PlayStation",
+    "category": "gaming",
+    "light": {
+      "--bg-000": "220 13.0% 96.6%",
+      "--bg-100": "220 13.0% 91.0%",
+      "--bg-200": "220 13.0% 88.0%",
+      "--bg-300": "220 13.0% 85.4%",
+      "--bg-400": "220 13.0% 82.6%",
+      "--bg-500": "220 13.0% 79.1%",
+      "--text-000": "222 15.6% 12.5%",
+      "--text-100": "222 15.6% 12.5%",
+      "--text-200": "221 12.6% 24.7%",
+      "--text-300": "221 12.6% 24.7%",
+      "--text-400": "220 9.6% 36.9%",
+      "--text-500": "220 9.6% 36.9%",
+      "--accent-brand": "221 65.3% 47.5%",
+      "--accent-000": "221 65.3% 50.5%",
+      "--accent-100": "221 65.3% 47.5%",
+      "--accent-200": "221 65.3% 47.5%",
+      "--accent-900": "221 39.2% 90.0%",
+      "--accent-pro-000": "314 52.7% 46.1%",
+      "--accent-pro-100": "314 52.7% 43.1%",
+      "--accent-pro-200": "314 52.7% 43.1%",
+      "--accent-pro-900": "314 31.6% 90.0%",
+      "--brand-000": "221 65.3% 50.5%",
+      "--brand-100": "221 65.3% 47.5%",
+      "--brand-200": "221 65.3% 47.5%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "218 13.3% 26.0%",
+      "--border-200": "218 13.3% 26.0%",
+      "--border-300": "218 13.3% 26.0%",
+      "--border-400": "218 13.3% 26.0%",
+      "--danger-000": "351 64.8% 45.7%",
+      "--danger-100": "351 64.8% 57.7%",
+      "--danger-200": "351 64.8% 45.7%",
+      "--danger-900": "351 38.9% 90.0%",
+      "--warning-000": "40 100.0% 29.0%",
+      "--warning-100": "40 100.0% 41.0%",
+      "--warning-200": "40 100.0% 29.0%",
+      "--warning-900": "40 60.0% 90.0%",
+      "--success-000": "143 57.4% 30.4%",
+      "--success-100": "143 57.4% 42.4%",
+      "--success-200": "143 57.4% 30.4%",
+      "--success-900": "143 34.5% 90.0%",
+      "--oncolor-100": "0 0.0% 100.0%",
+      "--oncolor-200": "0 0.0% 100.0%",
+      "--oncolor-300": "0 0.0% 100.0%",
+      "--pictogram-100": "222 15.6% 12.5%",
+      "--pictogram-200": "221 12.6% 24.7%",
+      "--pictogram-300": "220 9.6% 36.9%",
+      "--pictogram-400": "220 13.0% 85.4%",
+      "--claude-accent-clay": "#2a5bc8",
+      "--claude-foreground-color": "#1b1e25",
+      "--claude-background-color": "#e5e7eb",
+      "--claude-secondary-color": "#555b67",
+      "--claude-border": "#2a5bc818",
+      "--claude-border-300": "#2a5bc830",
+      "--claude-border-300-more": "#2a5bc855",
+      "--claude-text-100": "#1b1e25",
+      "--claude-text-200": "#373c47",
+      "--claude-text-400": "#555b67",
+      "--claude-text-500": "#555b67",
+      "--claude-description-text": "#3d424e"
     },
-    {
-     "d": "M14 0h3v1h-3zM13 1h5v1h-5zM12 2h2v1h-2zM17 2h2v1h-2zM11 3h2v1h-2zM18 3h2v1h-2zM11 4h2v1h-2zM18 4h2v1h-2zM11 5h2v1h-2zM18 5h2v1h-2zM12 6h2v1h-2zM17 6h2v1h-2zM13 7h5v1h-5zM14 8h3v1h-3z",
-     "fill": "#EE7B52"
+    "dark": {
+      "--bg-000": "222 15.2% 17.8%",
+      "--bg-100": "222 15.2% 12.9%",
+      "--bg-200": "222 15.2% 10.0%",
+      "--bg-300": "222 15.2% 7.5%",
+      "--bg-400": "222 15.2% 4.7%",
+      "--bg-500": "222 15.2% 2.3%",
+      "--text-000": "222 29.4% 93.3%",
+      "--text-100": "222 29.4% 93.3%",
+      "--text-200": "221 22.8% 82.0%",
+      "--text-300": "221 22.8% 82.0%",
+      "--text-400": "219 12.8% 64.9%",
+      "--text-500": "219 12.8% 64.9%",
+      "--accent-brand": "221 100.0% 71.8%",
+      "--accent-000": "221 100.0% 76.8%",
+      "--accent-100": "221 100.0% 71.8%",
+      "--accent-200": "221 100.0% 71.8%",
+      "--accent-900": "221 55.0% 24.0%",
+      "--accent-pro-000": "314 62.2% 72.8%",
+      "--accent-pro-100": "314 62.2% 67.8%",
+      "--accent-pro-200": "314 62.2% 67.8%",
+      "--accent-pro-900": "314 34.2% 24.0%",
+      "--brand-000": "221 100.0% 76.8%",
+      "--brand-100": "221 100.0% 71.8%",
+      "--brand-200": "221 100.0% 71.8%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "218 20.1% 74.0%",
+      "--border-200": "218 20.1% 74.0%",
+      "--border-300": "218 20.1% 74.0%",
+      "--border-400": "218 20.1% 74.0%",
+      "--danger-000": "352 100.0% 75.8%",
+      "--danger-100": "352 100.0% 68.8%",
+      "--danger-200": "352 100.0% 68.8%",
+      "--danger-900": "352 55.0% 24.0%",
+      "--warning-000": "39 100.0% 75.0%",
+      "--warning-100": "39 100.0% 68.0%",
+      "--warning-200": "39 100.0% 68.0%",
+      "--warning-900": "39 55.0% 24.0%",
+      "--success-000": "136 57.6% 67.2%",
+      "--success-100": "136 57.6% 60.2%",
+      "--success-200": "136 57.6% 60.2%",
+      "--success-900": "136 31.7% 24.0%",
+      "--oncolor-100": "220 48.8% 8.4%",
+      "--oncolor-200": "220 48.8% 8.4%",
+      "--oncolor-300": "220 48.8% 8.4%",
+      "--pictogram-100": "222 29.4% 93.3%",
+      "--pictogram-200": "221 22.8% 82.0%",
+      "--pictogram-300": "219 12.8% 64.9%",
+      "--pictogram-400": "222 15.2% 18.9%",
+      "--claude-accent-clay": "#6f9dff",
+      "--claude-foreground-color": "#e9ecf3",
+      "--claude-background-color": "#1c1f26",
+      "--claude-secondary-color": "#9aa2b1",
+      "--claude-border": "#6f9dff18",
+      "--claude-border-300": "#6f9dff30",
+      "--claude-border-300-more": "#6f9dff55",
+      "--claude-text-100": "#e9ecf3",
+      "--claude-text-200": "#c7cddb",
+      "--claude-text-400": "#9aa2b1",
+      "--claude-text-500": "#9aa2b1",
+      "--claude-description-text": "#b7bece"
     },
-    {
-     "d": "M11 11h2v1h-2zM18 11h2v1h-2zM11 12h3v1h-3zM17 12h3v1h-3zM12 13h3v1h-3zM16 13h3v1h-3zM13 14h5v1h-5zM14 15h3v1h-3zM13 16h5v1h-5zM12 17h3v1h-3zM16 17h3v1h-3zM11 18h3v1h-3zM17 18h3v1h-3zM11 19h2v1h-2zM18 19h2v1h-2z",
-     "fill": "#6D93E8"
+    "spinner": {
+      "viewBox": "0 0 20 20",
+      "animation": "flip",
+      "paths": [
+        {
+          "d": "M4 0h1v1h-1zM3 1h3v1h-3zM2 2h5v1h-5zM2 3h5v1h-5zM1 4h7v1h-7zM1 5h7v1h-7zM0 6h9v1h-9zM0 7h9v1h-9z",
+          "fill": "#2FD0B4"
+        },
+        {
+          "d": "M14 0h3v1h-3zM13 1h5v1h-5zM12 2h2v1h-2zM17 2h2v1h-2zM11 3h2v1h-2zM18 3h2v1h-2zM11 4h2v1h-2zM18 4h2v1h-2zM11 5h2v1h-2zM18 5h2v1h-2zM12 6h2v1h-2zM17 6h2v1h-2zM13 7h5v1h-5zM14 8h3v1h-3z",
+          "fill": "#EE7B52"
+        },
+        {
+          "d": "M11 11h2v1h-2zM18 11h2v1h-2zM11 12h3v1h-3zM17 12h3v1h-3zM12 13h3v1h-3zM16 13h3v1h-3zM13 14h5v1h-5zM14 15h3v1h-3zM13 16h5v1h-5zM12 17h3v1h-3zM16 17h3v1h-3zM11 18h3v1h-3zM17 18h3v1h-3zM11 19h2v1h-2zM18 19h2v1h-2z",
+          "fill": "#6D93E8"
+        },
+        {
+          "d": "M0 11h9v1h-9zM0 12h9v1h-9zM0 13h2v1h-2zM7 13h2v1h-2zM0 14h2v1h-2zM7 14h2v1h-2zM0 15h2v1h-2zM7 15h2v1h-2zM0 16h2v1h-2zM7 16h2v1h-2zM0 17h2v1h-2zM7 17h2v1h-2zM0 18h9v1h-9zM0 19h9v1h-9z",
+          "fill": "#E77CB8"
+        }
+      ],
+      "paths2": [
+        {
+          "d": "M15 0h1v1h-1zM14 1h3v1h-3zM13 2h5v1h-5zM13 3h5v1h-5zM12 4h7v1h-7zM12 5h7v1h-7zM11 6h9v1h-9zM11 7h9v1h-9z",
+          "fill": "#2FD0B4"
+        },
+        {
+          "d": "M14 11h3v1h-3zM13 12h5v1h-5zM12 13h2v1h-2zM17 13h2v1h-2zM11 14h2v1h-2zM18 14h2v1h-2zM11 15h2v1h-2zM18 15h2v1h-2zM11 16h2v1h-2zM18 16h2v1h-2zM12 17h2v1h-2zM17 17h2v1h-2zM13 18h5v1h-5zM14 19h3v1h-3z",
+          "fill": "#EE7B52"
+        },
+        {
+          "d": "M0 11h2v1h-2zM7 11h2v1h-2zM0 12h3v1h-3zM6 12h3v1h-3zM1 13h3v1h-3zM5 13h3v1h-3zM2 14h5v1h-5zM3 15h3v1h-3zM2 16h5v1h-5zM1 17h3v1h-3zM5 17h3v1h-3zM0 18h3v1h-3zM6 18h3v1h-3zM0 19h2v1h-2zM7 19h2v1h-2z",
+          "fill": "#6D93E8"
+        },
+        {
+          "d": "M0 0h9v1h-9zM0 1h9v1h-9zM0 2h2v1h-2zM7 2h2v1h-2zM0 3h2v1h-2zM7 3h2v1h-2zM0 4h2v1h-2zM7 4h2v1h-2zM0 5h2v1h-2zM7 5h2v1h-2zM0 6h2v1h-2zM7 6h2v1h-2zM0 7h9v1h-9zM0 8h9v1h-9z",
+          "fill": "#E77CB8"
+        }
+      ]
     },
-    {
-     "d": "M0 11h9v1h-9zM0 12h9v1h-9zM0 13h2v1h-2zM7 13h2v1h-2zM0 14h2v1h-2zM7 14h2v1h-2zM0 15h2v1h-2zM7 15h2v1h-2zM0 16h2v1h-2zM7 16h2v1h-2zM0 17h2v1h-2zM7 17h2v1h-2zM0 18h9v1h-9zM0 19h9v1h-9z",
-     "fill": "#E77CB8"
+    "backdrop": {
+      "scene": "playstation"
     }
-   ],
-   "paths2": [
-    {
-     "d": "M15 0h1v1h-1zM14 1h3v1h-3zM13 2h5v1h-5zM13 3h5v1h-5zM12 4h7v1h-7zM12 5h7v1h-7zM11 6h9v1h-9zM11 7h9v1h-9z",
-     "fill": "#2FD0B4"
+  },
+  "gameboy": {
+    "name": "Game Boy",
+    "category": "gaming",
+    "light": {
+      "--bg-000": "43 16.7% 89.1%",
+      "--bg-100": "43 16.7% 83.5%",
+      "--bg-200": "43 16.7% 80.6%",
+      "--bg-300": "43 16.7% 77.9%",
+      "--bg-400": "43 16.7% 75.1%",
+      "--bg-500": "43 16.7% 71.6%",
+      "--text-000": "42 15.2% 12.9%",
+      "--text-100": "42 15.2% 12.9%",
+      "--text-200": "42 13.6% 22.7%",
+      "--text-300": "42 13.6% 22.7%",
+      "--text-400": "42 12.0% 32.5%",
+      "--text-500": "42 12.0% 32.5%",
+      "--accent-brand": "333 66.3% 38.4%",
+      "--accent-000": "333 66.3% 41.4%",
+      "--accent-100": "333 66.3% 38.4%",
+      "--accent-200": "333 66.3% 38.4%",
+      "--accent-900": "333 39.8% 90.0%",
+      "--accent-pro-000": "238 49.5% 43.4%",
+      "--accent-pro-100": "238 49.5% 40.4%",
+      "--accent-pro-200": "238 49.5% 40.4%",
+      "--accent-pro-900": "238 29.7% 90.0%",
+      "--brand-000": "333 66.3% 41.4%",
+      "--brand-100": "333 66.3% 38.4%",
+      "--brand-200": "333 66.3% 38.4%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "40 12.0% 26.0%",
+      "--border-200": "40 12.0% 26.0%",
+      "--border-300": "40 12.0% 26.0%",
+      "--border-400": "40 12.0% 26.0%",
+      "--danger-000": "351 76.4% 39.8%",
+      "--danger-100": "351 76.4% 51.8%",
+      "--danger-200": "351 76.4% 39.8%",
+      "--danger-900": "351 45.8% 90.0%",
+      "--warning-000": "43 100.0% 28.0%",
+      "--warning-100": "43 100.0% 40.0%",
+      "--warning-200": "43 100.0% 28.0%",
+      "--warning-900": "43 60.0% 90.0%",
+      "--success-000": "90 75.4% 23.9%",
+      "--success-100": "90 75.4% 35.9%",
+      "--success-200": "90 75.4% 23.9%",
+      "--success-900": "90 45.2% 90.0%",
+      "--oncolor-100": "0 0.0% 100.0%",
+      "--oncolor-200": "0 0.0% 100.0%",
+      "--oncolor-300": "0 0.0% 100.0%",
+      "--pictogram-100": "42 15.2% 12.9%",
+      "--pictogram-200": "42 13.6% 22.7%",
+      "--pictogram-300": "42 12.0% 32.5%",
+      "--pictogram-400": "43 16.7% 77.9%",
+      "--claude-accent-clay": "#a3215c",
+      "--claude-foreground-color": "#26231c",
+      "--claude-background-color": "#dcd8ce",
+      "--claude-secondary-color": "#5d5749",
+      "--claude-border": "#a3215c18",
+      "--claude-border-300": "#a3215c30",
+      "--claude-border-300-more": "#a3215c55",
+      "--claude-text-100": "#26231c",
+      "--claude-text-200": "#423d32",
+      "--claude-text-400": "#5d5749",
+      "--claude-text-500": "#5d5749",
+      "--claude-description-text": "#474237"
     },
-    {
-     "d": "M14 11h3v1h-3zM13 12h5v1h-5zM12 13h2v1h-2zM17 13h2v1h-2zM11 14h2v1h-2zM18 14h2v1h-2zM11 15h2v1h-2zM18 15h2v1h-2zM11 16h2v1h-2zM18 16h2v1h-2zM12 17h2v1h-2zM17 17h2v1h-2zM13 18h5v1h-5zM14 19h3v1h-3z",
-     "fill": "#EE7B52"
+    "dark": {
+      "--bg-000": "120 58.3% 13.0%",
+      "--bg-100": "120 58.3% 9.4%",
+      "--bg-200": "120 58.3% 7.2%",
+      "--bg-300": "120 58.3% 5.5%",
+      "--bg-400": "120 58.3% 3.4%",
+      "--bg-500": "120 58.3% 1.6%",
+      "--text-000": "71 85.2% 39.8%",
+      "--text-100": "71 85.2% 39.8%",
+      "--text-200": "72 84.7% 38.5%",
+      "--text-300": "72 84.7% 38.5%",
+      "--text-400": "73 84.0% 36.7%",
+      "--text-500": "73 84.0% 36.7%",
+      "--accent-brand": "71 85.2% 39.8%",
+      "--accent-000": "71 85.2% 44.8%",
+      "--accent-100": "71 85.2% 39.8%",
+      "--accent-200": "71 85.2% 39.8%",
+      "--accent-900": "71 46.9% 24.0%",
+      "--accent-pro-000": "74 77.3% 39.5%",
+      "--accent-pro-100": "74 77.3% 34.5%",
+      "--accent-pro-200": "74 77.3% 34.5%",
+      "--accent-pro-900": "74 42.5% 24.0%",
+      "--brand-000": "71 85.2% 44.8%",
+      "--brand-100": "71 85.2% 39.8%",
+      "--brand-200": "71 85.2% 39.8%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "88 45.0% 74.0%",
+      "--border-200": "88 45.0% 74.0%",
+      "--border-300": "88 45.0% 74.0%",
+      "--border-400": "88 45.0% 74.0%",
+      "--danger-000": "20 66.7% 61.1%",
+      "--danger-100": "20 66.7% 54.1%",
+      "--danger-200": "20 66.7% 54.1%",
+      "--danger-900": "20 36.7% 24.0%",
+      "--warning-000": "47 68.1% 57.8%",
+      "--warning-100": "47 68.1% 50.8%",
+      "--warning-200": "47 68.1% 50.8%",
+      "--warning-900": "47 37.5% 24.0%",
+      "--success-000": "73 84.0% 43.7%",
+      "--success-100": "73 84.0% 36.7%",
+      "--success-200": "73 84.0% 36.7%",
+      "--success-900": "73 46.2% 24.0%",
+      "--oncolor-100": "120 57.7% 13.9%",
+      "--oncolor-200": "120 57.7% 13.9%",
+      "--oncolor-300": "120 57.7% 13.9%",
+      "--pictogram-100": "71 85.2% 39.8%",
+      "--pictogram-200": "72 84.7% 38.5%",
+      "--pictogram-300": "73 84.0% 36.7%",
+      "--pictogram-400": "120 58.3% 15.4%",
+      "--claude-accent-clay": "#9bbc0f",
+      "--claude-foreground-color": "#9bbc0f",
+      "--claude-background-color": "#0a260a",
+      "--claude-secondary-color": "#8bac0f",
+      "--claude-border": "#9bbc0f18",
+      "--claude-border-300": "#9bbc0f30",
+      "--claude-border-300-more": "#9bbc0f55",
+      "--claude-text-100": "#9bbc0f",
+      "--claude-text-200": "#95b60f",
+      "--claude-text-400": "#8bac0f",
+      "--claude-text-500": "#8bac0f",
+      "--claude-description-text": "#91b20f"
     },
-    {
-     "d": "M0 11h2v1h-2zM7 11h2v1h-2zM0 12h3v1h-3zM6 12h3v1h-3zM1 13h3v1h-3zM5 13h3v1h-3zM2 14h5v1h-5zM3 15h3v1h-3zM2 16h5v1h-5zM1 17h3v1h-3zM5 17h3v1h-3zM0 18h3v1h-3zM6 18h3v1h-3zM0 19h2v1h-2zM7 19h2v1h-2z",
-     "fill": "#6D93E8"
+    "spinner": {
+      "viewBox": "0 0 14 22",
+      "animation": "flip",
+      "paths": [
+        {
+          "d": "M2 0h10v1h-10ZM1 1h12v1h-12ZM0 2h14v1h-14ZM0 3h14v1h-14ZM0 4h14v1h-14ZM0 5h14v1h-14ZM0 6h14v1h-14ZM0 7h14v1h-14ZM0 8h14v1h-14ZM0 9h14v1h-14ZM0 10h14v1h-14ZM0 11h14v1h-14ZM0 12h14v1h-14ZM0 13h14v1h-14ZM0 14h14v1h-14ZM0 15h14v1h-14ZM0 16h14v1h-14ZM0 17h14v1h-14ZM0 18h13v1h-13ZM0 19h13v1h-13ZM0 20h12v1h-12ZM1 21h10v1h-10Z",
+          "fill": "#20231b"
+        },
+        {
+          "d": "M3 1h8v1h-8ZM2 2h10v1h-10ZM1 3h12v1h-12ZM1 4h12v1h-12ZM1 5h12v1h-12ZM1 6h12v1h-12ZM1 7h12v1h-12ZM1 8h12v1h-12ZM1 9h12v1h-12ZM1 10h12v1h-12ZM1 11h12v1h-12ZM1 12h12v1h-12ZM1 13h12v1h-12ZM1 14h12v1h-12ZM1 15h12v1h-12ZM1 16h12v1h-12ZM1 17h11v1h-11ZM1 18h11v1h-11ZM1 19h10v1h-10ZM2 20h8v1h-8Z",
+          "fill": "#cac6b6"
+        },
+        {
+          "d": "M2 3h10v1h-10ZM2 4h10v1h-10ZM2 5h10v1h-10ZM2 6h10v1h-10ZM2 7h10v1h-10ZM2 8h10v1h-10ZM2 9h10v1h-10Z",
+          "fill": "#5b5a63"
+        },
+        {
+          "d": "M4 4h6v1h-6ZM4 5h6v1h-6ZM4 6h6v1h-6ZM4 7h6v1h-6ZM4 8h6v1h-6Z",
+          "fill": "#9bbc0f"
+        },
+        {
+          "d": "M5 5h4v1h-4Z",
+          "fill": "#0f380f"
+        },
+        {
+          "d": "M3 1h3v1h-3ZM3 11h7v1h-7ZM3 17h2v1h-2ZM6 17h2v1h-2Z",
+          "fill": "#4d4d58"
+        },
+        {
+          "d": "M9 17h1v1h-1ZM9 18h1v1h-1ZM9 19h1v1h-1ZM11 17h1v1h-1ZM11 18h1v1h-1Z",
+          "fill": "#7b7869"
+        },
+        {
+          "d": "M3 13h2v1h-2ZM3 14h2v1h-2ZM3 15h2v1h-2ZM3 16h2v1h-2ZM2 14h4v1h-4ZM2 15h4v1h-4Z",
+          "fill": "#33333a"
+        },
+        {
+          "d": "M10 13h2v1h-2ZM10 14h2v1h-2ZM7 14h2v1h-2ZM7 15h2v1h-2Z",
+          "fill": "#a3215c"
+        },
+        {
+          "d": "M2 6h1v1h-1Z",
+          "fill": "#f0564e"
+        }
+      ],
+      "paths2": [
+        {
+          "d": "M2 0h10v1h-10ZM1 1h12v1h-12ZM0 2h14v1h-14ZM0 3h14v1h-14ZM0 4h14v1h-14ZM0 5h14v1h-14ZM0 6h14v1h-14ZM0 7h14v1h-14ZM0 8h14v1h-14ZM0 9h14v1h-14ZM0 10h14v1h-14ZM0 11h14v1h-14ZM0 12h14v1h-14ZM0 13h14v1h-14ZM0 14h14v1h-14ZM0 15h14v1h-14ZM0 16h14v1h-14ZM0 17h14v1h-14ZM0 18h13v1h-13ZM0 19h13v1h-13ZM0 20h12v1h-12ZM1 21h10v1h-10Z",
+          "fill": "#20231b"
+        },
+        {
+          "d": "M3 1h8v1h-8ZM2 2h10v1h-10ZM1 3h12v1h-12ZM1 4h12v1h-12ZM1 5h12v1h-12ZM1 6h12v1h-12ZM1 7h12v1h-12ZM1 8h12v1h-12ZM1 9h12v1h-12ZM1 10h12v1h-12ZM1 11h12v1h-12ZM1 12h12v1h-12ZM1 13h12v1h-12ZM1 14h12v1h-12ZM1 15h12v1h-12ZM1 16h12v1h-12ZM1 17h11v1h-11ZM1 18h11v1h-11ZM1 19h10v1h-10ZM2 20h8v1h-8Z",
+          "fill": "#cac6b6"
+        },
+        {
+          "d": "M2 3h10v1h-10ZM2 4h10v1h-10ZM2 5h10v1h-10ZM2 6h10v1h-10ZM2 7h10v1h-10ZM2 8h10v1h-10ZM2 9h10v1h-10Z",
+          "fill": "#5b5a63"
+        },
+        {
+          "d": "M4 4h6v1h-6ZM4 5h6v1h-6ZM4 6h6v1h-6ZM4 7h6v1h-6ZM4 8h6v1h-6Z",
+          "fill": "#9bbc0f"
+        },
+        {
+          "d": "M5 7h4v1h-4Z",
+          "fill": "#0f380f"
+        },
+        {
+          "d": "M3 1h3v1h-3ZM3 11h7v1h-7ZM3 17h2v1h-2ZM6 17h2v1h-2Z",
+          "fill": "#4d4d58"
+        },
+        {
+          "d": "M9 17h1v1h-1ZM9 18h1v1h-1ZM9 19h1v1h-1ZM11 17h1v1h-1ZM11 18h1v1h-1Z",
+          "fill": "#7b7869"
+        },
+        {
+          "d": "M3 13h2v1h-2ZM3 14h2v1h-2ZM3 15h2v1h-2ZM3 16h2v1h-2ZM2 14h4v1h-4ZM2 15h4v1h-4Z",
+          "fill": "#33333a"
+        },
+        {
+          "d": "M10 13h2v1h-2ZM10 14h2v1h-2ZM7 14h2v1h-2ZM7 15h2v1h-2Z",
+          "fill": "#a3215c"
+        },
+        {
+          "d": "M2 6h1v1h-1Z",
+          "fill": "#7a2f2c"
+        }
+      ]
     },
-    {
-     "d": "M0 0h9v1h-9zM0 1h9v1h-9zM0 2h2v1h-2zM7 2h2v1h-2zM0 3h2v1h-2zM7 3h2v1h-2zM0 4h2v1h-2zM7 4h2v1h-2zM0 5h2v1h-2zM7 5h2v1h-2zM0 6h2v1h-2zM7 6h2v1h-2zM0 7h9v1h-9zM0 8h9v1h-9z",
-     "fill": "#E77CB8"
+    "backdrop": {
+      "scene": "gameboy"
     }
-   ]
+  },
+  "final-fantasy": {
+    "name": "Final Fantasy",
+    "category": "gaming",
+    "light": {
+      "--bg-000": "44 52.0% 95.8%",
+      "--bg-100": "44 52.0% 90.2%",
+      "--bg-200": "44 52.0% 87.2%",
+      "--bg-300": "44 52.0% 84.6%",
+      "--bg-400": "44 52.0% 81.8%",
+      "--bg-500": "44 52.0% 78.3%",
+      "--text-000": "42 31.3% 12.5%",
+      "--text-100": "42 31.3% 12.5%",
+      "--text-200": "42 29.1% 22.6%",
+      "--text-300": "42 29.1% 22.6%",
+      "--text-400": "41 26.9% 32.7%",
+      "--text-500": "41 26.9% 32.7%",
+      "--accent-brand": "227 62.5% 34.5%",
+      "--accent-000": "227 62.5% 37.5%",
+      "--accent-100": "227 62.5% 34.5%",
+      "--accent-200": "227 62.5% 34.5%",
+      "--accent-900": "227 37.5% 90.0%",
+      "--accent-pro-000": "41 79.2% 33.2%",
+      "--accent-pro-100": "41 79.2% 30.2%",
+      "--accent-pro-200": "41 79.2% 30.2%",
+      "--accent-pro-900": "41 47.5% 90.0%",
+      "--brand-000": "227 62.5% 37.5%",
+      "--brand-100": "227 62.5% 34.5%",
+      "--brand-200": "227 62.5% 34.5%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "39 26.1% 26.0%",
+      "--border-200": "39 26.1% 26.0%",
+      "--border-300": "39 26.1% 26.0%",
+      "--border-400": "39 26.1% 26.0%",
+      "--danger-000": "355 67.3% 38.4%",
+      "--danger-100": "355 67.3% 50.4%",
+      "--danger-200": "355 67.3% 38.4%",
+      "--danger-900": "355 40.4% 90.0%",
+      "--warning-000": "39 83.3% 30.6%",
+      "--warning-100": "39 83.3% 42.6%",
+      "--warning-200": "39 83.3% 30.6%",
+      "--warning-900": "39 50.0% 90.0%",
+      "--success-000": "144 44.2% 30.2%",
+      "--success-100": "144 44.2% 42.2%",
+      "--success-200": "144 44.2% 30.2%",
+      "--success-900": "144 26.5% 90.0%",
+      "--oncolor-100": "0 0.0% 100.0%",
+      "--oncolor-200": "0 0.0% 100.0%",
+      "--oncolor-300": "0 0.0% 100.0%",
+      "--pictogram-100": "42 31.3% 12.5%",
+      "--pictogram-200": "42 29.1% 22.6%",
+      "--pictogram-300": "41 26.9% 32.7%",
+      "--pictogram-400": "44 52.0% 84.6%",
+      "--claude-accent-clay": "#21398f",
+      "--claude-foreground-color": "#2a2416",
+      "--claude-background-color": "#f3ecd9",
+      "--claude-secondary-color": "#6a5c3d",
+      "--claude-border": "#21398f18",
+      "--claude-border-300": "#21398f30",
+      "--claude-border-300-more": "#21398f55",
+      "--claude-text-100": "#2a2416",
+      "--claude-text-200": "#4b4029",
+      "--claude-text-400": "#6a5c3d",
+      "--claude-text-500": "#6a5c3d",
+      "--claude-description-text": "#51462d"
+    },
+    "dark": {
+      "--bg-000": "227 62.8% 21.8%",
+      "--bg-100": "227 62.8% 16.9%",
+      "--bg-200": "227 62.8% 13.9%",
+      "--bg-300": "227 62.8% 11.4%",
+      "--bg-400": "227 62.8% 8.6%",
+      "--bg-500": "227 62.8% 6.2%",
+      "--text-000": "0 0.0% 100.0%",
+      "--text-100": "0 0.0% 100.0%",
+      "--text-200": "0 16.2% 91.8%",
+      "--text-300": "0 16.2% 91.8%",
+      "--text-400": "224 40.4% 79.6%",
+      "--text-500": "224 40.4% 79.6%",
+      "--accent-brand": "42 82.8% 65.9%",
+      "--accent-000": "42 82.8% 70.9%",
+      "--accent-100": "42 82.8% 65.9%",
+      "--accent-200": "42 82.8% 65.9%",
+      "--accent-900": "42 45.5% 24.0%",
+      "--accent-pro-000": "223 61.3% 81.7%",
+      "--accent-pro-100": "223 61.3% 76.7%",
+      "--accent-pro-200": "223 61.3% 76.7%",
+      "--accent-pro-900": "223 33.7% 24.0%",
+      "--brand-000": "42 82.8% 70.9%",
+      "--brand-100": "42 82.8% 65.9%",
+      "--brand-200": "42 82.8% 65.9%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "224 27.1% 74.0%",
+      "--border-200": "224 27.1% 74.0%",
+      "--border-300": "224 27.1% 74.0%",
+      "--border-400": "224 27.1% 74.0%",
+      "--danger-000": "0 100.0% 78.0%",
+      "--danger-100": "0 100.0% 71.0%",
+      "--danger-200": "0 100.0% 71.0%",
+      "--danger-900": "0 55.0% 24.0%",
+      "--warning-000": "42 100.0% 77.0%",
+      "--warning-100": "42 100.0% 70.0%",
+      "--warning-200": "42 100.0% 70.0%",
+      "--warning-900": "42 55.0% 24.0%",
+      "--success-000": "141 57.1% 75.0%",
+      "--success-100": "141 57.1% 68.0%",
+      "--success-200": "141 57.1% 68.0%",
+      "--success-900": "141 31.4% 24.0%",
+      "--oncolor-100": "43 67.7% 6.1%",
+      "--oncolor-200": "43 67.7% 6.1%",
+      "--oncolor-300": "43 67.7% 6.1%",
+      "--pictogram-100": "0 0.0% 100.0%",
+      "--pictogram-200": "0 16.2% 91.8%",
+      "--pictogram-300": "224 40.4% 79.6%",
+      "--pictogram-400": "227 62.8% 22.9%",
+      "--claude-accent-clay": "#f0c460",
+      "--claude-foreground-color": "#ffffff",
+      "--claude-background-color": "#101c46",
+      "--claude-secondary-color": "#b6c1e0",
+      "--claude-border": "#f0c46018",
+      "--claude-border-300": "#f0c46030",
+      "--claude-border-300-more": "#f0c46055",
+      "--claude-text-100": "#ffffff",
+      "--claude-text-200": "#eee7e7",
+      "--claude-text-400": "#b6c1e0",
+      "--claude-text-500": "#b6c1e0",
+      "--claude-description-text": "#e7d8d8"
+    },
+    "spinner": {
+      "viewBox": "0 0 18 22",
+      "animation": "flip",
+      "paths": [
+        {
+          "d": "M12 0H15V1H12ZM11 1H12V2H11ZM15 1H16V3H15ZM10 2H11V3H10ZM9 3H10V4H9ZM14 3H15V4H14ZM7 4H9V5H7ZM13 4H14V6H13ZM4 5H7V6H4ZM2 6H4V7H2ZM14 6H15V7H14ZM1 7H2V8H1ZM15 7H16V8H15ZM2 8H3V9H2ZM13 8H15V9H13ZM3 9H13V10H3ZM4 10H5V14H4ZM7 10H9V13H7ZM11 10H12V14H11ZM5 12H7V13H5ZM9 12H11V13H9ZM3 14H4V16H3ZM12 14H13V16H12ZM2 16H3V19H2ZM13 16H14V19H13ZM1 19H2V20H1ZM14 19H15V20H14ZM2 20H3V21H2ZM5 20H11V21H5ZM13 20H14V21H13ZM3 21H5V22H3ZM11 21H13V22H11Z",
+          "fill": "#150f22"
+        },
+        {
+          "d": "M14 2H15V3H14ZM13 3H14V4H13ZM12 4H13V9H12ZM13 6H14V8H13ZM14 7H15V8H14ZM3 8H12V9H3Z",
+          "fill": "#96590f"
+        },
+        {
+          "d": "M12 1H15V2H12ZM11 2H14V3H11ZM10 3H13V4H10ZM9 4H12V8H9ZM7 5H9V8H7ZM4 6H7V8H4ZM2 7H4V8H2Z",
+          "fill": "#e29a1c"
+        },
+        {
+          "d": "M5 13H10V16H5ZM4 14H5V20H4ZM10 14H11V20H10ZM3 16H4V20H3ZM5 16H6V20H5ZM11 16H12V20H11ZM6 17H10V20H6ZM2 19H3V20H2ZM12 19H13V20H12Z",
+          "fill": "#46bdf5"
+        },
+        {
+          "d": "M10 13H11V14H10ZM11 14H12V16H11ZM12 16H13V19H12ZM13 19H14V20H13Z",
+          "fill": "#1f7fc4"
+        },
+        {
+          "d": "M6 16H10V17H6ZM3 20H5V21H3ZM11 20H13V21H11Z",
+          "fill": "#f5c542"
+        },
+        {
+          "d": "M5 10H7V12H5ZM9 10H11V12H9Z",
+          "fill": "#ffe066"
+        }
+      ],
+      "paths2": [
+        {
+          "d": "M12 0H15V1H12ZM11 1H12V2H11ZM15 1H16V3H15ZM10 2H11V3H10ZM9 3H10V4H9ZM14 3H15V4H14ZM7 4H9V5H7ZM13 4H14V6H13ZM4 5H7V6H4ZM2 6H4V7H2ZM14 6H15V7H14ZM1 7H2V8H1ZM15 7H16V8H15ZM2 8H3V9H2ZM13 8H15V9H13ZM3 9H13V10H3ZM4 10H5V14H4ZM7 10H9V13H7ZM11 10H12V14H11ZM5 12H7V13H5ZM9 12H11V13H9ZM3 14H4V16H3ZM12 14H13V16H12ZM2 16H3V19H2ZM13 16H14V19H13ZM1 19H2V20H1ZM14 19H15V20H14ZM2 20H4V21H2ZM6 20H10V21H6ZM12 20H14V21H12ZM4 21H6V22H4ZM10 21H12V22H10Z",
+          "fill": "#150f22"
+        },
+        {
+          "d": "M14 2H15V3H14ZM13 3H14V4H13ZM12 4H13V9H12ZM13 6H14V8H13ZM14 7H15V8H14ZM3 8H12V9H3Z",
+          "fill": "#96590f"
+        },
+        {
+          "d": "M12 1H15V2H12ZM11 2H14V3H11ZM10 3H13V4H10ZM9 4H12V8H9ZM7 5H9V8H7ZM4 6H7V8H4ZM2 7H4V8H2Z",
+          "fill": "#e29a1c"
+        },
+        {
+          "d": "M5 13H10V16H5ZM4 14H5V20H4ZM10 14H11V20H10ZM3 16H4V20H3ZM5 16H6V20H5ZM11 16H12V20H11ZM6 17H10V20H6ZM2 19H3V20H2ZM12 19H13V20H12Z",
+          "fill": "#46bdf5"
+        },
+        {
+          "d": "M10 13H11V14H10ZM11 14H12V16H11ZM12 16H13V19H12ZM13 19H14V20H13Z",
+          "fill": "#1f7fc4"
+        },
+        {
+          "d": "M6 16H10V17H6ZM4 20H6V21H4ZM10 20H12V21H10Z",
+          "fill": "#f5c542"
+        },
+        {
+          "d": "M5 10H7V12H5ZM9 10H11V12H9Z",
+          "fill": "#fff6c8"
+        },
+        {
+          "d": "M2 3H3V6H2ZM1 4H2V5H1ZM3 4H4V5H3ZM14 13H15V16H14ZM13 14H14V15H13ZM15 14H16V15H15Z",
+          "fill": "#efae24"
+        }
+      ]
+    },
+    "backdrop": {
+      "scene": "final-fantasy"
+    }
+  },
+  "zelda": {
+    "name": "Zelda",
+    "category": "gaming",
+    "light": {
+      "--bg-000": "78 39.5% 97.2%",
+      "--bg-100": "78 39.5% 91.6%",
+      "--bg-200": "78 39.5% 88.6%",
+      "--bg-300": "78 39.5% 86.0%",
+      "--bg-400": "78 39.5% 83.2%",
+      "--bg-500": "78 39.5% 79.7%",
+      "--text-000": "111 29.2% 12.7%",
+      "--text-100": "111 29.2% 12.7%",
+      "--text-200": "108 22.3% 23.0%",
+      "--text-300": "108 22.3% 23.0%",
+      "--text-400": "106 15.3% 33.3%",
+      "--text-500": "106 15.3% 33.3%",
+      "--accent-brand": "146 57.4% 26.7%",
+      "--accent-000": "146 57.4% 29.7%",
+      "--accent-100": "146 57.4% 26.7%",
+      "--accent-200": "146 57.4% 26.7%",
+      "--accent-900": "146 34.4% 90.0%",
+      "--accent-pro-000": "220 60.0% 44.2%",
+      "--accent-pro-100": "220 60.0% 41.2%",
+      "--accent-pro-200": "220 60.0% 41.2%",
+      "--accent-pro-900": "220 36.0% 90.0%",
+      "--brand-000": "146 57.4% 29.7%",
+      "--brand-100": "146 57.4% 26.7%",
+      "--brand-200": "146 57.4% 26.7%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "91 21.5% 26.0%",
+      "--border-200": "91 21.5% 26.0%",
+      "--border-300": "91 21.5% 26.0%",
+      "--border-400": "91 21.5% 26.0%",
+      "--danger-000": "356 65.3% 38.4%",
+      "--danger-100": "356 65.3% 50.4%",
+      "--danger-200": "356 65.3% 38.4%",
+      "--danger-900": "356 39.2% 90.0%",
+      "--warning-000": "40 85.2% 31.8%",
+      "--warning-100": "40 85.2% 43.8%",
+      "--warning-200": "40 85.2% 31.8%",
+      "--warning-900": "40 51.1% 90.0%",
+      "--success-000": "95 61.6% 28.6%",
+      "--success-100": "95 61.6% 40.6%",
+      "--success-200": "95 61.6% 28.6%",
+      "--success-900": "95 37.0% 90.0%",
+      "--oncolor-100": "0 0.0% 100.0%",
+      "--oncolor-200": "0 0.0% 100.0%",
+      "--oncolor-300": "0 0.0% 100.0%",
+      "--pictogram-100": "111 29.2% 12.7%",
+      "--pictogram-200": "108 22.3% 23.0%",
+      "--pictogram-300": "106 15.3% 33.3%",
+      "--pictogram-400": "78 39.5% 86.0%",
+      "--claude-accent-clay": "#1d6b3f",
+      "--claude-foreground-color": "#1a2a17",
+      "--claude-background-color": "#edf2e1",
+      "--claude-secondary-color": "#4e6248",
+      "--claude-border": "#1d6b3f18",
+      "--claude-border-300": "#1d6b3f30",
+      "--claude-border-300-more": "#1d6b3f55",
+      "--claude-text-100": "#1a2a17",
+      "--claude-text-200": "#33482e",
+      "--claude-text-400": "#4e6248",
+      "--claude-text-500": "#4e6248",
+      "--claude-description-text": "#384d33"
+    },
+    "dark": {
+      "--bg-000": "137 28.1% 17.2%",
+      "--bg-100": "137 28.1% 12.5%",
+      "--bg-200": "137 28.1% 9.7%",
+      "--bg-300": "137 28.1% 7.4%",
+      "--bg-400": "137 28.1% 4.7%",
+      "--bg-500": "137 28.1% 2.4%",
+      "--text-000": "90 47.1% 93.3%",
+      "--text-100": "90 47.1% 93.3%",
+      "--text-200": "98 35.0% 83.5%",
+      "--text-300": "98 35.0% 83.5%",
+      "--text-400": "109 17.0% 68.8%",
+      "--text-500": "109 17.0% 68.8%",
+      "--accent-brand": "48 87.8% 52.0%",
+      "--accent-000": "48 87.8% 57.0%",
+      "--accent-100": "48 87.8% 52.0%",
+      "--accent-200": "48 87.8% 52.0%",
+      "--accent-900": "48 48.3% 24.0%",
+      "--accent-pro-000": "198 69.5% 75.4%",
+      "--accent-pro-100": "198 69.5% 70.4%",
+      "--accent-pro-200": "198 69.5% 70.4%",
+      "--accent-pro-900": "198 38.2% 24.0%",
+      "--brand-000": "48 87.8% 57.0%",
+      "--brand-100": "48 87.8% 52.0%",
+      "--brand-200": "48 87.8% 52.0%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "114 30.4% 74.0%",
+      "--border-200": "114 30.4% 74.0%",
+      "--border-300": "114 30.4% 74.0%",
+      "--border-400": "114 30.4% 74.0%",
+      "--danger-000": "1 74.9% 71.1%",
+      "--danger-100": "1 74.9% 64.1%",
+      "--danger-200": "1 74.9% 64.1%",
+      "--danger-900": "1 41.2% 24.0%",
+      "--warning-000": "38 79.3% 63.5%",
+      "--warning-100": "38 79.3% 56.5%",
+      "--warning-200": "38 79.3% 56.5%",
+      "--warning-900": "38 43.6% 24.0%",
+      "--success-000": "127 50.8% 69.5%",
+      "--success-100": "127 50.8% 62.5%",
+      "--success-200": "127 50.8% 62.5%",
+      "--success-900": "127 27.9% 24.0%",
+      "--oncolor-100": "46 88.6% 6.9%",
+      "--oncolor-200": "46 88.6% 6.9%",
+      "--oncolor-300": "46 88.6% 6.9%",
+      "--pictogram-100": "90 47.1% 93.3%",
+      "--pictogram-200": "98 35.0% 83.5%",
+      "--pictogram-300": "109 17.0% 68.8%",
+      "--pictogram-400": "137 28.1% 18.5%",
+      "--claude-accent-clay": "#f0c419",
+      "--claude-foreground-color": "#eef6e6",
+      "--claude-background-color": "#17291c",
+      "--claude-secondary-color": "#a7bda2",
+      "--claude-border": "#f0c41918",
+      "--claude-border-300": "#f0c41930",
+      "--claude-border-300-more": "#f0c41955",
+      "--claude-text-100": "#eef6e6",
+      "--claude-text-200": "#d1e4c6",
+      "--claude-text-400": "#a7bda2",
+      "--claude-text-500": "#a7bda2",
+      "--claude-description-text": "#c3d8b9"
+    },
+    "spinner": {
+      "viewBox": "0 0 16 16",
+      "animation": "flip",
+      "paths": [
+        {
+          "d": "M4 0h4v1h-4Z M11 0h1v1h-1Z M14 0h1v1h-1Z M3 1h1v1h-1Z M8 1h1v1h-1Z M11 1h1v1h-1Z M14 1h1v1h-1Z M2 2h1v1h-1Z M9 2h1v1h-1Z M11 2h1v1h-1Z M14 2h1v1h-1Z M2 3h1v1h-1Z M9 3h1v1h-1Z M11 3h1v1h-1Z M14 3h1v1h-1Z M2 4h1v1h-1Z M9 4h1v1h-1Z M11 4h1v1h-1Z M14 4h1v1h-1Z M2 5h1v1h-1Z M9 5h1v1h-1Z M11 5h1v1h-1Z M14 5h1v1h-1Z M2 6h1v1h-1Z M4 6h1v1h-1Z M7 6h1v1h-1Z M9 6h1v1h-1Z M11 6h1v1h-1Z M14 6h1v1h-1Z M2 7h1v1h-1Z M9 7h2v1h-2Z M14 7h1v1h-1Z M1 8h1v1h-1Z M10 8h2v1h-2Z M14 8h1v1h-1Z M1 9h1v1h-1Z M11 9h1v1h-1Z M14 9h1v1h-1Z M1 10h1v1h-1Z M10 10h2v1h-2Z M14 10h1v1h-1Z M1 11h1v1h-1Z M10 11h1v1h-1Z M1 12h1v1h-1Z M10 12h1v1h-1Z M2 13h1v1h-1Z M5 13h2v1h-2Z M9 13h1v1h-1Z M2 14h1v1h-1Z M5 14h2v1h-2Z M9 14h1v1h-1Z M2 15h1v1h-1Z M5 15h2v1h-2Z M9 15h1v1h-1Z",
+          "fill": "#16240f"
+        },
+        {
+          "d": "M3 4h6v1h-6Z M2 9h1v1h-1Z M9 9h1v1h-1Z",
+          "fill": "#1f7a35"
+        },
+        {
+          "d": "M12 8h2v1h-2Z M12 9h2v1h-2Z M2 11h8v1h-8Z M3 15h2v1h-2Z M7 15h2v1h-2Z",
+          "fill": "#7b4a1e"
+        },
+        {
+          "d": "M6 1h2v1h-2Z M4 2h5v1h-5Z M3 3h6v1h-6Z M3 8h7v1h-7Z M3 9h6v1h-6Z M3 10h6v1h-6Z M2 12h8v1h-8Z",
+          "fill": "#34a94b"
+        },
+        {
+          "d": "M4 1h2v1h-2Z M3 2h1v1h-1Z M2 8h1v1h-1Z",
+          "fill": "#4ec863"
+        },
+        {
+          "d": "M4 5h4v1h-4Z M3 6h1v1h-1Z M5 6h2v1h-2Z M8 6h1v1h-1Z M3 7h6v1h-6Z M10 9h1v1h-1Z M2 10h1v1h-1Z M9 10h1v1h-1Z M3 13h2v1h-2Z M7 13h2v1h-2Z M3 14h2v1h-2Z M7 14h2v1h-2Z",
+          "fill": "#f0c08c"
+        },
+        {
+          "d": "M3 5h1v1h-1Z M8 5h1v1h-1Z",
+          "fill": "#c9902f"
+        },
+        {
+          "d": "M13 0h1v1h-1Z M13 1h1v1h-1Z M13 2h1v1h-1Z M13 3h1v1h-1Z M13 4h1v1h-1Z M13 5h1v1h-1Z M13 6h1v1h-1Z",
+          "fill": "#9fbdd2"
+        },
+        {
+          "d": "M12 0h1v1h-1Z M12 1h1v1h-1Z M12 2h1v1h-1Z M12 3h1v1h-1Z M12 4h1v1h-1Z M12 5h1v1h-1Z M12 6h1v1h-1Z",
+          "fill": "#eef6fb"
+        },
+        {
+          "d": "M11 7h3v1h-3Z M12 10h2v1h-2Z",
+          "fill": "#f2c231"
+        }
+      ],
+      "paths2": [
+        {
+          "d": "M4 0h4v1h-4Z M3 1h1v1h-1Z M8 1h1v1h-1Z M2 2h1v1h-1Z M9 2h1v1h-1Z M2 3h1v1h-1Z M9 3h1v1h-1Z M2 4h1v1h-1Z M9 4h1v1h-1Z M2 5h1v1h-1Z M9 5h1v1h-1Z M2 6h1v1h-1Z M4 6h1v1h-1Z M7 6h1v1h-1Z M9 6h1v1h-1Z M2 7h1v1h-1Z M9 7h1v1h-1Z M1 8h1v1h-1Z M10 8h6v1h-6Z M1 9h1v1h-1Z M1 10h1v1h-1Z M1 11h1v1h-1Z M10 11h1v1h-1Z M1 12h1v1h-1Z M10 12h1v1h-1Z M2 13h1v1h-1Z M5 13h2v1h-2Z M9 13h1v1h-1Z M2 14h1v1h-1Z M5 14h2v1h-2Z M9 14h1v1h-1Z M2 15h1v1h-1Z M5 15h1v1h-1Z",
+          "fill": "#16240f"
+        },
+        {
+          "d": "M3 4h6v1h-6Z M2 9h1v1h-1Z",
+          "fill": "#1f7a35"
+        },
+        {
+          "d": "M2 11h8v1h-8Z M7 14h2v1h-2Z M3 15h2v1h-2Z",
+          "fill": "#7b4a1e"
+        },
+        {
+          "d": "M6 1h2v1h-2Z M4 2h5v1h-5Z M3 3h6v1h-6Z M3 8h7v1h-7Z M3 9h6v1h-6Z M3 10h6v1h-6Z M2 12h8v1h-8Z",
+          "fill": "#34a94b"
+        },
+        {
+          "d": "M4 1h2v1h-2Z M3 2h1v1h-1Z M2 8h1v1h-1Z",
+          "fill": "#4ec863"
+        },
+        {
+          "d": "M4 5h4v1h-4Z M3 6h1v1h-1Z M5 6h2v1h-2Z M8 6h1v1h-1Z M3 7h6v1h-6Z M9 9h1v1h-1Z M2 10h1v1h-1Z M9 10h1v1h-1Z M3 13h2v1h-2Z M7 13h2v1h-2Z M3 14h2v1h-2Z",
+          "fill": "#f0c08c"
+        },
+        {
+          "d": "M3 5h1v1h-1Z M8 5h1v1h-1Z",
+          "fill": "#c9902f"
+        },
+        {
+          "d": "M11 10h4v1h-4Z",
+          "fill": "#9fbdd2"
+        },
+        {
+          "d": "M11 9h5v1h-5Z",
+          "fill": "#eef6fb"
+        },
+        {
+          "d": "M10 9h1v1h-1Z M10 10h1v1h-1Z",
+          "fill": "#f2c231"
+        }
+      ]
+    },
+    "backdrop": {
+      "scene": "zelda"
+    }
+  },
+  "warcraft": {
+    "name": "Warcraft",
+    "category": "gaming",
+    "light": {
+      "--bg-000": "42 44.8% 94.2%",
+      "--bg-100": "42 44.8% 88.6%",
+      "--bg-200": "42 44.8% 85.7%",
+      "--bg-300": "42 44.8% 83.0%",
+      "--bg-400": "42 44.8% 80.2%",
+      "--bg-500": "42 44.8% 76.7%",
+      "--text-000": "35 37.3% 10.0%",
+      "--text-100": "35 37.3% 10.0%",
+      "--text-200": "36 34.8% 19.5%",
+      "--text-300": "36 34.8% 19.5%",
+      "--text-400": "38 32.4% 29.0%",
+      "--text-500": "38 32.4% 29.0%",
+      "--accent-brand": "220 67.5% 37.5%",
+      "--accent-000": "220 67.5% 40.5%",
+      "--accent-100": "220 67.5% 37.5%",
+      "--accent-200": "220 67.5% 37.5%",
+      "--accent-900": "220 40.5% 90.0%",
+      "--accent-pro-000": "95 59.7% 30.3%",
+      "--accent-pro-100": "95 59.7% 27.3%",
+      "--accent-pro-200": "95 59.7% 27.3%",
+      "--accent-pro-900": "95 35.8% 90.0%",
+      "--brand-000": "220 67.5% 40.5%",
+      "--brand-100": "220 67.5% 37.5%",
+      "--brand-200": "220 67.5% 37.5%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "38 29.1% 26.0%",
+      "--border-200": "38 29.1% 26.0%",
+      "--border-300": "38 29.1% 26.0%",
+      "--border-400": "38 29.1% 26.0%",
+      "--danger-000": "357 66.5% 37.5%",
+      "--danger-100": "357 66.5% 49.5%",
+      "--danger-200": "357 66.5% 37.5%",
+      "--danger-900": "357 39.9% 90.0%",
+      "--warning-000": "43 89.7% 30.6%",
+      "--warning-100": "43 89.7% 42.6%",
+      "--warning-200": "43 89.7% 30.6%",
+      "--warning-900": "43 53.8% 90.0%",
+      "--success-000": "143 45.0% 31.4%",
+      "--success-100": "143 45.0% 43.4%",
+      "--success-200": "143 45.0% 31.4%",
+      "--success-900": "143 27.0% 90.0%",
+      "--oncolor-100": "0 0.0% 100.0%",
+      "--oncolor-200": "0 0.0% 100.0%",
+      "--oncolor-300": "0 0.0% 100.0%",
+      "--pictogram-100": "35 37.3% 10.0%",
+      "--pictogram-200": "36 34.8% 19.5%",
+      "--pictogram-300": "38 32.4% 29.0%",
+      "--pictogram-400": "42 44.8% 83.0%",
+      "--claude-accent-clay": "#1f4aa0",
+      "--claude-foreground-color": "#231b10",
+      "--claude-background-color": "#efe7d5",
+      "--claude-secondary-color": "#625032",
+      "--claude-border": "#1f4aa018",
+      "--claude-border-300": "#1f4aa030",
+      "--claude-border-300-more": "#1f4aa055",
+      "--claude-text-100": "#231b10",
+      "--claude-text-200": "#433520",
+      "--claude-text-400": "#625032",
+      "--claude-text-500": "#625032",
+      "--claude-description-text": "#493b24"
+    },
+    "dark": {
+      "--bg-000": "28 30.9% 14.9%",
+      "--bg-100": "28 30.9% 10.8%",
+      "--bg-200": "28 30.9% 8.3%",
+      "--bg-300": "28 30.9% 6.2%",
+      "--bg-400": "28 30.9% 3.9%",
+      "--bg-500": "28 30.9% 1.8%",
+      "--text-000": "39 57.4% 88.0%",
+      "--text-100": "39 57.4% 88.0%",
+      "--text-200": "39 47.6% 77.8%",
+      "--text-300": "39 47.6% 77.8%",
+      "--text-400": "37 33.0% 62.5%",
+      "--text-500": "37 33.0% 62.5%",
+      "--accent-brand": "43 78.6% 57.8%",
+      "--accent-000": "43 78.6% 62.8%",
+      "--accent-100": "43 78.6% 57.8%",
+      "--accent-200": "43 78.6% 57.8%",
+      "--accent-900": "43 43.2% 24.0%",
+      "--accent-pro-000": "217 72.5% 72.3%",
+      "--accent-pro-100": "217 72.5% 67.3%",
+      "--accent-pro-200": "217 72.5% 67.3%",
+      "--accent-pro-900": "217 39.9% 24.0%",
+      "--brand-000": "43 78.6% 62.8%",
+      "--brand-100": "43 78.6% 57.8%",
+      "--brand-200": "43 78.6% 57.8%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "38 40.8% 74.0%",
+      "--border-200": "38 40.8% 74.0%",
+      "--border-300": "38 40.8% 74.0%",
+      "--border-400": "38 40.8% 74.0%",
+      "--danger-000": "3 77.5% 67.0%",
+      "--danger-100": "3 77.5% 60.0%",
+      "--danger-200": "3 77.5% 60.0%",
+      "--danger-900": "3 42.6% 24.0%",
+      "--warning-000": "37 86.6% 63.1%",
+      "--warning-100": "37 86.6% 56.1%",
+      "--warning-200": "37 86.6% 56.1%",
+      "--warning-900": "37 47.6% 24.0%",
+      "--success-000": "92 51.8% 57.4%",
+      "--success-100": "92 51.8% 50.4%",
+      "--success-200": "92 51.8% 50.4%",
+      "--success-900": "92 28.5% 24.0%",
+      "--oncolor-100": "39 74.2% 6.1%",
+      "--oncolor-200": "39 74.2% 6.1%",
+      "--oncolor-300": "39 74.2% 6.1%",
+      "--pictogram-100": "39 57.4% 88.0%",
+      "--pictogram-200": "39 47.6% 77.8%",
+      "--pictogram-300": "37 33.0% 62.5%",
+      "--pictogram-400": "28 30.9% 16.8%",
+      "--claude-accent-clay": "#e8b93f",
+      "--claude-foreground-color": "#f2e6cf",
+      "--claude-background-color": "#241b13",
+      "--claude-secondary-color": "#bfa780",
+      "--claude-border": "#e8b93f18",
+      "--claude-border-300": "#e8b93f30",
+      "--claude-border-300-more": "#e8b93f55",
+      "--claude-text-100": "#f2e6cf",
+      "--claude-text-200": "#e1ceac",
+      "--claude-text-400": "#bfa780",
+      "--claude-text-500": "#bfa780",
+      "--claude-description-text": "#d7c19c"
+    },
+    "spinner": {
+      "viewBox": "0 0 20 20",
+      "animation": "flip",
+      "paths": [
+        {
+          "d": "M3 6H5V7H3ZM9 6H11V7H9ZM2 7H3V8H2ZM11 7H12V8H11ZM1 8H2V13H1ZM12 8H13V13H12ZM2 13H3V15H2ZM11 13H12V15H11ZM3 15H4V16H3ZM10 15H11V16H10ZM4 17H10V20H4Z",
+          "fill": "#7e1f18"
+        },
+        {
+          "d": "M5 6H9V7H5ZM3 7H11V8H3ZM2 8H12V9H2ZM2 9H4V10H2ZM10 9H12V10H10ZM2 10H3V13H2ZM11 10H12V13H11ZM3 13H4V15H3ZM10 13H11V15H10Z",
+          "fill": "#b6362a"
+        },
+        {
+          "d": "M4 9H10V10H4ZM5 16H9V17H5Z",
+          "fill": "#3b7a1f"
+        },
+        {
+          "d": "M3 10H11V11H3ZM3 11H4V12H3ZM6 11H8V12H6ZM10 11H11V12H10ZM3 12H11V13H3ZM4 13H10V14H4ZM4 14H5V17H4ZM6 14H8V15H6ZM9 14H10V17H9ZM2 17H4V18H2ZM10 17H12V18H10ZM1 18H4V20H1ZM10 18H13V20H10Z",
+          "fill": "#5aa832"
+        },
+        {
+          "d": "M4 11H6V12H4ZM8 11H10V12H8ZM5 15H9V16H5Z",
+          "fill": "#1d1409"
+        },
+        {
+          "d": "M5 14H6V15H5ZM8 14H9V15H8Z",
+          "fill": "#f2e6cf"
+        },
+        {
+          "d": "M14 5H16V7H14ZM13 7H15V9H13ZM13 9H14V11H13ZM15 19H18V20H15Z",
+          "fill": "#8a5a26"
+        },
+        {
+          "d": "M18 4H20V5H18ZM17 5H19V6H17Z",
+          "fill": "#6b7379"
+        },
+        {
+          "d": "M16 2H19V3H16ZM15 3H20V4H15ZM15 4H18V5H15ZM16 5H17V6H16Z",
+          "fill": "#b3bbc2"
+        },
+        {
+          "d": "M14 17H17V18H14ZM14 18H19V19H14ZM14 19H15V20H14ZM18 19H19V20H18Z",
+          "fill": "#e8b93f"
+        }
+      ],
+      "paths2": [
+        {
+          "d": "M3 6H5V7H3ZM9 6H11V7H9ZM2 7H3V8H2ZM11 7H12V8H11ZM1 8H2V13H1ZM12 8H13V13H12ZM2 13H3V15H2ZM11 13H12V15H11ZM3 15H4V16H3ZM10 15H11V16H10ZM4 17H10V20H4Z",
+          "fill": "#7e1f18"
+        },
+        {
+          "d": "M5 6H9V7H5ZM3 7H11V8H3ZM2 8H12V9H2ZM2 9H4V10H2ZM10 9H12V10H10ZM2 10H3V13H2ZM11 10H12V13H11ZM3 13H4V15H3ZM10 13H11V15H10Z",
+          "fill": "#b6362a"
+        },
+        {
+          "d": "M4 9H10V10H4ZM5 16H9V17H5Z",
+          "fill": "#3b7a1f"
+        },
+        {
+          "d": "M3 10H11V11H3ZM3 11H4V12H3ZM6 11H8V12H6ZM10 11H11V12H10ZM3 12H11V13H3ZM4 13H10V14H4ZM4 14H5V17H4ZM6 14H8V15H6ZM9 14H10V17H9ZM2 17H4V18H2ZM10 17H12V18H10ZM1 18H4V20H1ZM10 18H13V20H10Z",
+          "fill": "#5aa832"
+        },
+        {
+          "d": "M4 11H6V12H4ZM8 11H10V12H8ZM5 15H9V16H5Z",
+          "fill": "#1d1409"
+        },
+        {
+          "d": "M5 14H6V15H5ZM8 14H9V15H8Z",
+          "fill": "#f2e6cf"
+        },
+        {
+          "d": "M11 6H13V7H11ZM12 7H14V8H12ZM13 8H15V9H13ZM14 9H16V10H14ZM15 10H17V11H15ZM16 11H18V12H16ZM17 12H19V13H17ZM15 19H18V20H15Z",
+          "fill": "#8a5a26"
+        },
+        {
+          "d": "M18 15H20V16H18ZM17 16H19V17H17Z",
+          "fill": "#6b7379"
+        },
+        {
+          "d": "M16 13H19V14H16ZM15 14H20V15H15ZM15 15H18V16H15ZM16 16H17V17H16Z",
+          "fill": "#b3bbc2"
+        },
+        {
+          "d": "M14 17H17V18H14ZM14 18H19V19H14ZM14 19H15V20H14ZM18 19H19V20H18Z",
+          "fill": "#e8b93f"
+        }
+      ]
+    },
+    "backdrop": {
+      "scene": "warcraft"
+    }
+  },
+  "dragonball": {
+    "name": "Dragon Ball",
+    "category": "gaming",
+    "light": {
+      "--bg-000": "0 0.0% 100.0%",
+      "--bg-100": "210 69.2% 94.9%",
+      "--bg-200": "210 69.2% 91.9%",
+      "--bg-300": "210 69.2% 89.3%",
+      "--bg-400": "210 69.2% 86.5%",
+      "--bg-500": "210 69.2% 83.0%",
+      "--text-000": "221 49.3% 14.7%",
+      "--text-100": "221 49.3% 14.7%",
+      "--text-200": "220 37.2% 26.2%",
+      "--text-300": "220 37.2% 26.2%",
+      "--text-400": "220 25.0% 37.6%",
+      "--text-500": "220 25.0% 37.6%",
+      "--accent-brand": "25 95.0% 39.0%",
+      "--accent-000": "25 95.0% 42.0%",
+      "--accent-100": "25 95.0% 39.0%",
+      "--accent-200": "25 95.0% 39.0%",
+      "--accent-900": "25 57.0% 90.0%",
+      "--accent-pro-000": "222 72.1% 46.5%",
+      "--accent-pro-100": "222 72.1% 43.5%",
+      "--accent-pro-200": "222 72.1% 43.5%",
+      "--accent-pro-900": "222 43.2% 90.0%",
+      "--brand-000": "25 95.0% 42.0%",
+      "--brand-100": "25 95.0% 39.0%",
+      "--brand-200": "25 95.0% 39.0%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "213 38.6% 26.0%",
+      "--border-200": "213 38.6% 26.0%",
+      "--border-300": "213 38.6% 26.0%",
+      "--border-400": "213 38.6% 26.0%",
+      "--danger-000": "350 81.4% 38.0%",
+      "--danger-100": "350 81.4% 50.0%",
+      "--danger-200": "350 81.4% 38.0%",
+      "--danger-900": "350 48.9% 90.0%",
+      "--warning-000": "41 87.3% 31.0%",
+      "--warning-100": "41 87.3% 43.0%",
+      "--warning-200": "41 87.3% 31.0%",
+      "--warning-900": "41 52.4% 90.0%",
+      "--success-000": "149 60.8% 28.0%",
+      "--success-100": "149 60.8% 40.0%",
+      "--success-200": "149 60.8% 28.0%",
+      "--success-900": "149 36.5% 90.0%",
+      "--oncolor-100": "0 0.0% 100.0%",
+      "--oncolor-200": "0 0.0% 100.0%",
+      "--oncolor-300": "0 0.0% 100.0%",
+      "--pictogram-100": "221 49.3% 14.7%",
+      "--pictogram-200": "220 37.2% 26.2%",
+      "--pictogram-300": "220 25.0% 37.6%",
+      "--pictogram-400": "210 69.2% 89.3%",
+      "--claude-accent-clay": "#c25405",
+      "--claude-foreground-color": "#131f38",
+      "--claude-background-color": "#e9f2fb",
+      "--claude-secondary-color": "#485878",
+      "--claude-border": "#c2540518",
+      "--claude-border-300": "#c2540530",
+      "--claude-border-300-more": "#c2540555",
+      "--claude-text-100": "#131f38",
+      "--claude-text-200": "#2a3a5c",
+      "--claude-text-400": "#485878",
+      "--claude-text-500": "#485878",
+      "--claude-description-text": "#2f4062"
+    },
+    "dark": {
+      "--bg-000": "226 25.4% 18.0%",
+      "--bg-100": "226 25.4% 13.1%",
+      "--bg-200": "226 25.4% 10.2%",
+      "--bg-300": "226 25.4% 7.7%",
+      "--bg-400": "226 25.4% 4.9%",
+      "--bg-500": "226 25.4% 2.5%",
+      "--text-000": "41 47.1% 93.3%",
+      "--text-100": "41 47.1% 93.3%",
+      "--text-200": "337 33.3% 85.4%",
+      "--text-300": "337 33.3% 85.4%",
+      "--text-400": "240 12.6% 73.5%",
+      "--text-500": "240 12.6% 73.5%",
+      "--accent-brand": "30 100.0% 55.1%",
+      "--accent-000": "30 100.0% 60.1%",
+      "--accent-100": "30 100.0% 55.1%",
+      "--accent-200": "30 100.0% 55.1%",
+      "--accent-900": "30 55.0% 24.0%",
+      "--accent-pro-000": "222 100.0% 72.8%",
+      "--accent-pro-100": "222 100.0% 67.8%",
+      "--accent-pro-200": "222 100.0% 67.8%",
+      "--accent-pro-900": "222 55.0% 24.0%",
+      "--brand-000": "30 100.0% 60.1%",
+      "--brand-100": "30 100.0% 55.1%",
+      "--brand-200": "30 100.0% 55.1%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "235 29.7% 74.0%",
+      "--border-200": "235 29.7% 74.0%",
+      "--border-300": "235 29.7% 74.0%",
+      "--border-400": "235 29.7% 74.0%",
+      "--danger-000": "350 100.0% 72.1%",
+      "--danger-100": "350 100.0% 65.1%",
+      "--danger-200": "350 100.0% 65.1%",
+      "--danger-900": "350 55.0% 24.0%",
+      "--warning-000": "45 100.0% 69.0%",
+      "--warning-100": "45 100.0% 62.0%",
+      "--warning-200": "45 100.0% 62.0%",
+      "--warning-900": "45 55.0% 24.0%",
+      "--success-000": "143 55.3% 66.6%",
+      "--success-100": "143 55.3% 59.6%",
+      "--success-200": "143 55.3% 59.6%",
+      "--success-900": "143 30.4% 24.0%",
+      "--oncolor-100": "27 100.0% 7.1%",
+      "--oncolor-200": "27 100.0% 7.1%",
+      "--oncolor-300": "27 100.0% 7.1%",
+      "--pictogram-100": "41 47.1% 93.3%",
+      "--pictogram-200": "337 33.3% 85.4%",
+      "--pictogram-300": "240 12.6% 73.5%",
+      "--pictogram-400": "226 25.4% 19.1%",
+      "--claude-accent-clay": "#ff8c1a",
+      "--claude-foreground-color": "#f6f1e6",
+      "--claude-background-color": "#191d2a",
+      "--claude-secondary-color": "#b3b3c4",
+      "--claude-border": "#ff8c1a18",
+      "--claude-border-300": "#ff8c1a30",
+      "--claude-border-300-more": "#ff8c1a55",
+      "--claude-text-100": "#f6f1e6",
+      "--claude-text-200": "#e6cdd7",
+      "--claude-text-400": "#b3b3c4",
+      "--claude-text-500": "#b3b3c4",
+      "--claude-description-text": "#dcc3da"
+    },
+    "spinner": {
+      "viewBox": "0 0 21 21",
+      "animation": "flip",
+      "paths": [
+        {
+          "d": "M8 0h5v1h-5ZM6 1h9v1h-9ZM4 2h2v1h-2ZM15 2h2v1h-2ZM3 3h2v1h-2ZM16 3h2v1h-2ZM2 4h2v1h-2ZM17 4h2v1h-2ZM2 5h1v1h-1ZM18 5h1v1h-1ZM1 6h1v1h-1ZM19 6h1v1h-1ZM1 7h1v1h-1ZM19 7h1v1h-1ZM0 8h2v1h-2ZM19 8h2v1h-2ZM0 9h2v1h-2ZM19 9h2v1h-2ZM0 10h2v1h-2ZM19 10h2v1h-2ZM0 11h2v1h-2ZM19 11h2v1h-2ZM0 12h2v1h-2ZM19 12h2v1h-2ZM1 13h1v1h-1ZM19 13h1v1h-1ZM1 14h1v1h-1ZM19 14h1v1h-1ZM2 15h1v1h-1ZM18 15h1v1h-1ZM2 16h2v1h-2ZM17 16h2v1h-2ZM3 17h2v1h-2ZM16 17h2v1h-2ZM4 18h2v1h-2ZM15 18h2v1h-2ZM6 19h9v1h-9ZM8 20h5v1h-5Z",
+          "fill": "#7a2e00"
+        },
+        {
+          "d": "M18 7h1v1h-1ZM17 8h2v1h-2ZM17 9h2v1h-2ZM17 10h2v1h-2ZM17 11h2v1h-2ZM16 12h3v1h-3ZM16 13h3v1h-3ZM15 14h4v1h-4ZM15 15h3v1h-3ZM12 16h5v1h-5ZM8 17h8v1h-8ZM7 18h8v1h-8Z",
+          "fill": "#c25405"
+        },
+        {
+          "d": "M12 2h3v1h-3ZM11 3h5v1h-5ZM10 4h7v1h-7ZM9 5h4v1h-4ZM14 5h4v1h-4ZM9 6h3v1h-3ZM15 6h4v1h-4ZM10 7h1v1h-1ZM16 7h2v1h-2ZM9 8h3v1h-3ZM15 8h2v1h-2ZM5 9h1v1h-1ZM7 9h1v1h-1ZM9 9h3v1h-3ZM13 9h1v1h-1ZM15 9h2v1h-2ZM4 10h13v1h-13ZM3 11h4v1h-4ZM8 11h5v1h-5ZM14 11h3v1h-3ZM2 12h4v1h-4ZM9 12h3v1h-3ZM15 12h1v1h-1ZM2 13h3v1h-3ZM10 13h1v1h-1ZM2 14h4v1h-4ZM9 14h3v1h-3ZM3 15h3v1h-3ZM7 15h1v1h-1ZM9 15h3v1h-3ZM13 15h1v1h-1ZM4 16h8v1h-8ZM5 17h3v1h-3ZM6 18h1v1h-1Z",
+          "fill": "#f57d0d"
+        },
+        {
+          "d": "M6 2h6v1h-6ZM7 3h4v1h-4ZM7 4h3v1h-3ZM6 5h1v1h-1ZM8 5h1v1h-1ZM2 6h1v1h-1ZM5 6h1v1h-1ZM2 7h3v1h-3ZM2 8h4v1h-4ZM2 9h3v1h-3ZM2 10h2v1h-2ZM2 11h1v1h-1Z",
+          "fill": "#ffb03a"
+        },
+        {
+          "d": "M6 3h1v1h-1ZM6 4h1v1h-1ZM5 5h1v1h-1ZM3 6h2v1h-2Z",
+          "fill": "#ffd166"
+        },
+        {
+          "d": "M5 3h1v1h-1ZM4 4h2v1h-2ZM3 5h2v1h-2Z",
+          "fill": "#ffffff"
+        },
+        {
+          "d": "M6 8h3v1h-3ZM12 8h3v1h-3ZM6 9h1v1h-1ZM8 9h1v1h-1ZM12 9h1v1h-1ZM14 9h1v1h-1ZM6 14h3v1h-3ZM12 14h3v1h-3ZM6 15h1v1h-1ZM8 15h1v1h-1ZM12 15h1v1h-1ZM14 15h1v1h-1Z",
+          "fill": "#8f1010"
+        },
+        {
+          "d": "M7 5h1v1h-1ZM13 5h1v1h-1ZM6 6h3v1h-3ZM12 6h3v1h-3ZM5 7h5v1h-5ZM11 7h5v1h-5ZM7 11h1v1h-1ZM13 11h1v1h-1ZM6 12h3v1h-3ZM12 12h3v1h-3ZM5 13h5v1h-5ZM11 13h5v1h-5Z",
+          "fill": "#e3242b"
+        }
+      ],
+      "paths2": [
+        {
+          "d": "M8 1h5v1h-5ZM6 2h9v1h-9ZM4 3h2v1h-2ZM15 3h2v1h-2ZM3 4h2v1h-2ZM16 4h2v1h-2ZM2 5h2v1h-2ZM17 5h2v1h-2ZM2 6h1v1h-1ZM18 6h1v1h-1ZM1 7h1v1h-1ZM19 7h1v1h-1ZM1 8h1v1h-1ZM19 8h1v1h-1ZM0 9h2v1h-2ZM19 9h2v1h-2ZM0 10h2v1h-2ZM19 10h2v1h-2ZM0 11h2v1h-2ZM19 11h2v1h-2ZM0 12h2v1h-2ZM19 12h2v1h-2ZM0 13h2v1h-2ZM19 13h2v1h-2ZM1 14h1v1h-1ZM19 14h1v1h-1ZM1 15h1v1h-1ZM19 15h1v1h-1ZM2 16h1v1h-1ZM18 16h1v1h-1ZM2 17h2v1h-2ZM17 17h2v1h-2ZM3 18h2v1h-2ZM16 18h2v1h-2ZM4 19h2v1h-2ZM15 19h2v1h-2ZM6 20h9v1h-9Z",
+          "fill": "#7a2e00"
+        },
+        {
+          "d": "M18 8h1v1h-1ZM17 9h2v1h-2ZM17 10h2v1h-2ZM17 11h2v1h-2ZM17 12h2v1h-2ZM16 13h3v1h-3ZM16 14h3v1h-3ZM15 15h4v1h-4ZM15 16h3v1h-3ZM12 17h5v1h-5ZM8 18h8v1h-8ZM7 19h8v1h-8Z",
+          "fill": "#c25405"
+        },
+        {
+          "d": "M12 3h3v1h-3ZM11 4h5v1h-5ZM10 5h7v1h-7ZM9 6h4v1h-4ZM14 6h4v1h-4ZM9 7h3v1h-3ZM15 7h4v1h-4ZM10 8h1v1h-1ZM16 8h2v1h-2ZM9 9h3v1h-3ZM15 9h2v1h-2ZM5 10h1v1h-1ZM7 10h1v1h-1ZM9 10h3v1h-3ZM13 10h1v1h-1ZM15 10h2v1h-2ZM4 11h13v1h-13ZM3 12h4v1h-4ZM8 12h5v1h-5ZM14 12h3v1h-3ZM2 13h4v1h-4ZM9 13h3v1h-3ZM15 13h1v1h-1ZM2 14h3v1h-3ZM10 14h1v1h-1ZM2 15h4v1h-4ZM9 15h3v1h-3ZM3 16h3v1h-3ZM7 16h1v1h-1ZM9 16h3v1h-3ZM13 16h1v1h-1ZM4 17h8v1h-8ZM5 18h3v1h-3ZM6 19h1v1h-1Z",
+          "fill": "#f57d0d"
+        },
+        {
+          "d": "M6 3h6v1h-6ZM8 4h3v1h-3ZM7 5h3v1h-3ZM6 6h1v1h-1ZM8 6h1v1h-1ZM2 7h2v1h-2ZM5 7h1v1h-1ZM2 8h3v1h-3ZM2 9h4v1h-4ZM2 10h3v1h-3ZM2 11h2v1h-2ZM2 12h1v1h-1Z",
+          "fill": "#ffb03a"
+        },
+        {
+          "d": "M5 4h3v1h-3ZM6 5h1v1h-1ZM5 6h1v1h-1ZM4 7h1v1h-1Z",
+          "fill": "#ffd166"
+        },
+        {
+          "d": "M4 5h2v1h-2ZM3 6h2v1h-2Z",
+          "fill": "#ffffff"
+        },
+        {
+          "d": "M6 9h3v1h-3ZM12 9h3v1h-3ZM6 10h1v1h-1ZM8 10h1v1h-1ZM12 10h1v1h-1ZM14 10h1v1h-1ZM6 15h3v1h-3ZM12 15h3v1h-3ZM6 16h1v1h-1ZM8 16h1v1h-1ZM12 16h1v1h-1ZM14 16h1v1h-1Z",
+          "fill": "#8f1010"
+        },
+        {
+          "d": "M7 6h1v1h-1ZM13 6h1v1h-1ZM6 7h3v1h-3ZM12 7h3v1h-3ZM5 8h5v1h-5ZM11 8h5v1h-5ZM7 12h1v1h-1ZM13 12h1v1h-1ZM6 13h3v1h-3ZM12 13h3v1h-3ZM5 14h5v1h-5ZM11 14h5v1h-5Z",
+          "fill": "#e3242b"
+        }
+      ]
+    },
+    "backdrop": {
+      "scene": "dragonball"
+    }
+  },
+  "gta-i": {
+    "name": "GTA I",
+    "category": "gaming",
+    "blurb": "1997 top-down 8-bit pixel city blocks, yellow sports car vs. flashing red/blue police cruisers, and arcade score digits.",
+    "light": {
+      "--bg-000": "42 28.0% 94.0%",
+      "--bg-100": "42 24.0% 87.5%",
+      "--bg-200": "42 22.0% 83.5%",
+      "--bg-300": "42 20.0% 79.5%",
+      "--bg-400": "42 18.0% 75.0%",
+      "--bg-500": "42 16.0% 70.0%",
+      "--text-000": "220 30.0% 10.0%",
+      "--text-100": "220 30.0% 10.0%",
+      "--text-200": "220 22.0% 20.0%",
+      "--text-300": "220 22.0% 20.0%",
+      "--text-400": "220 22.0% 26.0%",
+      "--text-500": "220 22.0% 26.0%",
+      "--accent-brand": "38 96.0% 38.0%",
+      "--accent-000": "38 96.0% 42.0%",
+      "--accent-100": "38 96.0% 38.0%",
+      "--accent-200": "38 96.0% 38.0%",
+      "--accent-900": "38 70.0% 88.0%",
+      "--accent-pro-000": "221 83.0% 48.0%",
+      "--accent-pro-100": "221 83.0% 44.0%",
+      "--accent-pro-200": "221 83.0% 44.0%",
+      "--accent-pro-900": "221 60.0% 90.0%",
+      "--brand-000": "38 96.0% 42.0%",
+      "--brand-100": "38 96.0% 38.0%",
+      "--brand-200": "38 96.0% 38.0%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "220 25.0% 24.0%",
+      "--border-200": "220 25.0% 24.0%",
+      "--border-300": "220 25.0% 24.0%",
+      "--border-400": "220 25.0% 24.0%",
+      "--danger-000": "0 84.0% 40.0%",
+      "--danger-100": "0 84.0% 50.0%",
+      "--danger-200": "0 84.0% 40.0%",
+      "--danger-900": "0 60.0% 90.0%",
+      "--warning-000": "38 95.0% 34.0%",
+      "--warning-100": "38 95.0% 44.0%",
+      "--warning-200": "38 95.0% 34.0%",
+      "--warning-900": "38 65.0% 89.0%",
+      "--success-000": "142 70.0% 28.0%",
+      "--success-100": "142 70.0% 38.0%",
+      "--success-200": "142 70.0% 28.0%",
+      "--success-900": "142 45.0% 89.0%",
+      "--oncolor-100": "0 0.0% 100.0%",
+      "--oncolor-200": "0 0.0% 100.0%",
+      "--oncolor-300": "0 0.0% 100.0%",
+      "--pictogram-100": "220 30.0% 10.0%",
+      "--pictogram-200": "220 22.0% 20.0%",
+      "--pictogram-300": "220 15.0% 32.0%",
+      "--pictogram-400": "42 20.0% 79.5%",
+      "--claude-accent-clay": "#c97a00",
+      "--claude-foreground-color": "#121722",
+      "--claude-background-color": "#e6e0d2",
+      "--claude-secondary-color": "#444c5c",
+      "--claude-border": "#c97a0020",
+      "--claude-border-300": "#c97a0038",
+      "--claude-border-300-more": "#c97a0060",
+      "--claude-text-100": "#121722",
+      "--claude-text-200": "#262f40",
+      "--claude-text-400": "#444c5c",
+      "--claude-text-500": "#444c5c",
+      "--claude-description-text": "#2c3548"
+    },
+    "dark": {
+      "--bg-000": "216 18.0% 14.0%",
+      "--bg-100": "216 18.0% 9.5%",
+      "--bg-200": "216 19.0% 7.5%",
+      "--bg-300": "216 20.0% 5.8%",
+      "--bg-400": "216 22.0% 4.2%",
+      "--bg-500": "216 24.0% 2.8%",
+      "--text-000": "45 100.0% 94.0%",
+      "--text-100": "45 100.0% 94.0%",
+      "--text-200": "43 65.0% 82.0%",
+      "--text-300": "43 65.0% 82.0%",
+      "--text-400": "43 35.0% 75.0%",
+      "--text-500": "43 35.0% 75.0%",
+      "--accent-brand": "40 100.0% 50.0%",
+      "--accent-000": "40 100.0% 56.0%",
+      "--accent-100": "40 100.0% 50.0%",
+      "--accent-200": "40 100.0% 50.0%",
+      "--accent-900": "40 65.0% 20.0%",
+      "--accent-pro-000": "217 92.0% 66.0%",
+      "--accent-pro-100": "217 92.0% 60.0%",
+      "--accent-pro-200": "217 92.0% 60.0%",
+      "--accent-pro-900": "217 55.0% 22.0%",
+      "--brand-000": "40 100.0% 56.0%",
+      "--brand-100": "40 100.0% 50.0%",
+      "--brand-200": "40 100.0% 50.0%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "42 75.0% 62.0%",
+      "--border-200": "42 75.0% 62.0%",
+      "--border-300": "42 75.0% 62.0%",
+      "--border-400": "42 75.0% 62.0%",
+      "--danger-000": "0 92.0% 68.0%",
+      "--danger-100": "0 92.0% 60.0%",
+      "--danger-200": "0 92.0% 60.0%",
+      "--danger-900": "0 55.0% 22.0%",
+      "--warning-000": "45 100.0% 62.0%",
+      "--warning-100": "45 100.0% 54.0%",
+      "--warning-200": "45 100.0% 54.0%",
+      "--warning-900": "45 60.0% 22.0%",
+      "--success-000": "142 72.0% 58.0%",
+      "--success-100": "142 72.0% 50.0%",
+      "--success-200": "142 72.0% 50.0%",
+      "--success-900": "142 45.0% 20.0%",
+      "--oncolor-100": "220 40.0% 6.0%",
+      "--oncolor-200": "220 40.0% 6.0%",
+      "--oncolor-300": "220 40.0% 6.0%",
+      "--pictogram-100": "45 100.0% 94.0%",
+      "--pictogram-200": "43 65.0% 82.0%",
+      "--pictogram-300": "215 16.0% 68.0%",
+      "--pictogram-400": "216 18.0% 16.0%",
+      "--claude-accent-clay": "#ffab00",
+      "--claude-foreground-color": "#fff4d6",
+      "--claude-background-color": "#12151a",
+      "--claude-secondary-color": "#9ca6b8",
+      "--claude-border": "#ffab0022",
+      "--claude-border-300": "#ffab003d",
+      "--claude-border-300-more": "#ffab0066",
+      "--claude-text-100": "#fff4d6",
+      "--claude-text-200": "#edd69a",
+      "--claude-text-400": "#9ca6b8",
+      "--claude-text-500": "#9ca6b8",
+      "--claude-description-text": "#d4c292"
+    },
+    "spinner": {
+      "viewBox": "0 0 21 21",
+      "animation": "flip",
+      "paths": [
+        {
+          "d": "M7 1h7v1h-7ZM6 2h1v2h-1ZM14 2h1v2h-1ZM4 4h2v4h-2ZM15 4h2v4h-2ZM5 8h1v5h-1ZM15 8h1v5h-1ZM4 13h2v4h-2ZM15 13h2v4h-2ZM6 17h1v2h-1ZM14 17h1v2h-1ZM7 19h7v1h-7ZM10 2h1v4h-1ZM10 15h1v4h-1Z",
+          "fill": "#0c0e12"
+        },
+        {
+          "d": "M7 2h3v4h-3ZM11 2h3v4h-3ZM6 4h1v13h-1ZM14 4h1v13h-1ZM7 9h7v2h-7ZM7 14h3v5h-3ZM11 14h3v5h-3Z",
+          "fill": "#ffab00"
+        },
+        {
+          "d": "M8 2h1v3h-1ZM12 2h1v3h-1ZM8 15h1v3h-1ZM12 15h1v3h-1Z",
+          "fill": "#ffd166"
+        },
+        {
+          "d": "M7 6h7v3h-7ZM7 12h7v2h-7Z",
+          "fill": "#38bdf8"
+        },
+        {
+          "d": "M7 1h2v1h-2ZM12 1h2v1h-2Z",
+          "fill": "#fef08a"
+        },
+        {
+          "d": "M7 10h3v2h-3Z",
+          "fill": "#ef4444"
+        },
+        {
+          "d": "M11 10h3v2h-3Z",
+          "fill": "#3b82f6"
+        }
+      ],
+      "paths2": [
+        {
+          "d": "M7 1h7v1h-7ZM6 2h1v2h-1ZM14 2h1v2h-1ZM4 4h2v4h-2ZM15 4h2v4h-2ZM5 8h1v5h-1ZM15 8h1v5h-1ZM4 13h2v4h-2ZM15 13h2v4h-2ZM6 17h1v2h-1ZM14 17h1v2h-1ZM7 19h7v1h-7ZM10 2h1v4h-1ZM10 15h1v4h-1Z",
+          "fill": "#0c0e12"
+        },
+        {
+          "d": "M7 2h3v4h-3ZM11 2h3v4h-3ZM6 4h1v13h-1ZM14 4h1v13h-1ZM7 9h7v2h-7ZM7 14h3v5h-3ZM11 14h3v5h-3Z",
+          "fill": "#ffab00"
+        },
+        {
+          "d": "M8 2h1v3h-1ZM12 2h1v3h-1ZM8 15h1v3h-1ZM12 15h1v3h-1Z",
+          "fill": "#ffd166"
+        },
+        {
+          "d": "M7 6h7v3h-7ZM7 12h7v2h-7Z",
+          "fill": "#38bdf8"
+        },
+        {
+          "d": "M7 0h2v2h-2ZM12 0h2v2h-2Z",
+          "fill": "#fef08a"
+        },
+        {
+          "d": "M7 10h3v2h-3Z",
+          "fill": "#3b82f6"
+        },
+        {
+          "d": "M11 10h3v2h-3ZM8 20h1v1h-1ZM12 20h1v1h-1Z",
+          "fill": "#ef4444"
+        }
+      ]
+    },
+    "backdrop": {
+      "scene": "gta-i"
+    }
+  },
+  "gta-ii": {
+    "name": "GTA II",
+    "category": "gaming",
+    "blurb": "1999 Anywhere City pixel cyber-noir — Respect-o-Meter gang bars, Zaibatsu Z-Type cruisers, and ringing payphones.",
+    "light": {
+      "--bg-000": "220 20.0% 96.0%",
+      "--bg-100": "220 18.0% 90.0%",
+      "--bg-200": "220 16.0% 86.0%",
+      "--bg-300": "220 15.0% 82.0%",
+      "--bg-400": "220 14.0% 77.5%",
+      "--bg-500": "220 14.0% 72.5%",
+      "--text-000": "225 35.0% 10.0%",
+      "--text-100": "225 35.0% 10.0%",
+      "--text-200": "225 25.0% 20.0%",
+      "--text-300": "225 25.0% 20.0%",
+      "--text-400": "225 22.0% 26.0%",
+      "--text-500": "225 22.0% 26.0%",
+      "--accent-brand": "356 68.0% 42.0%",
+      "--accent-000": "356 68.0% 46.0%",
+      "--accent-100": "356 68.0% 42.0%",
+      "--accent-200": "356 68.0% 42.0%",
+      "--accent-900": "356 50.0% 90.0%",
+      "--accent-pro-000": "42 90.0% 40.0%",
+      "--accent-pro-100": "42 90.0% 36.0%",
+      "--accent-pro-200": "42 90.0% 36.0%",
+      "--accent-pro-900": "42 60.0% 90.0%",
+      "--brand-000": "356 68.0% 46.0%",
+      "--brand-100": "356 68.0% 42.0%",
+      "--brand-200": "356 68.0% 42.0%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "225 24.0% 26.0%",
+      "--border-200": "225 24.0% 26.0%",
+      "--border-300": "225 24.0% 26.0%",
+      "--border-400": "225 24.0% 26.0%",
+      "--danger-000": "356 78.0% 38.0%",
+      "--danger-100": "356 78.0% 48.0%",
+      "--danger-200": "356 78.0% 38.0%",
+      "--danger-900": "356 55.0% 90.0%",
+      "--warning-000": "42 88.0% 34.0%",
+      "--warning-100": "42 88.0% 44.0%",
+      "--warning-200": "42 88.0% 34.0%",
+      "--warning-900": "42 60.0% 90.0%",
+      "--success-000": "142 70.0% 28.0%",
+      "--success-100": "142 70.0% 38.0%",
+      "--success-200": "142 70.0% 28.0%",
+      "--success-900": "142 45.0% 90.0%",
+      "--oncolor-100": "0 0.0% 100.0%",
+      "--oncolor-200": "0 0.0% 100.0%",
+      "--oncolor-300": "0 0.0% 100.0%",
+      "--pictogram-100": "225 35.0% 10.0%",
+      "--pictogram-200": "225 25.0% 20.0%",
+      "--pictogram-300": "225 16.0% 34.0%",
+      "--pictogram-400": "220 15.0% 82.0%",
+      "--claude-accent-clay": "#b02a30",
+      "--claude-foreground-color": "#111520",
+      "--claude-background-color": "#e2e5ec",
+      "--claude-secondary-color": "#454c5e",
+      "--claude-border": "#b02a3020",
+      "--claude-border-300": "#b02a3038",
+      "--claude-border-300-more": "#b02a3060",
+      "--claude-text-100": "#111520",
+      "--claude-text-200": "#242b3d",
+      "--claude-text-400": "#454c5e",
+      "--claude-text-500": "#454c5e",
+      "--claude-description-text": "#2c3448"
+    },
+    "dark": {
+      "--bg-000": "222 28.0% 13.0%",
+      "--bg-100": "222 28.0% 8.5%",
+      "--bg-200": "222 30.0% 6.5%",
+      "--bg-300": "222 32.0% 5.0%",
+      "--bg-400": "222 34.0% 3.6%",
+      "--bg-500": "222 36.0% 2.2%",
+      "--text-000": "0 0.0% 96.0%",
+      "--text-100": "0 0.0% 96.0%",
+      "--text-200": "220 18.0% 84.0%",
+      "--text-300": "220 18.0% 84.0%",
+      "--text-400": "220 20.0% 76.0%",
+      "--text-500": "220 20.0% 76.0%",
+      "--accent-brand": "356 76.0% 54.0%",
+      "--accent-000": "356 80.0% 60.0%",
+      "--accent-100": "356 76.0% 54.0%",
+      "--accent-200": "356 76.0% 54.0%",
+      "--accent-900": "356 58.0% 20.0%",
+      "--accent-pro-000": "43 92.0% 62.0%",
+      "--accent-pro-100": "43 92.0% 56.0%",
+      "--accent-pro-200": "43 92.0% 56.0%",
+      "--accent-pro-900": "43 58.0% 20.0%",
+      "--brand-000": "356 80.0% 60.0%",
+      "--brand-100": "356 76.0% 54.0%",
+      "--brand-200": "356 76.0% 54.0%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "356 62.0% 56.0%",
+      "--border-200": "356 62.0% 56.0%",
+      "--border-300": "356 62.0% 56.0%",
+      "--border-400": "356 62.0% 56.0%",
+      "--danger-000": "356 90.0% 66.0%",
+      "--danger-100": "356 90.0% 58.0%",
+      "--danger-200": "356 90.0% 58.0%",
+      "--danger-900": "356 55.0% 22.0%",
+      "--warning-000": "43 96.0% 62.0%",
+      "--warning-100": "43 96.0% 54.0%",
+      "--warning-200": "43 96.0% 54.0%",
+      "--warning-900": "43 60.0% 20.0%",
+      "--success-000": "142 74.0% 58.0%",
+      "--success-100": "142 74.0% 50.0%",
+      "--success-200": "142 74.0% 50.0%",
+      "--success-900": "142 45.0% 20.0%",
+      "--oncolor-100": "0 0.0% 100.0%",
+      "--oncolor-200": "0 0.0% 100.0%",
+      "--oncolor-300": "0 0.0% 100.0%",
+      "--pictogram-100": "0 0.0% 96.0%",
+      "--pictogram-200": "220 18.0% 84.0%",
+      "--pictogram-300": "220 14.0% 66.0%",
+      "--pictogram-400": "222 28.0% 15.0%",
+      "--claude-accent-clay": "#e0353c",
+      "--claude-foreground-color": "#f5f5f7",
+      "--claude-background-color": "#0e121a",
+      "--claude-secondary-color": "#9aa3b5",
+      "--claude-border": "#e0353c24",
+      "--claude-border-300": "#e0353c40",
+      "--claude-border-300-more": "#e0353c68",
+      "--claude-text-100": "#f5f5f7",
+      "--claude-text-200": "#d6dce8",
+      "--claude-text-400": "#9aa3b5",
+      "--claude-text-500": "#9aa3b5",
+      "--claude-description-text": "#bcc4d4"
+    },
+    "spinner": {
+      "viewBox": "0 0 21 21",
+      "animation": "flip",
+      "paths": [
+        {
+          "d": "M3 1h15v1h-15ZM2 2h1v17h-1ZM18 2h1v17h-1ZM3 19h15v1h-15ZM3 2h15v17h-15Z",
+          "fill": "#0a0d14"
+        },
+        {
+          "d": "M5 3h11v2h-11ZM13 5h3v3h-3ZM5 8h11v2h-11ZM5 10h3v3h-3ZM5 13h11v2h-11Z",
+          "fill": "#e0353c"
+        },
+        {
+          "d": "M6 3h9v1h-9ZM6 8h9v1h-9ZM6 13h9v1h-9Z",
+          "fill": "#ff6b72"
+        },
+        {
+          "d": "M4 16h4v2h-4Z",
+          "fill": "#22c55e"
+        },
+        {
+          "d": "M9 16h3v2h-3Z",
+          "fill": "#06b6d4"
+        },
+        {
+          "d": "M13 16h4v2h-4Z",
+          "fill": "#f5b82e"
+        }
+      ],
+      "paths2": [
+        {
+          "d": "M3 1h15v1h-15ZM2 2h1v17h-1ZM18 2h1v17h-1ZM3 19h15v1h-15ZM3 2h15v17h-15Z",
+          "fill": "#0a0d14"
+        },
+        {
+          "d": "M5 3h11v2h-11ZM13 5h3v3h-3ZM5 8h11v2h-11ZM5 10h3v3h-3ZM5 13h11v2h-11Z",
+          "fill": "#b02a30"
+        },
+        {
+          "d": "M6 4h9v1h-9ZM6 9h9v1h-9ZM6 14h9v1h-9Z",
+          "fill": "#f5b82e"
+        },
+        {
+          "d": "M4 16h5v2h-5Z",
+          "fill": "#22c55e"
+        },
+        {
+          "d": "M10 16h4v2h-4Z",
+          "fill": "#06b6d4"
+        },
+        {
+          "d": "M15 16h2v2h-2Z",
+          "fill": "#ef4444"
+        }
+      ]
+    },
+    "backdrop": {
+      "scene": "gta-ii"
+    }
+  },
+  "gta-iii": {
+    "name": "GTA III",
+    "category": "gaming",
+    "blurb": "2001 Liberty City 3D era — rain-slicked Callahan Bridge, amber streetlamp fog, and classic teal HUD radar.",
+    "light": {
+      "--bg-000": "172 16.0% 95.0%",
+      "--bg-100": "172 14.0% 89.0%",
+      "--bg-200": "172 13.0% 85.0%",
+      "--bg-300": "172 12.0% 81.0%",
+      "--bg-400": "172 12.0% 76.5%",
+      "--bg-500": "172 12.0% 71.5%",
+      "--text-000": "185 32.0% 10.0%",
+      "--text-100": "185 32.0% 10.0%",
+      "--text-200": "185 24.0% 20.0%",
+      "--text-300": "185 24.0% 20.0%",
+      "--text-400": "185 24.0% 25.0%",
+      "--text-500": "185 24.0% 25.0%",
+      "--accent-brand": "168 62.0% 28.0%",
+      "--accent-000": "168 62.0% 32.0%",
+      "--accent-100": "168 62.0% 28.0%",
+      "--accent-200": "168 62.0% 28.0%",
+      "--accent-900": "168 45.0% 89.0%",
+      "--accent-pro-000": "342 84.0% 46.0%",
+      "--accent-pro-100": "342 84.0% 42.0%",
+      "--accent-pro-200": "342 84.0% 42.0%",
+      "--accent-pro-900": "342 55.0% 90.0%",
+      "--brand-000": "168 62.0% 32.0%",
+      "--brand-100": "168 62.0% 28.0%",
+      "--brand-200": "168 62.0% 28.0%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "180 24.0% 26.0%",
+      "--border-200": "180 24.0% 26.0%",
+      "--border-300": "180 24.0% 26.0%",
+      "--border-400": "180 24.0% 26.0%",
+      "--danger-000": "342 84.0% 42.0%",
+      "--danger-100": "342 84.0% 50.0%",
+      "--danger-200": "342 84.0% 42.0%",
+      "--danger-900": "342 55.0% 90.0%",
+      "--warning-000": "32 86.0% 34.0%",
+      "--warning-100": "32 86.0% 44.0%",
+      "--warning-200": "32 86.0% 34.0%",
+      "--warning-900": "32 58.0% 90.0%",
+      "--success-000": "165 65.0% 27.0%",
+      "--success-100": "165 65.0% 36.0%",
+      "--success-200": "165 65.0% 27.0%",
+      "--success-900": "165 45.0% 90.0%",
+      "--oncolor-100": "0 0.0% 100.0%",
+      "--oncolor-200": "0 0.0% 100.0%",
+      "--oncolor-300": "0 0.0% 100.0%",
+      "--pictogram-100": "185 32.0% 10.0%",
+      "--pictogram-200": "185 24.0% 20.0%",
+      "--pictogram-300": "185 16.0% 33.0%",
+      "--pictogram-400": "172 12.0% 81.0%",
+      "--claude-accent-clay": "#1b6b5c",
+      "--claude-foreground-color": "#0e191b",
+      "--claude-background-color": "#dfe6e4",
+      "--claude-secondary-color": "#425658",
+      "--claude-border": "#1b6b5c22",
+      "--claude-border-300": "#1b6b5c3a",
+      "--claude-border-300-more": "#1b6b5c62",
+      "--claude-text-100": "#0e191b",
+      "--claude-text-200": "#203438",
+      "--claude-text-400": "#425658",
+      "--claude-text-500": "#425658",
+      "--claude-description-text": "#294044"
+    },
+    "dark": {
+      "--bg-000": "190 24.0% 13.5%",
+      "--bg-100": "190 25.0% 9.0%",
+      "--bg-200": "190 26.0% 7.0%",
+      "--bg-300": "190 28.0% 5.4%",
+      "--bg-400": "190 30.0% 3.8%",
+      "--bg-500": "190 32.0% 2.4%",
+      "--text-000": "172 35.0% 93.0%",
+      "--text-100": "172 35.0% 93.0%",
+      "--text-200": "172 26.0% 80.0%",
+      "--text-300": "172 26.0% 80.0%",
+      "--text-400": "176 24.0% 75.0%",
+      "--text-500": "176 24.0% 75.0%",
+      "--accent-brand": "170 46.0% 56.0%",
+      "--accent-000": "170 52.0% 62.0%",
+      "--accent-100": "170 46.0% 56.0%",
+      "--accent-200": "170 46.0% 56.0%",
+      "--accent-900": "170 45.0% 20.0%",
+      "--accent-pro-000": "342 86.0% 60.0%",
+      "--accent-pro-100": "342 86.0% 54.0%",
+      "--accent-pro-200": "342 86.0% 54.0%",
+      "--accent-pro-900": "342 55.0% 22.0%",
+      "--brand-000": "170 52.0% 62.0%",
+      "--brand-100": "170 46.0% 56.0%",
+      "--brand-200": "170 46.0% 56.0%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "170 40.0% 58.0%",
+      "--border-200": "170 40.0% 58.0%",
+      "--border-300": "170 40.0% 58.0%",
+      "--border-400": "170 40.0% 58.0%",
+      "--danger-000": "342 88.0% 64.0%",
+      "--danger-100": "342 88.0% 56.0%",
+      "--danger-200": "342 88.0% 56.0%",
+      "--danger-900": "342 55.0% 22.0%",
+      "--warning-000": "31 88.0% 62.0%",
+      "--warning-100": "31 88.0% 56.0%",
+      "--warning-200": "31 88.0% 56.0%",
+      "--warning-900": "31 55.0% 22.0%",
+      "--success-000": "168 55.0% 58.0%",
+      "--success-100": "168 55.0% 52.0%",
+      "--success-200": "168 55.0% 52.0%",
+      "--success-900": "168 42.0% 20.0%",
+      "--oncolor-100": "190 40.0% 6.0%",
+      "--oncolor-200": "190 40.0% 6.0%",
+      "--oncolor-300": "190 40.0% 6.0%",
+      "--pictogram-100": "172 35.0% 93.0%",
+      "--pictogram-200": "172 26.0% 80.0%",
+      "--pictogram-300": "185 16.0% 64.0%",
+      "--pictogram-400": "190 25.0% 15.0%",
+      "--claude-accent-clay": "#5ec4b6",
+      "--claude-foreground-color": "#e5f2f0",
+      "--claude-background-color": "#0e1517",
+      "--claude-secondary-color": "#90a7aa",
+      "--claude-border": "#5ec4b622",
+      "--claude-border-300": "#5ec4b63d",
+      "--claude-border-300-more": "#5ec4b666",
+      "--claude-text-100": "#e5f2f0",
+      "--claude-text-200": "#bddad6",
+      "--claude-text-400": "#90a7aa",
+      "--claude-text-500": "#90a7aa",
+      "--claude-description-text": "#aec9c6"
+    },
+    "spinner": {
+      "viewBox": "0 0 100 100",
+      "animation": "pulse",
+      "paths": [
+        {
+          "d": "M50 6 A44 44 0 1 0 50 94 A44 44 0 1 0 50 6 Z",
+          "fill": "#0c0a08"
+        },
+        {
+          "d": "M50 10 A40 40 0 1 0 50 90 A40 40 0 1 0 50 10 Z M50 16 A34 34 0 1 1 50 84 A34 34 0 1 1 50 16 Z",
+          "fill": "#5ec4b6"
+        },
+        {
+          "d": "M21 26 H37 V74 H21 Z M42 26 H58 V74 H42 Z M63 26 H79 V74 H63 Z",
+          "fill": "#ec1757"
+        },
+        {
+          "d": "M18 22 H82 V28 H18 Z M18 72 H82 V78 H18 Z",
+          "fill": "#ffffff"
+        }
+      ]
+    },
+    "backdrop": {
+      "scene": "gta-iii"
+    }
+  },
+  "gta-iv": {
+    "name": "GTA IV",
+    "category": "gaming",
+    "blurb": "2008 Liberty City HD noir — Broker Bridge steel cables, amber harbor haze, and the Rockstar NYC gold badge.",
+    "light": {
+      "--bg-000": "215 16.0% 96.0%",
+      "--bg-100": "215 14.0% 90.5%",
+      "--bg-200": "215 13.0% 86.5%",
+      "--bg-300": "215 12.0% 82.5%",
+      "--bg-400": "215 11.0% 78.0%",
+      "--bg-500": "215 11.0% 73.0%",
+      "--text-000": "220 28.0% 10.0%",
+      "--text-100": "220 28.0% 10.0%",
+      "--text-200": "220 20.0% 20.0%",
+      "--text-300": "220 20.0% 20.0%",
+      "--text-400": "220 22.0% 26.0%",
+      "--text-500": "220 22.0% 26.0%",
+      "--accent-brand": "36 86.0% 38.0%",
+      "--accent-000": "36 86.0% 42.0%",
+      "--accent-100": "36 86.0% 38.0%",
+      "--accent-200": "36 86.0% 38.0%",
+      "--accent-900": "36 58.0% 89.0%",
+      "--accent-pro-000": "215 35.0% 32.0%",
+      "--accent-pro-100": "215 35.0% 28.0%",
+      "--accent-pro-200": "215 35.0% 28.0%",
+      "--accent-pro-900": "215 28.0% 90.0%",
+      "--brand-000": "36 86.0% 42.0%",
+      "--brand-100": "36 86.0% 38.0%",
+      "--brand-200": "36 86.0% 38.0%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "215 20.0% 26.0%",
+      "--border-200": "215 20.0% 26.0%",
+      "--border-300": "215 20.0% 26.0%",
+      "--border-400": "215 20.0% 26.0%",
+      "--danger-000": "0 76.0% 40.0%",
+      "--danger-100": "0 76.0% 48.0%",
+      "--danger-200": "0 76.0% 40.0%",
+      "--danger-900": "0 55.0% 90.0%",
+      "--warning-000": "38 90.0% 34.0%",
+      "--warning-100": "38 90.0% 44.0%",
+      "--warning-200": "38 90.0% 34.0%",
+      "--warning-900": "38 60.0% 90.0%",
+      "--success-000": "142 62.0% 28.0%",
+      "--success-100": "142 62.0% 38.0%",
+      "--success-200": "142 62.0% 28.0%",
+      "--success-900": "142 42.0% 90.0%",
+      "--oncolor-100": "0 0.0% 100.0%",
+      "--oncolor-200": "0 0.0% 100.0%",
+      "--oncolor-300": "0 0.0% 100.0%",
+      "--pictogram-100": "220 28.0% 10.0%",
+      "--pictogram-200": "220 20.0% 20.0%",
+      "--pictogram-300": "220 14.0% 34.0%",
+      "--pictogram-400": "215 12.0% 82.5%",
+      "--claude-accent-clay": "#c47d14",
+      "--claude-foreground-color": "#12161f",
+      "--claude-background-color": "#e5e8ec",
+      "--claude-secondary-color": "#485060",
+      "--claude-border": "#c47d1422",
+      "--claude-border-300": "#c47d143a",
+      "--claude-border-300-more": "#c47d1462",
+      "--claude-text-100": "#12161f",
+      "--claude-text-200": "#262d3d",
+      "--claude-text-400": "#485060",
+      "--claude-text-500": "#485060",
+      "--claude-description-text": "#2e3647"
+    },
+    "dark": {
+      "--bg-000": "218 18.0% 14.0%",
+      "--bg-100": "218 18.0% 9.2%",
+      "--bg-200": "218 19.0% 7.2%",
+      "--bg-300": "218 20.0% 5.5%",
+      "--bg-400": "218 22.0% 4.0%",
+      "--bg-500": "218 24.0% 2.5%",
+      "--text-000": "40 20.0% 94.0%",
+      "--text-100": "40 20.0% 94.0%",
+      "--text-200": "38 22.0% 82.0%",
+      "--text-300": "38 22.0% 82.0%",
+      "--text-400": "38 18.0% 76.0%",
+      "--text-500": "38 18.0% 76.0%",
+      "--accent-brand": "40 100.0% 50.0%",
+      "--accent-000": "40 100.0% 56.0%",
+      "--accent-100": "40 100.0% 50.0%",
+      "--accent-200": "40 100.0% 50.0%",
+      "--accent-900": "40 60.0% 20.0%",
+      "--accent-pro-000": "215 28.0% 72.0%",
+      "--accent-pro-100": "215 28.0% 66.0%",
+      "--accent-pro-200": "215 28.0% 66.0%",
+      "--accent-pro-900": "215 25.0% 22.0%",
+      "--brand-000": "40 100.0% 56.0%",
+      "--brand-100": "40 100.0% 50.0%",
+      "--brand-200": "40 100.0% 50.0%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "40 60.0% 62.0%",
+      "--border-200": "40 60.0% 62.0%",
+      "--border-300": "40 60.0% 62.0%",
+      "--border-400": "40 60.0% 62.0%",
+      "--danger-000": "0 85.0% 66.0%",
+      "--danger-100": "0 85.0% 58.0%",
+      "--danger-200": "0 85.0% 58.0%",
+      "--danger-900": "0 55.0% 22.0%",
+      "--warning-000": "40 100.0% 60.0%",
+      "--warning-100": "40 100.0% 52.0%",
+      "--warning-200": "40 100.0% 52.0%",
+      "--warning-900": "40 60.0% 20.0%",
+      "--success-000": "142 62.0% 56.0%",
+      "--success-100": "142 62.0% 48.0%",
+      "--success-200": "142 62.0% 48.0%",
+      "--success-900": "142 42.0% 20.0%",
+      "--oncolor-100": "220 35.0% 6.0%",
+      "--oncolor-200": "220 35.0% 6.0%",
+      "--oncolor-300": "220 35.0% 6.0%",
+      "--pictogram-100": "40 20.0% 94.0%",
+      "--pictogram-200": "38 22.0% 82.0%",
+      "--pictogram-300": "218 12.0% 66.0%",
+      "--pictogram-400": "218 18.0% 15.5%",
+      "--claude-accent-clay": "#ffab00",
+      "--claude-foreground-color": "#f3f1ec",
+      "--claude-background-color": "#13161b",
+      "--claude-secondary-color": "#9ca2ae",
+      "--claude-border": "#ffab0022",
+      "--claude-border-300": "#ffab003d",
+      "--claude-border-300-more": "#ffab0066",
+      "--claude-text-100": "#f3f1ec",
+      "--claude-text-200": "#dcd6c8",
+      "--claude-text-400": "#9ca2ae",
+      "--claude-text-500": "#9ca2ae",
+      "--claude-description-text": "#c4beb0"
+    },
+    "spinner": {
+      "viewBox": "0 0 100 100",
+      "animation": "pulse",
+      "paths": [
+        {
+          "d": "M22 4 H78 A18 18 0 0 1 96 22 V78 A18 18 0 0 1 78 96 H22 A18 18 0 0 1 4 78 V22 A18 18 0 0 1 22 4 Z",
+          "fill": "#040301"
+        },
+        {
+          "d": "M24 9 H76 A15 15 0 0 1 91 24 V76 A15 15 0 0 1 76 91 H24 A15 15 0 0 1 9 76 V24 A15 15 0 0 1 24 9 Z",
+          "fill": "#ffab00"
+        },
+        {
+          "d": "M24 20 L16 62 H29 L32 46 H42 C46 46 48 48 47 54 L46 62 H59 L60 52 C61 46 58 43 54 42 C60 40 64 35 65 29 C66 22 60 20 49 20 Z M35 29 H46 C50 29 52 31 51 34 C50 37 48 38 44 38 H33 Z",
+          "fill": "#040301"
+        },
+        {
+          "d": "M70 46 L74 58 L87 58 L76 66 L80 79 L70 71 L59 79 L63 66 L53 58 L66 58 Z",
+          "fill": "#040301"
+        },
+        {
+          "d": "M70 49 L73 59 L84 59 L75 65 L78 76 L70 69 L61 76 L64 65 L56 59 L67 59 Z",
+          "fill": "#ffffff"
+        }
+      ]
+    },
+    "backdrop": {
+      "scene": "gta-iv"
+    }
+  },
+  "gta-v": {
+    "name": "GTA V",
+    "category": "gaming",
+    "blurb": "2013 Los Santos sun & Vinewood Hills — helicopter searchlights, banknote emerald-green, and the 3-character HUD.",
+    "light": {
+      "--bg-000": "44 38.0% 96.0%",
+      "--bg-100": "44 32.0% 90.5%",
+      "--bg-200": "44 28.0% 86.5%",
+      "--bg-300": "44 25.0% 82.5%",
+      "--bg-400": "44 22.0% 78.0%",
+      "--bg-500": "44 20.0% 73.0%",
+      "--text-000": "150 35.0% 10.0%",
+      "--text-100": "150 35.0% 10.0%",
+      "--text-200": "150 26.0% 20.0%",
+      "--text-300": "150 26.0% 20.0%",
+      "--text-400": "150 24.0% 25.0%",
+      "--text-500": "150 24.0% 25.0%",
+      "--accent-brand": "138 60.0% 30.0%",
+      "--accent-000": "138 60.0% 34.0%",
+      "--accent-100": "138 60.0% 30.0%",
+      "--accent-200": "138 60.0% 30.0%",
+      "--accent-900": "138 45.0% 89.0%",
+      "--accent-pro-000": "28 85.0% 44.0%",
+      "--accent-pro-100": "28 85.0% 40.0%",
+      "--accent-pro-200": "28 85.0% 40.0%",
+      "--accent-pro-900": "28 60.0% 90.0%",
+      "--brand-000": "138 60.0% 34.0%",
+      "--brand-100": "138 60.0% 30.0%",
+      "--brand-200": "138 60.0% 30.0%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "145 28.0% 25.0%",
+      "--border-200": "145 28.0% 25.0%",
+      "--border-300": "145 28.0% 25.0%",
+      "--border-400": "145 28.0% 25.0%",
+      "--danger-000": "4 80.0% 42.0%",
+      "--danger-100": "4 80.0% 50.0%",
+      "--danger-200": "4 80.0% 42.0%",
+      "--danger-900": "4 55.0% 90.0%",
+      "--warning-000": "36 90.0% 35.0%",
+      "--warning-100": "36 90.0% 44.0%",
+      "--warning-200": "36 90.0% 35.0%",
+      "--warning-900": "36 60.0% 90.0%",
+      "--success-000": "138 62.0% 28.0%",
+      "--success-100": "138 62.0% 38.0%",
+      "--success-200": "138 62.0% 28.0%",
+      "--success-900": "138 45.0% 90.0%",
+      "--oncolor-100": "0 0.0% 100.0%",
+      "--oncolor-200": "0 0.0% 100.0%",
+      "--oncolor-300": "0 0.0% 100.0%",
+      "--pictogram-100": "150 35.0% 10.0%",
+      "--pictogram-200": "150 26.0% 20.0%",
+      "--pictogram-300": "150 16.0% 33.0%",
+      "--pictogram-400": "44 25.0% 82.5%",
+      "--claude-accent-clay": "#1f7a3a",
+      "--claude-foreground-color": "#112217",
+      "--claude-background-color": "#f2ede2",
+      "--claude-secondary-color": "#455a4c",
+      "--claude-border": "#1f7a3a22",
+      "--claude-border-300": "#1f7a3a3a",
+      "--claude-border-300-more": "#1f7a3a62",
+      "--claude-text-100": "#112217",
+      "--claude-text-200": "#223b2b",
+      "--claude-text-400": "#455a4c",
+      "--claude-text-500": "#455a4c",
+      "--claude-description-text": "#2c4635"
+    },
+    "dark": {
+      "--bg-000": "195 22.0% 13.5%",
+      "--bg-100": "195 24.0% 9.0%",
+      "--bg-200": "195 25.0% 7.0%",
+      "--bg-300": "195 26.0% 5.4%",
+      "--bg-400": "195 28.0% 3.8%",
+      "--bg-500": "195 30.0% 2.4%",
+      "--text-000": "135 28.0% 94.0%",
+      "--text-100": "135 28.0% 94.0%",
+      "--text-200": "135 24.0% 82.0%",
+      "--text-300": "135 24.0% 82.0%",
+      "--text-400": "138 22.0% 76.0%",
+      "--text-500": "138 22.0% 76.0%",
+      "--accent-brand": "132 54.0% 52.0%",
+      "--accent-000": "132 58.0% 58.0%",
+      "--accent-100": "132 54.0% 52.0%",
+      "--accent-200": "132 54.0% 52.0%",
+      "--accent-900": "132 45.0% 20.0%",
+      "--accent-pro-000": "199 72.0% 62.0%",
+      "--accent-pro-100": "199 72.0% 56.0%",
+      "--accent-pro-200": "199 72.0% 56.0%",
+      "--accent-pro-900": "199 50.0% 22.0%",
+      "--brand-000": "132 58.0% 58.0%",
+      "--brand-100": "132 54.0% 52.0%",
+      "--brand-200": "132 54.0% 52.0%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "132 45.0% 56.0%",
+      "--border-200": "132 45.0% 56.0%",
+      "--border-300": "132 45.0% 56.0%",
+      "--border-400": "132 45.0% 56.0%",
+      "--danger-000": "4 88.0% 65.0%",
+      "--danger-100": "4 88.0% 58.0%",
+      "--danger-200": "4 88.0% 58.0%",
+      "--danger-900": "4 55.0% 22.0%",
+      "--warning-000": "37 92.0% 60.0%",
+      "--warning-100": "37 92.0% 54.0%",
+      "--warning-200": "37 92.0% 54.0%",
+      "--warning-900": "37 58.0% 22.0%",
+      "--success-000": "132 58.0% 56.0%",
+      "--success-100": "132 58.0% 50.0%",
+      "--success-200": "132 58.0% 50.0%",
+      "--success-900": "132 45.0% 20.0%",
+      "--oncolor-100": "195 40.0% 6.0%",
+      "--oncolor-200": "195 40.0% 6.0%",
+      "--oncolor-300": "195 40.0% 6.0%",
+      "--pictogram-100": "135 28.0% 94.0%",
+      "--pictogram-200": "135 24.0% 82.0%",
+      "--pictogram-300": "190 14.0% 65.0%",
+      "--pictogram-400": "195 24.0% 15.0%",
+      "--claude-accent-clay": "#4ec962",
+      "--claude-foreground-color": "#e9f5ec",
+      "--claude-background-color": "#11171a",
+      "--claude-secondary-color": "#94a89c",
+      "--claude-border": "#4ec96222",
+      "--claude-border-300": "#4ec9623d",
+      "--claude-border-300-more": "#4ec96266",
+      "--claude-text-100": "#e9f5ec",
+      "--claude-text-200": "#c2dec9",
+      "--claude-text-400": "#94a89c",
+      "--claude-text-500": "#94a89c",
+      "--claude-description-text": "#b2cfb9"
+    },
+    "spinner": {
+      "viewBox": "0 0 100 100",
+      "animation": "pulse",
+      "paths": [
+        {
+          "d": "M12 14 L50 92 L88 14 H66 L50 56 L34 14 Z",
+          "fill": "#0d1f14"
+        },
+        {
+          "d": "M17 18 L50 86 L83 18 H68 L50 62 L32 18 Z",
+          "fill": "#359a47"
+        },
+        {
+          "d": "M22 21 L50 80 L78 21 H71 L50 67 L29 21 Z",
+          "fill": "#86efac"
+        },
+        {
+          "d": "M8 46 H92 L86 62 H14 Z",
+          "fill": "#1f4d2b"
+        },
+        {
+          "d": "M12 49 H88 L84 59 H16 Z",
+          "fill": "#f5a623"
+        }
+      ]
+    },
+    "backdrop": {
+      "scene": "gta-v"
+    }
+  },
+  "gta-vi": {
+    "name": "GTA VI",
+    "category": "gaming",
+    "blurb": "Leonida & Vice City synthwave sunset — neon hot pink, electric cyan, golden amber horizon, and swaying palm silhouettes.",
+    "light": {
+      "--bg-000": "328 55.0% 97.5%",
+      "--bg-100": "328 45.0% 93.5%",
+      "--bg-200": "328 40.0% 89.5%",
+      "--bg-300": "328 36.0% 85.5%",
+      "--bg-400": "328 32.0% 81.0%",
+      "--bg-500": "328 28.0% 76.0%",
+      "--text-000": "282 65.0% 13.0%",
+      "--text-100": "282 65.0% 13.0%",
+      "--text-200": "282 48.0% 24.0%",
+      "--text-300": "282 48.0% 24.0%",
+      "--text-400": "282 44.0% 27.0%",
+      "--text-500": "282 44.0% 27.0%",
+      "--accent-brand": "330 82.0% 45.0%",
+      "--accent-000": "330 82.0% 49.0%",
+      "--accent-100": "330 82.0% 45.0%",
+      "--accent-200": "330 82.0% 45.0%",
+      "--accent-900": "330 65.0% 91.0%",
+      "--accent-pro-000": "192 85.0% 36.0%",
+      "--accent-pro-100": "192 85.0% 32.0%",
+      "--accent-pro-200": "192 85.0% 32.0%",
+      "--accent-pro-900": "192 60.0% 90.0%",
+      "--brand-000": "330 82.0% 49.0%",
+      "--brand-100": "330 82.0% 45.0%",
+      "--brand-200": "330 82.0% 45.0%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "288 42.0% 30.0%",
+      "--border-200": "288 42.0% 30.0%",
+      "--border-300": "288 42.0% 30.0%",
+      "--border-400": "288 42.0% 30.0%",
+      "--danger-000": "345 84.0% 42.0%",
+      "--danger-100": "345 84.0% 50.0%",
+      "--danger-200": "345 84.0% 42.0%",
+      "--danger-900": "345 60.0% 91.0%",
+      "--warning-000": "32 90.0% 36.0%",
+      "--warning-100": "32 90.0% 45.0%",
+      "--warning-200": "32 90.0% 36.0%",
+      "--warning-900": "32 65.0% 90.0%",
+      "--success-000": "172 72.0% 28.0%",
+      "--success-100": "172 72.0% 38.0%",
+      "--success-200": "172 72.0% 28.0%",
+      "--success-900": "172 50.0% 90.0%",
+      "--oncolor-100": "0 0.0% 100.0%",
+      "--oncolor-200": "0 0.0% 100.0%",
+      "--oncolor-300": "0 0.0% 100.0%",
+      "--pictogram-100": "282 65.0% 13.0%",
+      "--pictogram-200": "282 48.0% 24.0%",
+      "--pictogram-300": "282 32.0% 38.0%",
+      "--pictogram-400": "328 36.0% 85.5%",
+      "--claude-accent-clay": "#d91b7a",
+      "--claude-foreground-color": "#260b36",
+      "--claude-background-color": "#f9eaf2",
+      "--claude-secondary-color": "#643d78",
+      "--claude-border": "#d91b7a22",
+      "--claude-border-300": "#d91b7a3d",
+      "--claude-border-300-more": "#d91b7a66",
+      "--claude-text-100": "#260b36",
+      "--claude-text-200": "#431a5c",
+      "--claude-text-400": "#643d78",
+      "--claude-text-500": "#643d78",
+      "--claude-description-text": "#4c2266"
+    },
+    "dark": {
+      "--bg-000": "272 52.0% 15.0%",
+      "--bg-100": "272 54.0% 9.8%",
+      "--bg-200": "272 56.0% 7.6%",
+      "--bg-300": "272 58.0% 5.8%",
+      "--bg-400": "272 62.0% 4.0%",
+      "--bg-500": "272 66.0% 2.4%",
+      "--text-000": "325 70.0% 95.0%",
+      "--text-100": "325 70.0% 95.0%",
+      "--text-200": "320 55.0% 85.0%",
+      "--text-300": "320 55.0% 85.0%",
+      "--text-400": "310 42.0% 78.0%",
+      "--text-500": "310 42.0% 78.0%",
+      "--accent-brand": "331 100.0% 58.0%",
+      "--accent-000": "331 100.0% 64.0%",
+      "--accent-100": "331 100.0% 58.0%",
+      "--accent-200": "331 100.0% 58.0%",
+      "--accent-900": "331 65.0% 22.0%",
+      "--accent-pro-000": "191 100.0% 59.0%",
+      "--accent-pro-100": "191 100.0% 52.0%",
+      "--accent-pro-200": "191 100.0% 52.0%",
+      "--accent-pro-900": "191 65.0% 22.0%",
+      "--brand-000": "331 100.0% 64.0%",
+      "--brand-100": "331 100.0% 58.0%",
+      "--brand-200": "331 100.0% 58.0%",
+      "--brand-900": "0 0% 0%",
+      "--border-100": "322 72.0% 64.0%",
+      "--border-200": "322 72.0% 64.0%",
+      "--border-300": "322 72.0% 64.0%",
+      "--border-400": "322 72.0% 64.0%",
+      "--danger-000": "345 100.0% 68.0%",
+      "--danger-100": "345 100.0% 60.0%",
+      "--danger-200": "345 100.0% 60.0%",
+      "--danger-900": "345 60.0% 22.0%",
+      "--warning-000": "43 100.0% 62.0%",
+      "--warning-100": "43 100.0% 56.0%",
+      "--warning-200": "43 100.0% 56.0%",
+      "--warning-900": "43 65.0% 22.0%",
+      "--success-000": "182 90.0% 56.0%",
+      "--success-100": "182 90.0% 48.0%",
+      "--success-200": "182 90.0% 48.0%",
+      "--success-900": "182 55.0% 20.0%",
+      "--oncolor-100": "275 65.0% 7.0%",
+      "--oncolor-200": "275 65.0% 7.0%",
+      "--oncolor-300": "275 65.0% 7.0%",
+      "--pictogram-100": "325 70.0% 95.0%",
+      "--pictogram-200": "320 55.0% 85.0%",
+      "--pictogram-300": "280 28.0% 70.0%",
+      "--pictogram-400": "272 52.0% 17.0%",
+      "--claude-accent-clay": "#ff2b90",
+      "--claude-foreground-color": "#fce8f4",
+      "--claude-background-color": "#160b24",
+      "--claude-secondary-color": "#b999cc",
+      "--claude-border": "#ff2b9026",
+      "--claude-border-300": "#ff2b9044",
+      "--claude-border-300-more": "#ff2b9070",
+      "--claude-text-100": "#fce8f4",
+      "--claude-text-200": "#f0bfe0",
+      "--claude-text-400": "#b999cc",
+      "--claude-text-500": "#b999cc",
+      "--claude-description-text": "#dfb0d4"
+    },
+    "spinner": {
+      "viewBox": "0 0 100 100",
+      "animation": "pulse",
+      "paths": [
+        {
+          "d": "M6 16 L36 86 L66 16 H50 L36 56 L22 16 Z M70 16 H88 V86 H70 Z",
+          "fill": "#350054"
+        },
+        {
+          "d": "M10 19 L36 81 L62 19 H51 L36 60 L21 19 Z",
+          "fill": "#ff2b90"
+        },
+        {
+          "d": "M73 19 H85 V81 H73 Z",
+          "fill": "#ffbc24"
+        },
+        {
+          "d": "M14 21 L36 74 L58 21 H53 L36 64 L19 21 Z M75 21 H83 V46 H75 Z",
+          "fill": "#2fd8ff"
+        },
+        {
+          "d": "M24 66 Q38 56 54 62 Q40 62 32 74 Z M64 56 Q78 48 92 54 Q78 55 72 66 Z",
+          "fill": "#160b24"
+        }
+      ]
+    },
+    "backdrop": {
+      "scene": "gta-vi"
+    }
   }
- },
- "gameboy": {
-  "name": "Game Boy",
-  "category": "gaming",
-  "light": {
-   "--bg-000": "43 16.7% 89.1%",
-   "--bg-100": "43 16.7% 83.5%",
-   "--bg-200": "43 16.7% 80.6%",
-   "--bg-300": "43 16.7% 77.9%",
-   "--bg-400": "43 16.7% 75.1%",
-   "--bg-500": "43 16.7% 71.6%",
-   "--text-000": "42 15.2% 12.9%",
-   "--text-100": "42 15.2% 12.9%",
-   "--text-200": "42 13.6% 22.7%",
-   "--text-300": "42 13.6% 22.7%",
-   "--text-400": "42 12.0% 32.5%",
-   "--text-500": "42 12.0% 32.5%",
-   "--accent-brand": "333 66.3% 38.4%",
-   "--accent-000": "333 66.3% 41.4%",
-   "--accent-100": "333 66.3% 38.4%",
-   "--accent-200": "333 66.3% 38.4%",
-   "--accent-900": "333 39.8% 90.0%",
-   "--accent-pro-000": "238 49.5% 43.4%",
-   "--accent-pro-100": "238 49.5% 40.4%",
-   "--accent-pro-200": "238 49.5% 40.4%",
-   "--accent-pro-900": "238 29.7% 90.0%",
-   "--brand-000": "333 66.3% 41.4%",
-   "--brand-100": "333 66.3% 38.4%",
-   "--brand-200": "333 66.3% 38.4%",
-   "--brand-900": "0 0% 0%",
-   "--border-100": "40 12.0% 26.0%",
-   "--border-200": "40 12.0% 26.0%",
-   "--border-300": "40 12.0% 26.0%",
-   "--border-400": "40 12.0% 26.0%",
-   "--danger-000": "351 76.4% 39.8%",
-   "--danger-100": "351 76.4% 51.8%",
-   "--danger-200": "351 76.4% 39.8%",
-   "--danger-900": "351 45.8% 90.0%",
-   "--warning-000": "43 100.0% 28.0%",
-   "--warning-100": "43 100.0% 40.0%",
-   "--warning-200": "43 100.0% 28.0%",
-   "--warning-900": "43 60.0% 90.0%",
-   "--success-000": "90 75.4% 23.9%",
-   "--success-100": "90 75.4% 35.9%",
-   "--success-200": "90 75.4% 23.9%",
-   "--success-900": "90 45.2% 90.0%",
-   "--oncolor-100": "0 0.0% 100.0%",
-   "--oncolor-200": "0 0.0% 100.0%",
-   "--oncolor-300": "0 0.0% 100.0%",
-   "--pictogram-100": "42 15.2% 12.9%",
-   "--pictogram-200": "42 13.6% 22.7%",
-   "--pictogram-300": "42 12.0% 32.5%",
-   "--pictogram-400": "43 16.7% 77.9%",
-   "--claude-accent-clay": "#a3215c",
-   "--claude-foreground-color": "#26231c",
-   "--claude-background-color": "#dcd8ce",
-   "--claude-secondary-color": "#5d5749",
-   "--claude-border": "#a3215c18",
-   "--claude-border-300": "#a3215c30",
-   "--claude-border-300-more": "#a3215c55",
-   "--claude-text-100": "#26231c",
-   "--claude-text-200": "#423d32",
-   "--claude-text-400": "#5d5749",
-   "--claude-text-500": "#5d5749",
-   "--claude-description-text": "#474237"
-  },
-  "dark": {
-   "--bg-000": "120 58.3% 13.0%",
-   "--bg-100": "120 58.3% 9.4%",
-   "--bg-200": "120 58.3% 7.2%",
-   "--bg-300": "120 58.3% 5.5%",
-   "--bg-400": "120 58.3% 3.4%",
-   "--bg-500": "120 58.3% 1.6%",
-   "--text-000": "71 85.2% 39.8%",
-   "--text-100": "71 85.2% 39.8%",
-   "--text-200": "72 84.7% 38.5%",
-   "--text-300": "72 84.7% 38.5%",
-   "--text-400": "73 84.0% 36.7%",
-   "--text-500": "73 84.0% 36.7%",
-   "--accent-brand": "71 85.2% 39.8%",
-   "--accent-000": "71 85.2% 44.8%",
-   "--accent-100": "71 85.2% 39.8%",
-   "--accent-200": "71 85.2% 39.8%",
-   "--accent-900": "71 46.9% 24.0%",
-   "--accent-pro-000": "74 77.3% 39.5%",
-   "--accent-pro-100": "74 77.3% 34.5%",
-   "--accent-pro-200": "74 77.3% 34.5%",
-   "--accent-pro-900": "74 42.5% 24.0%",
-   "--brand-000": "71 85.2% 44.8%",
-   "--brand-100": "71 85.2% 39.8%",
-   "--brand-200": "71 85.2% 39.8%",
-   "--brand-900": "0 0% 0%",
-   "--border-100": "88 45.0% 74.0%",
-   "--border-200": "88 45.0% 74.0%",
-   "--border-300": "88 45.0% 74.0%",
-   "--border-400": "88 45.0% 74.0%",
-   "--danger-000": "20 66.7% 61.1%",
-   "--danger-100": "20 66.7% 54.1%",
-   "--danger-200": "20 66.7% 54.1%",
-   "--danger-900": "20 36.7% 24.0%",
-   "--warning-000": "47 68.1% 57.8%",
-   "--warning-100": "47 68.1% 50.8%",
-   "--warning-200": "47 68.1% 50.8%",
-   "--warning-900": "47 37.5% 24.0%",
-   "--success-000": "73 84.0% 43.7%",
-   "--success-100": "73 84.0% 36.7%",
-   "--success-200": "73 84.0% 36.7%",
-   "--success-900": "73 46.2% 24.0%",
-   "--oncolor-100": "120 57.7% 13.9%",
-   "--oncolor-200": "120 57.7% 13.9%",
-   "--oncolor-300": "120 57.7% 13.9%",
-   "--pictogram-100": "71 85.2% 39.8%",
-   "--pictogram-200": "72 84.7% 38.5%",
-   "--pictogram-300": "73 84.0% 36.7%",
-   "--pictogram-400": "120 58.3% 15.4%",
-   "--claude-accent-clay": "#9bbc0f",
-   "--claude-foreground-color": "#9bbc0f",
-   "--claude-background-color": "#0a260a",
-   "--claude-secondary-color": "#8bac0f",
-   "--claude-border": "#9bbc0f18",
-   "--claude-border-300": "#9bbc0f30",
-   "--claude-border-300-more": "#9bbc0f55",
-   "--claude-text-100": "#9bbc0f",
-   "--claude-text-200": "#95b60f",
-   "--claude-text-400": "#8bac0f",
-   "--claude-text-500": "#8bac0f",
-   "--claude-description-text": "#91b20f"
-  },
-  "spinner": {
-   "viewBox": "0 0 14 22",
-   "animation": "flip",
-   "paths": [
-    {
-     "d": "M2 0h10v1h-10ZM1 1h12v1h-12ZM0 2h14v1h-14ZM0 3h14v1h-14ZM0 4h14v1h-14ZM0 5h14v1h-14ZM0 6h14v1h-14ZM0 7h14v1h-14ZM0 8h14v1h-14ZM0 9h14v1h-14ZM0 10h14v1h-14ZM0 11h14v1h-14ZM0 12h14v1h-14ZM0 13h14v1h-14ZM0 14h14v1h-14ZM0 15h14v1h-14ZM0 16h14v1h-14ZM0 17h14v1h-14ZM0 18h13v1h-13ZM0 19h13v1h-13ZM0 20h12v1h-12ZM1 21h10v1h-10Z",
-     "fill": "#20231b"
-    },
-    {
-     "d": "M3 1h8v1h-8ZM2 2h10v1h-10ZM1 3h12v1h-12ZM1 4h12v1h-12ZM1 5h12v1h-12ZM1 6h12v1h-12ZM1 7h12v1h-12ZM1 8h12v1h-12ZM1 9h12v1h-12ZM1 10h12v1h-12ZM1 11h12v1h-12ZM1 12h12v1h-12ZM1 13h12v1h-12ZM1 14h12v1h-12ZM1 15h12v1h-12ZM1 16h12v1h-12ZM1 17h11v1h-11ZM1 18h11v1h-11ZM1 19h10v1h-10ZM2 20h8v1h-8Z",
-     "fill": "#cac6b6"
-    },
-    {
-     "d": "M2 3h10v1h-10ZM2 4h10v1h-10ZM2 5h10v1h-10ZM2 6h10v1h-10ZM2 7h10v1h-10ZM2 8h10v1h-10ZM2 9h10v1h-10Z",
-     "fill": "#5b5a63"
-    },
-    {
-     "d": "M4 4h6v1h-6ZM4 5h6v1h-6ZM4 6h6v1h-6ZM4 7h6v1h-6ZM4 8h6v1h-6Z",
-     "fill": "#9bbc0f"
-    },
-    {
-     "d": "M5 5h4v1h-4Z",
-     "fill": "#0f380f"
-    },
-    {
-     "d": "M3 1h3v1h-3ZM3 11h7v1h-7ZM3 17h2v1h-2ZM6 17h2v1h-2Z",
-     "fill": "#4d4d58"
-    },
-    {
-     "d": "M9 17h1v1h-1ZM9 18h1v1h-1ZM9 19h1v1h-1ZM11 17h1v1h-1ZM11 18h1v1h-1Z",
-     "fill": "#7b7869"
-    },
-    {
-     "d": "M3 13h2v1h-2ZM3 14h2v1h-2ZM3 15h2v1h-2ZM3 16h2v1h-2ZM2 14h4v1h-4ZM2 15h4v1h-4Z",
-     "fill": "#33333a"
-    },
-    {
-     "d": "M10 13h2v1h-2ZM10 14h2v1h-2ZM7 14h2v1h-2ZM7 15h2v1h-2Z",
-     "fill": "#a3215c"
-    },
-    {
-     "d": "M2 6h1v1h-1Z",
-     "fill": "#f0564e"
-    }
-   ],
-   "paths2": [
-    {
-     "d": "M2 0h10v1h-10ZM1 1h12v1h-12ZM0 2h14v1h-14ZM0 3h14v1h-14ZM0 4h14v1h-14ZM0 5h14v1h-14ZM0 6h14v1h-14ZM0 7h14v1h-14ZM0 8h14v1h-14ZM0 9h14v1h-14ZM0 10h14v1h-14ZM0 11h14v1h-14ZM0 12h14v1h-14ZM0 13h14v1h-14ZM0 14h14v1h-14ZM0 15h14v1h-14ZM0 16h14v1h-14ZM0 17h14v1h-14ZM0 18h13v1h-13ZM0 19h13v1h-13ZM0 20h12v1h-12ZM1 21h10v1h-10Z",
-     "fill": "#20231b"
-    },
-    {
-     "d": "M3 1h8v1h-8ZM2 2h10v1h-10ZM1 3h12v1h-12ZM1 4h12v1h-12ZM1 5h12v1h-12ZM1 6h12v1h-12ZM1 7h12v1h-12ZM1 8h12v1h-12ZM1 9h12v1h-12ZM1 10h12v1h-12ZM1 11h12v1h-12ZM1 12h12v1h-12ZM1 13h12v1h-12ZM1 14h12v1h-12ZM1 15h12v1h-12ZM1 16h12v1h-12ZM1 17h11v1h-11ZM1 18h11v1h-11ZM1 19h10v1h-10ZM2 20h8v1h-8Z",
-     "fill": "#cac6b6"
-    },
-    {
-     "d": "M2 3h10v1h-10ZM2 4h10v1h-10ZM2 5h10v1h-10ZM2 6h10v1h-10ZM2 7h10v1h-10ZM2 8h10v1h-10ZM2 9h10v1h-10Z",
-     "fill": "#5b5a63"
-    },
-    {
-     "d": "M4 4h6v1h-6ZM4 5h6v1h-6ZM4 6h6v1h-6ZM4 7h6v1h-6ZM4 8h6v1h-6Z",
-     "fill": "#9bbc0f"
-    },
-    {
-     "d": "M5 7h4v1h-4Z",
-     "fill": "#0f380f"
-    },
-    {
-     "d": "M3 1h3v1h-3ZM3 11h7v1h-7ZM3 17h2v1h-2ZM6 17h2v1h-2Z",
-     "fill": "#4d4d58"
-    },
-    {
-     "d": "M9 17h1v1h-1ZM9 18h1v1h-1ZM9 19h1v1h-1ZM11 17h1v1h-1ZM11 18h1v1h-1Z",
-     "fill": "#7b7869"
-    },
-    {
-     "d": "M3 13h2v1h-2ZM3 14h2v1h-2ZM3 15h2v1h-2ZM3 16h2v1h-2ZM2 14h4v1h-4ZM2 15h4v1h-4Z",
-     "fill": "#33333a"
-    },
-    {
-     "d": "M10 13h2v1h-2ZM10 14h2v1h-2ZM7 14h2v1h-2ZM7 15h2v1h-2Z",
-     "fill": "#a3215c"
-    },
-    {
-     "d": "M2 6h1v1h-1Z",
-     "fill": "#7a2f2c"
-    }
-   ]
-  }
- },
- "final-fantasy": {
-  "name": "Final Fantasy",
-  "category": "gaming",
-  "light": {
-   "--bg-000": "44 52.0% 95.8%",
-   "--bg-100": "44 52.0% 90.2%",
-   "--bg-200": "44 52.0% 87.2%",
-   "--bg-300": "44 52.0% 84.6%",
-   "--bg-400": "44 52.0% 81.8%",
-   "--bg-500": "44 52.0% 78.3%",
-   "--text-000": "42 31.3% 12.5%",
-   "--text-100": "42 31.3% 12.5%",
-   "--text-200": "42 29.1% 22.6%",
-   "--text-300": "42 29.1% 22.6%",
-   "--text-400": "41 26.9% 32.7%",
-   "--text-500": "41 26.9% 32.7%",
-   "--accent-brand": "227 62.5% 34.5%",
-   "--accent-000": "227 62.5% 37.5%",
-   "--accent-100": "227 62.5% 34.5%",
-   "--accent-200": "227 62.5% 34.5%",
-   "--accent-900": "227 37.5% 90.0%",
-   "--accent-pro-000": "41 79.2% 33.2%",
-   "--accent-pro-100": "41 79.2% 30.2%",
-   "--accent-pro-200": "41 79.2% 30.2%",
-   "--accent-pro-900": "41 47.5% 90.0%",
-   "--brand-000": "227 62.5% 37.5%",
-   "--brand-100": "227 62.5% 34.5%",
-   "--brand-200": "227 62.5% 34.5%",
-   "--brand-900": "0 0% 0%",
-   "--border-100": "39 26.1% 26.0%",
-   "--border-200": "39 26.1% 26.0%",
-   "--border-300": "39 26.1% 26.0%",
-   "--border-400": "39 26.1% 26.0%",
-   "--danger-000": "355 67.3% 38.4%",
-   "--danger-100": "355 67.3% 50.4%",
-   "--danger-200": "355 67.3% 38.4%",
-   "--danger-900": "355 40.4% 90.0%",
-   "--warning-000": "39 83.3% 30.6%",
-   "--warning-100": "39 83.3% 42.6%",
-   "--warning-200": "39 83.3% 30.6%",
-   "--warning-900": "39 50.0% 90.0%",
-   "--success-000": "144 44.2% 30.2%",
-   "--success-100": "144 44.2% 42.2%",
-   "--success-200": "144 44.2% 30.2%",
-   "--success-900": "144 26.5% 90.0%",
-   "--oncolor-100": "0 0.0% 100.0%",
-   "--oncolor-200": "0 0.0% 100.0%",
-   "--oncolor-300": "0 0.0% 100.0%",
-   "--pictogram-100": "42 31.3% 12.5%",
-   "--pictogram-200": "42 29.1% 22.6%",
-   "--pictogram-300": "41 26.9% 32.7%",
-   "--pictogram-400": "44 52.0% 84.6%",
-   "--claude-accent-clay": "#21398f",
-   "--claude-foreground-color": "#2a2416",
-   "--claude-background-color": "#f3ecd9",
-   "--claude-secondary-color": "#6a5c3d",
-   "--claude-border": "#21398f18",
-   "--claude-border-300": "#21398f30",
-   "--claude-border-300-more": "#21398f55",
-   "--claude-text-100": "#2a2416",
-   "--claude-text-200": "#4b4029",
-   "--claude-text-400": "#6a5c3d",
-   "--claude-text-500": "#6a5c3d",
-   "--claude-description-text": "#51462d"
-  },
-  "dark": {
-   "--bg-000": "227 62.8% 21.8%",
-   "--bg-100": "227 62.8% 16.9%",
-   "--bg-200": "227 62.8% 13.9%",
-   "--bg-300": "227 62.8% 11.4%",
-   "--bg-400": "227 62.8% 8.6%",
-   "--bg-500": "227 62.8% 6.2%",
-   "--text-000": "0 0.0% 100.0%",
-   "--text-100": "0 0.0% 100.0%",
-   "--text-200": "0 16.2% 91.8%",
-   "--text-300": "0 16.2% 91.8%",
-   "--text-400": "224 40.4% 79.6%",
-   "--text-500": "224 40.4% 79.6%",
-   "--accent-brand": "42 82.8% 65.9%",
-   "--accent-000": "42 82.8% 70.9%",
-   "--accent-100": "42 82.8% 65.9%",
-   "--accent-200": "42 82.8% 65.9%",
-   "--accent-900": "42 45.5% 24.0%",
-   "--accent-pro-000": "223 61.3% 81.7%",
-   "--accent-pro-100": "223 61.3% 76.7%",
-   "--accent-pro-200": "223 61.3% 76.7%",
-   "--accent-pro-900": "223 33.7% 24.0%",
-   "--brand-000": "42 82.8% 70.9%",
-   "--brand-100": "42 82.8% 65.9%",
-   "--brand-200": "42 82.8% 65.9%",
-   "--brand-900": "0 0% 0%",
-   "--border-100": "224 27.1% 74.0%",
-   "--border-200": "224 27.1% 74.0%",
-   "--border-300": "224 27.1% 74.0%",
-   "--border-400": "224 27.1% 74.0%",
-   "--danger-000": "0 100.0% 78.0%",
-   "--danger-100": "0 100.0% 71.0%",
-   "--danger-200": "0 100.0% 71.0%",
-   "--danger-900": "0 55.0% 24.0%",
-   "--warning-000": "42 100.0% 77.0%",
-   "--warning-100": "42 100.0% 70.0%",
-   "--warning-200": "42 100.0% 70.0%",
-   "--warning-900": "42 55.0% 24.0%",
-   "--success-000": "141 57.1% 75.0%",
-   "--success-100": "141 57.1% 68.0%",
-   "--success-200": "141 57.1% 68.0%",
-   "--success-900": "141 31.4% 24.0%",
-   "--oncolor-100": "43 67.7% 6.1%",
-   "--oncolor-200": "43 67.7% 6.1%",
-   "--oncolor-300": "43 67.7% 6.1%",
-   "--pictogram-100": "0 0.0% 100.0%",
-   "--pictogram-200": "0 16.2% 91.8%",
-   "--pictogram-300": "224 40.4% 79.6%",
-   "--pictogram-400": "227 62.8% 22.9%",
-   "--claude-accent-clay": "#f0c460",
-   "--claude-foreground-color": "#ffffff",
-   "--claude-background-color": "#101c46",
-   "--claude-secondary-color": "#b6c1e0",
-   "--claude-border": "#f0c46018",
-   "--claude-border-300": "#f0c46030",
-   "--claude-border-300-more": "#f0c46055",
-   "--claude-text-100": "#ffffff",
-   "--claude-text-200": "#eee7e7",
-   "--claude-text-400": "#b6c1e0",
-   "--claude-text-500": "#b6c1e0",
-   "--claude-description-text": "#e7d8d8"
-  },
-  "spinner": {
-   "viewBox": "0 0 18 22",
-   "animation": "flip",
-   "paths": [
-    {
-     "d": "M12 0H15V1H12ZM11 1H12V2H11ZM15 1H16V3H15ZM10 2H11V3H10ZM9 3H10V4H9ZM14 3H15V4H14ZM7 4H9V5H7ZM13 4H14V6H13ZM4 5H7V6H4ZM2 6H4V7H2ZM14 6H15V7H14ZM1 7H2V8H1ZM15 7H16V8H15ZM2 8H3V9H2ZM13 8H15V9H13ZM3 9H13V10H3ZM4 10H5V14H4ZM7 10H9V13H7ZM11 10H12V14H11ZM5 12H7V13H5ZM9 12H11V13H9ZM3 14H4V16H3ZM12 14H13V16H12ZM2 16H3V19H2ZM13 16H14V19H13ZM1 19H2V20H1ZM14 19H15V20H14ZM2 20H3V21H2ZM5 20H11V21H5ZM13 20H14V21H13ZM3 21H5V22H3ZM11 21H13V22H11Z",
-     "fill": "#150f22"
-    },
-    {
-     "d": "M14 2H15V3H14ZM13 3H14V4H13ZM12 4H13V9H12ZM13 6H14V8H13ZM14 7H15V8H14ZM3 8H12V9H3Z",
-     "fill": "#96590f"
-    },
-    {
-     "d": "M12 1H15V2H12ZM11 2H14V3H11ZM10 3H13V4H10ZM9 4H12V8H9ZM7 5H9V8H7ZM4 6H7V8H4ZM2 7H4V8H2Z",
-     "fill": "#e29a1c"
-    },
-    {
-     "d": "M5 13H10V16H5ZM4 14H5V20H4ZM10 14H11V20H10ZM3 16H4V20H3ZM5 16H6V20H5ZM11 16H12V20H11ZM6 17H10V20H6ZM2 19H3V20H2ZM12 19H13V20H12Z",
-     "fill": "#46bdf5"
-    },
-    {
-     "d": "M10 13H11V14H10ZM11 14H12V16H11ZM12 16H13V19H12ZM13 19H14V20H13Z",
-     "fill": "#1f7fc4"
-    },
-    {
-     "d": "M6 16H10V17H6ZM3 20H5V21H3ZM11 20H13V21H11Z",
-     "fill": "#f5c542"
-    },
-    {
-     "d": "M5 10H7V12H5ZM9 10H11V12H9Z",
-     "fill": "#ffe066"
-    }
-   ],
-   "paths2": [
-    {
-     "d": "M12 0H15V1H12ZM11 1H12V2H11ZM15 1H16V3H15ZM10 2H11V3H10ZM9 3H10V4H9ZM14 3H15V4H14ZM7 4H9V5H7ZM13 4H14V6H13ZM4 5H7V6H4ZM2 6H4V7H2ZM14 6H15V7H14ZM1 7H2V8H1ZM15 7H16V8H15ZM2 8H3V9H2ZM13 8H15V9H13ZM3 9H13V10H3ZM4 10H5V14H4ZM7 10H9V13H7ZM11 10H12V14H11ZM5 12H7V13H5ZM9 12H11V13H9ZM3 14H4V16H3ZM12 14H13V16H12ZM2 16H3V19H2ZM13 16H14V19H13ZM1 19H2V20H1ZM14 19H15V20H14ZM2 20H4V21H2ZM6 20H10V21H6ZM12 20H14V21H12ZM4 21H6V22H4ZM10 21H12V22H10Z",
-     "fill": "#150f22"
-    },
-    {
-     "d": "M14 2H15V3H14ZM13 3H14V4H13ZM12 4H13V9H12ZM13 6H14V8H13ZM14 7H15V8H14ZM3 8H12V9H3Z",
-     "fill": "#96590f"
-    },
-    {
-     "d": "M12 1H15V2H12ZM11 2H14V3H11ZM10 3H13V4H10ZM9 4H12V8H9ZM7 5H9V8H7ZM4 6H7V8H4ZM2 7H4V8H2Z",
-     "fill": "#e29a1c"
-    },
-    {
-     "d": "M5 13H10V16H5ZM4 14H5V20H4ZM10 14H11V20H10ZM3 16H4V20H3ZM5 16H6V20H5ZM11 16H12V20H11ZM6 17H10V20H6ZM2 19H3V20H2ZM12 19H13V20H12Z",
-     "fill": "#46bdf5"
-    },
-    {
-     "d": "M10 13H11V14H10ZM11 14H12V16H11ZM12 16H13V19H12ZM13 19H14V20H13Z",
-     "fill": "#1f7fc4"
-    },
-    {
-     "d": "M6 16H10V17H6ZM4 20H6V21H4ZM10 20H12V21H10Z",
-     "fill": "#f5c542"
-    },
-    {
-     "d": "M5 10H7V12H5ZM9 10H11V12H9Z",
-     "fill": "#fff6c8"
-    },
-    {
-     "d": "M2 3H3V6H2ZM1 4H2V5H1ZM3 4H4V5H3ZM14 13H15V16H14ZM13 14H14V15H13ZM15 14H16V15H15Z",
-     "fill": "#efae24"
-    }
-   ]
-  }
- },
- "zelda": {
-  "name": "Zelda",
-  "category": "gaming",
-  "light": {
-   "--bg-000": "78 39.5% 97.2%",
-   "--bg-100": "78 39.5% 91.6%",
-   "--bg-200": "78 39.5% 88.6%",
-   "--bg-300": "78 39.5% 86.0%",
-   "--bg-400": "78 39.5% 83.2%",
-   "--bg-500": "78 39.5% 79.7%",
-   "--text-000": "111 29.2% 12.7%",
-   "--text-100": "111 29.2% 12.7%",
-   "--text-200": "108 22.3% 23.0%",
-   "--text-300": "108 22.3% 23.0%",
-   "--text-400": "106 15.3% 33.3%",
-   "--text-500": "106 15.3% 33.3%",
-   "--accent-brand": "146 57.4% 26.7%",
-   "--accent-000": "146 57.4% 29.7%",
-   "--accent-100": "146 57.4% 26.7%",
-   "--accent-200": "146 57.4% 26.7%",
-   "--accent-900": "146 34.4% 90.0%",
-   "--accent-pro-000": "220 60.0% 44.2%",
-   "--accent-pro-100": "220 60.0% 41.2%",
-   "--accent-pro-200": "220 60.0% 41.2%",
-   "--accent-pro-900": "220 36.0% 90.0%",
-   "--brand-000": "146 57.4% 29.7%",
-   "--brand-100": "146 57.4% 26.7%",
-   "--brand-200": "146 57.4% 26.7%",
-   "--brand-900": "0 0% 0%",
-   "--border-100": "91 21.5% 26.0%",
-   "--border-200": "91 21.5% 26.0%",
-   "--border-300": "91 21.5% 26.0%",
-   "--border-400": "91 21.5% 26.0%",
-   "--danger-000": "356 65.3% 38.4%",
-   "--danger-100": "356 65.3% 50.4%",
-   "--danger-200": "356 65.3% 38.4%",
-   "--danger-900": "356 39.2% 90.0%",
-   "--warning-000": "40 85.2% 31.8%",
-   "--warning-100": "40 85.2% 43.8%",
-   "--warning-200": "40 85.2% 31.8%",
-   "--warning-900": "40 51.1% 90.0%",
-   "--success-000": "95 61.6% 28.6%",
-   "--success-100": "95 61.6% 40.6%",
-   "--success-200": "95 61.6% 28.6%",
-   "--success-900": "95 37.0% 90.0%",
-   "--oncolor-100": "0 0.0% 100.0%",
-   "--oncolor-200": "0 0.0% 100.0%",
-   "--oncolor-300": "0 0.0% 100.0%",
-   "--pictogram-100": "111 29.2% 12.7%",
-   "--pictogram-200": "108 22.3% 23.0%",
-   "--pictogram-300": "106 15.3% 33.3%",
-   "--pictogram-400": "78 39.5% 86.0%",
-   "--claude-accent-clay": "#1d6b3f",
-   "--claude-foreground-color": "#1a2a17",
-   "--claude-background-color": "#edf2e1",
-   "--claude-secondary-color": "#4e6248",
-   "--claude-border": "#1d6b3f18",
-   "--claude-border-300": "#1d6b3f30",
-   "--claude-border-300-more": "#1d6b3f55",
-   "--claude-text-100": "#1a2a17",
-   "--claude-text-200": "#33482e",
-   "--claude-text-400": "#4e6248",
-   "--claude-text-500": "#4e6248",
-   "--claude-description-text": "#384d33"
-  },
-  "dark": {
-   "--bg-000": "137 28.1% 17.2%",
-   "--bg-100": "137 28.1% 12.5%",
-   "--bg-200": "137 28.1% 9.7%",
-   "--bg-300": "137 28.1% 7.4%",
-   "--bg-400": "137 28.1% 4.7%",
-   "--bg-500": "137 28.1% 2.4%",
-   "--text-000": "90 47.1% 93.3%",
-   "--text-100": "90 47.1% 93.3%",
-   "--text-200": "98 35.0% 83.5%",
-   "--text-300": "98 35.0% 83.5%",
-   "--text-400": "109 17.0% 68.8%",
-   "--text-500": "109 17.0% 68.8%",
-   "--accent-brand": "48 87.8% 52.0%",
-   "--accent-000": "48 87.8% 57.0%",
-   "--accent-100": "48 87.8% 52.0%",
-   "--accent-200": "48 87.8% 52.0%",
-   "--accent-900": "48 48.3% 24.0%",
-   "--accent-pro-000": "198 69.5% 75.4%",
-   "--accent-pro-100": "198 69.5% 70.4%",
-   "--accent-pro-200": "198 69.5% 70.4%",
-   "--accent-pro-900": "198 38.2% 24.0%",
-   "--brand-000": "48 87.8% 57.0%",
-   "--brand-100": "48 87.8% 52.0%",
-   "--brand-200": "48 87.8% 52.0%",
-   "--brand-900": "0 0% 0%",
-   "--border-100": "114 30.4% 74.0%",
-   "--border-200": "114 30.4% 74.0%",
-   "--border-300": "114 30.4% 74.0%",
-   "--border-400": "114 30.4% 74.0%",
-   "--danger-000": "1 74.9% 71.1%",
-   "--danger-100": "1 74.9% 64.1%",
-   "--danger-200": "1 74.9% 64.1%",
-   "--danger-900": "1 41.2% 24.0%",
-   "--warning-000": "38 79.3% 63.5%",
-   "--warning-100": "38 79.3% 56.5%",
-   "--warning-200": "38 79.3% 56.5%",
-   "--warning-900": "38 43.6% 24.0%",
-   "--success-000": "127 50.8% 69.5%",
-   "--success-100": "127 50.8% 62.5%",
-   "--success-200": "127 50.8% 62.5%",
-   "--success-900": "127 27.9% 24.0%",
-   "--oncolor-100": "46 88.6% 6.9%",
-   "--oncolor-200": "46 88.6% 6.9%",
-   "--oncolor-300": "46 88.6% 6.9%",
-   "--pictogram-100": "90 47.1% 93.3%",
-   "--pictogram-200": "98 35.0% 83.5%",
-   "--pictogram-300": "109 17.0% 68.8%",
-   "--pictogram-400": "137 28.1% 18.5%",
-   "--claude-accent-clay": "#f0c419",
-   "--claude-foreground-color": "#eef6e6",
-   "--claude-background-color": "#17291c",
-   "--claude-secondary-color": "#a7bda2",
-   "--claude-border": "#f0c41918",
-   "--claude-border-300": "#f0c41930",
-   "--claude-border-300-more": "#f0c41955",
-   "--claude-text-100": "#eef6e6",
-   "--claude-text-200": "#d1e4c6",
-   "--claude-text-400": "#a7bda2",
-   "--claude-text-500": "#a7bda2",
-   "--claude-description-text": "#c3d8b9"
-  },
-  "spinner": {
-   "viewBox": "0 0 16 16",
-   "animation": "flip",
-   "paths": [
-    {
-     "d": "M4 0h4v1h-4Z M11 0h1v1h-1Z M14 0h1v1h-1Z M3 1h1v1h-1Z M8 1h1v1h-1Z M11 1h1v1h-1Z M14 1h1v1h-1Z M2 2h1v1h-1Z M9 2h1v1h-1Z M11 2h1v1h-1Z M14 2h1v1h-1Z M2 3h1v1h-1Z M9 3h1v1h-1Z M11 3h1v1h-1Z M14 3h1v1h-1Z M2 4h1v1h-1Z M9 4h1v1h-1Z M11 4h1v1h-1Z M14 4h1v1h-1Z M2 5h1v1h-1Z M9 5h1v1h-1Z M11 5h1v1h-1Z M14 5h1v1h-1Z M2 6h1v1h-1Z M4 6h1v1h-1Z M7 6h1v1h-1Z M9 6h1v1h-1Z M11 6h1v1h-1Z M14 6h1v1h-1Z M2 7h1v1h-1Z M9 7h2v1h-2Z M14 7h1v1h-1Z M1 8h1v1h-1Z M10 8h2v1h-2Z M14 8h1v1h-1Z M1 9h1v1h-1Z M11 9h1v1h-1Z M14 9h1v1h-1Z M1 10h1v1h-1Z M10 10h2v1h-2Z M14 10h1v1h-1Z M1 11h1v1h-1Z M10 11h1v1h-1Z M1 12h1v1h-1Z M10 12h1v1h-1Z M2 13h1v1h-1Z M5 13h2v1h-2Z M9 13h1v1h-1Z M2 14h1v1h-1Z M5 14h2v1h-2Z M9 14h1v1h-1Z M2 15h1v1h-1Z M5 15h2v1h-2Z M9 15h1v1h-1Z",
-     "fill": "#16240f"
-    },
-    {
-     "d": "M3 4h6v1h-6Z M2 9h1v1h-1Z M9 9h1v1h-1Z",
-     "fill": "#1f7a35"
-    },
-    {
-     "d": "M12 8h2v1h-2Z M12 9h2v1h-2Z M2 11h8v1h-8Z M3 15h2v1h-2Z M7 15h2v1h-2Z",
-     "fill": "#7b4a1e"
-    },
-    {
-     "d": "M6 1h2v1h-2Z M4 2h5v1h-5Z M3 3h6v1h-6Z M3 8h7v1h-7Z M3 9h6v1h-6Z M3 10h6v1h-6Z M2 12h8v1h-8Z",
-     "fill": "#34a94b"
-    },
-    {
-     "d": "M4 1h2v1h-2Z M3 2h1v1h-1Z M2 8h1v1h-1Z",
-     "fill": "#4ec863"
-    },
-    {
-     "d": "M4 5h4v1h-4Z M3 6h1v1h-1Z M5 6h2v1h-2Z M8 6h1v1h-1Z M3 7h6v1h-6Z M10 9h1v1h-1Z M2 10h1v1h-1Z M9 10h1v1h-1Z M3 13h2v1h-2Z M7 13h2v1h-2Z M3 14h2v1h-2Z M7 14h2v1h-2Z",
-     "fill": "#f0c08c"
-    },
-    {
-     "d": "M3 5h1v1h-1Z M8 5h1v1h-1Z",
-     "fill": "#c9902f"
-    },
-    {
-     "d": "M13 0h1v1h-1Z M13 1h1v1h-1Z M13 2h1v1h-1Z M13 3h1v1h-1Z M13 4h1v1h-1Z M13 5h1v1h-1Z M13 6h1v1h-1Z",
-     "fill": "#9fbdd2"
-    },
-    {
-     "d": "M12 0h1v1h-1Z M12 1h1v1h-1Z M12 2h1v1h-1Z M12 3h1v1h-1Z M12 4h1v1h-1Z M12 5h1v1h-1Z M12 6h1v1h-1Z",
-     "fill": "#eef6fb"
-    },
-    {
-     "d": "M11 7h3v1h-3Z M12 10h2v1h-2Z",
-     "fill": "#f2c231"
-    }
-   ],
-   "paths2": [
-    {
-     "d": "M4 0h4v1h-4Z M3 1h1v1h-1Z M8 1h1v1h-1Z M2 2h1v1h-1Z M9 2h1v1h-1Z M2 3h1v1h-1Z M9 3h1v1h-1Z M2 4h1v1h-1Z M9 4h1v1h-1Z M2 5h1v1h-1Z M9 5h1v1h-1Z M2 6h1v1h-1Z M4 6h1v1h-1Z M7 6h1v1h-1Z M9 6h1v1h-1Z M2 7h1v1h-1Z M9 7h1v1h-1Z M1 8h1v1h-1Z M10 8h6v1h-6Z M1 9h1v1h-1Z M1 10h1v1h-1Z M1 11h1v1h-1Z M10 11h1v1h-1Z M1 12h1v1h-1Z M10 12h1v1h-1Z M2 13h1v1h-1Z M5 13h2v1h-2Z M9 13h1v1h-1Z M2 14h1v1h-1Z M5 14h2v1h-2Z M9 14h1v1h-1Z M2 15h1v1h-1Z M5 15h1v1h-1Z",
-     "fill": "#16240f"
-    },
-    {
-     "d": "M3 4h6v1h-6Z M2 9h1v1h-1Z",
-     "fill": "#1f7a35"
-    },
-    {
-     "d": "M2 11h8v1h-8Z M7 14h2v1h-2Z M3 15h2v1h-2Z",
-     "fill": "#7b4a1e"
-    },
-    {
-     "d": "M6 1h2v1h-2Z M4 2h5v1h-5Z M3 3h6v1h-6Z M3 8h7v1h-7Z M3 9h6v1h-6Z M3 10h6v1h-6Z M2 12h8v1h-8Z",
-     "fill": "#34a94b"
-    },
-    {
-     "d": "M4 1h2v1h-2Z M3 2h1v1h-1Z M2 8h1v1h-1Z",
-     "fill": "#4ec863"
-    },
-    {
-     "d": "M4 5h4v1h-4Z M3 6h1v1h-1Z M5 6h2v1h-2Z M8 6h1v1h-1Z M3 7h6v1h-6Z M9 9h1v1h-1Z M2 10h1v1h-1Z M9 10h1v1h-1Z M3 13h2v1h-2Z M7 13h2v1h-2Z M3 14h2v1h-2Z",
-     "fill": "#f0c08c"
-    },
-    {
-     "d": "M3 5h1v1h-1Z M8 5h1v1h-1Z",
-     "fill": "#c9902f"
-    },
-    {
-     "d": "M11 10h4v1h-4Z",
-     "fill": "#9fbdd2"
-    },
-    {
-     "d": "M11 9h5v1h-5Z",
-     "fill": "#eef6fb"
-    },
-    {
-     "d": "M10 9h1v1h-1Z M10 10h1v1h-1Z",
-     "fill": "#f2c231"
-    }
-   ]
-  }
- },
- "warcraft": {
-  "name": "Warcraft",
-  "category": "gaming",
-  "light": {
-   "--bg-000": "42 44.8% 94.2%",
-   "--bg-100": "42 44.8% 88.6%",
-   "--bg-200": "42 44.8% 85.7%",
-   "--bg-300": "42 44.8% 83.0%",
-   "--bg-400": "42 44.8% 80.2%",
-   "--bg-500": "42 44.8% 76.7%",
-   "--text-000": "35 37.3% 10.0%",
-   "--text-100": "35 37.3% 10.0%",
-   "--text-200": "36 34.8% 19.5%",
-   "--text-300": "36 34.8% 19.5%",
-   "--text-400": "38 32.4% 29.0%",
-   "--text-500": "38 32.4% 29.0%",
-   "--accent-brand": "220 67.5% 37.5%",
-   "--accent-000": "220 67.5% 40.5%",
-   "--accent-100": "220 67.5% 37.5%",
-   "--accent-200": "220 67.5% 37.5%",
-   "--accent-900": "220 40.5% 90.0%",
-   "--accent-pro-000": "95 59.7% 30.3%",
-   "--accent-pro-100": "95 59.7% 27.3%",
-   "--accent-pro-200": "95 59.7% 27.3%",
-   "--accent-pro-900": "95 35.8% 90.0%",
-   "--brand-000": "220 67.5% 40.5%",
-   "--brand-100": "220 67.5% 37.5%",
-   "--brand-200": "220 67.5% 37.5%",
-   "--brand-900": "0 0% 0%",
-   "--border-100": "38 29.1% 26.0%",
-   "--border-200": "38 29.1% 26.0%",
-   "--border-300": "38 29.1% 26.0%",
-   "--border-400": "38 29.1% 26.0%",
-   "--danger-000": "357 66.5% 37.5%",
-   "--danger-100": "357 66.5% 49.5%",
-   "--danger-200": "357 66.5% 37.5%",
-   "--danger-900": "357 39.9% 90.0%",
-   "--warning-000": "43 89.7% 30.6%",
-   "--warning-100": "43 89.7% 42.6%",
-   "--warning-200": "43 89.7% 30.6%",
-   "--warning-900": "43 53.8% 90.0%",
-   "--success-000": "143 45.0% 31.4%",
-   "--success-100": "143 45.0% 43.4%",
-   "--success-200": "143 45.0% 31.4%",
-   "--success-900": "143 27.0% 90.0%",
-   "--oncolor-100": "0 0.0% 100.0%",
-   "--oncolor-200": "0 0.0% 100.0%",
-   "--oncolor-300": "0 0.0% 100.0%",
-   "--pictogram-100": "35 37.3% 10.0%",
-   "--pictogram-200": "36 34.8% 19.5%",
-   "--pictogram-300": "38 32.4% 29.0%",
-   "--pictogram-400": "42 44.8% 83.0%",
-   "--claude-accent-clay": "#1f4aa0",
-   "--claude-foreground-color": "#231b10",
-   "--claude-background-color": "#efe7d5",
-   "--claude-secondary-color": "#625032",
-   "--claude-border": "#1f4aa018",
-   "--claude-border-300": "#1f4aa030",
-   "--claude-border-300-more": "#1f4aa055",
-   "--claude-text-100": "#231b10",
-   "--claude-text-200": "#433520",
-   "--claude-text-400": "#625032",
-   "--claude-text-500": "#625032",
-   "--claude-description-text": "#493b24"
-  },
-  "dark": {
-   "--bg-000": "28 30.9% 14.9%",
-   "--bg-100": "28 30.9% 10.8%",
-   "--bg-200": "28 30.9% 8.3%",
-   "--bg-300": "28 30.9% 6.2%",
-   "--bg-400": "28 30.9% 3.9%",
-   "--bg-500": "28 30.9% 1.8%",
-   "--text-000": "39 57.4% 88.0%",
-   "--text-100": "39 57.4% 88.0%",
-   "--text-200": "39 47.6% 77.8%",
-   "--text-300": "39 47.6% 77.8%",
-   "--text-400": "37 33.0% 62.5%",
-   "--text-500": "37 33.0% 62.5%",
-   "--accent-brand": "43 78.6% 57.8%",
-   "--accent-000": "43 78.6% 62.8%",
-   "--accent-100": "43 78.6% 57.8%",
-   "--accent-200": "43 78.6% 57.8%",
-   "--accent-900": "43 43.2% 24.0%",
-   "--accent-pro-000": "217 72.5% 72.3%",
-   "--accent-pro-100": "217 72.5% 67.3%",
-   "--accent-pro-200": "217 72.5% 67.3%",
-   "--accent-pro-900": "217 39.9% 24.0%",
-   "--brand-000": "43 78.6% 62.8%",
-   "--brand-100": "43 78.6% 57.8%",
-   "--brand-200": "43 78.6% 57.8%",
-   "--brand-900": "0 0% 0%",
-   "--border-100": "38 40.8% 74.0%",
-   "--border-200": "38 40.8% 74.0%",
-   "--border-300": "38 40.8% 74.0%",
-   "--border-400": "38 40.8% 74.0%",
-   "--danger-000": "3 77.5% 67.0%",
-   "--danger-100": "3 77.5% 60.0%",
-   "--danger-200": "3 77.5% 60.0%",
-   "--danger-900": "3 42.6% 24.0%",
-   "--warning-000": "37 86.6% 63.1%",
-   "--warning-100": "37 86.6% 56.1%",
-   "--warning-200": "37 86.6% 56.1%",
-   "--warning-900": "37 47.6% 24.0%",
-   "--success-000": "92 51.8% 57.4%",
-   "--success-100": "92 51.8% 50.4%",
-   "--success-200": "92 51.8% 50.4%",
-   "--success-900": "92 28.5% 24.0%",
-   "--oncolor-100": "39 74.2% 6.1%",
-   "--oncolor-200": "39 74.2% 6.1%",
-   "--oncolor-300": "39 74.2% 6.1%",
-   "--pictogram-100": "39 57.4% 88.0%",
-   "--pictogram-200": "39 47.6% 77.8%",
-   "--pictogram-300": "37 33.0% 62.5%",
-   "--pictogram-400": "28 30.9% 16.8%",
-   "--claude-accent-clay": "#e8b93f",
-   "--claude-foreground-color": "#f2e6cf",
-   "--claude-background-color": "#241b13",
-   "--claude-secondary-color": "#bfa780",
-   "--claude-border": "#e8b93f18",
-   "--claude-border-300": "#e8b93f30",
-   "--claude-border-300-more": "#e8b93f55",
-   "--claude-text-100": "#f2e6cf",
-   "--claude-text-200": "#e1ceac",
-   "--claude-text-400": "#bfa780",
-   "--claude-text-500": "#bfa780",
-   "--claude-description-text": "#d7c19c"
-  },
-  "spinner": {
-   "viewBox": "0 0 20 20",
-   "animation": "flip",
-   "paths": [
-    {
-     "d": "M3 6H5V7H3ZM9 6H11V7H9ZM2 7H3V8H2ZM11 7H12V8H11ZM1 8H2V13H1ZM12 8H13V13H12ZM2 13H3V15H2ZM11 13H12V15H11ZM3 15H4V16H3ZM10 15H11V16H10ZM4 17H10V20H4Z",
-     "fill": "#7e1f18"
-    },
-    {
-     "d": "M5 6H9V7H5ZM3 7H11V8H3ZM2 8H12V9H2ZM2 9H4V10H2ZM10 9H12V10H10ZM2 10H3V13H2ZM11 10H12V13H11ZM3 13H4V15H3ZM10 13H11V15H10Z",
-     "fill": "#b6362a"
-    },
-    {
-     "d": "M4 9H10V10H4ZM5 16H9V17H5Z",
-     "fill": "#3b7a1f"
-    },
-    {
-     "d": "M3 10H11V11H3ZM3 11H4V12H3ZM6 11H8V12H6ZM10 11H11V12H10ZM3 12H11V13H3ZM4 13H10V14H4ZM4 14H5V17H4ZM6 14H8V15H6ZM9 14H10V17H9ZM2 17H4V18H2ZM10 17H12V18H10ZM1 18H4V20H1ZM10 18H13V20H10Z",
-     "fill": "#5aa832"
-    },
-    {
-     "d": "M4 11H6V12H4ZM8 11H10V12H8ZM5 15H9V16H5Z",
-     "fill": "#1d1409"
-    },
-    {
-     "d": "M5 14H6V15H5ZM8 14H9V15H8Z",
-     "fill": "#f2e6cf"
-    },
-    {
-     "d": "M14 5H16V7H14ZM13 7H15V9H13ZM13 9H14V11H13ZM15 19H18V20H15Z",
-     "fill": "#8a5a26"
-    },
-    {
-     "d": "M18 4H20V5H18ZM17 5H19V6H17Z",
-     "fill": "#6b7379"
-    },
-    {
-     "d": "M16 2H19V3H16ZM15 3H20V4H15ZM15 4H18V5H15ZM16 5H17V6H16Z",
-     "fill": "#b3bbc2"
-    },
-    {
-     "d": "M14 17H17V18H14ZM14 18H19V19H14ZM14 19H15V20H14ZM18 19H19V20H18Z",
-     "fill": "#e8b93f"
-    }
-   ],
-   "paths2": [
-    {
-     "d": "M3 6H5V7H3ZM9 6H11V7H9ZM2 7H3V8H2ZM11 7H12V8H11ZM1 8H2V13H1ZM12 8H13V13H12ZM2 13H3V15H2ZM11 13H12V15H11ZM3 15H4V16H3ZM10 15H11V16H10ZM4 17H10V20H4Z",
-     "fill": "#7e1f18"
-    },
-    {
-     "d": "M5 6H9V7H5ZM3 7H11V8H3ZM2 8H12V9H2ZM2 9H4V10H2ZM10 9H12V10H10ZM2 10H3V13H2ZM11 10H12V13H11ZM3 13H4V15H3ZM10 13H11V15H10Z",
-     "fill": "#b6362a"
-    },
-    {
-     "d": "M4 9H10V10H4ZM5 16H9V17H5Z",
-     "fill": "#3b7a1f"
-    },
-    {
-     "d": "M3 10H11V11H3ZM3 11H4V12H3ZM6 11H8V12H6ZM10 11H11V12H10ZM3 12H11V13H3ZM4 13H10V14H4ZM4 14H5V17H4ZM6 14H8V15H6ZM9 14H10V17H9ZM2 17H4V18H2ZM10 17H12V18H10ZM1 18H4V20H1ZM10 18H13V20H10Z",
-     "fill": "#5aa832"
-    },
-    {
-     "d": "M4 11H6V12H4ZM8 11H10V12H8ZM5 15H9V16H5Z",
-     "fill": "#1d1409"
-    },
-    {
-     "d": "M5 14H6V15H5ZM8 14H9V15H8Z",
-     "fill": "#f2e6cf"
-    },
-    {
-     "d": "M11 6H13V7H11ZM12 7H14V8H12ZM13 8H15V9H13ZM14 9H16V10H14ZM15 10H17V11H15ZM16 11H18V12H16ZM17 12H19V13H17ZM15 19H18V20H15Z",
-     "fill": "#8a5a26"
-    },
-    {
-     "d": "M18 15H20V16H18ZM17 16H19V17H17Z",
-     "fill": "#6b7379"
-    },
-    {
-     "d": "M16 13H19V14H16ZM15 14H20V15H15ZM15 15H18V16H15ZM16 16H17V17H16Z",
-     "fill": "#b3bbc2"
-    },
-    {
-     "d": "M14 17H17V18H14ZM14 18H19V19H14ZM14 19H15V20H14ZM18 19H19V20H18Z",
-     "fill": "#e8b93f"
-    }
-   ]
-  }
- },
- "dragonball": {
-  "name": "Dragon Ball",
-  "category": "gaming",
-  "light": {
-   "--bg-000": "0 0.0% 100.0%",
-   "--bg-100": "210 69.2% 94.9%",
-   "--bg-200": "210 69.2% 91.9%",
-   "--bg-300": "210 69.2% 89.3%",
-   "--bg-400": "210 69.2% 86.5%",
-   "--bg-500": "210 69.2% 83.0%",
-   "--text-000": "221 49.3% 14.7%",
-   "--text-100": "221 49.3% 14.7%",
-   "--text-200": "220 37.2% 26.2%",
-   "--text-300": "220 37.2% 26.2%",
-   "--text-400": "220 25.0% 37.6%",
-   "--text-500": "220 25.0% 37.6%",
-   "--accent-brand": "25 95.0% 39.0%",
-   "--accent-000": "25 95.0% 42.0%",
-   "--accent-100": "25 95.0% 39.0%",
-   "--accent-200": "25 95.0% 39.0%",
-   "--accent-900": "25 57.0% 90.0%",
-   "--accent-pro-000": "222 72.1% 46.5%",
-   "--accent-pro-100": "222 72.1% 43.5%",
-   "--accent-pro-200": "222 72.1% 43.5%",
-   "--accent-pro-900": "222 43.2% 90.0%",
-   "--brand-000": "25 95.0% 42.0%",
-   "--brand-100": "25 95.0% 39.0%",
-   "--brand-200": "25 95.0% 39.0%",
-   "--brand-900": "0 0% 0%",
-   "--border-100": "213 38.6% 26.0%",
-   "--border-200": "213 38.6% 26.0%",
-   "--border-300": "213 38.6% 26.0%",
-   "--border-400": "213 38.6% 26.0%",
-   "--danger-000": "350 81.4% 38.0%",
-   "--danger-100": "350 81.4% 50.0%",
-   "--danger-200": "350 81.4% 38.0%",
-   "--danger-900": "350 48.9% 90.0%",
-   "--warning-000": "41 87.3% 31.0%",
-   "--warning-100": "41 87.3% 43.0%",
-   "--warning-200": "41 87.3% 31.0%",
-   "--warning-900": "41 52.4% 90.0%",
-   "--success-000": "149 60.8% 28.0%",
-   "--success-100": "149 60.8% 40.0%",
-   "--success-200": "149 60.8% 28.0%",
-   "--success-900": "149 36.5% 90.0%",
-   "--oncolor-100": "0 0.0% 100.0%",
-   "--oncolor-200": "0 0.0% 100.0%",
-   "--oncolor-300": "0 0.0% 100.0%",
-   "--pictogram-100": "221 49.3% 14.7%",
-   "--pictogram-200": "220 37.2% 26.2%",
-   "--pictogram-300": "220 25.0% 37.6%",
-   "--pictogram-400": "210 69.2% 89.3%",
-   "--claude-accent-clay": "#c25405",
-   "--claude-foreground-color": "#131f38",
-   "--claude-background-color": "#e9f2fb",
-   "--claude-secondary-color": "#485878",
-   "--claude-border": "#c2540518",
-   "--claude-border-300": "#c2540530",
-   "--claude-border-300-more": "#c2540555",
-   "--claude-text-100": "#131f38",
-   "--claude-text-200": "#2a3a5c",
-   "--claude-text-400": "#485878",
-   "--claude-text-500": "#485878",
-   "--claude-description-text": "#2f4062"
-  },
-  "dark": {
-   "--bg-000": "226 25.4% 18.0%",
-   "--bg-100": "226 25.4% 13.1%",
-   "--bg-200": "226 25.4% 10.2%",
-   "--bg-300": "226 25.4% 7.7%",
-   "--bg-400": "226 25.4% 4.9%",
-   "--bg-500": "226 25.4% 2.5%",
-   "--text-000": "41 47.1% 93.3%",
-   "--text-100": "41 47.1% 93.3%",
-   "--text-200": "337 33.3% 85.4%",
-   "--text-300": "337 33.3% 85.4%",
-   "--text-400": "240 12.6% 73.5%",
-   "--text-500": "240 12.6% 73.5%",
-   "--accent-brand": "30 100.0% 55.1%",
-   "--accent-000": "30 100.0% 60.1%",
-   "--accent-100": "30 100.0% 55.1%",
-   "--accent-200": "30 100.0% 55.1%",
-   "--accent-900": "30 55.0% 24.0%",
-   "--accent-pro-000": "222 100.0% 72.8%",
-   "--accent-pro-100": "222 100.0% 67.8%",
-   "--accent-pro-200": "222 100.0% 67.8%",
-   "--accent-pro-900": "222 55.0% 24.0%",
-   "--brand-000": "30 100.0% 60.1%",
-   "--brand-100": "30 100.0% 55.1%",
-   "--brand-200": "30 100.0% 55.1%",
-   "--brand-900": "0 0% 0%",
-   "--border-100": "235 29.7% 74.0%",
-   "--border-200": "235 29.7% 74.0%",
-   "--border-300": "235 29.7% 74.0%",
-   "--border-400": "235 29.7% 74.0%",
-   "--danger-000": "350 100.0% 72.1%",
-   "--danger-100": "350 100.0% 65.1%",
-   "--danger-200": "350 100.0% 65.1%",
-   "--danger-900": "350 55.0% 24.0%",
-   "--warning-000": "45 100.0% 69.0%",
-   "--warning-100": "45 100.0% 62.0%",
-   "--warning-200": "45 100.0% 62.0%",
-   "--warning-900": "45 55.0% 24.0%",
-   "--success-000": "143 55.3% 66.6%",
-   "--success-100": "143 55.3% 59.6%",
-   "--success-200": "143 55.3% 59.6%",
-   "--success-900": "143 30.4% 24.0%",
-   "--oncolor-100": "27 100.0% 7.1%",
-   "--oncolor-200": "27 100.0% 7.1%",
-   "--oncolor-300": "27 100.0% 7.1%",
-   "--pictogram-100": "41 47.1% 93.3%",
-   "--pictogram-200": "337 33.3% 85.4%",
-   "--pictogram-300": "240 12.6% 73.5%",
-   "--pictogram-400": "226 25.4% 19.1%",
-   "--claude-accent-clay": "#ff8c1a",
-   "--claude-foreground-color": "#f6f1e6",
-   "--claude-background-color": "#191d2a",
-   "--claude-secondary-color": "#b3b3c4",
-   "--claude-border": "#ff8c1a18",
-   "--claude-border-300": "#ff8c1a30",
-   "--claude-border-300-more": "#ff8c1a55",
-   "--claude-text-100": "#f6f1e6",
-   "--claude-text-200": "#e6cdd7",
-   "--claude-text-400": "#b3b3c4",
-   "--claude-text-500": "#b3b3c4",
-   "--claude-description-text": "#dcc3da"
-  },
-  "spinner": {
-   "viewBox": "0 0 21 21",
-   "animation": "flip",
-   "paths": [
-    {
-     "d": "M8 0h5v1h-5ZM6 1h9v1h-9ZM4 2h2v1h-2ZM15 2h2v1h-2ZM3 3h2v1h-2ZM16 3h2v1h-2ZM2 4h2v1h-2ZM17 4h2v1h-2ZM2 5h1v1h-1ZM18 5h1v1h-1ZM1 6h1v1h-1ZM19 6h1v1h-1ZM1 7h1v1h-1ZM19 7h1v1h-1ZM0 8h2v1h-2ZM19 8h2v1h-2ZM0 9h2v1h-2ZM19 9h2v1h-2ZM0 10h2v1h-2ZM19 10h2v1h-2ZM0 11h2v1h-2ZM19 11h2v1h-2ZM0 12h2v1h-2ZM19 12h2v1h-2ZM1 13h1v1h-1ZM19 13h1v1h-1ZM1 14h1v1h-1ZM19 14h1v1h-1ZM2 15h1v1h-1ZM18 15h1v1h-1ZM2 16h2v1h-2ZM17 16h2v1h-2ZM3 17h2v1h-2ZM16 17h2v1h-2ZM4 18h2v1h-2ZM15 18h2v1h-2ZM6 19h9v1h-9ZM8 20h5v1h-5Z",
-     "fill": "#7a2e00"
-    },
-    {
-     "d": "M18 7h1v1h-1ZM17 8h2v1h-2ZM17 9h2v1h-2ZM17 10h2v1h-2ZM17 11h2v1h-2ZM16 12h3v1h-3ZM16 13h3v1h-3ZM15 14h4v1h-4ZM15 15h3v1h-3ZM12 16h5v1h-5ZM8 17h8v1h-8ZM7 18h8v1h-8Z",
-     "fill": "#c25405"
-    },
-    {
-     "d": "M12 2h3v1h-3ZM11 3h5v1h-5ZM10 4h7v1h-7ZM9 5h4v1h-4ZM14 5h4v1h-4ZM9 6h3v1h-3ZM15 6h4v1h-4ZM10 7h1v1h-1ZM16 7h2v1h-2ZM9 8h3v1h-3ZM15 8h2v1h-2ZM5 9h1v1h-1ZM7 9h1v1h-1ZM9 9h3v1h-3ZM13 9h1v1h-1ZM15 9h2v1h-2ZM4 10h13v1h-13ZM3 11h4v1h-4ZM8 11h5v1h-5ZM14 11h3v1h-3ZM2 12h4v1h-4ZM9 12h3v1h-3ZM15 12h1v1h-1ZM2 13h3v1h-3ZM10 13h1v1h-1ZM2 14h4v1h-4ZM9 14h3v1h-3ZM3 15h3v1h-3ZM7 15h1v1h-1ZM9 15h3v1h-3ZM13 15h1v1h-1ZM4 16h8v1h-8ZM5 17h3v1h-3ZM6 18h1v1h-1Z",
-     "fill": "#f57d0d"
-    },
-    {
-     "d": "M6 2h6v1h-6ZM7 3h4v1h-4ZM7 4h3v1h-3ZM6 5h1v1h-1ZM8 5h1v1h-1ZM2 6h1v1h-1ZM5 6h1v1h-1ZM2 7h3v1h-3ZM2 8h4v1h-4ZM2 9h3v1h-3ZM2 10h2v1h-2ZM2 11h1v1h-1Z",
-     "fill": "#ffb03a"
-    },
-    {
-     "d": "M6 3h1v1h-1ZM6 4h1v1h-1ZM5 5h1v1h-1ZM3 6h2v1h-2Z",
-     "fill": "#ffd166"
-    },
-    {
-     "d": "M5 3h1v1h-1ZM4 4h2v1h-2ZM3 5h2v1h-2Z",
-     "fill": "#ffffff"
-    },
-    {
-     "d": "M6 8h3v1h-3ZM12 8h3v1h-3ZM6 9h1v1h-1ZM8 9h1v1h-1ZM12 9h1v1h-1ZM14 9h1v1h-1ZM6 14h3v1h-3ZM12 14h3v1h-3ZM6 15h1v1h-1ZM8 15h1v1h-1ZM12 15h1v1h-1ZM14 15h1v1h-1Z",
-     "fill": "#8f1010"
-    },
-    {
-     "d": "M7 5h1v1h-1ZM13 5h1v1h-1ZM6 6h3v1h-3ZM12 6h3v1h-3ZM5 7h5v1h-5ZM11 7h5v1h-5ZM7 11h1v1h-1ZM13 11h1v1h-1ZM6 12h3v1h-3ZM12 12h3v1h-3ZM5 13h5v1h-5ZM11 13h5v1h-5Z",
-     "fill": "#e3242b"
-    }
-   ],
-   "paths2": [
-    {
-     "d": "M8 1h5v1h-5ZM6 2h9v1h-9ZM4 3h2v1h-2ZM15 3h2v1h-2ZM3 4h2v1h-2ZM16 4h2v1h-2ZM2 5h2v1h-2ZM17 5h2v1h-2ZM2 6h1v1h-1ZM18 6h1v1h-1ZM1 7h1v1h-1ZM19 7h1v1h-1ZM1 8h1v1h-1ZM19 8h1v1h-1ZM0 9h2v1h-2ZM19 9h2v1h-2ZM0 10h2v1h-2ZM19 10h2v1h-2ZM0 11h2v1h-2ZM19 11h2v1h-2ZM0 12h2v1h-2ZM19 12h2v1h-2ZM0 13h2v1h-2ZM19 13h2v1h-2ZM1 14h1v1h-1ZM19 14h1v1h-1ZM1 15h1v1h-1ZM19 15h1v1h-1ZM2 16h1v1h-1ZM18 16h1v1h-1ZM2 17h2v1h-2ZM17 17h2v1h-2ZM3 18h2v1h-2ZM16 18h2v1h-2ZM4 19h2v1h-2ZM15 19h2v1h-2ZM6 20h9v1h-9Z",
-     "fill": "#7a2e00"
-    },
-    {
-     "d": "M18 8h1v1h-1ZM17 9h2v1h-2ZM17 10h2v1h-2ZM17 11h2v1h-2ZM17 12h2v1h-2ZM16 13h3v1h-3ZM16 14h3v1h-3ZM15 15h4v1h-4ZM15 16h3v1h-3ZM12 17h5v1h-5ZM8 18h8v1h-8ZM7 19h8v1h-8Z",
-     "fill": "#c25405"
-    },
-    {
-     "d": "M12 3h3v1h-3ZM11 4h5v1h-5ZM10 5h7v1h-7ZM9 6h4v1h-4ZM14 6h4v1h-4ZM9 7h3v1h-3ZM15 7h4v1h-4ZM10 8h1v1h-1ZM16 8h2v1h-2ZM9 9h3v1h-3ZM15 9h2v1h-2ZM5 10h1v1h-1ZM7 10h1v1h-1ZM9 10h3v1h-3ZM13 10h1v1h-1ZM15 10h2v1h-2ZM4 11h13v1h-13ZM3 12h4v1h-4ZM8 12h5v1h-5ZM14 12h3v1h-3ZM2 13h4v1h-4ZM9 13h3v1h-3ZM15 13h1v1h-1ZM2 14h3v1h-3ZM10 14h1v1h-1ZM2 15h4v1h-4ZM9 15h3v1h-3ZM3 16h3v1h-3ZM7 16h1v1h-1ZM9 16h3v1h-3ZM13 16h1v1h-1ZM4 17h8v1h-8ZM5 18h3v1h-3ZM6 19h1v1h-1Z",
-     "fill": "#f57d0d"
-    },
-    {
-     "d": "M6 3h6v1h-6ZM8 4h3v1h-3ZM7 5h3v1h-3ZM6 6h1v1h-1ZM8 6h1v1h-1ZM2 7h2v1h-2ZM5 7h1v1h-1ZM2 8h3v1h-3ZM2 9h4v1h-4ZM2 10h3v1h-3ZM2 11h2v1h-2ZM2 12h1v1h-1Z",
-     "fill": "#ffb03a"
-    },
-    {
-     "d": "M5 4h3v1h-3ZM6 5h1v1h-1ZM5 6h1v1h-1ZM4 7h1v1h-1Z",
-     "fill": "#ffd166"
-    },
-    {
-     "d": "M4 5h2v1h-2ZM3 6h2v1h-2Z",
-     "fill": "#ffffff"
-    },
-    {
-     "d": "M6 9h3v1h-3ZM12 9h3v1h-3ZM6 10h1v1h-1ZM8 10h1v1h-1ZM12 10h1v1h-1ZM14 10h1v1h-1ZM6 15h3v1h-3ZM12 15h3v1h-3ZM6 16h1v1h-1ZM8 16h1v1h-1ZM12 16h1v1h-1ZM14 16h1v1h-1Z",
-     "fill": "#8f1010"
-    },
-    {
-     "d": "M7 6h1v1h-1ZM13 6h1v1h-1ZM6 7h3v1h-3ZM12 7h3v1h-3ZM5 8h5v1h-5ZM11 8h5v1h-5ZM7 12h1v1h-1ZM13 12h1v1h-1ZM6 13h3v1h-3ZM12 13h3v1h-3ZM5 14h5v1h-5ZM11 14h5v1h-5Z",
-     "fill": "#e3242b"
-    }
-   ]
-  }
- }
 }

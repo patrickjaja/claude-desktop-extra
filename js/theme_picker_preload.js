@@ -38,4 +38,15 @@ contextBridge.exposeInMainWorld("cdbThemes", {
   setOverlay: function (name) {
     return ipcRenderer.invoke("cdb-themes:set-overlay", String(name || ""));
   },
+  // activeBackdrop: animated SVG backdrop + frosted glass ("", "off", or a
+  // scene id). Follow theme ("") uses the active palette's paired scene.
+  backdrop: function () {
+    return ipcRenderer.invoke("cdb-themes:backdrop");
+  },
+  backdrops: function () {
+    return ipcRenderer.invoke("cdb-themes:backdrops");
+  },
+  setBackdrop: function (name) {
+    return ipcRenderer.invoke("cdb-themes:set-backdrop", String(name || ""));
+  },
 });

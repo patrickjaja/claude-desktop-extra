@@ -64,6 +64,17 @@
     themesSetOverlay: function (name) {
       return ipcRenderer.invoke("cdb-themes:set-overlay", String(name || ""));
     },
+    // activeBackdrop: animated SVG backdrop + frosted glass ("", "off", or a
+    // scene id). Follow theme ("") uses the active palette's paired scene.
+    themesBackdrop: function () {
+      return ipcRenderer.invoke("cdb-themes:backdrop");
+    },
+    themesBackdrops: function () {
+      return ipcRenderer.invoke("cdb-themes:backdrops");
+    },
+    themesSetBackdrop: function (name) {
+      return ipcRenderer.invoke("cdb-themes:set-backdrop", String(name || ""));
+    },
 
     // GrowthBook feature flags.
     flagsCatalog: function () {

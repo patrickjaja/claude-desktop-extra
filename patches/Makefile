@@ -148,15 +148,22 @@ community/add_feature_transcript_limits: ../js/transcript_limits_main.js
 community/add_feature_transcript_limits_worker: ../js/transcript_limits_worker.js
 
 # Theme patch embeds the spinner-reshape installer (swaps the loading-star SVG
-# for the active theme's custom shape) and the bundled community + gaming palette
-# collections via staticRead.
+# for the active theme's custom shape), the animated SVG backdrop scenes +
+# injector, and the bundled community + gaming + scene palette collections via
+# staticRead.
 core/add_feature_custom_themes: \
   ../js/spinner_injector.js \
+  ../js/backdrop_scenes.js \
+  ../js/backdrop_injector.js \
   ../js/community_themes.json \
-  ../js/gaming_themes.json
+  ../js/gaming_themes.json \
+  ../js/scene_themes.json
 
-# Theme picker embeds its page + preload via staticRead.
-community/add_feature_theme_picker: ../js/theme_picker_page.html ../js/theme_picker_preload.js
+# Theme picker embeds its page + preload + backdrop scenes via staticRead.
+community/add_feature_theme_picker: \
+  ../js/theme_picker_page.html \
+  ../js/theme_picker_preload.js \
+  ../js/backdrop_scenes.js
 
 # Extra settings area: main-process half embeds the injected page script and its
 # stylesheet; the bridge half embeds the preload snippet.

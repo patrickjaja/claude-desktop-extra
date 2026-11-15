@@ -191,7 +191,7 @@ Check it with `curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/gpg
 
 Settings → **Extra** holds everything this project adds, no config file or `sudo` needed:
 
-- **[Themes](docs/themes.md)** - pick one of 97 palettes or your own, applied live.
+- **[Themes](docs/themes.md)** - pick one of 123 palettes and 33 animated SVG backdrops (or your own), applied live across Chat, Cowork and Code.
 - **[Community](docs/patches.md#community-features)** - opt-in switches such as Files quick open, panel tabs, diff view modes, custom models and Escape stops Computer Use (see [Computer Use](docs/cu-escape-abort.md)).
 - **[Models](docs/custom-models.md)** - providers and models for the Code tab's model picker.
 - **[Anthropic](docs/feature-flags.md)** - every upstream feature flag as a switch.
@@ -237,9 +237,11 @@ Settings → Extra → **Cowork (Linux)** shows whether it works here and holds 
 
 ## Custom Themes
 
-97 dual light/dark palettes (Catppuccin, Nord, Gruvbox, gaming themes, ...). Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> to pick one live. Theme files reload live, so [matugen](https://github.com/InioX/matugen), pywal or wallust can recolor the app from your wallpaper. Guide: [docs/themes.md](docs/themes.md), gallery: [themes/PALETTES.md](themes/PALETTES.md).
+123 dual light/dark palettes and 33 live animated SVG backdrops with frosted-glass panels across **Chat, Cowork and Code** - including a full **GTA I-VI** series (`gta-i` .. `gta-vi`), reworked gaming themes (`mario`, `zelda`, `final-fantasy`, `warcraft`, `dragonball`, `playstation`, `gameboy`), 20 scene themes from Anthropic's [Claude Code interface mod examples](https://code.claude.com/docs/en/plugins/mods/interface#put-a-backdrop-behind-the-conversation) (no plugin needed), and 84 community palettes. Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> (or open Settings → Extra → Themes) to switch themes and backdrops live, or combine them with **Transparent window**. Theme files reload live for [matugen](https://github.com/InioX/matugen), pywal and wallust. The new animated backdrops are our first pass and we will keep polishing them - PRs with your own light/dark palettes, animated SVG backdrops and custom SVG spinners are very welcome! Guide: [docs/themes.md](docs/themes.md), gallery: [themes/PALETTES.md](themes/PALETTES.md).
 
-![Final Fantasy theme - dark](themes/ff/2026-10-12_20-04-home-dark.png)
+| GTA VI (Vice City neon) | Winter / Snow Pines |
+|---|---|
+| ![GTA VI theme with live animated backdrop](docs/extra/themes-gta-vi.gif) | ![Winter Snow Pines animated backdrop](docs/extra/themes-winter.gif) |
 
 ## Multiple Profiles
 

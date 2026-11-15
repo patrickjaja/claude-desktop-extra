@@ -153,6 +153,18 @@ h1{
   line-height:15px;
 }
 .card[aria-pressed="true"][data-overlay="1"] .card-ov{display:inline-block}
+.card-bd{
+  flex:0 0 auto;
+  padding:0 6px;
+  border:1px solid var(--line);
+  border-radius:20px;
+  background:var(--ink-700);
+  color:var(--fog-400);
+  font-family:var(--mono);
+  font-size:9px;
+  letter-spacing:0.06em;
+  line-height:15px;
+}
 
 /* ---- scroll body ----------------------------------------------------- */
 main{flex:1 1 auto;overflow-y:auto;padding:6px var(--pad) 26px;scrollbar-width:thin;scrollbar-color:var(--ink-600) transparent}
@@ -354,6 +366,7 @@ kbd{
     </label>
   </header>
 
+  <div class="overlay-bar" id="backdrop-bar" role="region" aria-label="Theme backdrop" hidden></div>
   <div class="overlay-bar" id="overlay-bar" role="region" aria-label="Theme overlay" hidden></div>
 
   <main id="main">
@@ -389,9 +402,9 @@ kbd{
 "use strict";
 (function () {
   var SWATCH = ["--bg-000", "--text-000", "--accent-brand", "--accent-pro-100", "--danger-100", "--warning-100", "--success-100"];
-  var SECTIONS = ["custom", "gaming", "common"];
-  var LABEL = { custom: "Your themes", gaming: "Gaming", common: "Common" };
-  var state = { entries: [], active: null, cards: [], overlay: null, overlays: [] };
+  var SECTIONS = ["custom", "scenes", "gaming", "common"];
+  var LABEL = { custom: "Your themes", scenes: "Scenes", gaming: "Gaming", common: "Common" };
+  var state = { entries: [], active: null, cards: [], overlay: null, overlays: [], backdrop: "", backdropEffective: null, backdrops: [] };
   var toastTimer = null;
 
   function $(id) { return document.getElementById(id); }
@@ -440,10 +453,15 @@ kbd{
     b.setAttribute("aria-pressed", "false");
     b.dataset.name = entry.name;
     b.dataset.hay = (entry.displayName + " " + entry.name + " " + entry.source +
-                     " " + (entry.category || "")).toLowerCase();
+                     " " + (entry.category || "") + " " + (entry.backdrop || "") + " " + (entry.blurb || "")).toLowerCase();
 
     var head = el("span", "card-head");
     head.appendChild(el("span", "card-title", entry.displayName));
+    if (entry.backdrop) {
+      var bd = el("span", "card-bd", entry.category === "scenes" ? "scene" : entry.backdrop);
+      bd.title = entry.blurb || ("Animated backdrop: " + entry.backdrop);
+      head.appendChild(bd);
+    }
     head.appendChild(el("span", "card-ov", "overlay"));
     head.appendChild(el("span", "card-check", "✓"));
     b.appendChild(head);
@@ -592,6 +610,102 @@ kbd{
     bar.hidden = false;
   }
 
+  // ---- activeBackdrop ---------------------------------------------------
+  function backdropApi() {
+    var t = window.cdbThemes;
+    if (!t || typeof t.backdrop !== "function" || typeof t.backdrops !== "function" ||
+        typeof t.setBackdrop !== "function") return null;
+    return t;
+  }
+  function backdropEntry(id) {
+    for (var i = 0; i < state.backdrops.length; i++) {
+      if (state.backdrops[i].id === id) return state.backdrops[i];
+    }
+    return null;
+  }
+  function fetchBackdrop() {
+    var t = backdropApi();
+    if (!t) return Promise.resolve();
+    return Promise.all([t.backdrop(), t.backdrops()]).then(function (res) {
+      var b = res[0], l = res[1];
+      state.backdrop = (b && b.ok && typeof b.backdrop === "string") ? b.backdrop : "";
+      state.backdropEffective = (b && b.ok && b.effective) ? String(b.effective) : null;
+      state.backdrops = (l && l.ok && Array.isArray(l.entries)) ? l.entries : [];
+    }, function () {
+      state.backdrop = "";
+      state.backdropEffective = null;
+      state.backdrops = [];
+    });
+  }
+  function setBackdrop(val) {
+    var t = backdropApi();
+    if (!t) return;
+    var bar = $("backdrop-bar");
+    var sel = bar && bar.querySelector("select");
+    if (sel) sel.disabled = true;
+    t.setBackdrop(val).then(function (r) {
+      if (!r || !r.ok) {
+        toast((r && r.error) || "Could not change the backdrop", true);
+        renderBackdrop();
+        return;
+      }
+      fetchBackdrop().then(function () {
+        renderBackdrop();
+        var where = r.saved || "claude-desktop-extra.jsonc";
+        var entry = state.backdropEffective ? backdropEntry(state.backdropEffective) : null;
+        var label = state.backdrop === "off" ? "Backdrop off"
+          : state.backdrop ? ("Backdrop " + ((entry && entry.displayName) || state.backdrop))
+          : ("Backdrop follows theme" + (entry ? " (" + entry.displayName + ")" : ""));
+        toast(label + " - saved to " + where);
+      });
+    }, function (e) {
+      toast("Could not reach the theme engine: " + (e && e.message), true);
+      renderBackdrop();
+    });
+  }
+  function renderBackdrop() {
+    var bar = $("backdrop-bar");
+    if (!bar) return;
+    bar.textContent = "";
+    if (!state.backdrops.length) {
+      bar.hidden = true;
+      return;
+    }
+    bar.appendChild(el("span", "overlay-k", "Backdrop"));
+    var sel = el("select");
+    sel.id = "backdrop-pick";
+    sel.setAttribute("aria-label", "Animated SVG backdrop and frosted glass");
+    var follow = el("option", null, "Follow theme");
+    follow.value = "";
+    sel.appendChild(follow);
+    var off = el("option", null, "Off (solid surfaces)");
+    off.value = "off";
+    sel.appendChild(off);
+    var scenesGroup = el("optgroup");
+    scenesGroup.label = "Animated Scenes";
+    var gamingGroup = el("optgroup");
+    gamingGroup.label = "Gaming Scenes";
+    for (var i = 0; i < state.backdrops.length; i++) {
+      var b = state.backdrops[i];
+      var opt = el("option", null, b.displayName || b.id);
+      opt.value = b.id;
+      if (b.category === "gaming") gamingGroup.appendChild(opt);
+      else scenesGroup.appendChild(opt);
+    }
+    if (scenesGroup.children.length) sel.appendChild(scenesGroup);
+    if (gamingGroup.children.length) sel.appendChild(gamingGroup);
+    sel.value = state.backdrop || "";
+    sel.addEventListener("change", function () { setBackdrop(sel.value); });
+    bar.appendChild(sel);
+    var eff = state.backdropEffective ? backdropEntry(state.backdropEffective) : null;
+    var noteText = state.backdrop === "off"
+      ? "solid surfaces — animated backdrop and frosted glass disabled"
+      : eff ? ((state.backdrop ? "" : eff.displayName + " · ") + (eff.blurb || "animated SVG backdrop + frosted glass"))
+      : "pick a scene or let the active theme supply its paired backdrop";
+    bar.appendChild(el("span", "overlay-note", noteText));
+    bar.hidden = false;
+  }
+
   function toast(msg, bad) {
     var t = $("toast");
     t.textContent = msg;
@@ -619,6 +733,7 @@ kbd{
       state.active = name || null;
       markActive();
       paintAccent();
+      fetchBackdrop().then(renderBackdrop);
       var where = (r && r.saved) || "claude-desktop-extra.jsonc";
       var shown = name || "stock";
       for (var i = 0; i < state.entries.length; i++) {
@@ -634,7 +749,7 @@ kbd{
   function filter(q) {
     q = q.trim().toLowerCase();
     var shown = 0;
-    var perSection = { custom: 0, gaming: 0, common: 0, stock: 0 };
+    var perSection = { custom: 0, scenes: 0, gaming: 0, common: 0, stock: 0 };
     for (var i = 0; i < state.cards.length; i++) {
       var c = state.cards[i];
       var hit = !q || c.dataset.hay.indexOf(q) >= 0;
@@ -738,18 +853,44 @@ kbd{
   // ships as is a packaging detail, not a reason to look in a different list.
   function bucketOf(entry) {
     if (entry.source === "stock") return "stock";
+    if (entry.category === "scenes") return "scenes";
     if (entry.category === "gaming") return "gaming";
     if (entry.source === "custom") return "custom";
     return "common";
   }
 
+  function ensureScenesSection(hasScenes) {
+    var existing = $("sec-scenes");
+    if (!hasScenes) {
+      if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+      return;
+    }
+    if (existing) return;
+    var sec = el("section", "section-split");
+    sec.id = "sec-scenes";
+    sec.hidden = true;
+    var h2 = el("h2", "eyebrow", "Scenes ");
+    var badge = el("span", "badge", "0");
+    badge.id = "count-scenes";
+    h2.appendChild(badge);
+    var grid = el("div", "grid");
+    grid.id = "grid-scenes";
+    sec.appendChild(h2);
+    sec.appendChild(grid);
+    var main = $("main");
+    var gaming = $("sec-gaming");
+    if (main && gaming) main.insertBefore(sec, gaming);
+    else if (main) main.appendChild(sec);
+  }
+
   function render() {
-    var buckets = { stock: [], custom: [], gaming: [], common: [] };
+    var buckets = { stock: [], custom: [], scenes: [], gaming: [], common: [] };
     for (var i = 0; i < state.entries.length; i++) {
       var e = state.entries[i];
       var b = bucketOf(e);
       if (buckets[b]) buckets[b].push(e);
     }
+    ensureScenesSection(buckets.scenes.length > 0);
     var keys = ["stock"].concat(SECTIONS);
     for (var s = 0; s < keys.length; s++) {
       var key = keys[s];
@@ -769,6 +910,7 @@ kbd{
     }
     var n2 = state.entries.length - 1;
     $("tally").textContent = n2 + " palettes";
+    renderBackdrop();
     renderOverlay();
     markActive();
     paintAccent();
@@ -790,7 +932,7 @@ kbd{
       }
       state.entries = [{ name: "", displayName: "Claude default", source: "stock" }].concat(l.entries || []);
       state.active = (a && a.ok) ? (a.name || null) : null;
-      return fetchOverlay().then(function () {
+      return Promise.all([fetchOverlay(), fetchBackdrop()]).then(function () {
         render();
         var first = state.cards.filter(function (c) { return c.getAttribute("aria-pressed") === "true"; })[0];
         (first || $("search")).focus();
