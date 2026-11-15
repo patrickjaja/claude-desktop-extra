@@ -571,6 +571,11 @@ return ""
 +".dframe-root:where([data-engine-backdrop-on]) .dframe-content>[data-engine-backdrop]{top:0!important}"
 +".dframe-root:where([data-engine-backdrop-on]){--tile-page-ground:transparent!important}"
 +".dframe-root:where([data-engine-backdrop-on]) .tiles-shell:not(.is-moving){--tile-page-ground:transparent!important;--tile-shell-ground:transparent!important;background:transparent!important}"
+// Chat's sticky input container is an outer shell, not the rounded field.
+// Clear only its backing layers; cards, focus rings and the field keep their fill.
++".dframe-root:where([data-engine-backdrop-on]) :is([data-chat-input-container],[data-testid=transcript-bottom-fade],[data-testid=transcript-bottom-backing-start],[data-testid=transcript-bottom-backing-end],[data-testid=transcript-bottom-gap],[data-testid=chat-column] [data-disclaimer]){background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
++".dframe-root:where([data-engine-backdrop-on]) [data-chat-input-container] :where([data-composer-card-holder],[data-cds=ChatComposer],.rounded-composer:has([data-cds=ChatComposer])){background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
++".dframe-root:where([data-engine-backdrop-on]) [data-chat-input-container] [data-cds=ChatComposerChin]{background:transparent!important;box-shadow:none!important}"
 +".dframe-root:where([data-engine-backdrop-on]) :is([data-transcript-fade-strip],[data-scroll-fade],[data-docked-column-edge],.epitaxy-top-scrim,.epitaxy-bottom-scrim){background-image:none!important;background:transparent!important}"
 +".dframe-root:where([data-engine-backdrop-on]) :is([data-code-composer-column],[data-docked-column-backing],[data-docked-column-edge],.epitaxy-titlebar){--epitaxy-transcript-surface:transparent!important;background-color:transparent!important}"
 +".dframe-root:where([data-engine-backdrop-on]) [data-cds=Toolbar]>[data-cds-part=toolbar-ground],.dframe-root:where([data-engine-backdrop-on]) [data-cds=Page] [data-cds-part=page-header-ground]{background-color:transparent!important;background-image:none!important}"
@@ -578,7 +583,7 @@ return ""
 +".dframe-root:where([data-engine-glass])[data-engine-glass-unsuited]{--cdb-glass-fill:color-mix(in srgb,hsl(var(--bg-100)) calc(var(--engine-glass-opacity,0.38) * 100%),transparent);--cdb-glass-fill-elevated:color-mix(in srgb,hsl(var(--bg-000)) calc(min(var(--engine-glass-opacity,0.38) + 0.16,0.9) * 100%),transparent);--cdb-glass-filter:blur(var(--engine-glass-blur,14px)) saturate(1.2)}"
 +".dframe-root:where([data-engine-backdrop-on])[data-engine-glass-unsuited] [data-engine-backdrop]::after{content:\"\";position:absolute;inset:0;background:hsl(var(--bg-100) / 0.72);pointer-events:none}"
 +".dframe-root:where([data-engine-glass]) .dframe-sidebar,:where([data-darker]) .dframe-root:where([data-engine-glass]) .dframe-sidebar,.dframe-root:where([data-engine-glass]):where([data-darker]) .dframe-sidebar{background-color:var(--cdb-glass-fill)!important;background-image:none!important;backdrop-filter:var(--cdb-glass-filter)!important;-webkit-backdrop-filter:var(--cdb-glass-filter)!important}"
-+".dframe-root:where([data-engine-glass]) :where([data-user-message-bubble],[data-chat-input-container],[data-testid=\"start-card-environments\"],[data-testid=\"start-card-setup\"],.rounded-composer:has([data-cds=ChatComposerEditor])){background-color:var(--cdb-glass-fill-elevated)!important;backdrop-filter:var(--cdb-glass-filter)!important;-webkit-backdrop-filter:var(--cdb-glass-filter)!important}";
++".dframe-root:where([data-engine-glass]) :where([data-user-message-bubble],[data-testid=\"start-card-environments\"],[data-testid=\"start-card-setup\"],.rounded-composer:has([data-cds=ChatComposerEditor])){background-color:var(--cdb-glass-fill-elevated)!important;backdrop-filter:var(--cdb-glass-filter)!important;-webkit-backdrop-filter:var(--cdb-glass-filter)!important}";
 }
 function __cdb_buildBackdropOnlyCss(cfg){
 var bd=__cdb_resolveBackdrop(cfg,null);
@@ -1174,7 +1179,7 @@ const MARKERS = [
   "__cdb_builtins[__cdb_sk]=__cdb_scenes[__cdb_sk]", "window.__cdbSpinnerApply",
   "window.__cdbBackdropApply", "reload:__cdb_reload", "function __cdb_effective(",
   "setOverlay:__cdb_setOverlay", "setBackdrop:__cdb_setBackdrop",
-  "function __cdb_persistKey(",
+  "function __cdb_persistKey(", "transcript-bottom-backing-start",
 ]
 
 proc apply*(input: string): string =
