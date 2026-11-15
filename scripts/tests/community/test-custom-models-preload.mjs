@@ -194,6 +194,31 @@ const ANTHROPIC = "https://api.anthropic.com/v1/messages";
      "adaptive thinking becomes enabled with the clamped budget, effort travels with it");
 }
 
+// --- adaptive-only Claude models behind a relay: never budget_tokens or disabled -------
+{
+  const cfg = { providers: [{ id: "relay", baseUrl: "https://relay.example", apiKey: "sk-test-relay",
+    models: [{ id: "claude-fable-5-2", alias: "claude-relay-fable-5-2", vision: true, thinking: true },
+      { id: "claude-opus-5-5", alias: "claude-relay-opus-5-5", vision: true, thinking: true }] }] };
+  const { hooked, calls } = load(cfg);
+  const send = (model, extra) => hooked(ANTHROPIC, messagesInit(Object.assign({ model,
+    max_tokens: 32000, messages: [{ role: "user", content: "x" }] }, extra)));
+  await send("claude-relay-fable-5-2", { thinking: { type: "enabled", budget_tokens: 31999 }, output_config: { effort: "xhigh" } });
+  let out = JSON.parse(calls[0].init.body);
+  ok(out.thinking && out.thinking.type === "adaptive" && !("budget_tokens" in out.thinking),
+     "Fable 5.x: requested thinking is sent as adaptive, without budget_tokens");
+  ok(out.output_config && out.output_config.effort === "xhigh", "Fable 5.x: effort is forwarded unmapped");
+  await send("claude-relay-fable-5-2", { thinking: { type: "disabled" }, output_config: { effort: "low" } });
+  out = JSON.parse(calls[1].init.body);
+  ok(!("thinking" in out) && out.output_config.effort === "low",
+     "Fable 5.x: mode Off omits thinking (disabled is a 400) and keeps effort");
+  await send("claude-relay-opus-5-5", { thinking: { type: "adaptive" }, output_config: { effort: "medium" } });
+  out = JSON.parse(calls[2].init.body);
+  ok(out.thinking.type === "adaptive" && out.output_config.effort === "medium", "Opus 5.5: adaptive thinking and effort pass as is");
+  await send("claude-relay-opus-5-5", {});
+  out = JSON.parse(calls[3].init.body);
+  ok(!("thinking" in out) && !("output_config" in out), "Opus 5.5: a request without thinking stays without it");
+}
+
 // --- max_tokens has a floor of 16: the CLI's model check sends 1 ---------------------
 {
   const { hooked, calls } = load(CONFIG);

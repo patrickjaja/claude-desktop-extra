@@ -413,6 +413,15 @@
     // the 1024 minimum sends no thinking rather than an invalid request.
     var asked = body.thinking && typeof body.thinking === "object" ? body.thinking : null;
     var think = false;
+    // Fable/Mythos 5.x and Opus 5.5 reject budget_tokens and disabled: adaptive or omitted only.
+    if (/^claude-(fable|mythos)-5|^claude-opus-5-5/.test(m.id)) {
+      if (asked && asked.type !== "disabled") out.thinking = { type: "adaptive" };
+      var ownTable = Array.isArray(p.effort) || (p.effortMap && typeof p.effortMap === "object");
+      var eff = body.output_config && typeof body.output_config.effort === "string"
+        ? (ownTable ? effortTable(p)[body.output_config.effort] : body.output_config.effort) : undefined;
+      if (typeof eff === "string" && eff && !opts.dropEffort) out.output_config = { effort: eff };
+      return out;
+    }
     if (asked && asked.type === "disabled") out.thinking = { type: "disabled" };
     else if (asked && m.thinking === false) out.thinking = { type: "disabled" };
     else if (asked) {
