@@ -130,7 +130,7 @@ WebFetch reads the page itself, then has the **small/fast model** summarise it a
 
 The picker's effort menu shows the levels the provider accepts. A preset knows them (DeepSeek accepts `low`, `high` and `max`), and **detect** in the provider form asks the API with one small request per level. A level the provider lacks is sent as the next one up. With the default five levels, `medium` and `xhigh` go out as `high` and `max`, which is DeepSeek's convention.
 
-Thinking follows the CLI: it is on for a session's turns and off for its light work. The budget is capped at 16,000 tokens. Effort is never sent without thinking.
+Thinking follows the CLI: it is on for a session's turns and off for its light work (which always omits both thinking and effort). The budget is capped at 16,000 tokens, and effort is only sent with thinking - except on adaptive Claude models (Opus/Sonnet 4.6+, Haiku 5+, Fable 5+, Mythos) behind a compatible endpoint, which receive `thinking: { type: "adaptive" }` and unmapped effort (`low..max`, capping `xhigh -> max` on 4.6 / Mythos preview) rather than `budget_tokens`. Always-thinking models that reject `{ type: "disabled" }` (Fable 5+, Mythos 5+, Haiku 5+, Opus/Sonnet 5.5+) omit `thinking` when turned off so low effort still works without a 400, while 4.6..5.0 keep `{ type: "disabled" }`; **detect** probes all adaptive Claude models with `{ type: "adaptive" }`.
 
 ### What reaches the provider
 

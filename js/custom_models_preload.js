@@ -83,7 +83,7 @@
   function exposedId(id) { return id.indexOf(PREFIX) === 0 ? id : PREFIX + id; }
   // Anthropic's own model ids are never routed, whatever the routes say: they
   // belong to the subscription (the app refuses them as custom models too).
-  var ANTHROPIC_FAMILY_RE = /^claude-(?:opus|sonnet|haiku|fable|instant)(?:-|$)|^claude-[1-3](?:[.-]|$)/;
+  var ANTHROPIC_FAMILY_RE = /^claude-(?:opus|sonnet|haiku|fable|mythos|instant)(?:-|$)|^claude-[1-3](?:[.-]|$)/;
 
   // The routing state, rebuilt from a config object: alias (what the CLI
   // sends) -> { provider, model }, plus the web-search target.
@@ -286,8 +286,8 @@
   // differently.
   var EFFORT_ORDER = ["low", "medium", "high", "xhigh", "max"];
   var EFFORT_DEFAULT = { low: "low", medium: "high", high: "high", xhigh: "max", max: "max" };
-  function effortTable(p) {
-    var base = EFFORT_DEFAULT;
+  function effortTable(p, fallback) {
+    var base = fallback || EFFORT_DEFAULT;
     var listed = Array.isArray(p.effort) ? EFFORT_ORDER.filter(function (l) { return p.effort.indexOf(l) !== -1; }) : [];
     if (listed.length) {
       base = {};
@@ -362,6 +362,35 @@
     return o;
   }
 
+  // Claude models whose Messages API takes adaptive thinking + effort instead
+  // of budget_tokens (CLI 2.1.325 bakedCatalog): Opus/Sonnet 4.6+, Haiku 5+,
+  // Fable 5+ and Mythos (preview + 5+), under bare or gateway-prefixed/dotted/
+  // tagged ids (anthropic/claude-fable-5-2, anthropic/claude-opus-5.5,
+  // anthropic/claude-opus-4.6:thinking, us.anthropic.claude-fable-5-2-v1:0).
+  //   rejectsDisabled: always-thinking models that 400 on {type: "disabled"}
+  //                    (Fable, Mythos 5+, Haiku 5+, Opus/Sonnet > 5.0)
+  //   xhigh:           models whose effort enum includes "xhigh" (all except
+  //                    Opus 4.6, Sonnet 4.6 and Mythos preview)
+  function adaptiveClaude(rawId) {
+    var s = String(rawId || "").toLowerCase().trim().replace(/\[[12]m\]$/, "");
+    var slash = s.lastIndexOf("/");
+    if (slash !== -1) s = s.slice(slash + 1);
+    var br = /^(?:[a-z0-9-]+\.)?anthropic\.(claude-.*?)(?::\d+)?$/.exec(s);
+    if (br) s = br[1];
+    s = s.replace(/(claude-[a-z]+-\d{1,2})\.(?=\d)/, "$1-");
+    if (/^claude-mythos-preview(?:$|[-@:])/.test(s)) return { rejectsDisabled: false, xhigh: false };
+    var m = /^claude-(haiku|sonnet|opus|fable|mythos)-(\d{1,2})(?!\d)(?:-(\d{1,2})(?!\d))?(?:$|[-@:])/.exec(s);
+    if (!m) return null;
+    var fam = m[1], maj = parseInt(m[2], 10), min = m[3] ? parseInt(m[3], 10) : 0;
+    if (maj < 4) return null;
+    if ((fam === "opus" || fam === "sonnet") && maj === 4 && min <= 5) return null;
+    if ((fam === "haiku" || fam === "fable" || fam === "mythos") && maj < 5) return null;
+    return {
+      rejectsDisabled: fam === "fable" || fam === "mythos" || fam === "haiku" || maj > 5 || (maj === 5 && min > 0),
+      xhigh: !((fam === "opus" || fam === "sonnet") && maj === 4 && min === 6)
+    };
+  }
+
   function sanitize(body, route, opts) {
     var m = route.model, p = route.provider;
     var out = { model: m.id };
@@ -413,12 +442,25 @@
     // the 1024 minimum sends no thinking rather than an invalid request.
     var asked = body.thinking && typeof body.thinking === "object" ? body.thinking : null;
     var think = false;
-    // Fable/Mythos 5.x and Opus 5.5 reject budget_tokens and disabled: adaptive or omitted only.
-    if (/^claude-(fable|mythos)-5|^claude-opus-5-5/.test(m.id)) {
-      if (asked && asked.type !== "disabled") out.thinking = { type: "adaptive" };
-      var ownTable = Array.isArray(p.effort) || (p.effortMap && typeof p.effortMap === "object");
-      var eff = body.output_config && typeof body.output_config.effort === "string"
-        ? (ownTable ? effortTable(p)[body.output_config.effort] : body.output_config.effort) : undefined;
+    // Adaptive Claude models (4.6+, Haiku 5+, Fable 5+, Mythos) behind a
+    // compatible endpoint reject budget_tokens; newer ones (Fable, Mythos 5+,
+    // Haiku 5+, Opus/Sonnet > 5.0) also reject {type: "disabled"}.
+    var cc = adaptiveClaude(m.id);
+    if (cc) {
+      if (m.thinking === false) {
+        if (!cc.rejectsDisabled && asked) out.thinking = { type: "disabled" };
+        return out;
+      }
+      if (!asked) return out;
+      if (asked.type === "disabled") {
+        if (!cc.rejectsDisabled) { out.thinking = { type: "disabled" }; return out; }
+      } else {
+        out.thinking = { type: "adaptive" };
+      }
+      var rawEff = body.output_config && typeof body.output_config.effort === "string"
+        ? body.output_config.effort : undefined;
+      var tbl = effortTable(p, { low: "low", medium: "medium", high: "high", xhigh: cc.xhigh ? "xhigh" : "max", max: "max" });
+      var eff = rawEff && Object.prototype.hasOwnProperty.call(tbl, rawEff) ? tbl[rawEff] : undefined;
       if (typeof eff === "string" && eff && !opts.dropEffort) out.output_config = { effort: eff };
       return out;
     }

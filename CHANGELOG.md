@@ -4,9 +4,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-16
 
-### Custom models: adaptive thinking for Claude Fable 5.x, Mythos 5.x and Opus 5.5 behind a compatible endpoint
+### Custom models: adaptive thinking for Claude 4.6+, Fable 5.x and Mythos 5.x behind a compatible endpoint (thanks @aliveoutside, #342)
 
-- A custom model whose id is `claude-fable-5*`, `claude-mythos-5*` or `claude-opus-5-5` (a Claude model served through an Anthropic-compatible relay) now gets `thinking: {type: "adaptive"}` when the CLI asks for thinking, and no `thinking` field for mode Off, instead of `{type: "enabled", budget_tokens}` / `{type: "disabled"}`, which these models answer with `400 ... requires adaptive thinking`. Effort is forwarded unmapped (`xhigh` stays `xhigh`) unless the provider lists its own `effort` levels or `effortMap` (`js/custom_models_preload.js`).
+- Adaptive Claude models (Opus/Sonnet 4.6+, Haiku 5+, Fable 5.x and Mythos, bare or gateway-prefixed/dotted like `anthropic/claude-fable-5-2` or `anthropic/claude-opus-5.5`) served through an Anthropic-compatible endpoint now receive `thinking: {type: "adaptive"}` and unmapped effort (`low..max`, capping `xhigh -> max` on 4.6 / Mythos preview unless the provider configures its own `effort` list or `effortMap`) instead of `budget_tokens`, while light requests without thinking keep both omitted (`js/custom_models_preload.js`).
+- On the always-thinking models that reject `{type: "disabled"}` (Fable 5.x, Mythos 5+, Haiku 5+, Opus/Sonnet 5.5+), mode Off omits `thinking` and keeps effort (`thinking: false` omits both); on 4.6..5.0 models it sends `{type: "disabled"}` without `output_config`. Settings -> Extra -> Models **detect** (`cdb-cm:effort-probe`) probes adaptive Claude models with `{type: "adaptive"}` (`js/custom_models_main.js`), and `claude-mythos-*` joins `ANTHROPIC_FAMILY_RE` so custom aliases never shadow subscription Mythos sessions.
 
 ## 2026-11-15
 

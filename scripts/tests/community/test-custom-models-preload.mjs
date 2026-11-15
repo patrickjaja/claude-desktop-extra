@@ -194,29 +194,169 @@ const ANTHROPIC = "https://api.anthropic.com/v1/messages";
      "adaptive thinking becomes enabled with the clamped budget, effort travels with it");
 }
 
-// --- adaptive-only Claude models behind a relay: never budget_tokens or disabled -------
+// --- adaptive Claude models behind a relay: never budget_tokens -----------------
 {
-  const cfg = { providers: [{ id: "relay", baseUrl: "https://relay.example", apiKey: "sk-test-relay",
-    models: [{ id: "claude-fable-5-2", alias: "claude-relay-fable-5-2", vision: true, thinking: true },
-      { id: "claude-opus-5-5", alias: "claude-relay-opus-5-5", vision: true, thinking: true }] }] };
+  const cfg = { providers: [
+    { id: "relay", baseUrl: "https://relay.example", apiKey: "sk-test-relay",
+      models: [
+        { id: "claude-fable-5-2", alias: "claude-relay-fable-5-2", vision: true, thinking: true },
+        { id: "claude-opus-5-5", alias: "claude-relay-opus-5-5", vision: true, thinking: true },
+        { id: "claude-sonnet-5-5", alias: "claude-relay-sonnet-5-5", vision: true, thinking: true },
+        { id: "claude-haiku-5-5", alias: "claude-relay-haiku-5-5", vision: true, thinking: true },
+        { id: "claude-mythos-5-2", alias: "claude-relay-mythos-5-2", vision: true, thinking: true },
+        { id: "claude-opus-4-7", alias: "claude-relay-opus-4-7", vision: true, thinking: true },
+        { id: "claude-opus-5", alias: "claude-relay-opus-5", vision: true, thinking: true },
+        { id: "claude-opus-4-6", alias: "claude-relay-opus-4-6", vision: true, thinking: true },
+        { id: "claude-sonnet-4-6", alias: "claude-relay-sonnet-4-6", vision: true, thinking: true },
+        { id: "claude-mythos-preview", alias: "claude-relay-mythos-preview", vision: true, thinking: true },
+        { id: "anthropic/claude-fable-5-2", alias: "claude-anthropic/claude-fable-5-2", vision: true, thinking: true },
+        { id: "anthropic/claude-opus-5.5", alias: "claude-anthropic/claude-opus-5.5", vision: true, thinking: true },
+        { id: "aws/claude-sonnet-5-5-eu", alias: "claude-aws/claude-sonnet-5-5-eu", vision: true, thinking: true },
+        { id: "us.anthropic.claude-fable-5-2-v1:0", alias: "claude-us.anthropic.claude-fable-5-2-v1:0", vision: true, thinking: true },
+        { id: "anthropic/claude-opus-4-5", alias: "claude-anthropic/claude-opus-4-5", vision: true, thinking: true },
+        { id: "claude-sonnet-4-20250514", alias: "claude-relay-sonnet-4-20250514", vision: true, thinking: true },
+        { id: "claude-fable-5-2", alias: "claude-relay-fable-nothink", vision: true, thinking: false },
+        { id: "claude-opus-4-7", alias: "claude-relay-opus47-nothink", vision: true, thinking: false }
+      ] }
+  ] };
   const { hooked, calls } = load(cfg);
-  const send = (model, extra) => hooked(ANTHROPIC, messagesInit(Object.assign({ model,
-    max_tokens: 32000, messages: [{ role: "user", content: "x" }] }, extra)));
-  await send("claude-relay-fable-5-2", { thinking: { type: "enabled", budget_tokens: 31999 }, output_config: { effort: "xhigh" } });
-  let out = JSON.parse(calls[0].init.body);
+  const send = async (model, extra) => {
+    const idx = calls.length;
+    await hooked(ANTHROPIC, messagesInit(Object.assign({ model,
+      max_tokens: 32000, messages: [{ role: "user", content: "x" }] }, extra)));
+    return JSON.parse(calls[idx].init.body);
+  };
+
+  let out = await send("claude-relay-fable-5-2", { thinking: { type: "enabled", budget_tokens: 31999 }, output_config: { effort: "xhigh" } });
   ok(out.thinking && out.thinking.type === "adaptive" && !("budget_tokens" in out.thinking),
      "Fable 5.x: requested thinking is sent as adaptive, without budget_tokens");
   ok(out.output_config && out.output_config.effort === "xhigh", "Fable 5.x: effort is forwarded unmapped");
-  await send("claude-relay-fable-5-2", { thinking: { type: "disabled" }, output_config: { effort: "low" } });
-  out = JSON.parse(calls[1].init.body);
+
+  out = await send("claude-relay-fable-5-2", { thinking: { type: "disabled" }, output_config: { effort: "low" } });
   ok(!("thinking" in out) && out.output_config.effort === "low",
      "Fable 5.x: mode Off omits thinking (disabled is a 400) and keeps effort");
-  await send("claude-relay-opus-5-5", { thinking: { type: "adaptive" }, output_config: { effort: "medium" } });
-  out = JSON.parse(calls[2].init.body);
+
+  out = await send("claude-relay-opus-5-5", { thinking: { type: "adaptive" }, output_config: { effort: "medium" } });
   ok(out.thinking.type === "adaptive" && out.output_config.effort === "medium", "Opus 5.5: adaptive thinking and effort pass as is");
-  await send("claude-relay-opus-5-5", {});
-  out = JSON.parse(calls[3].init.body);
-  ok(!("thinking" in out) && !("output_config" in out), "Opus 5.5: a request without thinking stays without it");
+
+  out = await send("claude-relay-opus-5-5", { output_config: { effort: "high" } });
+  ok(!("thinking" in out) && !("output_config" in out), "Opus 5.5: a light request without thinking omits thinking and effort");
+
+  out = await send("claude-relay-sonnet-5-5", { thinking: { type: "enabled", budget_tokens: 4000 }, output_config: { effort: "xhigh" } });
+  ok(out.thinking.type === "adaptive" && out.output_config.effort === "xhigh", "Sonnet 5.5: adaptive thinking and xhigh effort");
+  out = await send("claude-relay-sonnet-5-5", { thinking: { type: "disabled" }, output_config: { effort: "low" } });
+  ok(!("thinking" in out) && out.output_config.effort === "low", "Sonnet 5.5: mode Off omits thinking and keeps effort");
+
+  out = await send("claude-relay-haiku-5-5", { thinking: { type: "enabled", budget_tokens: 4000 }, output_config: { effort: "xhigh" } });
+  ok(out.thinking.type === "adaptive" && out.output_config.effort === "xhigh", "Haiku 5.5: adaptive thinking and xhigh effort");
+  out = await send("claude-relay-haiku-5-5", { thinking: { type: "disabled" }, output_config: { effort: "low" } });
+  ok(!("thinking" in out) && out.output_config.effort === "low", "Haiku 5.5: mode Off omits thinking and keeps effort");
+
+  out = await send("claude-relay-mythos-5-2", { thinking: { type: "enabled", budget_tokens: 4000 }, output_config: { effort: "xhigh" } });
+  ok(out.thinking.type === "adaptive" && out.output_config.effort === "xhigh", "Mythos 5.2: adaptive thinking and xhigh effort");
+
+  out = await send("claude-relay-opus-4-7", { thinking: { type: "enabled", budget_tokens: 4000 }, output_config: { effort: "xhigh" } });
+  ok(out.thinking.type === "adaptive" && out.output_config.effort === "xhigh", "Opus 4.7: adaptive thinking and unmapped xhigh");
+  out = await send("claude-relay-opus-4-7", { thinking: { type: "disabled" }, output_config: { effort: "high" } });
+  ok(out.thinking && out.thinking.type === "disabled" && !("output_config" in out),
+     "Opus 4.7: mode Off sends thinking:disabled without output_config");
+
+  out = await send("claude-relay-opus-5", { thinking: { type: "disabled" }, output_config: { effort: "high" } });
+  ok(out.thinking && out.thinking.type === "disabled" && !("output_config" in out),
+     "Opus 5.0: mode Off sends thinking:disabled without output_config");
+
+  out = await send("claude-relay-opus-4-6", { thinking: { type: "enabled", budget_tokens: 4000 }, output_config: { effort: "xhigh" } });
+  ok(out.thinking.type === "adaptive" && out.output_config.effort === "max", "Opus 4.6: xhigh caps to max");
+  out = await send("claude-relay-opus-4-6", { thinking: { type: "enabled", budget_tokens: 4000 }, output_config: { effort: "medium" } });
+  ok(out.output_config.effort === "medium", "Opus 4.6: medium passes unmapped");
+  out = await send("claude-relay-sonnet-4-6", { thinking: { type: "enabled", budget_tokens: 4000 }, output_config: { effort: "xhigh" } });
+  ok(out.thinking.type === "adaptive" && out.output_config.effort === "max", "Sonnet 4.6: xhigh caps to max");
+  out = await send("claude-relay-mythos-preview", { thinking: { type: "enabled", budget_tokens: 4000 }, output_config: { effort: "xhigh" } });
+  ok(out.thinking.type === "adaptive" && out.output_config.effort === "max", "Mythos preview: xhigh caps to max");
+
+  for (const gw of [
+    "claude-anthropic/claude-fable-5-2",
+    "claude-anthropic/claude-opus-5.5",
+    "claude-aws/claude-sonnet-5-5-eu",
+    "claude-us.anthropic.claude-fable-5-2-v1:0"
+  ]) {
+    out = await send(gw, { thinking: { type: "enabled", budget_tokens: 8000 }, output_config: { effort: "xhigh" } });
+    ok(out.thinking && out.thinking.type === "adaptive" && out.output_config.effort === "xhigh",
+       "gateway/dotted adaptive id gets adaptive thinking: " + gw);
+  }
+
+  out = await send("claude-anthropic/claude-opus-4-5", { thinking: { type: "enabled", budget_tokens: 8000 }, output_config: { effort: "medium" } });
+  ok(out.thinking.type === "enabled" && out.thinking.budget_tokens === 8000 && out.output_config.effort === "high",
+     "gateway-prefixed Opus 4.5 keeps budget_tokens and default effort table");
+  out = await send("claude-relay-sonnet-4-20250514", { thinking: { type: "enabled", budget_tokens: 8000 }, output_config: { effort: "high" } });
+  ok(out.thinking.type === "enabled" && out.thinking.budget_tokens === 8000,
+     "dated Sonnet 4 (4-20250514) keeps budget_tokens");
+
+  out = await send("claude-relay-fable-nothink", { thinking: { type: "enabled", budget_tokens: 4000 }, output_config: { effort: "high" } });
+  ok(!("thinking" in out) && !("output_config" in out),
+     "thinking:false on always-thinking Fable omits both thinking and output_config");
+  out = await send("claude-relay-opus47-nothink", { thinking: { type: "enabled", budget_tokens: 4000 }, output_config: { effort: "high" } });
+  ok(out.thinking && out.thinking.type === "disabled" && !("output_config" in out),
+     "thinking:false on Opus 4.7 sends thinking:disabled without output_config");
+
+  out = await send("claude-relay-opus-5-5", { thinking: { type: "enabled", budget_tokens: 4000 }, output_config: { effort: "ultracode" } });
+  ok(!("output_config" in out), "unknown effort value is dropped on adaptive models");
+  out = await send("claude-relay-opus-5-5", { thinking: { type: "enabled", budget_tokens: 4000 }, output_config: { effort: "toString" } });
+  ok(!("output_config" in out), "prototype property names are dropped as effort values");
+
+  // OpenRouter :tag suffix variants
+  const cfgTag = { providers: [{ id: "or", baseUrl: "https://or.example", apiKey: "sk-test-or",
+    models: [
+      { id: "anthropic/claude-opus-4.6:thinking", alias: "claude-or-opus46-tag", vision: true, thinking: true },
+      { id: "anthropic/claude-sonnet-4-5:free", alias: "claude-or-sonnet45-tag", vision: true, thinking: true }
+    ] }] };
+  const { hooked: hTag, calls: cTag } = load(cfgTag);
+  await hTag(ANTHROPIC, messagesInit({ model: "claude-or-opus46-tag", max_tokens: 32000,
+    messages: [{ role: "user", content: "x" }], thinking: { type: "enabled", budget_tokens: 4000 }, output_config: { effort: "xhigh" } }));
+  out = JSON.parse(cTag[0].init.body);
+  ok(out.thinking.type === "adaptive" && out.output_config.effort === "max", "OpenRouter :tag on Opus 4.6 gets adaptive thinking and xhigh->max");
+  await hTag(ANTHROPIC, messagesInit({ model: "claude-or-sonnet45-tag", max_tokens: 32000,
+    messages: [{ role: "user", content: "x" }], thinking: { type: "enabled", budget_tokens: 4000 }, output_config: { effort: "medium" } }));
+  out = JSON.parse(cTag[1].init.body);
+  ok(out.thinking.type === "enabled" && out.thinking.budget_tokens === 4000, "OpenRouter :tag on pre-adaptive Sonnet 4.5 keeps budget_tokens");
+
+  // p.effortMap alone, empty p.effort: [], explicit p.effort list, and 400 effort-refusal retry
+  const cfgMap = JSON.parse(JSON.stringify(cfg));
+  cfgMap.providers[0].effortMap = { max: "high" };
+  cfgMap.providers[0].effort = [];
+  const { hooked: hMap, calls: cMap } = load(cfgMap);
+  await hMap(ANTHROPIC, messagesInit({ model: "claude-relay-opus-5-5", max_tokens: 32000,
+    messages: [{ role: "user", content: "x" }], thinking: { type: "adaptive" }, output_config: { effort: "medium" } }));
+  out = JSON.parse(cMap[0].init.body);
+  ok(out.output_config.effort === "medium", "effortMap alone (and empty p.effort) keeps medium unmapped instead of DeepSeek's high");
+  await hMap(ANTHROPIC, messagesInit({ model: "claude-relay-opus-5-5", max_tokens: 32000,
+    messages: [{ role: "user", content: "x" }], thinking: { type: "adaptive" }, output_config: { effort: "max" } }));
+  out = JSON.parse(cMap[1].init.body);
+  ok(out.output_config.effort === "high", "effortMap still remaps its named keys on adaptive models");
+
+  const cfgList = JSON.parse(JSON.stringify(cfg));
+  cfgList.providers[0].effort = ["low", "medium", "high", "xhigh", "max"];
+  const { hooked: hList, calls: cList } = load(cfgList);
+  await hList(ANTHROPIC, messagesInit({ model: "claude-relay-opus-4-6", max_tokens: 32000,
+    messages: [{ role: "user", content: "x" }], thinking: { type: "adaptive" }, output_config: { effort: "xhigh" } }));
+  ok(JSON.parse(cList[0].init.body).output_config.effort === "xhigh", "explicit 5-level p.effort overrides 4.6's xhigh->max cap");
+
+  const cfgSub = JSON.parse(JSON.stringify(cfg));
+  cfgSub.providers[0].effort = ["low", "high", "max"];
+  const { hooked: hSub, calls: cSub } = load(cfgSub);
+  await hSub(ANTHROPIC, messagesInit({ model: "claude-relay-opus-5-5", max_tokens: 32000,
+    messages: [{ role: "user", content: "x" }], thinking: { type: "adaptive" }, output_config: { effort: "medium" } }));
+  ok(JSON.parse(cSub[0].init.body).output_config.effort === "high", "explicit subset p.effort maps unlisted medium up to high");
+
+  const { hooked: hRetry, calls: cRetry } = load(cfg, { responses: [
+    new Response(JSON.stringify({ error: { message: "invalid output_config.effort: xhigh" } }), { status: 400 }),
+    new Response(JSON.stringify({ id: "ok" }), { status: 200 })
+  ] });
+  const rRetry = await hRetry(ANTHROPIC, messagesInit({ model: "claude-relay-fable-5-2", max_tokens: 32000,
+    messages: [{ role: "user", content: "x" }], thinking: { type: "adaptive" }, output_config: { effort: "xhigh" } }));
+  ok(rRetry.status === 200 && cRetry.length === 2 &&
+     JSON.parse(cRetry[1].init.body).thinking.type === "adaptive" && !("output_config" in JSON.parse(cRetry[1].init.body)),
+     "400 effort-refusal retry on adaptive model drops output_config while preserving thinking:adaptive");
 }
 
 // --- max_tokens has a floor of 16: the CLI's model check sends 1 ---------------------

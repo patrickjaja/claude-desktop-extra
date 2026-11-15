@@ -120,7 +120,7 @@
   // custom model listed under one would take every session on that Claude
   // model away from the subscription. Anthropic's families by name, plus any
   // id the last bootstrap listed (a family this does not know yet).
-  var ANTHROPIC_FAMILY_RE = /^claude-(?:opus|sonnet|haiku|fable|instant)(?:-|$)|^claude-[1-3](?:[.-]|$)/;
+  var ANTHROPIC_FAMILY_RE = /^claude-(?:opus|sonnet|haiku|fable|mythos|instant)(?:-|$)|^claude-[1-3](?:[.-]|$)/;
   var serverAnthropicIds = Object.create(null);
   var ANTHROPIC_API_ORIGIN = "https://api.anthropic.com";
   function shadowsAnthropic(alias) {
@@ -2206,12 +2206,34 @@
     return tryNext(0, 0);
   });
 
+  // True for Claude models whose Messages API requires adaptive thinking instead
+  // of budget_tokens (same family/version rule as js/custom_models_preload.js):
+  // Opus/Sonnet 4.6+, Haiku 5+, Fable 5+, Mythos (preview + 5+), bare or
+  // gateway-prefixed/dotted.
+  function adaptiveClaude(rawId) {
+    var s = String(rawId || "").toLowerCase().trim().replace(/\[[12]m\]$/, "");
+    var slash = s.lastIndexOf("/");
+    if (slash !== -1) s = s.slice(slash + 1);
+    var br = /^(?:[a-z0-9-]+\.)?anthropic\.(claude-.*?)(?::\d+)?$/.exec(s);
+    if (br) s = br[1];
+    s = s.replace(/(claude-[a-z]+-\d{1,2})\.(?=\d)/, "$1-");
+    if (/^claude-mythos-preview(?:$|[-@:])/.test(s)) return true;
+    var m = /^claude-(haiku|sonnet|opus|fable|mythos)-(\d{1,2})(?!\d)(?:-(\d{1,2})(?!\d))?(?:$|[-@:])/.exec(s);
+    if (!m) return false;
+    var fam = m[1], maj = parseInt(m[2], 10), min = m[3] ? parseInt(m[3], 10) : 0;
+    if (maj < 4) return false;
+    if ((fam === "opus" || fam === "sonnet") && maj === 4 && min <= 5) return false;
+    if ((fam === "haiku" || fam === "fable" || fam === "mythos") && maj < 5) return false;
+    return true;
+  }
+
   // Which of the app's five effort levels a provider accepts for a model:
   // one request with each value, in parallel. What we cannot know from here,
   // the provider's own answer settles. Effort travels with thinking, and a
   // thinking budget is at least 1024 tokens and below max_tokens (strict
   // endpoints refuse anything else), so each is the smallest valid request:
   // max_tokens 1025 - at most about a thousand output tokens per level.
+  // Adaptive Claude models reject budget_tokens and are probed with adaptive.
   _ipc.handle("cdb-cm:effort-probe", function (ev, providerId, modelId) {
     if (!okSender(ev)) return { ok: false, error: "rejected: unrecognized sender" };
     providerId = cleanString(providerId, 40);
@@ -2225,9 +2247,10 @@
     if (!ID_RE.test(modelId)) return { ok: false, error: "add a model first - the probe sends it one minimal request with each level" };
     var headers = { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": p.apiKey };
     withProviderHeaders(p, headers);
+    var adaptive = adaptiveClaude(modelId);
     return Promise.all(EFFORT_ORDER.map(function (level) {
       var body = { model: modelId, max_tokens: 1025, messages: [{ role: "user", content: "Reply with OK." }],
-        thinking: { type: "enabled", budget_tokens: 1024 }, output_config: { effort: level } };
+        thinking: adaptive ? { type: "adaptive" } : { type: "enabled", budget_tokens: 1024 }, output_config: { effort: level } };
       var ctl = new AbortController();
       var timer = setTimeout(function () { ctl.abort(); }, 20000);
       return fetchSameOrigin(p.baseUrl + "/v1/messages", { method: "POST", headers: headers, body: JSON.stringify(body), signal: ctl.signal })

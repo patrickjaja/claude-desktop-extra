@@ -816,6 +816,35 @@ async function settle() { await new Promise((r) => setTimeout(r, 10)); }
   ok(sandbox.__fetchCalls.length === 5 && sandbox.__fetchCalls.every((c) => { const b = JSON.parse(c.init.body);
        return b.thinking.type === "enabled" && b.thinking.budget_tokens >= 1024 && b.thinking.budget_tokens < b.max_tokens && b.max_tokens <= 1025; }),
      "five minimal requests with thinking on, each valid for a strict endpoint (1024 <= budget < max_tokens)");
+  sandbox.__fetchCalls.length = 0;
+  sandbox.__fetchImpl = () => Promise.resolve(new Response("{}", { status: 200 }));
+  r = await h["cdb-cm:effort-probe"](okSenderEv, "ds", "anthropic/claude-fable-5-2");
+  ok(r.ok === true && sandbox.__fetchCalls.length === 5 && sandbox.__fetchCalls.every((c) => {
+       const b = JSON.parse(c.init.body);
+       return b.thinking && b.thinking.type === "adaptive" && !("budget_tokens" in b.thinking); }),
+     "effort-probe on adaptive Claude models sends thinking:adaptive instead of budget_tokens");
+  sandbox.__fetchCalls.length = 0;
+  r = await h["cdb-cm:effort-probe"](okSenderEv, "ds", "claude-opus-5-5");
+  ok(r.ok === true && sandbox.__fetchCalls.every((c) => JSON.parse(c.init.body).thinking.type === "adaptive"),
+     "and on bare claude-opus-5-5");
+  sandbox.__fetchCalls.length = 0;
+  r = await h["cdb-cm:effort-probe"](okSenderEv, "ds", "anthropic/claude-opus-4-5");
+  ok(r.ok === true && sandbox.__fetchCalls.every((c) => JSON.parse(c.init.body).thinking.type === "enabled" && JSON.parse(c.init.body).thinking.budget_tokens === 1024),
+     "effort-probe on pre-adaptive Opus 4.5 keeps budget_tokens");
+  await h["cdb-cm:provider-set"](okSenderEv, { id: "adp", baseUrl: "https://gw.example", apiKey: "sk-adp-1234567890" });
+  await h["cdb-cm:model-set"](okSenderEv, "adp", { id: "anthropic/claude-opus-4.6:thinking" });
+  sandbox.__fetchCalls.length = 0;
+  sandbox.__fetchImpl = (_u, init) => {
+    const lv = JSON.parse(init.body).output_config.effort;
+    return Promise.resolve(lv === "xhigh"
+      ? new Response(JSON.stringify({ error: { message: "unsupported effort: xhigh" } }), { status: 400 })
+      : new Response("{}", { status: 200 }));
+  };
+  r = await h["cdb-cm:effort-probe"](okSenderEv, "adp", "");
+  ok(r.ok === true && r.accepted.join(",") === "low,medium,high,max" && Object.keys(r.rejected).join(",") === "xhigh" &&
+     sandbox.__fetchCalls.every((c) => JSON.parse(c.init.body).thinking.type === "adaptive"),
+     "effort-probe with empty modelId defaults to p.models[0], probes adaptive with :tag, and collects partial refusals");
+  await h["cdb-cm:provider-delete"](okSenderEv, "adp");
   sandbox.__fetchImpl = () => Promise.resolve(new Response(JSON.stringify({ error: { message: "invalid api key" } }), { status: 401 }));
   r = await h["cdb-cm:effort-probe"](okSenderEv, "ds", "deepseek-flash");
   ok(r.ok === false && /invalid api key/.test(r.error), "every level refused for one reason reports that reason, not 'no level'");
@@ -1528,15 +1557,15 @@ async function settle() { await new Promise((r) => setTimeout(r, 10)); }
     { id: "anthropic", baseUrl: "https://api.anthropic.com/v1/", apiKey: "sk-ant-api-1234567890",
       models: [{ id: "claude-opus-5-5", name: "Opus 5.5 (API)" }, { id: "claude-sonnet-5-5" }] },
     { id: "ds", baseUrl: "https://api.deepseek.com/anthropic", apiKey: "sk-secret-1234567890",
-      models: [{ id: "deepseek-flash" }, { id: "claude-mythos-1" }, { id: "opus-5-5" }] },
+      models: [{ id: "deepseek-flash" }, { id: "claude-nova-1" }, { id: "claude-mythos-5-2" }, { id: "opus-5-5" }] },
     { id: "opus", baseUrl: "https://gw.example/anthropic", apiKey: "sk-gw-1234567890",
       models: [{ id: "claude-sonnet-5-5" }, { id: "gw-model" }] }
   ] } }));
   const { h, api, diag } = load(dir);
   const aliases = (c) => c.providers.flatMap((p) => p.models.map((m) => m.alias)).join(",");
   let cfg = api.readConfig();
-  ok(aliases(cfg) === "claude-anthropic-opus-5-5,claude-anthropic-sonnet-5-5,claude-deepseek-flash,claude-mythos-1,claude-ds-opus-5-5,claude-gw-model",
-     "a Claude id is listed under its provider's id (opus-5-5 -> claude-ds-opus-5-5 too): " + aliases(cfg));
+  ok(aliases(cfg) === "claude-anthropic-opus-5-5,claude-anthropic-sonnet-5-5,claude-deepseek-flash,claude-nova-1,claude-ds-mythos-5-2,claude-ds-opus-5-5,claude-gw-model",
+     "a Claude id (incl. mythos) is listed under its provider's id (opus-5-5 -> claude-ds-opus-5-5 too): " + aliases(cfg));
   ok(cfg.providers.find((p) => p.id === "anthropic").context === "1m" && cfg.providers.find((p) => p.id === "ds").context === "1m",
      "context: 1M everywhere when nothing says otherwise, Anthropic's own API included");
   ok(api.listedIds(cfg.providers[0].models[0]).join(",") === "claude-anthropic-opus-5-5[1m]", "so a Claude model on the API is listed as its [1m] id");
@@ -1593,14 +1622,14 @@ async function settle() { await new Promise((r) => setTimeout(r, 10)); }
   ok(r.ok !== false && !api.readConfig().webSearch, "removing it drops the references made to its alias");
   // A family this rule does not know: the bootstrap's own list is the judge.
   const b2 = bootstrap();
-  b2.model_selector_config.find((s) => s.id === "ccd").models.push({ id: "claude-mythos-1", name: "Mythos 1", section: "main" });
+  b2.model_selector_config.find((s) => s.id === "ccd").models.push({ id: "claude-nova-1", name: "Nova 1", section: "main" });
   ok(api.rememberServerState(b2, cfg) === true, "a bootstrap listing an id we route says so (the caller re-reads the config)");
   cfg = api.readConfig();
-  ok(cfg.providers.find((p) => p.id === "ds").models.some((m) => m.alias === "claude-ds-mythos-1") && !aliases(cfg).split(",").includes("claude-mythos-1"),
+  ok(cfg.providers.find((p) => p.id === "ds").models.some((m) => m.alias === "claude-ds-nova-1") && !aliases(cfg).split(",").includes("claude-nova-1"),
      "after it, that model moves under its provider's id: " + aliases(cfg));
   ok(api.rememberServerState(bootstrap(), cfg) === false, "nothing left to collide: false");
   api.cliEnv({});
-  ok(routesFile().providers.find((p) => p.id === "ds").models.some((m) => m.alias === "claude-ds-mythos-1"), "and routes.json follows");
+  ok(routesFile().providers.find((p) => p.id === "ds").models.some((m) => m.alias === "claude-ds-nova-1"), "and routes.json follows");
   rmSync(dir, { recursive: true, force: true });
 }
 
