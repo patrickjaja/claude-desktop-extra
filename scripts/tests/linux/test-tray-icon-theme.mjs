@@ -623,8 +623,11 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
     /var CU_ROWS = \[\s*renderCuAskRow,\s*renderCuEscapeAbortCuRow,\s*renderCuBackgroundRow,\s*renderCuAxRow,\s*renderCuGlowRow,\s*renderCuDrawnCursorRow\s*\];/.test(page), true);
   check("page: no Computer Use row left in FEATURE_GROUPS",
     /var FEATURE_GROUPS = [\s\S]*?renderCu(Status|Background|Ax)/.test(page) || /function renderCuStatusRow\b/.test(page), false);
+  const cuOptionFns = ["renderCuBackgroundRow", "renderCuAskRow", "renderCuAxRow", "renderCuGlowRow"]
+    .map((fn) => new RegExp("function " + fn + "\\([\\s\\S]*?\\n {2}\\}\\n").exec(page));
   check("page: the four switches share the one Options heading",
-    (page.match(/section: "Options"/g) || []).length === 4 && (page.match(/sharedSection: true/g) || []).length === 4 &&
+    (page.match(/section: "Options"/g) || []).length === 4 &&
+    cuOptionFns.every((m) => !!m && /section: "Options"/.test(m[0]) && /sharedSection: true/.test(m[0])) &&
     !/section: "Computer Use"/.test(page), true);
   const cuPage = /function renderCu\(panel\) \{[\s\S]*?\n {2}\}\n/.exec(page);
   check("page: renderCu draws the status block first, then the Options heading, then CU_ROWS",
