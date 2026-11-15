@@ -148,8 +148,9 @@ jobs:
         env:
           CURRENT_VERSION: ${{ steps.version.outputs.version }}
           REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          RELEASES_JSON=$(curl -sf "https://api.github.com/repos/${REPO}/releases?per_page=20") || {
+          RELEASES_JSON=$(curl -sf -H "Authorization: Bearer ${GH_TOKEN}" "https://api.github.com/repos/${REPO}/releases?per_page=20") || {
             echo "::error::Failed to fetch releases from GitHub API (rate limit or auth issue)"
             exit 1
           }
@@ -196,9 +197,10 @@ jobs:
           NEEDS_UPDATE: ${{ steps.check.outputs.needs_update }}
           HIGHEST_VERSION: ${{ steps.check.outputs.highest_version }}
           REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$FORCE" == "true" ] && [ "$NEEDS_UPDATE" != "true" ]; then
-            RELEASE_COUNT=$(curl -s "https://api.github.com/repos/${REPO}/releases?per_page=100" \
+            RELEASE_COUNT=$(curl -sf -H "Authorization: Bearer ${GH_TOKEN}" "https://api.github.com/repos/${REPO}/releases?per_page=100" \
               | jq "[.[] | select(.tag_name | test(\"^v${VERSION}(-[0-9]+)?$\"))] | length")
             PKGREL=$((RELEASE_COUNT + 1))
           else

@@ -234,7 +234,7 @@ jobs:
 
           # Seed AppImage/Nix badges from GitHub release assets (if not yet present)
           if [ ! -f "$REPO_DIR/badges/appimage.json" ] || [ ! -f "$REPO_DIR/badges/nix.json" ]; then
-            ASSETS=$(curl -sf "https://api.github.com/repos/${{ github.repository }}/releases/latest" | python3 -c "
+            ASSETS=$(curl -sf -H "Authorization: Bearer ${{ github.token }}" "https://api.github.com/repos/${{ github.repository }}/releases/latest" | python3 -c "
           import sys, json
           data = json.load(sys.stdin)
           for a in data.get('assets', []):
