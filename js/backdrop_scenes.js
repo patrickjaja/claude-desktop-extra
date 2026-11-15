@@ -637,6 +637,169 @@ function radGrad(id, color, peak) {
 var CALM_DARK = '<radialGradient id="calmD" cx="0.5" cy="0.52" r="0.62"><stop offset="0" stop-color="#000" stop-opacity="0.24"/><stop offset="0.68" stop-color="#000" stop-opacity="0.10"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>';
 var CALM_LIGHT = '<radialGradient id="calmL" cx="0.5" cy="0.52" r="0.62"><stop offset="0" stop-color="#fff" stop-opacity="0.30"/><stop offset="0.68" stop-color="#fff" stop-opacity="0.12"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>';
 
+var PX_FONT = {
+  "$": ["00100","01111","11000","01110","00011","11110","00100"],
+  "0": ["01110","11011","11011","11011","11011","11011","01110"],
+  "1": ["00110","01110","00110","00110","00110","00110","01111"],
+  "2": ["01110","11011","00011","00110","01100","11000","11111"],
+  "3": ["11110","00011","00011","01110","00011","00011","11110"],
+  "4": ["11011","11011","11011","11111","00011","00011","00011"],
+  "5": ["11111","11000","11110","00011","00011","11011","01110"],
+  "6": ["01110","11000","11000","11110","11011","11011","01110"],
+  "7": ["11111","00011","00110","00110","01100","01100","01100"],
+  "8": ["01110","11011","11011","01110","11011","11011","01110"],
+  "9": ["01110","11011","11011","01111","00011","00011","01110"],
+  ",": ["000","000","000","000","011","011","110"],
+  ":": ["00","00","11","00","11","00","00"],
+  "-": ["0000","0000","0000","1111","0000","0000","0000"],
+  "x": ["0000","0000","1001","0110","0110","1001","0000"],
+  "*": ["00000","00100","10101","01110","10101","00100","00000"],
+  " ": ["000"],
+  "A": ["01110","10001","11111","10001","10001"],
+  "B": ["11110","10001","11110","10001","11110"],
+  "C": ["01111","10000","10000","10000","01111"],
+  "D": ["11110","10001","10001","10001","11110"],
+  "E": ["11111","10000","11110","10000","11111"],
+  "F": ["11111","10000","11110","10000","10000"],
+  "G": ["01111","10000","10011","10001","01111"],
+  "H": ["10001","10001","11111","10001","10001"],
+  "I": ["111","010","010","010","111"],
+  "K": ["10001","10010","11100","10010","10001"],
+  "L": ["10000","10000","10000","10000","11111"],
+  "M": ["10001","11011","10101","10001","10001"],
+  "N": ["10001","11001","10101","10011","10001"],
+  "O": ["01110","10001","10001","10001","01110"],
+  "P": ["11110","10001","11110","10000","10000"],
+  "R": ["11110","10001","11110","10100","10010"],
+  "S": ["01111","10000","01110","00001","11110"],
+  "T": ["11111","00100","00100","00100","00100"],
+  "U": ["10001","10001","10001","10001","01110"],
+  "V": ["10001","10001","10001","01010","00100"],
+  "W": ["10001","10001","10101","11011","10001"],
+  "X": ["10001","01010","00100","01010","10001"],
+  "Y": ["10001","01010","00100","00100","00100"],
+  "Z": ["11111","00010","00100","01000","11111"],
+  "¥": ["10001","01010","11111","00100","11111","00100","00100"]
+};
+function pxStr(str, x, y, px, fill, shadow, highlight) {
+  var dShad = "", dMain = "", dHi = "", cx = x, sOff = Math.max(1, Math.round(px * 0.5));
+  for (var i = 0; i < str.length; i++) {
+    var g = PX_FONT[str.charAt(i)];
+    if (!g) { cx += px * 3; continue; }
+    var w = g[0].length;
+    for (var r = 0; r < g.length; r++) {
+      var row = g[r];
+      for (var c = 0; c < w; c++) {
+        if (row.charAt(c) !== "1") continue;
+        var rx = cx + c * px, ry = y + r * px;
+        if (shadow) dShad += "M" + (rx + sOff) + " " + (ry + sOff) + "h" + px + "v" + px + "h-" + px + "z";
+        dMain += "M" + rx + " " + ry + "h" + px + "v" + px + "h-" + px + "z";
+        if (highlight && r < 2) dHi += "M" + rx + " " + ry + "h" + px + "v" + Math.max(1, Math.round(px * 0.5)) + "h-" + px + "z";
+      }
+    }
+    cx += (w + 1) * px;
+  }
+  return '<g shape-rendering="crispEdges">' +
+    (dShad ? '<path d="' + dShad + '" fill="' + shadow + '"/>' : "") +
+    (dMain ? '<path d="' + dMain + '" fill="' + fill + '"/>' : "") +
+    (dHi ? '<path d="' + dHi + '" fill="' + highlight + '"/>' : "") +
+    '</g>';
+}
+function gtaCopHeads(count, x, y, step) {
+  var out = "", gap = step || 24;
+  for (var i = 0; i < count; i++) {
+    var hx = x + i * gap;
+    out += '<g transform="translate(' + hx + ' ' + y + ')">' +
+      '<rect x="2" y="0" width="16" height="9" fill="#05070a"/>' +
+      '<rect x="4" y="1" width="12" height="5" fill="#1e3a8a"/>' +
+      '<rect x="8" y="2" width="4" height="4" fill="#fbbf24"/>' +
+      '<rect x="0" y="7" width="20" height="3" fill="#090d16"/>' +
+      '<rect x="3" y="10" width="14" height="12" fill="#e9aa78"/>' +
+      '<rect x="3" y="19" width="14" height="3" fill="#c68352"/>' +
+      '<rect x="1" y="12" width="2" height="6" fill="#090d16"/>' +
+      '<rect x="17" y="12" width="2" height="6" fill="#090d16"/>' +
+      '<rect x="5" y="13" width="3" height="2" fill="#090d16"/>' +
+      '<rect x="12" y="13" width="3" height="2" fill="#090d16"/>' +
+      '<rect x="7" y="18" width="6" height="2" fill="#7c2d12"/>' +
+    '</g>';
+  }
+  return out;
+}
+function gtaPixelHearts(count, x, y, step) {
+  var out = "", gap = step || 22;
+  for (var i = 0; i < count; i++) {
+    var hx = x + i * gap;
+    out += '<g transform="translate(' + hx + ' ' + y + ')">' +
+      '<path d="M2 0h5v2h2V0h5v2h2v6h-2v2h-2v2h-2v2H6v-2H4v-2H2V8H0V2h2z" fill="#05070a"/>' +
+      '<path d="M2 2h5v2h2V2h5v5h-2v2h-2v2H6V9H4V7H2z" fill="#ef4444"/>' +
+      '<rect x="3" y="3" width="2" height="2" fill="#fca5a5"/>' +
+    '</g>';
+  }
+  return out;
+}
+function gtaTopDownCar(kind, heading, isDark) {
+  var body = "", roof = "", lights = "";
+  if (kind === "cop") {
+    body = '<rect x="3" y="3" width="28" height="58" rx="3" fill="#1d4ed8"/>' +
+      '<rect x="5" y="5" width="24" height="14" fill="#2563eb"/>' +
+      '<rect x="10" y="6" width="14" height="10" fill="#3b82f6"/>' +
+      '<rect x="3" y="21" width="28" height="22" fill="#f8fafc"/>' +
+      '<rect x="5" y="22" width="24" height="20" fill="#e2e8f0"/>' +
+      '<rect x="6" y="45" width="22" height="14" fill="#1e3a8a"/>' +
+      '<rect x="5" y="15" width="24" height="8" fill="#0f172a"/><rect x="7" y="16" width="10" height="3" fill="#38bdf8"/>' +
+      '<rect x="6" y="41" width="22" height="5" fill="#0f172a"/>' +
+      '<rect x="5" y="28" width="24" height="7" fill="#1e293b"/>' +
+      '<rect class="sirenR" x="6" y="29" width="10" height="5" fill="#ef4444"/>' +
+      '<rect x="16" y="29" width="2" height="5" fill="#ffffff"/>' +
+      '<rect class="sirenB" x="18" y="29" width="10" height="5" fill="#3b82f6"/>';
+    if (isDark) {
+      roof = '<circle class="sirenR" cx="9" cy="31" r="46" fill="url(#gta1SirenR)"/>' +
+        '<circle class="sirenB" cx="25" cy="31" r="46" fill="url(#gta1SirenB)"/>';
+    }
+  } else if (kind === "taxi") {
+    body = '<rect x="3" y="3" width="28" height="58" rx="3" fill="#d97706"/>' +
+      '<rect x="5" y="5" width="24" height="54" fill="#f59e0b"/>' +
+      '<rect x="8" y="6" width="18" height="50" fill="#facc15"/>' +
+      '<rect x="5" y="15" width="24" height="8" fill="#0f172a"/><rect x="7" y="16" width="10" height="3" fill="#7dd3fc"/>' +
+      '<rect x="6" y="41" width="22" height="5" fill="#0f172a"/>' +
+      '<rect x="5" y="29" width="24" height="7" fill="#111827"/>' +
+      '<rect x="6" y="30" width="4" height="3" fill="#ffffff"/><rect x="14" y="30" width="4" height="3" fill="#ffffff"/><rect x="22" y="30" width="4" height="3" fill="#ffffff"/>' +
+      '<rect x="10" y="33" width="4" height="2" fill="#ffffff"/><rect x="18" y="33" width="4" height="2" fill="#ffffff"/>';
+  } else if (kind === "blue") {
+    body = '<rect x="3" y="3" width="28" height="58" rx="3" fill="#1e3a8a"/>' +
+      '<rect x="5" y="5" width="24" height="54" fill="#2563eb"/>' +
+      '<rect x="12" y="5" width="4" height="54" fill="#f8fafc"/><rect x="18" y="5" width="4" height="54" fill="#f8fafc"/>' +
+      '<rect x="5" y="16" width="24" height="8" fill="#0f172a"/><rect x="7" y="17" width="8" height="3" fill="#60a5fa"/>' +
+      '<rect x="6" y="40" width="22" height="6" fill="#0f172a"/>' +
+      '<rect x="4" y="55" width="26" height="4" fill="#172554"/>';
+  } else {
+    body = '<rect x="3" y="3" width="28" height="58" rx="3" fill="#9a3412"/>' +
+      '<rect x="5" y="5" width="24" height="54" fill="#ea580c"/>' +
+      '<rect x="10" y="7" width="14" height="14" fill="#fb923c"/>' +
+      '<rect x="5" y="17" width="24" height="8" fill="#0f172a"/><rect x="7" y="18" width="9" height="3" fill="#38bdf8"/>' +
+      '<rect x="6" y="41" width="22" height="5" fill="#0f172a"/>' +
+      '<rect x="8" y="47" width="18" height="2" fill="#431407"/><rect x="8" y="51" width="18" height="2" fill="#431407"/>';
+  }
+  lights = (isDark ? '<polygon points="5,3 -14,-72 48,-72 29,3" fill="#fef08a" opacity="0.20"/>' : "") +
+    '<rect x="5" y="2" width="6" height="3" fill="#fef08a"/><rect x="23" y="2" width="6" height="3" fill="#fef08a"/>' +
+    '<rect x="5" y="59" width="6" height="3" fill="#ef4444"/><rect x="23" y="59" width="6" height="3" fill="#ef4444"/>';
+  var inner = roof +
+    '<rect x="6" y="6" width="32" height="62" rx="4" fill="#000000" opacity="0.30"/>' +
+    '<rect x="0" y="10" width="4" height="10" fill="#090d16"/><rect x="30" y="10" width="4" height="10" fill="#090d16"/>' +
+    '<rect x="0" y="44" width="4" height="10" fill="#090d16"/><rect x="30" y="44" width="4" height="10" fill="#090d16"/>' +
+    '<rect x="2" y="2" width="30" height="60" rx="4" fill="#090d16"/>' +
+    body + lights;
+  return heading === "down" ? '<g transform="rotate(180 17 32)">' + inner + '</g>' : inner;
+}
+function gtaStarRow(lit, total, x, y, step, litFill, dimFill, strokeFill) {
+  var out = "", gap = step || 24;
+  for (var i = 0; i < total; i++) {
+    var fill = i < lit ? litFill : dimFill;
+    out += '<polygon transform="translate(' + (x + i * gap) + ' ' + y + ')" points="10,0 13,7 20,7 14,11 16,18 10,14 4,18 6,11 0,7 7,7" fill="' + fill + '" stroke="' + (strokeFill || "none") + '" stroke-width="1.2"/>';
+  }
+  return out;
+}
+
 function marioLightSvg() {
   return openSvg(
     ".cloud{animation:mDrift 64s ease-in-out infinite alternate}" +
@@ -673,15 +836,21 @@ function marioLightSvg() {
   '<rect x="-800" width="3200" height="1000" fill="url(#mSky)"/>' +
   '<g class="cdb-flank-rt">' +
     '<circle cx="1440" cy="140" r="270" fill="url(#mSun)"/>' +
+    '<g transform="translate(1320 68)">' +
+      pxStr("WORLD", 0, 0, 3, "#ffffff", "#1e3a8a") +
+      pxStr("1-1", 12, 20, 3, "#ffffff", "#1e3a8a") +
+      pxStr("TIME", 118, 0, 3, "#ffffff", "#1e3a8a") +
+      pxStr("365", 118, 20, 3, "#ffffff", "#1e3a8a") +
+    '</g>' +
     '<g class="cloud" opacity="0.82">' +
-      '<g transform="translate(1305 152)">' +
+      '<g transform="translate(1305 164)">' +
         '<rect x="0" y="18" width="164" height="38" rx="19" fill="#ffffff" stroke="#2038ec" stroke-width="2.5"/>' +
         '<rect x="30" y="0" width="104" height="36" rx="18" fill="#ffffff"/>' +
         '<rect x="66" y="17" width="4" height="12" rx="2" fill="#182048"/><rect x="84" y="17" width="4" height="12" rx="2" fill="#182048"/>' +
       '</g>' +
     '</g>' +
     '<g class="cloud b" opacity="0.65">' +
-      '<g transform="translate(1210 76)">' +
+      '<g transform="translate(1180 120)">' +
         '<rect x="0" y="14" width="132" height="32" rx="16" fill="#ffffff"/><rect x="24" y="0" width="84" height="28" rx="14" fill="#ffffff"/>' +
       '</g>' +
     '</g>' +
@@ -696,8 +865,14 @@ function marioLightSvg() {
     '</g>' +
   '</g>' +
   '<g class="cdb-flank-lt">' +
+    '<g transform="translate(32 68)">' +
+      pxStr("MARIO", 0, 0, 3, "#ffffff", "#1e3a8a") +
+      pxStr("024800", 0, 20, 3, "#ffffff", "#1e3a8a") +
+      '<ellipse cx="132" cy="29" rx="6" ry="9" fill="#ffd93d" stroke="#984800" stroke-width="1.5"/>' +
+      pxStr("x12", 142, 20, 3, "#ffffff", "#1e3a8a") +
+    '</g>' +
     '<g class="cloud" opacity="0.82">' +
-      '<g transform="translate(65 86)">' +
+      '<g transform="translate(46 130)">' +
         '<rect x="0" y="18" width="148" height="36" rx="18" fill="#ffffff" stroke="#2038ec" stroke-width="2.5"/>' +
         '<rect x="26" y="0" width="96" height="34" rx="17" fill="#ffffff"/>' +
         '<rect x="56" y="16" width="4" height="12" rx="2" fill="#182048"/><rect x="74" y="16" width="4" height="12" rx="2" fill="#182048"/>' +
@@ -809,11 +984,17 @@ function marioDarkSvg() {
   ) +
   '<rect x="-800" width="3200" height="1000" fill="url(#mNight)"/>' +
   '<g class="cdb-flank-lt">' +
-    // Underground brick brackets positioned safely below top window controls
-    '<g fill="#1c2c5c" stroke="#0b1228" stroke-width="2" opacity="0.68">' +
-      '<rect x="24" y="64" width="180" height="28" rx="3"/><rect x="24" y="92" width="104" height="26" rx="3"/>' +
+    '<g transform="translate(32 68)">' +
+      pxStr("MARIO", 0, 0, 3, "#ffffff", "#0d0914") +
+      pxStr("084000", 0, 20, 3, "#ffffff", "#0d0914") +
+      '<ellipse cx="132" cy="29" rx="6" ry="9" fill="#ffd93d" stroke="#984800" stroke-width="1.5"/>' +
+      pxStr("x24", 142, 20, 3, "#ffffff", "#0d0914") +
     '</g>' +
-    '<g transform="translate(120 205)">' +
+    // Underground brick brackets positioned safely below NES Castle HUD
+    '<g fill="#42322d" stroke="#18100d" stroke-width="2" opacity="0.72">' +
+      '<rect x="24" y="122" width="180" height="28" rx="3"/><rect x="24" y="150" width="104" height="26" rx="3"/>' +
+    '</g>' +
+    '<g transform="translate(120 226)">' +
       '<g class="boo">' +
         '<path d="M0 -28 C18 -28 28 -14 28 4 C28 18 36 24 22 26 C14 27 8 20 0 26 C-14 26 -26 14 -26 -2 C-26 -18 -14 -28 0 -28 Z" fill="#f0f4ff"/>' +
         '<circle cx="-8" cy="-4" r="3" fill="#141828"/><circle cx="4" cy="-4" r="3" fill="#141828"/>' +
@@ -822,10 +1003,16 @@ function marioDarkSvg() {
     '</g>' +
   '</g>' +
   '<g class="cdb-flank-rt">' +
-    '<g fill="#1c2c5c" stroke="#0b1228" stroke-width="2" opacity="0.68">' +
-      '<rect x="1396" y="64" width="180" height="28" rx="3"/><rect x="1472" y="92" width="104" height="26" rx="3"/>' +
+    '<g transform="translate(1320 68)">' +
+      pxStr("WORLD", 0, 0, 3, "#ffffff", "#0d0914") +
+      pxStr("8-4", 12, 20, 3, "#ffffff", "#0d0914") +
+      pxStr("TIME", 118, 0, 3, "#ffffff", "#0d0914") +
+      pxStr("240", 118, 20, 3, "#ff9800", "#0d0914") +
     '</g>' +
-    '<g transform="translate(1475 225) scale(-1,1)">' +
+    '<g fill="#42322d" stroke="#18100d" stroke-width="2" opacity="0.72">' +
+      '<rect x="1396" y="122" width="180" height="28" rx="3"/><rect x="1472" y="150" width="104" height="26" rx="3"/>' +
+    '</g>' +
+    '<g transform="translate(1475 236) scale(-1,1)">' +
       '<g class="boo b">' +
         '<path d="M0 -28 C18 -28 28 -14 28 4 C28 18 36 24 22 26 C14 27 8 20 0 26 C-14 26 -26 14 -26 -2 C-26 -18 -14 -28 0 -28 Z" fill="#f0f4ff"/>' +
         '<circle cx="-8" cy="-4" r="3" fill="#141828"/><circle cx="4" cy="-4" r="3" fill="#141828"/>' +
@@ -913,17 +1100,24 @@ function playstationLightSvg() {
     '<path d="M-820 800 C-60 700 1200 920 2420 780"/>' +
   '</g>' +
   '<g class="cdb-flank-lt">' +
-    '<g class="psSym" style="transform-origin:120px 240px" fill="none" stroke="#2fd0b4" stroke-width="6" opacity="0.75"><polygon points="120,210 148,260 92,260"/></g>' +
+    '<circle cx="120" cy="240" r="40" fill="#2fd0b4" opacity="0.14"/>' +
+    '<circle cx="120" cy="240" r="40" fill="none" stroke="#2fd0b4" stroke-width="1.6" opacity="0.35"/>' +
+    '<g class="psSym" style="transform-origin:120px 240px" fill="none" stroke="#2fd0b4" stroke-width="6" opacity="0.82"><polygon points="120,210 148,260 92,260"/></g>' +
   '</g>' +
   '<g class="cdb-flank-l">' +
-    '<g class="psSym b" style="transform-origin:130px 760px" fill="none" stroke="#6d93e8" stroke-width="6" stroke-linecap="round" opacity="0.75"><path d="M108,738 L152,782 M152,738 L108,782"/></g>' +
+    '<circle cx="130" cy="760" r="40" fill="#6d93e8" opacity="0.14"/>' +
+    '<circle cx="130" cy="760" r="40" fill="none" stroke="#6d93e8" stroke-width="1.6" opacity="0.35"/>' +
+    '<g class="psSym b" style="transform-origin:130px 760px" fill="none" stroke="#6d93e8" stroke-width="6" stroke-linecap="round" opacity="0.82"><path d="M108,738 L152,782 M152,738 L108,782"/></g>' +
   '</g>' +
   '<g class="cdb-flank-rt">' +
     '<g class="psOrbit" style="transform-origin:1460px 250px" fill="none" stroke="#2a5bc8" stroke-width="1.5" stroke-dasharray="10 8" opacity="0.35"><circle cx="1460" cy="250" r="76"/></g>' +
-    '<g class="psSym b" style="transform-origin:1460px 250px" fill="none" stroke="#ee7b52" stroke-width="6" opacity="0.75"><circle cx="1460" cy="250" r="26"/></g>' +
+    '<circle cx="1460" cy="250" r="40" fill="#ee7b52" opacity="0.14"/>' +
+    '<g class="psSym b" style="transform-origin:1460px 250px" fill="none" stroke="#ee7b52" stroke-width="6" opacity="0.82"><circle cx="1460" cy="250" r="24"/></g>' +
   '</g>' +
   '<g class="cdb-flank-r">' +
-    '<g class="psSym" style="transform-origin:1460px 740px" fill="none" stroke="#e77cb8" stroke-width="6" opacity="0.75"><rect x="1436" y="716" width="48" height="48" rx="4"/></g>' +
+    '<circle cx="1460" cy="740" r="40" fill="#e77cb8" opacity="0.14"/>' +
+    '<circle cx="1460" cy="740" r="40" fill="none" stroke="#e77cb8" stroke-width="1.6" opacity="0.35"/>' +
+    '<g class="psSym" style="transform-origin:1460px 740px" fill="none" stroke="#e77cb8" stroke-width="6" opacity="0.82"><rect x="1438" y="718" width="44" height="44" rx="4"/></g>' +
   '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
@@ -952,10 +1146,16 @@ function playstationDarkSvg() {
     '<path d="M-820 750 C-60 630 1180 890 2420 730"/>' +
   '</g>' +
   '<g class="cdb-flank-lt">' +
-    '<g class="psSym" style="transform-origin:125px 180px" fill="none" stroke="#2fd0b4" stroke-width="5.5" opacity="0.82"><polygon points="125,152 153,202 97,202"/></g>' +
+    '<circle cx="125" cy="180" r="40" fill="#2fd0b4" opacity="0.16"/>' +
+    '<g class="psSym" style="transform-origin:125px 180px" fill="none" stroke="#2fd0b4" stroke-width="5.5" opacity="0.88"><polygon points="125,152 153,202 97,202"/></g>' +
   '</g>' +
   '<g class="cdb-flank-l">' +
-    '<g fill="url(#psTower)" stroke="#5b8cff" stroke-opacity="0.25"><rect x="46" y="540" width="48" height="460" rx="4"/><rect x="108" y="630" width="42" height="370" rx="4"/><rect x="162" y="700" width="38" height="300" rx="4"/></g>' +
+    '<g fill="url(#psTower)" stroke="#7ef9ff" stroke-opacity="0.32">' +
+      '<rect x="34" y="610" width="38" height="390" rx="3"/><rect x="34" y="610" width="38" height="7" rx="2" fill="#7ef9ff" opacity="0.48"/>' +
+      '<rect x="82" y="530" width="46" height="470" rx="3"/><rect x="82" y="530" width="46" height="8" rx="2" fill="#7ef9ff" opacity="0.55"/>' +
+      '<rect x="138" y="650" width="40" height="350" rx="3"/><rect x="138" y="650" width="40" height="7" rx="2" fill="#7ef9ff" opacity="0.45"/>' +
+      '<rect x="188" y="720" width="36" height="280" rx="3"/><rect x="188" y="720" width="36" height="6" rx="2" fill="#7ef9ff" opacity="0.42"/>' +
+    '</g>' +
     '<g class="psOrbs" style="transform-origin:130px 350px">' +
       '<circle cx="130" cy="306" r="14" fill="url(#psOrbGlow)"/>' +
       '<circle cx="168" cy="328" r="12" fill="url(#psOrbGlow)"/>' +
@@ -965,28 +1165,53 @@ function playstationDarkSvg() {
       '<circle cx="92" cy="328" r="12" fill="url(#psOrbGlow)"/>' +
       '<circle cx="130" cy="350" r="16" fill="#ffffff" opacity="0.7"/>' +
     '</g>' +
-    '<g class="psSym b" style="transform-origin:135px 490px" fill="none" stroke="#6d93e8" stroke-width="5.5" stroke-linecap="round" opacity="0.82"><path d="M113,468 L157,512 M157,468 L113,512"/></g>' +
+    '<circle cx="135" cy="490" r="38" fill="#6d93e8" opacity="0.16"/>' +
+    '<g class="psSym b" style="transform-origin:135px 490px" fill="none" stroke="#6d93e8" stroke-width="5.5" stroke-linecap="round" opacity="0.88"><path d="M113,468 L157,512 M157,468 L113,512"/></g>' +
   '</g>' +
   '<g class="cdb-flank-rt">' +
-    '<g class="psSym b" style="transform-origin:1475px 210px" fill="none" stroke="#ee7b52" stroke-width="5.5" opacity="0.82"><circle cx="1475" cy="210" r="26"/></g>' +
-    '<g class="psSym" style="transform-origin:1465px 410px" fill="none" stroke="#e77cb8" stroke-width="5.5" opacity="0.82"><rect x="1441" y="386" width="48" height="48" rx="4"/></g>' +
+    '<circle cx="1475" cy="210" r="40" fill="#ee7b52" opacity="0.16"/>' +
+    '<g class="psSym b" style="transform-origin:1475px 210px" fill="none" stroke="#ee7b52" stroke-width="5.5" opacity="0.88"><circle cx="1475" cy="210" r="26"/></g>' +
+    '<circle cx="1465" cy="410" r="38" fill="#e77cb8" opacity="0.16"/>' +
+    '<g class="psSym" style="transform-origin:1465px 410px" fill="none" stroke="#e77cb8" stroke-width="5.5" opacity="0.88"><rect x="1441" y="386" width="48" height="48" rx="4"/></g>' +
   '</g>' +
   '<g class="cdb-flank-r">' +
-    '<g fill="url(#psTower)" stroke="#5b8cff" stroke-opacity="0.25"><rect x="1436" y="580" width="48" height="420" rx="4"/><rect x="1498" y="470" width="52" height="530" rx="4"/></g>' +
+    '<g fill="url(#psTower)" stroke="#7ef9ff" stroke-opacity="0.32">' +
+      '<rect x="1408" y="630" width="42" height="370" rx="3"/><rect x="1408" y="630" width="42" height="7" rx="2" fill="#7ef9ff" opacity="0.45"/>' +
+      '<rect x="1460" y="550" width="46" height="450" rx="3"/><rect x="1460" y="550" width="46" height="8" rx="2" fill="#7ef9ff" opacity="0.52"/>' +
+      '<rect x="1516" y="470" width="52" height="530" rx="3"/><rect x="1516" y="470" width="52" height="8" rx="2" fill="#7ef9ff" opacity="0.58"/>' +
+    '</g>' +
   '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
+function gbTetrisHud(bg, border, ink, accent) {
+  return '<g transform="translate(1364 92)" shape-rendering="crispEdges">' +
+    '<rect x="0" y="0" width="196" height="66" rx="4" fill="' + bg + '" stroke="' + border + '" stroke-width="4"/>' +
+    pxStr("SCORE", 16, 12, 3, accent) +
+    pxStr("028400", 16, 36, 3, ink) +
+    '<rect x="0" y="78" width="196" height="58" rx="4" fill="' + bg + '" stroke="' + border + '" stroke-width="4"/>' +
+    pxStr("LEVEL", 16, 88, 3, accent) +
+    pxStr("09", 132, 88, 3, ink) +
+    pxStr("LINES", 16, 110, 3, accent) +
+    pxStr("042", 118, 110, 3, ink) +
+    '<rect x="34" y="148" width="128" height="92" rx="4" fill="' + bg + '" stroke="' + border + '" stroke-width="4"/>' +
+    pxStr("NEXT", 62, 158, 3, accent) +
+    '<g fill="' + ink + '" stroke="' + border + '" stroke-width="1.5">' +
+      '<rect x="70" y="186" width="18" height="18"/><rect x="88" y="186" width="18" height="18"/><rect x="106" y="186" width="18" height="18"/><rect x="88" y="204" width="18" height="18"/>' +
+    '</g>' +
+  '</g>';
+}
+
 function gameboyLightSvg() {
   return openSvg(
-    ".tet{animation:gbFall 28s steps(28,jump-none) infinite}" +
-    ".tet.b{animation-duration:36s;animation-delay:-14s}" +
-    ".tet.c{animation-duration:32s;animation-delay:-22s}" +
-    ".tet.d{animation-duration:34s;animation-delay:-8s}" +
-    ".tet.e{animation-duration:30s;animation-delay:-19s}" +
+    ".tet{animation:gbFall 22s steps(22,jump-none) infinite}" +
+    ".tet.b{animation-duration:26s}" +
+    ".tet.c{animation-duration:24s}" +
+    ".tet.d{animation-duration:25s}" +
+    ".tet.e{animation-duration:28s}" +
     ".lineClr{animation:gbClear 6s steps(2,jump-none) infinite}" +
     ".led{animation:gbLed 3.2s ease-in-out infinite alternate}" +
-    "@keyframes gbFall{from{transform:translateY(-110px)}to{transform:translateY(1120px)}}" +
+    "@keyframes gbFall{0%{transform:translateY(0);opacity:1}42%{transform:translateY(420px);opacity:1}45%{transform:translateY(420px);opacity:0}47%{transform:translateY(-220px);opacity:0}52%{opacity:1}100%{transform:translateY(0);opacity:1}}" +
     "@keyframes gbClear{0%,82%,100%{opacity:0.45}86%,94%{opacity:0.95;fill:#a3215c}}" +
     "@keyframes gbLed{from{opacity:0.45}to{opacity:1}}",
     '<linearGradient id="gbShell" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e6e2d6"/><stop offset="1" stop-color="#cecab8"/></linearGradient>' +
@@ -996,23 +1221,25 @@ function gameboyLightSvg() {
   '<rect x="-800" width="3200" height="1000" fill="url(#gbShell)"/>' +
   '<g class="cdb-flank-lt">' +
     '<circle class="led" cx="42" cy="96" r="8" fill="#d92438"/>' +
+    pxStr("BATTERY", 58, 90, 2, "#4f525c") +
     '<path d="M24 62 H260" stroke="#8a1c52" stroke-width="3" opacity="0.55"/>' +
     '<path d="M24 70 H260" stroke="#283578" stroke-width="3" opacity="0.55"/>' +
   '</g>' +
   '<g class="cdb-flank-rt">' +
     '<path d="M1340 62 H1576" stroke="#8a1c52" stroke-width="3" opacity="0.55"/>' +
     '<path d="M1340 70 H1576" stroke="#283578" stroke-width="3" opacity="0.55"/>' +
+    gbTetrisHud("#dcd8c8", "#5b5a63", "#2d3048", "#8a1c52") +
   '</g>' +
   '<g class="cdb-flank-l">' +
     '<rect x="0" y="0" width="280" height="1000" fill="url(#gbDotsL)"/>' +
     '<g class="tet" fill="#a3215c" opacity="0.65">' +
-      '<rect x="80" y="0" width="26" height="26" rx="2"/><rect x="108" y="0" width="26" height="26" rx="2"/><rect x="136" y="0" width="26" height="26" rx="2"/><rect x="108" y="28" width="26" height="26" rx="2"/>' +
+      '<rect x="80" y="170" width="26" height="26" rx="2"/><rect x="108" y="170" width="26" height="26" rx="2"/><rect x="136" y="170" width="26" height="26" rx="2"/><rect x="108" y="198" width="26" height="26" rx="2"/>' +
     '</g>' +
     '<g class="tet b" fill="#3d3a78" opacity="0.6">' +
-      '<rect x="140" y="0" width="26" height="26" rx="2"/><rect x="168" y="0" width="26" height="26" rx="2"/><rect x="168" y="28" width="26" height="26" rx="2"/><rect x="196" y="28" width="26" height="26" rx="2"/>' +
+      '<rect x="148" y="340" width="26" height="26" rx="2"/><rect x="176" y="340" width="26" height="26" rx="2"/><rect x="176" y="368" width="26" height="26" rx="2"/><rect x="204" y="368" width="26" height="26" rx="2"/>' +
     '</g>' +
     '<g class="tet c" fill="#4f5b48" opacity="0.58">' +
-      '<rect x="52" y="0" width="26" height="26" rx="2"/><rect x="52" y="28" width="26" height="26" rx="2"/><rect x="52" y="56" width="26" height="26" rx="2"/><rect x="52" y="84" width="26" height="26" rx="2"/>' +
+      '<rect x="52" y="510" width="26" height="26" rx="2"/><rect x="52" y="538" width="26" height="26" rx="2"/><rect x="52" y="566" width="26" height="26" rx="2"/><rect x="52" y="594" width="26" height="26" rx="2"/>' +
     '</g>' +
     '<g class="lineClr" fill="#3d3a78">' +
       '<rect x="52" y="940" width="26" height="26" rx="2"/><rect x="80" y="940" width="26" height="26" rx="2"/><rect x="108" y="940" width="26" height="26" rx="2"/><rect x="136" y="940" width="26" height="26" rx="2"/><rect x="164" y="940" width="26" height="26" rx="2"/><rect x="192" y="940" width="26" height="26" rx="2"/>' +
@@ -1021,10 +1248,10 @@ function gameboyLightSvg() {
   '<g class="cdb-flank-r">' +
     '<rect x="1320" y="0" width="280" height="1000" fill="url(#gbDotsL)"/>' +
     '<g class="tet d" fill="#a3215c" opacity="0.65">' +
-      '<rect x="1430" y="0" width="26" height="26" rx="2"/><rect x="1430" y="28" width="26" height="26" rx="2"/><rect x="1430" y="56" width="26" height="26" rx="2"/><rect x="1458" y="56" width="26" height="26" rx="2"/>' +
+      '<rect x="1430" y="390" width="26" height="26" rx="2"/><rect x="1430" y="418" width="26" height="26" rx="2"/><rect x="1430" y="446" width="26" height="26" rx="2"/><rect x="1458" y="446" width="26" height="26" rx="2"/>' +
     '</g>' +
     '<g class="tet e" fill="#3d3a78" opacity="0.6">' +
-      '<rect x="1380" y="0" width="26" height="26" rx="2"/><rect x="1408" y="0" width="26" height="26" rx="2"/><rect x="1380" y="28" width="26" height="26" rx="2"/><rect x="1408" y="28" width="26" height="26" rx="2"/>' +
+      '<rect x="1380" y="570" width="26" height="26" rx="2"/><rect x="1408" y="570" width="26" height="26" rx="2"/><rect x="1380" y="598" width="26" height="26" rx="2"/><rect x="1408" y="598" width="26" height="26" rx="2"/>' +
     '</g>' +
   '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
@@ -1032,14 +1259,14 @@ function gameboyLightSvg() {
 
 function gameboyDarkSvg() {
   return openSvg(
-    ".tet{animation:gbFall 28s steps(28,jump-none) infinite}" +
-    ".tet.b{animation-duration:36s;animation-delay:-14s}" +
-    ".tet.c{animation-duration:32s;animation-delay:-22s}" +
-    ".tet.d{animation-duration:34s;animation-delay:-8s}" +
-    ".tet.e{animation-duration:30s;animation-delay:-19s}" +
+    ".tet{animation:gbFall 22s steps(22,jump-none) infinite}" +
+    ".tet.b{animation-duration:26s}" +
+    ".tet.c{animation-duration:24s}" +
+    ".tet.d{animation-duration:25s}" +
+    ".tet.e{animation-duration:28s}" +
     ".lineClr{animation:gbClearD 6s steps(2,jump-none) infinite}" +
     ".pulse{animation:gbPulse 6s ease-in-out infinite alternate}" +
-    "@keyframes gbFall{from{transform:translateY(-110px)}to{transform:translateY(1120px)}}" +
+    "@keyframes gbFall{0%{transform:translateY(0);opacity:1}42%{transform:translateY(420px);opacity:1}45%{transform:translateY(420px);opacity:0}47%{transform:translateY(-220px);opacity:0}52%{opacity:1}100%{transform:translateY(0);opacity:1}}" +
     "@keyframes gbClearD{0%,82%,100%{opacity:0.42}86%,94%{opacity:0.95;fill:#d0f040}}" +
     "@keyframes gbPulse{from{opacity:0.35}to{opacity:0.8}}",
     '<linearGradient id="gbLcd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#071c07"/><stop offset="0.5" stop-color="#0b280b"/><stop offset="1" stop-color="#051405"/></linearGradient>' +
@@ -1047,17 +1274,27 @@ function gameboyDarkSvg() {
     radGrad("gbGlow", "#9bbc0f", 0.28) + CALM_DARK
   ) +
   '<rect x="-800" width="3200" height="1000" fill="url(#gbLcd)"/>' +
+  '<g class="cdb-flank-lt">' +
+    '<circle cx="42" cy="96" r="7" fill="#d92438" opacity="0.85"/>' +
+    pxStr("BATTERY", 58, 90, 2, "#8bac0f") +
+    '<path d="M24 62 H260" stroke="#306230" stroke-width="3" opacity="0.75"/>' +
+    '<path d="M24 70 H260" stroke="#8bac0f" stroke-width="2" opacity="0.45"/>' +
+  '</g>' +
+  '<g class="cdb-flank-rt">' +
+    '<path d="M1340 62 H1576" stroke="#306230" stroke-width="3" opacity="0.75"/>' +
+    gbTetrisHud("#0a230a", "#306230", "#9bbc0f", "#8bac0f") +
+  '</g>' +
   '<g class="cdb-flank-l">' +
     '<rect x="0" y="0" width="300" height="1000" fill="url(#gbDotsD)"/>' +
     '<ellipse class="pulse" cx="150" cy="200" rx="260" ry="200" fill="url(#gbGlow)"/>' +
     '<g class="tet" fill="#9bbc0f" opacity="0.68">' +
-      '<rect x="76" y="0" width="26" height="26" rx="2"/><rect x="104" y="0" width="26" height="26" rx="2"/><rect x="132" y="0" width="26" height="26" rx="2"/><rect x="104" y="28" width="26" height="26" rx="2"/>' +
+      '<rect x="76" y="170" width="26" height="26" rx="2"/><rect x="104" y="170" width="26" height="26" rx="2"/><rect x="132" y="170" width="26" height="26" rx="2"/><rect x="104" y="198" width="26" height="26" rx="2"/>' +
     '</g>' +
     '<g class="tet b" fill="#8bac0f" opacity="0.54">' +
-      '<rect x="140" y="0" width="26" height="26" rx="2"/><rect x="168" y="0" width="26" height="26" rx="2"/><rect x="168" y="28" width="26" height="26" rx="2"/><rect x="196" y="28" width="26" height="26" rx="2"/>' +
+      '<rect x="148" y="340" width="26" height="26" rx="2"/><rect x="176" y="340" width="26" height="26" rx="2"/><rect x="176" y="368" width="26" height="26" rx="2"/><rect x="204" y="368" width="26" height="26" rx="2"/>' +
     '</g>' +
     '<g class="tet c" fill="#9bbc0f" opacity="0.5">' +
-      '<rect x="48" y="0" width="26" height="26" rx="2"/><rect x="48" y="28" width="26" height="26" rx="2"/><rect x="48" y="56" width="26" height="26" rx="2"/><rect x="48" y="84" width="26" height="26" rx="2"/>' +
+      '<rect x="48" y="510" width="26" height="26" rx="2"/><rect x="48" y="538" width="26" height="26" rx="2"/><rect x="48" y="566" width="26" height="26" rx="2"/><rect x="48" y="594" width="26" height="26" rx="2"/>' +
     '</g>' +
     '<g class="lineClr" fill="#8bac0f">' +
       '<rect x="48" y="940" width="26" height="26" rx="2"/><rect x="76" y="940" width="26" height="26" rx="2"/><rect x="104" y="940" width="26" height="26" rx="2"/><rect x="132" y="940" width="26" height="26" rx="2"/><rect x="160" y="940" width="26" height="26" rx="2"/><rect x="188" y="940" width="26" height="26" rx="2"/>' +
@@ -1067,13 +1304,29 @@ function gameboyDarkSvg() {
     '<rect x="1300" y="0" width="300" height="1000" fill="url(#gbDotsD)"/>' +
     '<ellipse class="pulse" cx="1450" cy="800" rx="260" ry="200" fill="url(#gbGlow)" style="animation-delay:-3s"/>' +
     '<g class="tet d" fill="#9bbc0f" opacity="0.68">' +
-      '<rect x="1430" y="0" width="26" height="26" rx="2"/><rect x="1430" y="28" width="26" height="26" rx="2"/><rect x="1430" y="56" width="26" height="26" rx="2"/><rect x="1458" y="56" width="26" height="26" rx="2"/>' +
+      '<rect x="1430" y="390" width="26" height="26" rx="2"/><rect x="1430" y="418" width="26" height="26" rx="2"/><rect x="1430" y="446" width="26" height="26" rx="2"/><rect x="1458" y="446" width="26" height="26" rx="2"/>' +
     '</g>' +
     '<g class="tet e" fill="#8bac0f" opacity="0.54">' +
-      '<rect x="1380" y="0" width="26" height="26" rx="2"/><rect x="1408" y="0" width="26" height="26" rx="2"/><rect x="1380" y="28" width="26" height="26" rx="2"/><rect x="1408" y="28" width="26" height="26" rx="2"/>' +
+      '<rect x="1380" y="570" width="26" height="26" rx="2"/><rect x="1408" y="570" width="26" height="26" rx="2"/><rect x="1380" y="598" width="26" height="26" rx="2"/><rect x="1408" y="598" width="26" height="26" rx="2"/>' +
     '</g>' +
   '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
+}
+
+function ffBlueWindow(isDark) {
+  return '<g transform="translate(32 72)" opacity="' + (isDark ? "0.90" : "0.78") + '">' +
+    '<rect x="0" y="0" width="218" height="106" rx="7" fill="url(#ffWinBlue)" stroke="#f8fafc" stroke-width="3"/>' +
+    '<rect x="4" y="4" width="210" height="98" rx="4" fill="none" stroke="#93c5fd" stroke-width="1.2" opacity="0.65"/>' +
+    '<g class="ffHand">' +
+      '<path d="M12 21 H26 L30 18 H34 V24 L26 27 H14 Z" fill="#ffffff" stroke="#09133a" stroke-width="1.4"/>' +
+    '</g>' +
+    pxStr("MAGIC", 42, 16, 2.5, "#ffffff", "#060c24") +
+    pxStr("HP 9999", 18, 42, 2.5, "#4ade80", "#060c24") +
+    pxStr("MP 999", 18, 62, 2.5, "#38bdf8", "#060c24") +
+    pxStr("ATB", 18, 82, 2, "#fde047", "#060c24") +
+    '<rect x="64" y="82" width="132" height="10" rx="3" fill="#060c24" stroke="#93c5fd" stroke-width="1.5"/>' +
+    '<rect x="66" y="84" width="104" height="6" rx="2" fill="#facc15"/>' +
+  '</g>';
 }
 
 function finalFantasyLightSvg() {
@@ -1082,16 +1335,20 @@ function finalFantasyLightSvg() {
     ".ring{animation:ffSpin 75s linear infinite}" +
     ".ring.rev{animation-direction:reverse;animation-duration:55s}" +
     ".mote{animation:ffRise 24s linear infinite}" +
+    ".ffHand{animation:ffBob 1.1s steps(2,jump-none) infinite alternate}" +
     "@keyframes ffHover{from{transform:translateY(-14px)}to{transform:translateY(14px)}}" +
     "@keyframes ffSpin{to{transform:rotate(360deg)}}" +
+    "@keyframes ffBob{from{transform:translateX(0)}to{transform:translateX(5px)}}" +
     "@keyframes ffRise{from{transform:translateY(0);opacity:0}20%{opacity:0.85}80%{opacity:0.45}to{transform:translateY(-900px);opacity:0}}",
     '<linearGradient id="ffParch" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f8f2e2"/><stop offset="0.6" stop-color="#f1e7cf"/><stop offset="1" stop-color="#e5d7b7"/></linearGradient>' +
+    '<linearGradient id="ffWinBlue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2244b8"/><stop offset="1" stop-color="#07113b"/></linearGradient>' +
     '<linearGradient id="ffCryL" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#62d2ff"/><stop offset="0.5" stop-color="#2155b8"/><stop offset="1" stop-color="#192e7a"/></linearGradient>' +
     radGrad("ffAetherL", "#2155b8", 0.22) + radGrad("ffGoldL", "#d49b27", 0.28) + CALM_LIGHT
   ) +
   '<rect x="-800" width="3200" height="1000" fill="url(#ffParch)"/>' +
   '<g class="cdb-flank-lt">' +
     '<ellipse cx="180" cy="240" rx="340" ry="260" fill="url(#ffGoldL)"/>' +
+    ffBlueWindow(false) +
   '</g>' +
   '<g class="cdb-flank-rt">' +
     '<g class="ring" style="transform-origin:1440px 265px" fill="none" stroke="#b88a28" stroke-width="1.6" stroke-dasharray="10 6" opacity="0.5"><circle cx="1440" cy="265" r="134"/></g>' +
@@ -1125,15 +1382,19 @@ function finalFantasyDarkSvg() {
     ".ring.rev{animation-direction:reverse;animation-duration:50s}" +
     ".stream{animation:ffWave 32s ease-in-out infinite alternate}" +
     ".mote{animation:ffRise 24s linear infinite}" +
+    ".ffHand{animation:ffBob 1.1s steps(2,jump-none) infinite alternate}" +
     "@keyframes ffHover{from{transform:translateY(-16px)}to{transform:translateY(16px)}}" +
     "@keyframes ffSpin{to{transform:rotate(360deg)}}" +
+    "@keyframes ffBob{from{transform:translateX(0)}to{transform:translateX(5px)}}" +
     "@keyframes ffWave{from{transform:translateX(-55px) skewX(-6deg)}to{transform:translateX(55px) skewX(6deg)}}" +
     "@keyframes ffRise{from{transform:translateY(0);opacity:0}15%{opacity:0.95}80%{opacity:0.45}to{transform:translateY(-940px);opacity:0}}",
     '<linearGradient id="ffWin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b153c"/><stop offset="0.55" stop-color="#08102b"/><stop offset="1" stop-color="#040817"/></linearGradient>' +
+    '<linearGradient id="ffWinBlue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1e40af"/><stop offset="1" stop-color="#071036"/></linearGradient>' +
     '<linearGradient id="ffCryD" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b8f4ff"/><stop offset="0.5" stop-color="#46bdf5"/><stop offset="1" stop-color="#1b56a8"/></linearGradient>' +
     radGrad("ffLife", "#46f5c8", 0.34) + radGrad("ffCrystalGlow", "#46bdf5", 0.4) + radGrad("ffGoldD", "#f0c460", 0.6) + CALM_DARK
   ) +
   '<rect x="-800" width="3200" height="1000" fill="url(#ffWin)"/>' +
+  '<g class="cdb-flank-lt">' + ffBlueWindow(true) + '</g>' +
   '<g class="stream">' +
     '<ellipse cx="220" cy="880" rx="520" ry="180" fill="url(#ffLife)"/>' +
     '<ellipse cx="1380" cy="900" rx="540" ry="190" fill="url(#ffCrystalGlow)"/>' +
@@ -1167,6 +1428,36 @@ function finalFantasyDarkSvg() {
   '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
+function zeldaHeartsHud(isDark) {
+  var rim = isDark ? "#ffffff" : "#253b2c";
+  var hearts = "", hx;
+  for (var i = 0; i < 6; i++) {
+    hx = i * 26;
+    if (i < 5) {
+      hearts += '<g transform="translate(' + hx + ' 0)">' +
+        '<path d="M11 5 C8 0 0 2 0 8 C0 14 11 21 11 21 C11 21 22 14 22 8 C22 2 14 0 11 5 Z" fill="#e11d48" stroke="' + rim + '" stroke-width="1.6"/>' +
+        '<rect x="4" y="5" width="3" height="3" fill="#fda4af"/>' +
+      '</g>';
+    } else {
+      hearts += '<g transform="translate(' + hx + ' 0)">' +
+        '<path d="M11 5 C8 0 0 2 0 8 C0 14 11 21 11 21 C11 21 22 14 22 8 C22 2 14 0 11 5 Z" fill="#1e293b" stroke="' + rim + '" stroke-width="1.6"/>' +
+        '<path d="M11 5 C8 0 0 2 0 8 C0 14 11 21 11 21 Z" fill="#e11d48"/>' +
+        '<rect x="4" y="5" width="3" height="3" fill="#fda4af"/>' +
+      '</g>';
+    }
+  }
+  return '<g transform="translate(32 68)" opacity="' + (isDark ? "0.92" : "0.78") + '">' +
+    hearts +
+    '<rect x="0" y="32" width="124" height="14" rx="4" fill="#0f1f14" stroke="' + rim + '" stroke-width="2"/>' +
+    '<rect x="3" y="35" width="96" height="8" rx="2" fill="#22c55e"/><rect x="3" y="36" width="96" height="2.5" fill="#86efac"/>' +
+    '<g transform="translate(0 54)">' +
+      '<polygon points="9,0 17,6 17,18 9,24 1,18 1,6" fill="#10b981" stroke="' + rim + '" stroke-width="1.6"/>' +
+      '<polygon points="9,3 14,7 14,17 9,21 5,17 5,7" fill="#6ee7b7" opacity="0.65"/>' +
+      pxStr("099", 24, 5, 2.5, isDark ? "#f2f7e7" : "#18281c", isDark ? "#08110b" : "") +
+    '</g>' +
+  '</g>';
+}
+
 function zeldaLightSvg() {
   return openSvg(
     ".tri{animation:zPulse 6s ease-in-out infinite alternate}" +
@@ -1182,6 +1473,7 @@ function zeldaLightSvg() {
     radGrad("zSun", "#f2c231", 0.38) + radGrad("zNaviL", "#2898d8", 0.55) + CALM_LIGHT
   ) +
   '<rect x="-800" width="3200" height="1000" fill="url(#zMeadow)"/>' +
+  '<g class="cdb-flank-lt">' + zeldaHeartsHud(false) + '</g>' +
   '<g class="cdb-flank-rt">' +
     '<ellipse cx="1440" cy="205" rx="360" ry="260" fill="url(#zSun)"/>' +
     '<g class="rays" style="transform-origin:1440px 205px" stroke="#d4a017" stroke-width="1.5" stroke-dasharray="8 8" fill="none" opacity="0.38"><circle cx="1440" cy="205" r="108"/></g>' +
@@ -1230,6 +1522,7 @@ function zeldaDarkSvg() {
     radGrad("zTriGlow", "#f0c419", 0.42) + radGrad("zNaviD", "#56d8ff", 0.72) + radGrad("zTatl", "#ffe066", 0.65) + radGrad("zTael", "#c878ff", 0.6) + CALM_DARK
   ) +
   '<rect x="-800" width="3200" height="1000" fill="url(#zGrove)"/>' +
+  '<g class="cdb-flank-lt">' + zeldaHeartsHud(true) + '</g>' +
   '<g class="cdb-flank-rt">' +
     '<ellipse cx="1440" cy="210" rx="320" ry="240" fill="url(#zTriGlow)"/>' +
     '<g class="rays" style="transform-origin:1440px 210px" stroke="#f0c419" stroke-width="1.5" stroke-dasharray="10 7" fill="none" opacity="0.42"><circle cx="1440" cy="210" r="112"/></g>' +
@@ -1272,6 +1565,28 @@ function zeldaDarkSvg() {
   '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
+function warcraftUnitFrame(crestBg, isDark) {
+  return '<g transform="translate(28 68)" opacity="' + (isDark ? "0.90" : "0.78") + '">' +
+    '<rect x="44" y="12" width="160" height="44" rx="8" fill="' + (isDark ? "#140e09" : "#2c2217") + '" stroke="#d49b27" stroke-width="2.5"/>' +
+    '<rect x="64" y="18" width="132" height="14" rx="4" fill="#09150b" stroke="#644a14" stroke-width="1.2"/>' +
+    '<rect x="66" y="20" width="114" height="10" rx="3" fill="#22c55e"/><rect x="66" y="21" width="114" height="3" fill="#86efac" opacity="0.7"/>' +
+    '<rect x="64" y="36" width="132" height="14" rx="4" fill="#081224" stroke="#644a14" stroke-width="1.2"/>' +
+    '<rect x="66" y="38" width="102" height="10" rx="3" fill="#3b82f6"/><rect x="66" y="39" width="102" height="3" fill="#93c5fd" opacity="0.7"/>' +
+    '<circle cx="34" cy="34" r="30" fill="#8a5a18" stroke="#f0c460" stroke-width="3"/>' +
+    '<circle cx="34" cy="34" r="24" fill="' + crestBg + '"/>' +
+    '<polygon points="34,15 44,34 34,53 24,34" fill="#f0c460" opacity="0.9"/>' +
+    '<path d="M6 18 C-4 28 -4 40 6 50" fill="none" stroke="#f0c460" stroke-width="3" stroke-linecap="round"/>' +
+  '</g>';
+}
+function hearthstoneGem(x, y, isDark) {
+  return '<g transform="translate(' + x + ' ' + y + ')" opacity="' + (isDark ? "0.86" : "0.76") + '">' +
+    '<ellipse cx="0" cy="0" rx="24" ry="30" fill="#4b5563" stroke="#1f2937" stroke-width="2.5"/>' +
+    '<ellipse cx="-3" cy="-3" rx="18" ry="23" fill="#6b7280"/>' +
+    '<path d="M0 -13 C10 -13 13 -3 7 3 C2 8 -6 6 -6 -1 C-6 -6 -1 -8 2 -6" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round"/>' +
+    '<path d="M0 -13 C10 -13 13 -3 7 3 C2 8 -6 6 -6 -1 C-6 -6 -1 -8 2 -6" fill="none" stroke="#e0f2fe" stroke-width="1.6" stroke-linecap="round"/>' +
+  '</g>';
+}
+
 function warcraftLightSvg() {
   return openSvg(
     ".rune{animation:wcSpin 85s linear infinite}" +
@@ -1284,16 +1599,17 @@ function warcraftLightSvg() {
   ) +
   '<rect x="-800" width="3200" height="1000" fill="url(#wcMap)"/>' +
   '<g class="cdb-flank-lt">' +
-    '<ellipse class="glow" style="transform-origin:160px 235px" cx="160" cy="235" rx="340" ry="260" fill="url(#wcAlliance)"/>' +
-    '<g class="rune" style="transform-origin:160px 235px" fill="none" stroke="#1f4aa0" stroke-width="2" opacity="0.48">' +
-      '<circle cx="160" cy="235" r="116"/><circle cx="160" cy="235" r="88" stroke-dasharray="12 8"/>' +
-      '<polygon points="160,125 194,235 160,345 126,235"/>' +
+    warcraftUnitFrame("#1f4aa0", false) +
+    '<ellipse class="glow" style="transform-origin:160px 305px" cx="160" cy="305" rx="340" ry="240" fill="url(#wcAlliance)"/>' +
+    '<g class="rune" style="transform-origin:160px 305px" fill="none" stroke="#1f4aa0" stroke-width="2" opacity="0.48">' +
+      '<circle cx="160" cy="305" r="112"/><circle cx="160" cy="305" r="84" stroke-dasharray="12 8"/>' +
+      '<polygon points="160,198 194,305 160,412 126,305"/>' +
     '</g>' +
-    '<g class="rune rev" style="transform-origin:160px 235px" fill="none" stroke="#d49b27" stroke-width="1.8" opacity="0.45">' +
-      '<polygon points="160,155 229,275 91,275"/><polygon points="160,315 229,195 91,195"/>' +
+    '<g class="rune rev" style="transform-origin:160px 305px" fill="none" stroke="#d49b27" stroke-width="1.8" opacity="0.45">' +
+      '<polygon points="160,225 229,345 91,345"/><polygon points="160,385 229,265 91,265"/>' +
     '</g>' +
   '</g>' +
-  '<g class="cdb-flank-l"></g>' +
+  '<g class="cdb-flank-l">' + hearthstoneGem(132, 740, false) + '</g>' +
   '<g class="cdb-flank-r">' +
     '<ellipse class="glow" style="transform-origin:1440px 760px" cx="1440" cy="760" rx="360" ry="280" fill="url(#wcGold)"/>' +
     '<g class="rune rev" style="transform-origin:1440px 760px" fill="none" stroke="#8a5a18" stroke-width="2" opacity="0.48">' +
@@ -1317,6 +1633,7 @@ function warcraftDarkSvg() {
     radGrad("wcFel", "#5aa832", 0.36) + radGrad("wcArcane", "#e8b93f", 0.42) + radGrad("wcSpark", "#ffbd4a", 0.78) + CALM_DARK
   ) +
   '<rect x="-800" width="3200" height="1000" fill="url(#wcDark)"/>' +
+  '<g class="cdb-flank-lt">' + warcraftUnitFrame("#991b1b", true) + '</g>' +
   '<g class="cdb-flank-rt">' +
     '<g class="hearth" style="transform-origin:1450px 235px;animation-delay:-3.5s"><ellipse cx="1450" cy="235" rx="420" ry="260" fill="url(#wcFel)"/></g>' +
     '<g class="rune" style="transform-origin:1450px 235px" fill="none" stroke="#5aa832" stroke-width="2" opacity="0.58">' +
@@ -1328,6 +1645,7 @@ function warcraftDarkSvg() {
     '</g>' +
   '</g>' +
   '<g class="cdb-flank-l">' +
+    hearthstoneGem(150, 565, true) +
     '<g class="hearth" style="transform-origin:150px 880px"><ellipse cx="150" cy="880" rx="440" ry="280" fill="url(#wcArcane)"/></g>' +
     '<g class="rune rev" style="transform-origin:150px 780px" fill="none" stroke="#e8b93f" stroke-width="2" opacity="0.58">' +
       '<circle cx="150" cy="780" r="118"/><circle cx="150" cy="780" r="88" stroke-dasharray="14 7"/>' +
@@ -1349,19 +1667,30 @@ function dragonballLightSvg() {
     ".ring{animation:dbOrbit 48s linear infinite}" +
     ".orb{animation:dbBob 4.5s ease-in-out infinite alternate}" +
     ".orb.b{animation-delay:-2.2s}" +
+    ".radarBlip{animation:dbBlip 1.4s steps(2,end) infinite}" +
     "@keyframes dbFly{from{transform:translateX(-45px) translateY(-8px)}to{transform:translateX(85px) translateY(8px)}}" +
     "@keyframes dbOrbit{to{transform:rotate(360deg)}}" +
-    "@keyframes dbBob{from{transform:translateY(-12px)}to{transform:translateY(12px)}}",
+    "@keyframes dbBob{from{transform:translateY(-12px)}to{transform:translateY(12px)}}" +
+    "@keyframes dbBlip{0%,100%{opacity:1}50%{opacity:0.25}}",
     '<linearGradient id="dbSkyL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e3f0ff"/><stop offset="0.6" stop-color="#f2f8ff"/><stop offset="1" stop-color="#fff4e0"/></linearGradient>' +
     '<radialGradient id="dbBall" cx="0.38" cy="0.35" r="0.65"><stop offset="0" stop-color="#ffe58f"/><stop offset="0.55" stop-color="#f57d0d"/><stop offset="1" stop-color="#b84200"/></radialGradient>' +
     radGrad("dbAuraL", "#ff9d2e", 0.34) + CALM_LIGHT
   ) +
   '<rect x="-800" width="3200" height="1000" fill="url(#dbSkyL)"/>' +
   '<g class="cdb-flank-lt">' +
-    '<g class="nimbus" opacity="0.84">' +
+    '<g transform="translate(24 62)" opacity="0.56">' +
+      '<rect x="0" y="0" width="214" height="44" rx="8" fill="#ffffff" fill-opacity="0.82" stroke="#d97706" stroke-width="2"/>' +
+      pxStr("HP", 10, 8, 2, "#15803d", "") +
+      '<rect x="44" y="8" width="156" height="10" rx="3" fill="#dcfce7" stroke="#16a34a" stroke-width="1"/>' +
+      '<rect x="46" y="10" width="136" height="6" rx="2" fill="#22c55e"/>' +
+      pxStr("KI", 10, 25, 2, "#b45309", "") +
+      '<rect x="44" y="25" width="156" height="10" rx="3" fill="#fef3c7" stroke="#d97706" stroke-width="1"/>' +
+      '<rect x="46" y="27" width="124" height="6" rx="2" fill="#f59e0b"/>' +
+    '</g>' +
+    '<g transform="translate(0 46)"><g class="nimbus" opacity="0.84">' +
       '<path d="M-20 176 L70 170 L70 184 Z" fill="#ffd93d" opacity="0.65"/>' +
       '<path d="M55 190 L195 190 C220 190 230 154 202 148 C196 122 158 122 148 143 C128 126 96 143 96 166 L55 174 Z" fill="#ffd93d" stroke="#d48800" stroke-width="2"/>' +
-    '</g>' +
+    '</g></g>' +
   '</g>' +
   '<g class="cdb-flank-rt">' +
     '<ellipse cx="1440" cy="260" rx="340" ry="240" fill="url(#dbAuraL)"/>' +
@@ -1389,7 +1718,19 @@ function dragonballLightSvg() {
       '</g>' +
     '</g>' +
   '</g>' +
-  '<g class="cdb-flank-r"></g>' +
+  '<g class="cdb-flank-r">' +
+    '<g transform="translate(1458 790)" opacity="0.54">' +
+      '<rect x="-14" y="-84" width="28" height="16" rx="4" fill="#94a3b8" stroke="#475569" stroke-width="2"/>' +
+      '<rect x="-8" y="-92" width="16" height="10" rx="2" fill="#cbd5e1" stroke="#475569" stroke-width="1.5"/>' +
+      '<circle cx="0" cy="0" r="70" fill="#e2e8f0" stroke="#475569" stroke-width="3"/>' +
+      '<circle cx="0" cy="0" r="56" fill="#0d4a2e" stroke="#1e293b" stroke-width="2.5"/>' +
+      '<path d="M-54 0 H54 M0 -54 V54 M-44 -28 H44 M-44 28 H44 M-28 -44 V44 M28 -44 V44" stroke="#16a34a" stroke-width="1" opacity="0.55"/>' +
+      '<polygon points="0,-8 6,6 -6,6" fill="#ffffff"/>' +
+      '<circle class="radarBlip" cx="-22" cy="-18" r="4.5" fill="#fbbf24"/>' +
+      '<circle class="radarBlip" cx="26" cy="20" r="4.5" fill="#fbbf24" style="animation-delay:-0.5s"/>' +
+      '<circle class="radarBlip" cx="18" cy="-30" r="4" fill="#fbbf24" style="animation-delay:-0.9s"/>' +
+    '</g>' +
+  '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
@@ -1401,17 +1742,28 @@ function dragonballDarkSvg() {
     ".orb.b{animation-delay:-2.5s}" +
     ".bolt{animation:dbBolt 2.8s steps(2,jump-none) infinite}" +
     ".spark{animation:dbRise 20s linear infinite}" +
+    ".radarBlip{animation:dbBlipD 1.4s steps(2,end) infinite}" +
     "@keyframes dbKi{from{opacity:0.58;transform:scale(0.94)}to{opacity:0.98;transform:scale(1.07)}}" +
     "@keyframes dbOrbit{to{transform:rotate(360deg)}}" +
     "@keyframes dbBob{from{transform:translateY(-14px)}to{transform:translateY(14px)}}" +
     "@keyframes dbBolt{0%,72%,100%{opacity:0}76%,88%{opacity:0.85}}" +
-    "@keyframes dbRise{from{transform:translateY(0);opacity:0}15%{opacity:0.95}80%{opacity:0.45}to{transform:translateY(-940px);opacity:0}}",
+    "@keyframes dbRise{from{transform:translateY(0);opacity:0}15%{opacity:0.95}80%{opacity:0.45}to{transform:translateY(-940px);opacity:0}}" +
+    "@keyframes dbBlipD{0%,100%{opacity:1}50%{opacity:0.25}}",
     '<linearGradient id="dbCosmos" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b0e18"/><stop offset="0.6" stop-color="#141929"/><stop offset="1" stop-color="#221712"/></linearGradient>' +
     '<radialGradient id="dbBallD" cx="0.38" cy="0.35" r="0.65"><stop offset="0" stop-color="#ffe58f"/><stop offset="0.55" stop-color="#ff8c1a"/><stop offset="1" stop-color="#b84200"/></radialGradient>' +
     radGrad("dbAuraD", "#ff8c1a", 0.46) + radGrad("dbGoldD", "#ffd166", 0.72) + CALM_DARK
   ) +
   '<rect x="-800" width="3200" height="1000" fill="url(#dbCosmos)"/>' +
   '<g class="cdb-flank-lt">' +
+    '<g transform="translate(24 62)" opacity="0.88">' +
+      '<rect x="0" y="0" width="214" height="44" rx="8" fill="#0d1220" stroke="#ffd166" stroke-width="2"/>' +
+      pxStr("HP", 10, 8, 2, "#4ade80", "#05070a") +
+      '<rect x="44" y="8" width="156" height="10" rx="3" fill="#0a2618" stroke="#22c55e" stroke-width="1"/>' +
+      '<rect x="46" y="10" width="138" height="6" rx="2" fill="#4ade80"/>' +
+      pxStr("KI", 10, 25, 2, "#7ef9ff", "#05070a") +
+      '<rect x="44" y="25" width="156" height="10" rx="3" fill="#0d2238" stroke="#38bdf8" stroke-width="1"/>' +
+      '<rect x="46" y="27" width="144" height="6" rx="2" fill="#ffd166"/>' +
+    '</g>' +
     '<g transform="translate(135 280)">' +
       '<g class="orb b" opacity="0.88">' +
         '<circle cx="0" cy="0" r="46" fill="url(#dbAuraD)"/>' +
@@ -1446,9 +1798,20 @@ function dragonballDarkSvg() {
   '</g>' +
   '<g class="cdb-flank-r">' +
     '<g class="ki" style="transform-origin:1450px 920px;animation-delay:-2.5s"><ellipse cx="1450" cy="920" rx="480" ry="320" fill="url(#dbAuraD)"/></g>' +
-    '<polyline class="bolt" style="animation-delay:-1.4s" points="1505,850 1480,805 1496,785 1468,735 1484,710 1455,665" fill="none" stroke="#ffd166" stroke-width="2.5"/>' +
+    '<polyline class="bolt" style="animation-delay:-1.4s" points="1365,850 1340,805 1356,785 1328,735 1344,710 1315,665" fill="none" stroke="#ffd166" stroke-width="2.5"/>' +
     '<circle class="spark" cx="1420" cy="965" r="11" fill="url(#dbGoldD)" style="animation-delay:-7s"/>' +
     '<circle class="spark" cx="1490" cy="970" r="12" fill="url(#dbGoldD)" style="animation-delay:-15s"/>' +
+    '<g transform="translate(1458 765)" opacity="0.86">' +
+      '<rect x="-14" y="-82" width="28" height="16" rx="4" fill="#94a3b8" stroke="#334155" stroke-width="2"/>' +
+      '<rect x="-8" y="-90" width="16" height="10" rx="2" fill="#e2e8f0" stroke="#334155" stroke-width="1.5"/>' +
+      '<circle cx="0" cy="0" r="68" fill="#cbd5e1" stroke="#334155" stroke-width="3"/>' +
+      '<circle cx="0" cy="0" r="54" fill="#073b22" stroke="#0f172a" stroke-width="2.5"/>' +
+      '<path d="M-52 0 H52 M0 -52 V52 M-42 -26 H42 M-42 26 H42 M-26 -42 V42 M26 -42 V42" stroke="#22c55e" stroke-width="1" opacity="0.55"/>' +
+      '<polygon points="0,-8 6,6 -6,6" fill="#ffffff"/>' +
+      '<circle class="radarBlip" cx="-22" cy="-18" r="4.5" fill="#ffd166"/>' +
+      '<circle class="radarBlip" cx="26" cy="20" r="4.5" fill="#ffd166" style="animation-delay:-0.5s"/>' +
+      '<circle class="radarBlip" cx="18" cy="-28" r="4" fill="#ffd166" style="animation-delay:-0.9s"/>' +
+    '</g>' +
   '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
@@ -1457,193 +1820,167 @@ function dragonballDarkSvg() {
 // 8. GTA I - 1997 DMA Design Top-Down 2D Pixel City (Light + Dark)
 // =============================================================================
 function gtaILightSvg() {
+  var cash = pxStr("$34240", 108, 0, 4, "#16a34a", "#05070a", "#86efac") +
+    pxStr("x1", 108, 34, 2.5, "#ef4444", "#05070a") +
+    pxStr("*5", 138, 34, 2.5, "#22c55e", "#05070a") +
+    gtaPixelHearts(4, 174, 36, 20);
   return openSvg(
-    '.racer{animation:gta1DriveUp 18s steps(36) infinite}' +
-    '.cop{animation:gta1DriveUp 18s steps(36) infinite;animation-delay:-1.2s}' +
-    '.cab{animation:gta1DriveDown 22s steps(44) infinite}' +
-    '.sirenR{animation:gta1Blink 0.6s steps(2,end) infinite}' +
-    '.sirenB{animation:gta1Blink 0.6s steps(2,end) infinite reverse}' +
+    '.chaseUp{animation:gta1LoopUp 14s linear infinite}' +
+    '.chaseUp.b{animation-duration:18s;animation-delay:-4s}' +
+    '.chaseDown{animation:gta1LoopDown 16s linear infinite}' +
+    '.chaseDown.b{animation-duration:20s;animation-delay:-7s}' +
+    '.sirenR{animation:gta1Blink 0.45s steps(2,end) infinite}' +
+    '.sirenB{animation:gta1Blink 0.45s steps(2,end) infinite reverse}' +
     '.wanted{animation:gta1Wanted 1.8s steps(2,end) infinite}' +
-    '@keyframes gta1DriveUp{from{transform:translateY(1120px)}to{transform:translateY(-220px)}}' +
-    '@keyframes gta1DriveDown{from{transform:translateY(-220px)}to{transform:translateY(1120px)}}' +
+    '@keyframes gta1LoopUp{0%{transform:translateY(0);opacity:1}44%{transform:translateY(-640px);opacity:1}46%{transform:translateY(-640px);opacity:0}47%{transform:translateY(680px);opacity:0}51%{transform:translateY(640px);opacity:1}100%{transform:translateY(0);opacity:1}}' +
+    '@keyframes gta1LoopDown{0%{transform:translateY(0);opacity:1}44%{transform:translateY(640px);opacity:1}46%{transform:translateY(640px);opacity:0}47%{transform:translateY(-680px);opacity:0}51%{transform:translateY(-640px);opacity:1}100%{transform:translateY(0);opacity:1}}' +
     '@keyframes gta1Blink{from{opacity:1}to{opacity:0.15}}' +
-    '@keyframes gta1Wanted{0%,100%{opacity:0.95}50%{opacity:0.35}}',
+    '@keyframes gta1Wanted{0%,100%{opacity:1}50%{opacity:0.55}}',
     '<linearGradient id="gta1GroundL" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0" stop-color="#ece6d8"/><stop offset="1" stop-color="#dcd4c2"/>' +
+      '<stop offset="0" stop-color="#e8e0cf"/><stop offset="1" stop-color="#d6ccb6"/>' +
     '</linearGradient>' +
-    '<pattern id="gta1GridL" width="32" height="32" patternUnits="userSpaceOnUse">' +
-      '<path d="M32 0H0V32" fill="none" stroke="#bab09c" stroke-width="1" opacity="0.35"/>' +
+    '<pattern id="gta1TileL" width="16" height="16" patternUnits="userSpaceOnUse">' +
+      '<rect width="16" height="16" fill="#dfd5c2"/><path d="M16 0H0V16" fill="none" stroke="#c0b49c" stroke-width="1"/>' +
     '</pattern>' +
     CALM_LIGHT
   ) +
   '<rect x="-800" width="3200" height="1000" fill="url(#gta1GroundL)"/>' +
-  '<rect x="-800" width="3200" height="1000" fill="url(#gta1GridL)"/>' +
-  '<g class="cdb-flank-l" shape-rendering="crispEdges" opacity="0.36">' +
-    '<rect x="156" y="-450" width="120" height="1550" fill="#b8b0a0" opacity="0.7"/>' +
-    '<rect x="168" y="-450" width="96" height="1550" fill="#707888" opacity="0.65"/>' +
-    '<rect x="214" y="-450" width="4" height="1550" fill="#d97706" stroke-dasharray="24 24" opacity="0.75"/>' +
-    '<rect x="24" y="130" width="116" height="180" fill="#b09e86"/><rect x="32" y="138" width="100" height="164" fill="#c4b299"/>' +
-    '<rect x="44" y="154" width="24" height="24" fill="#94826a"/><rect x="88" y="230" width="32" height="32" fill="#94826a"/>' +
-    '<rect x="24" y="340" width="116" height="220" fill="#9ca5b4"/><rect x="32" y="348" width="100" height="204" fill="#b2bccb"/>' +
-    '<rect x="48" y="372" width="68" height="40" fill="#848d9c"/><rect x="48" y="452" width="68" height="40" fill="#848d9c"/>' +
-    '<rect x="24" y="600" width="116" height="260" fill="#b88b74"/><rect x="32" y="608" width="100" height="244" fill="#cca088"/>' +
-    '<g transform="translate(180 0)"><g class="cab">' +
-      '<rect x="0" y="0" width="28" height="52" fill="#475569"/>' +
-      '<rect x="2" y="4" width="24" height="44" fill="#eab308"/>' +
-      '<rect x="4" y="14" width="20" height="10" fill="#38bdf8"/>' +
-      '<rect x="8" y="26" width="12" height="6" fill="#475569"/>' +
-    '</g></g>' +
+  '<g class="cdb-flank-l" shape-rendering="crispEdges" opacity="0.54">' +
+    '<rect x="136" y="-450" width="144" height="1550" fill="url(#gta1TileL)"/>' +
+    '<rect x="150" y="-450" width="4" height="1550" fill="#ca8a04"/>' +
+    '<rect x="262" y="-450" width="4" height="1550" fill="#ca8a04"/>' +
+    '<rect x="154" y="-450" width="108" height="1550" fill="#5b6370"/>' +
+    '<line x1="208" y1="-420" x2="208" y2="1080" stroke="#e2e8f0" stroke-width="4" stroke-dasharray="22 20"/>' +
+    '<rect x="20" y="138" width="116" height="176" fill="#a8957c"/><rect x="28" y="146" width="100" height="160" fill="#bfa98e"/>' +
+    '<rect x="42" y="162" width="24" height="24" fill="#8f7b62"/><rect x="86" y="242" width="28" height="28" fill="#8f7b62"/>' +
+    '<rect x="20" y="346" width="116" height="222" fill="#929cae"/><rect x="28" y="354" width="100" height="206" fill="#adb7c8"/>' +
+    '<rect x="44" y="378" width="68" height="38" fill="#7c8799"/><rect x="44" y="458" width="68" height="38" fill="#7c8799"/>' +
+    '<rect x="20" y="606" width="116" height="260" fill="#b48870"/><rect x="28" y="614" width="100" height="244" fill="#c89e86"/>' +
+    '<rect x="48" y="650" width="60" height="60" fill="#9c7058"/>' +
+    '<g transform="translate(162 290)"><g class="chaseDown">' + gtaTopDownCar("taxi", "down", false) + '</g></g>' +
+    '<g transform="translate(216 630)"><g class="chaseUp b">' + gtaTopDownCar("orange", "up", false) + '</g></g>' +
   '</g>' +
-  '<g class="cdb-flank-r" shape-rendering="crispEdges" opacity="0.36">' +
-    '<rect x="1324" y="-450" width="120" height="1550" fill="#b8b0a0" opacity="0.7"/>' +
-    '<rect x="1336" y="-450" width="96" height="1550" fill="#707888" opacity="0.65"/>' +
-    '<rect x="1382" y="-450" width="4" height="1550" fill="#d97706" opacity="0.75"/>' +
-    '<rect x="1460" y="140" width="116" height="210" fill="#9aa498"/><rect x="1468" y="148" width="100" height="194" fill="#b1bcb0"/>' +
-    '<rect x="1484" y="172" width="28" height="28" fill="#7c867a"/><rect x="1524" y="260" width="28" height="28" fill="#7c867a"/>' +
-    '<rect x="1460" y="390" width="116" height="200" fill="#b6a28a"/><rect x="1468" y="398" width="100" height="184" fill="#ccb79e"/>' +
-    '<rect x="1460" y="630" width="116" height="240" fill="#98a2b6"/><rect x="1468" y="638" width="100" height="224" fill="#b0bad0"/>' +
-    '<g transform="translate(1396 0)"><g class="racer">' +
-      '<rect x="0" y="0" width="28" height="54" fill="#475569"/>' +
-      '<rect x="2" y="4" width="24" height="46" fill="#ffab00"/>' +
-      '<rect x="12" y="4" width="4" height="46" fill="#475569"/>' +
-      '<rect x="4" y="14" width="20" height="10" fill="#38bdf8"/>' +
-    '</g></g>' +
-    '<g transform="translate(1396 110)"><g class="cop">' +
-      '<rect x="0" y="0" width="28" height="54" fill="#475569"/>' +
-      '<rect x="2" y="4" width="24" height="16" fill="#334155"/>' +
-      '<rect x="2" y="20" width="24" height="16" fill="#f8fafc"/>' +
-      '<rect x="2" y="36" width="24" height="14" fill="#334155"/>' +
-      '<rect class="sirenR" x="4" y="24" width="10" height="6" fill="#ef4444"/>' +
-      '<rect class="sirenB" x="14" y="24" width="10" height="6" fill="#3b82f6"/>' +
-    '</g></g>' +
+  '<g class="cdb-flank-r" shape-rendering="crispEdges" opacity="0.54">' +
+    '<rect x="1320" y="-450" width="144" height="1550" fill="url(#gta1TileL)"/>' +
+    '<rect x="1334" y="-450" width="4" height="1550" fill="#ca8a04"/>' +
+    '<rect x="1446" y="-450" width="4" height="1550" fill="#ca8a04"/>' +
+    '<rect x="1338" y="-450" width="108" height="1550" fill="#5b6370"/>' +
+    '<line x1="1392" y1="-420" x2="1392" y2="1080" stroke="#e2e8f0" stroke-width="4" stroke-dasharray="22 20"/>' +
+    '<rect x="1464" y="138" width="116" height="216" fill="#96a094"/><rect x="1472" y="146" width="100" height="200" fill="#aeb8ac"/>' +
+    '<rect x="1488" y="170" width="28" height="28" fill="#798477"/><rect x="1528" y="264" width="28" height="28" fill="#798477"/>' +
+    '<rect x="1464" y="388" width="116" height="212" fill="#b09c84"/><rect x="1472" y="396" width="100" height="196" fill="#c6b299"/>' +
+    '<rect x="1494" y="424" width="56" height="44" fill="#96826c"/>' +
+    '<rect x="1464" y="636" width="116" height="260" fill="#b4aa92"/>' +
+    '<rect x="1472" y="644" width="100" height="244" fill="#588550"/>' +
+    '<rect x="1480" y="652" width="38" height="54" fill="#6b995e"/><rect x="1526" y="756" width="38" height="64" fill="#467040"/>' +
+    '<rect x="1508" y="644" width="18" height="244" fill="#d6ccb6"/>' +
+    '<rect x="1484" y="726" width="20" height="20" rx="4" fill="#3a5e34"/><rect x="1532" y="832" width="22" height="22" rx="4" fill="#3a5e34"/>' +
+    '<polygon points="1412,718 1424,740 1416,740 1416,756 1408,756 1408,740 1400,740" fill="#a855f7" stroke="#1e1b4b" stroke-width="2"/>' +
+    '<g transform="translate(1346 240)"><g class="chaseDown b">' + gtaTopDownCar("blue", "down", false) + '</g></g>' +
+    '<g transform="translate(1398 370)"><g class="chaseUp">' + gtaTopDownCar("taxi", "up", false) + '</g></g>' +
+    '<g transform="translate(1398 475)"><g class="chaseUp">' + gtaTopDownCar("cop", "up", false) + '</g></g>' +
   '</g>' +
-  '<g class="cdb-flank-lt" shape-rendering="crispEdges" opacity="0.36">' +
-    '<g transform="translate(28 62)">' +
-      '<rect x="0" y="0" width="112" height="44" fill="#8c8474"/><rect x="4" y="4" width="104" height="36" fill="#a8be98"/>' +
-      '<rect x="12" y="12" width="16" height="4" fill="#3a4434"/><rect x="12" y="16" width="4" height="16" fill="#3a4434"/><rect x="12" y="28" width="16" height="4" fill="#3a4434"/><rect x="24" y="20" width="4" height="8" fill="#3a4434"/>' +
-      '<rect x="36" y="12" width="20" height="4" fill="#3a4434"/><rect x="44" y="16" width="4" height="16" fill="#3a4434"/>' +
-      '<rect x="64" y="12" width="16" height="4" fill="#3a4434"/><rect x="64" y="16" width="4" height="16" fill="#3a4434"/><rect x="76" y="16" width="4" height="16" fill="#3a4434"/><rect x="68" y="20" width="8" height="4" fill="#3a4434"/>' +
+  '<g class="cdb-flank-lt" shape-rendering="crispEdges" opacity="0.72">' +
+    '<g transform="translate(28 64)">' +
+      '<rect x="0" y="0" width="116" height="50" rx="4" fill="#854d0e"/>' +
+      '<rect x="3" y="3" width="110" height="44" rx="3" fill="#facc15"/>' +
+      '<rect x="9" y="8" width="98" height="34" fill="#1a2e1f"/>' +
+      pxStr("GTA", 22, 16, 3, "#4ade80", "") +
+      '<circle class="sirenR" cx="98" cy="14" r="3" fill="#ef4444"/>' +
     '</g>' +
   '</g>' +
-  '<g class="cdb-flank-rt" shape-rendering="crispEdges" opacity="0.36">' +
-    '<g transform="translate(1330 62)">' +
-      '<rect x="0" y="0" width="242" height="36" fill="#9e9482"/>' +
-      '<rect x="8" y="6" width="16" height="24" fill="#d97706"/><rect x="12" y="10" width="8" height="16" fill="#9e9482"/>' +
-      '<rect x="30" y="6" width="16" height="24" fill="#d97706"/><rect x="34" y="10" width="8" height="6" fill="#9e9482"/><rect x="34" y="20" width="8" height="6" fill="#9e9482"/>' +
-      '<rect x="52" y="6" width="16" height="24" fill="#d97706"/><rect x="52" y="10" width="12" height="6" fill="#9e9482"/><rect x="56" y="20" width="12" height="6" fill="#9e9482"/>' +
-      '<rect x="74" y="6" width="16" height="24" fill="#d97706"/><rect x="78" y="10" width="8" height="16" fill="#9e9482"/>' +
-      '<rect x="96" y="6" width="16" height="24" fill="#d97706"/><rect x="100" y="10" width="8" height="16" fill="#9e9482"/>' +
-      '<g transform="translate(132 6)"><g class="wanted">' +
-        '<rect x="0" y="0" width="22" height="24" fill="#dc2626"/><rect x="4" y="6" width="4" height="4" fill="#fff"/><rect x="14" y="6" width="4" height="4" fill="#fff"/>' +
-        '<rect x="28" y="0" width="22" height="24" fill="#dc2626"/><rect x="32" y="6" width="4" height="4" fill="#fff"/><rect x="42" y="6" width="4" height="4" fill="#fff"/>' +
-        '<rect x="56" y="0" width="22" height="24" fill="#dc2626"/><rect x="60" y="6" width="4" height="4" fill="#fff"/><rect x="70" y="6" width="4" height="4" fill="#fff"/>' +
-        '<rect x="84" y="0" width="22" height="24" fill="#dc2626"/><rect x="88" y="6" width="4" height="4" fill="#fff"/><rect x="98" y="6" width="4" height="4" fill="#fff"/>' +
-      '</g></g>' +
+  '<g class="cdb-flank-rt" shape-rendering="crispEdges" opacity="0.78">' +
+    '<g transform="translate(1322 64)">' +
+      '<g class="wanted">' + gtaCopHeads(4, 0, 2, 24) + '</g>' +
+      cash +
     '</g>' +
   '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function gtaIDarkSvg() {
+  var cash = pxStr("$34240", 108, 0, 4, "#22c55e", "#05070a", "#86efac") +
+    pxStr("x1", 108, 34, 2.5, "#ef4444", "#05070a") +
+    pxStr("*5", 138, 34, 2.5, "#4ade80", "#05070a") +
+    gtaPixelHearts(4, 174, 36, 20);
   return openSvg(
-    '.racer{animation:gta1DriveUpD 17s steps(34) infinite}' +
-    '.cop{animation:gta1DriveUpD 17s steps(34) infinite;animation-delay:-1.1s}' +
-    '.cab{animation:gta1DriveDownD 21s steps(42) infinite}' +
-    '.sirenR{animation:gta1BlinkD 0.5s steps(2,end) infinite}' +
-    '.sirenB{animation:gta1BlinkD 0.5s steps(2,end) infinite reverse}' +
+    '.chaseUp{animation:gta1LoopUpD 13s linear infinite}' +
+    '.chaseUp.b{animation-duration:17s;animation-delay:-4s}' +
+    '.chaseDown{animation:gta1LoopDownD 15s linear infinite}' +
+    '.chaseDown.b{animation-duration:19s;animation-delay:-7s}' +
+    '.sirenR{animation:gta1BlinkD 0.42s steps(2,end) infinite}' +
+    '.sirenB{animation:gta1BlinkD 0.42s steps(2,end) infinite reverse}' +
     '.wanted{animation:gta1WantedD 1.6s steps(2,end) infinite}' +
-    '@keyframes gta1DriveUpD{from{transform:translateY(1120px)}to{transform:translateY(-220px)}}' +
-    '@keyframes gta1DriveDownD{from{transform:translateY(-220px)}to{transform:translateY(1120px)}}' +
-    '@keyframes gta1BlinkD{from{opacity:1}to{opacity:0.1}}' +
-    '@keyframes gta1WantedD{0%,100%{opacity:1}50%{opacity:0.3}}',
+    '@keyframes gta1LoopUpD{0%{transform:translateY(0);opacity:1}44%{transform:translateY(-640px);opacity:1}46%{transform:translateY(-640px);opacity:0}47%{transform:translateY(680px);opacity:0}51%{transform:translateY(640px);opacity:1}100%{transform:translateY(0);opacity:1}}' +
+    '@keyframes gta1LoopDownD{0%{transform:translateY(0);opacity:1}44%{transform:translateY(640px);opacity:1}46%{transform:translateY(640px);opacity:0}47%{transform:translateY(-680px);opacity:0}51%{transform:translateY(-640px);opacity:1}100%{transform:translateY(0);opacity:1}}' +
+    '@keyframes gta1BlinkD{from{opacity:1}to{opacity:0.12}}' +
+    '@keyframes gta1WantedD{0%,100%{opacity:1}50%{opacity:0.55}}',
     '<linearGradient id="gta1GroundD" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#0d1015"/><stop offset="1" stop-color="#07090c"/>' +
     '</linearGradient>' +
-    '<pattern id="gta1GridD" width="32" height="32" patternUnits="userSpaceOnUse">' +
-      '<path d="M32 0H0V32" fill="none" stroke="#1e2533" stroke-width="1" opacity="0.55"/>' +
+    '<pattern id="gta1TileD" width="16" height="16" patternUnits="userSpaceOnUse">' +
+      '<rect width="16" height="16" fill="#232834"/><path d="M16 0H0V16" fill="none" stroke="#181c26" stroke-width="1"/>' +
     '</pattern>' +
-    radGrad("gta1SirenR", "#ef4444", 0.35) +
-    radGrad("gta1SirenB", "#3b82f6", 0.35) +
+    radGrad("gta1SirenR", "#ef4444", 0.36) +
+    radGrad("gta1SirenB", "#3b82f6", 0.36) +
     radGrad("gta1Lamp", "#ffab00", 0.22) +
     CALM_DARK
   ) +
   '<rect x="-800" width="3200" height="1000" fill="url(#gta1GroundD)"/>' +
-  '<rect x="-800" width="3200" height="1000" fill="url(#gta1GridD)"/>' +
   '<g class="cdb-flank-l">' +
-    '<g shape-rendering="crispEdges" opacity="0.65">' +
-      '<rect x="156" y="-450" width="120" height="1550" fill="#1c222e"/>' +
-      '<rect x="168" y="-450" width="96" height="1550" fill="#11151d"/>' +
-      '<rect x="214" y="-450" width="4" height="1550" fill="#ffab00" opacity="0.65"/>' +
-      '<rect x="24" y="130" width="116" height="180" fill="#161b24"/><rect x="32" y="138" width="100" height="164" fill="#1e2530"/>' +
-      '<rect x="40" y="150" width="12" height="12" fill="#ffab00"/><rect x="64" y="150" width="12" height="12" fill="#38bdf8"/><rect x="104" y="250" width="12" height="12" fill="#ffab00"/>' +
-      '<rect x="24" y="340" width="116" height="220" fill="#141820"/><rect x="32" y="348" width="100" height="204" fill="#1b212c"/>' +
-      '<rect x="44" y="368" width="12" height="12" fill="#ffab00"/><rect x="96" y="420" width="12" height="12" fill="#ffab00"/><rect x="52" y="500" width="12" height="12" fill="#38bdf8"/>' +
-      '<rect x="24" y="600" width="116" height="260" fill="#171b22"/><rect x="32" y="608" width="100" height="244" fill="#202630"/>' +
-      '<rect x="48" y="632" width="12" height="12" fill="#ffab00"/><rect x="88" y="740" width="12" height="12" fill="#ffab00"/>' +
-      '<g transform="translate(180 0)"><g class="cab">' +
-        '<polygon points="2,52 -12,110 40,110 26,52" fill="#fef08a" opacity="0.18"/>' +
-        '<rect x="0" y="0" width="28" height="52" fill="#05070a"/>' +
-        '<rect x="2" y="4" width="24" height="44" fill="#eab308"/>' +
-        '<rect x="4" y="14" width="20" height="10" fill="#38bdf8"/>' +
-        '<rect x="4" y="48" width="6" height="4" fill="#fef08a"/><rect x="18" y="48" width="6" height="4" fill="#fef08a"/>' +
-      '</g></g>' +
+    '<g shape-rendering="crispEdges" opacity="0.82">' +
+      '<rect x="136" y="-450" width="144" height="1550" fill="url(#gta1TileD)"/>' +
+      '<rect x="150" y="-450" width="4" height="1550" fill="#a16207"/>' +
+      '<rect x="262" y="-450" width="4" height="1550" fill="#a16207"/>' +
+      '<rect x="154" y="-450" width="108" height="1550" fill="#161b24"/>' +
+      '<line x1="208" y1="-420" x2="208" y2="1080" stroke="#94a3b8" stroke-width="4" stroke-dasharray="22 20" opacity="0.65"/>' +
+      '<rect x="20" y="138" width="116" height="176" fill="#171d28"/><rect x="28" y="146" width="100" height="160" fill="#1f2735"/>' +
+      '<rect x="40" y="158" width="12" height="12" fill="#ffab00"/><rect x="64" y="158" width="12" height="12" fill="#38bdf8"/><rect x="104" y="250" width="12" height="12" fill="#ffab00"/>' +
+      '<rect x="20" y="346" width="116" height="222" fill="#141922"/><rect x="28" y="354" width="100" height="206" fill="#1b222e"/>' +
+      '<rect x="44" y="372" width="12" height="12" fill="#ffab00"/><rect x="96" y="424" width="12" height="12" fill="#ffab00"/><rect x="52" y="502" width="12" height="12" fill="#38bdf8"/>' +
+      '<rect x="20" y="606" width="116" height="260" fill="#181c24"/><rect x="28" y="614" width="100" height="244" fill="#212732"/>' +
+      '<rect x="48" y="636" width="12" height="12" fill="#ffab00"/><rect x="88" y="742" width="12" height="12" fill="#ffab00"/>' +
+      '<g transform="translate(162 290)"><g class="chaseDown">' + gtaTopDownCar("taxi", "down", true) + '</g></g>' +
+      '<g transform="translate(216 630)"><g class="chaseUp b">' + gtaTopDownCar("orange", "up", true) + '</g></g>' +
     '</g>' +
-    '<circle cx="156" cy="220" r="64" fill="url(#gta1Lamp)"/><circle cx="156" cy="540" r="64" fill="url(#gta1Lamp)"/><circle cx="156" cy="840" r="64" fill="url(#gta1Lamp)"/>' +
+    '<circle cx="152" cy="220" r="64" fill="url(#gta1Lamp)"/><circle cx="152" cy="540" r="64" fill="url(#gta1Lamp)"/><circle cx="152" cy="840" r="64" fill="url(#gta1Lamp)"/>' +
   '</g>' +
   '<g class="cdb-flank-r">' +
-    '<g shape-rendering="crispEdges" opacity="0.65">' +
-      '<rect x="1324" y="-450" width="120" height="1550" fill="#1c222e"/>' +
-      '<rect x="1336" y="-450" width="96" height="1550" fill="#11151d"/>' +
-      '<rect x="1382" y="-450" width="4" height="1550" fill="#ffab00" opacity="0.65"/>' +
-      '<rect x="1460" y="140" width="116" height="210" fill="#151a22"/><rect x="1468" y="148" width="100" height="194" fill="#1d2430"/>' +
-      '<rect x="1480" y="164" width="12" height="12" fill="#ffab00"/><rect x="1532" y="220" width="12" height="12" fill="#38bdf8"/>' +
-      '<rect x="1460" y="390" width="116" height="200" fill="#171c26"/><rect x="1468" y="398" width="100" height="184" fill="#202734"/>' +
-      '<rect x="1484" y="420" width="12" height="12" fill="#ffab00"/><rect x="1524" y="510" width="12" height="12" fill="#ffab00"/>' +
-      '<rect x="1460" y="630" width="116" height="240" fill="#141922"/><rect x="1468" y="638" width="100" height="224" fill="#1c2330"/>' +
-      '<rect x="1490" y="670" width="12" height="12" fill="#38bdf8"/><rect x="1530" y="780" width="12" height="12" fill="#ffab00"/>' +
-      '<g transform="translate(1396 0)"><g class="racer">' +
-        '<polygon points="2,0 -14,-64 42,-64 26,0" fill="#fef08a" opacity="0.22"/>' +
-        '<rect x="0" y="0" width="28" height="54" fill="#05070a"/>' +
-        '<rect x="2" y="4" width="24" height="46" fill="#ffab00"/>' +
-        '<rect x="12" y="4" width="4" height="46" fill="#05070a"/>' +
-        '<rect x="4" y="14" width="20" height="10" fill="#38bdf8"/>' +
-        '<rect x="4" y="0" width="6" height="4" fill="#fef08a"/><rect x="18" y="0" width="6" height="4" fill="#fef08a"/>' +
-      '</g></g>' +
-      '<g transform="translate(1396 110)"><g class="cop">' +
-        '<circle class="sirenR" cx="6" cy="26" r="56" fill="url(#gta1SirenR)"/>' +
-        '<circle class="sirenB" cx="22" cy="26" r="56" fill="url(#gta1SirenB)"/>' +
-        '<rect x="0" y="0" width="28" height="54" fill="#05070a"/>' +
-        '<rect x="2" y="4" width="24" height="16" fill="#111827"/>' +
-        '<rect x="2" y="20" width="24" height="16" fill="#f8fafc"/>' +
-        '<rect x="2" y="36" width="24" height="14" fill="#111827"/>' +
-        '<rect class="sirenR" x="4" y="24" width="10" height="6" fill="#ef4444"/>' +
-        '<rect class="sirenB" x="14" y="24" width="10" height="6" fill="#3b82f6"/>' +
-      '</g></g>' +
+    '<g shape-rendering="crispEdges" opacity="0.82">' +
+      '<rect x="1320" y="-450" width="144" height="1550" fill="url(#gta1TileD)"/>' +
+      '<rect x="1334" y="-450" width="4" height="1550" fill="#a16207"/>' +
+      '<rect x="1446" y="-450" width="4" height="1550" fill="#a16207"/>' +
+      '<rect x="1338" y="-450" width="108" height="1550" fill="#161b24"/>' +
+      '<line x1="1392" y1="-420" x2="1392" y2="1080" stroke="#94a3b8" stroke-width="4" stroke-dasharray="22 20" opacity="0.65"/>' +
+      '<rect x="1464" y="138" width="116" height="216" fill="#161b24"/><rect x="1472" y="146" width="100" height="200" fill="#1e2532"/>' +
+      '<rect x="1484" y="164" width="12" height="12" fill="#ffab00"/><rect x="1532" y="220" width="12" height="12" fill="#38bdf8"/>' +
+      '<rect x="1464" y="388" width="116" height="212" fill="#171c26"/><rect x="1472" y="396" width="100" height="196" fill="#202734"/>' +
+      '<rect x="1484" y="422" width="12" height="12" fill="#ffab00"/><rect x="1524" y="512" width="12" height="12" fill="#ffab00"/>' +
+      '<rect x="1464" y="636" width="116" height="260" fill="#272c38"/>' +
+      '<rect x="1472" y="644" width="100" height="244" fill="#1e3c26"/>' +
+      '<rect x="1480" y="652" width="38" height="54" fill="#274e31"/><rect x="1526" y="756" width="38" height="64" fill="#162e1c"/>' +
+      '<rect x="1508" y="644" width="18" height="244" fill="#2d3340"/>' +
+      '<rect x="1484" y="726" width="20" height="20" rx="4" fill="#152b1b"/><rect x="1532" y="832" width="22" height="22" rx="4" fill="#152b1b"/>' +
+      '<polygon points="1412,718 1424,740 1416,740 1416,756 1408,756 1408,740 1400,740" fill="#c084fc" stroke="#090d16" stroke-width="2"/>' +
+      '<g transform="translate(1346 240)"><g class="chaseDown b">' + gtaTopDownCar("blue", "down", true) + '</g></g>' +
+      '<g transform="translate(1398 370)"><g class="chaseUp">' + gtaTopDownCar("taxi", "up", true) + '</g></g>' +
+      '<g transform="translate(1398 475)"><g class="chaseUp">' + gtaTopDownCar("cop", "up", true) + '</g></g>' +
     '</g>' +
-    '<circle cx="1444" cy="260" r="64" fill="url(#gta1Lamp)"/><circle cx="1444" cy="580" r="64" fill="url(#gta1Lamp)"/><circle cx="1444" cy="860" r="64" fill="url(#gta1Lamp)"/>' +
+    '<circle cx="1448" cy="260" r="64" fill="url(#gta1Lamp)"/><circle cx="1448" cy="580" r="64" fill="url(#gta1Lamp)"/><circle cx="1448" cy="860" r="64" fill="url(#gta1Lamp)"/>' +
   '</g>' +
-  '<g class="cdb-flank-lt" shape-rendering="crispEdges" opacity="0.94">' +
-    '<g transform="translate(28 62)">' +
-      '<rect x="0" y="0" width="112" height="44" fill="#05070a"/><rect x="4" y="4" width="104" height="36" fill="#1f3322"/>' +
-      '<rect x="12" y="12" width="16" height="4" fill="#4ade80"/><rect x="12" y="16" width="4" height="16" fill="#4ade80"/><rect x="12" y="28" width="16" height="4" fill="#4ade80"/><rect x="24" y="20" width="4" height="8" fill="#4ade80"/>' +
-      '<rect x="36" y="12" width="20" height="4" fill="#4ade80"/><rect x="44" y="16" width="4" height="16" fill="#4ade80"/>' +
-      '<rect x="64" y="12" width="16" height="4" fill="#4ade80"/><rect x="64" y="16" width="4" height="16" fill="#4ade80"/><rect x="76" y="16" width="4" height="16" fill="#4ade80"/><rect x="68" y="20" width="8" height="4" fill="#4ade80"/>' +
+  '<g class="cdb-flank-lt" shape-rendering="crispEdges" opacity="0.96">' +
+    '<g transform="translate(28 64)">' +
+      '<rect x="0" y="0" width="116" height="50" rx="4" fill="#854d0e"/>' +
+      '<rect x="3" y="3" width="110" height="44" rx="3" fill="#eab308"/>' +
+      '<rect x="9" y="8" width="98" height="34" fill="#182a1e"/>' +
+      pxStr("GTA", 22, 16, 3, "#4ade80", "") +
+      '<circle class="sirenR" cx="98" cy="14" r="3" fill="#ef4444"/>' +
     '</g>' +
   '</g>' +
-  '<g class="cdb-flank-rt" shape-rendering="crispEdges" opacity="0.94">' +
-    '<g transform="translate(1330 62)">' +
-      '<rect x="0" y="0" width="242" height="36" fill="#05070a"/>' +
-      '<rect x="8" y="6" width="16" height="24" fill="#ffab00"/><rect x="12" y="10" width="8" height="16" fill="#05070a"/>' +
-      '<rect x="30" y="6" width="16" height="24" fill="#ffab00"/><rect x="34" y="10" width="8" height="6" fill="#05070a"/><rect x="34" y="20" width="8" height="6" fill="#05070a"/>' +
-      '<rect x="52" y="6" width="16" height="24" fill="#ffab00"/><rect x="52" y="10" width="12" height="6" fill="#05070a"/><rect x="56" y="20" width="12" height="6" fill="#05070a"/>' +
-      '<rect x="74" y="6" width="16" height="24" fill="#ffab00"/><rect x="78" y="10" width="8" height="16" fill="#05070a"/>' +
-      '<rect x="96" y="6" width="16" height="24" fill="#ffab00"/><rect x="100" y="10" width="8" height="16" fill="#05070a"/>' +
-      '<g transform="translate(132 6)"><g class="wanted">' +
-        '<rect x="0" y="0" width="22" height="24" fill="#ffab00"/><rect x="4" y="6" width="4" height="4" fill="#ef4444"/><rect x="14" y="6" width="4" height="4" fill="#ef4444"/>' +
-        '<rect x="28" y="0" width="22" height="24" fill="#ffab00"/><rect x="32" y="6" width="4" height="4" fill="#ef4444"/><rect x="42" y="6" width="4" height="4" fill="#ef4444"/>' +
-        '<rect x="56" y="0" width="22" height="24" fill="#ffab00"/><rect x="60" y="6" width="4" height="4" fill="#ef4444"/><rect x="70" y="6" width="4" height="4" fill="#ef4444"/>' +
-        '<rect x="84" y="0" width="22" height="24" fill="#ffab00"/><rect x="88" y="6" width="4" height="4" fill="#ef4444"/><rect x="98" y="6" width="4" height="4" fill="#ef4444"/>' +
-      '</g></g>' +
+  '<g class="cdb-flank-rt" shape-rendering="crispEdges" opacity="0.96">' +
+    '<g transform="translate(1322 64)">' +
+      '<g class="wanted">' + gtaCopHeads(4, 0, 2, 24) + '</g>' +
+      cash +
     '</g>' +
   '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
@@ -1652,12 +1989,50 @@ function gtaIDarkSvg() {
 // =============================================================================
 // 9. GTA II - 1999 Anywhere City / Respect Is Everything (Light + Dark)
 // =============================================================================
+function gta2RespectHud(isDark) {
+  var bg = isDark ? "#06080d" : "#475569";
+  var empty = isDark ? "#131926" : "#cbd5e1";
+  return '<g transform="translate(28 64)">' +
+    '<rect x="0" y="0" width="204" height="82" rx="4" fill="' + bg + '"/>' +
+    '<rect x="6" y="6" width="22" height="22" rx="2" fill="#1e3a8a"/>' +
+    pxStr("¥", 10, 8, 2.5, "#67e8f9", "#05070a") +
+    '<rect x="34" y="9" width="162" height="16" fill="' + empty + '"/>' +
+    '<rect class="meter" x="36" y="11" width="136" height="12" fill="#2563eb"/>' +
+    '<rect x="6" y="31" width="22" height="22" rx="2" fill="#1e293b"/>' +
+    pxStr("Z", 10, 34, 2.5, "#facc15", "#05070a") +
+    '<rect x="34" y="34" width="162" height="16" fill="' + empty + '"/>' +
+    '<rect class="meter" x="36" y="36" width="110" height="12" fill="#94a3b8"/>' +
+    '<rect x="6" y="56" width="22" height="22" rx="2" fill="#15803d"/>' +
+    '<rect x="9" y="59" width="16" height="16" rx="4" fill="#fef08a"/>' +
+    '<rect x="13" y="63" width="2" height="3" fill="#05070a"/><rect x="19" y="63" width="2" height="3" fill="#05070a"/>' +
+    '<rect x="13" y="69" width="8" height="2" fill="#05070a"/>' +
+    '<rect x="34" y="59" width="162" height="16" fill="' + empty + '"/>' +
+    '<rect class="meter" x="36" y="61" width="124" height="12" fill="#22c55e"/>' +
+  '</g>';
+}
+
+function gta2TopRightHud(isDark) {
+  var cash = isDark ? "#22c55e" : "#16a34a";
+  return '<g transform="translate(1322 64)">' +
+    gtaCopHeads(3, 24, 2, 24) +
+    pxStr("$58420", 108, 0, 4, cash, "#05070a", "#86efac") +
+    pxStr("x2", 108, 34, 2.5, "#f5b82e", "#05070a") +
+    gtaPixelHearts(4, 148, 36, 20) +
+    '<rect x="234" y="34" width="14" height="16" rx="3" fill="#38bdf8" stroke="#05070a" stroke-width="2"/>' +
+  '</g>';
+}
+
 function gtaIILightSvg() {
   return openSvg(
-    '.ztype{animation:gta2Cruise 20s steps(40) infinite}' +
+    '.ztype{animation:gta2LoopUp 15s linear infinite}' +
+    '.cop2{animation:gta2LoopDown 17s linear infinite}' +
+    '.sirenR{animation:gta2Blink 0.45s steps(2,end) infinite}' +
+    '.sirenB{animation:gta2Blink 0.45s steps(2,end) infinite reverse}' +
     '.ring{animation:gta2Ring 2.4s steps(4,end) infinite}' +
     '.meter{animation:gta2Meter 4s steps(4,end) infinite alternate}' +
-    '@keyframes gta2Cruise{from{transform:translateY(1100px)}to{transform:translateY(-200px)}}' +
+    '@keyframes gta2LoopUp{0%{transform:translateY(0);opacity:1}44%{transform:translateY(-640px);opacity:1}46%{transform:translateY(-640px);opacity:0}47%{transform:translateY(680px);opacity:0}51%{transform:translateY(640px);opacity:1}100%{transform:translateY(0);opacity:1}}' +
+    '@keyframes gta2LoopDown{0%{transform:translateY(0);opacity:1}44%{transform:translateY(640px);opacity:1}46%{transform:translateY(640px);opacity:0}47%{transform:translateY(-680px);opacity:0}51%{transform:translateY(-640px);opacity:1}100%{transform:translateY(0);opacity:1}}' +
+    '@keyframes gta2Blink{from{opacity:1}to{opacity:0.15}}' +
     '@keyframes gta2Ring{0%{opacity:0.9;transform:scale(0.8)}100%{opacity:0;transform:scale(1.8)}}' +
     '@keyframes gta2Meter{from{opacity:0.75}to{opacity:1}}',
     '<linearGradient id="gta2SkyL" x1="0" y1="0" x2="0" y2="1">' +
@@ -1670,9 +2045,9 @@ function gtaIILightSvg() {
   ) +
   '<rect x="-800" width="3200" height="1000" fill="url(#gta2SkyL)"/>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#gta2ScanL)"/>' +
-  '<g class="cdb-flank-l" shape-rendering="crispEdges" opacity="0.36">' +
-    '<rect x="164" y="-450" width="92" height="1550" fill="#64748b" opacity="0.55"/>' +
-    '<rect x="208" y="-450" width="4" height="1550" fill="#d97706" opacity="0.7"/>' +
+  '<g class="cdb-flank-l" shape-rendering="crispEdges" opacity="0.46">' +
+    '<rect x="164" y="-450" width="96" height="1550" fill="#64748b" opacity="0.65"/>' +
+    '<line x1="212" y1="-420" x2="212" y2="1080" stroke="#e2e8f0" stroke-width="4" stroke-dasharray="20 20"/>' +
     '<rect x="24" y="180" width="124" height="240" fill="#94a3b8"/><rect x="32" y="188" width="108" height="224" fill="#cbd5e1"/>' +
     '<rect x="24" y="460" width="124" height="260" fill="#94a3b8"/><rect x="32" y="468" width="108" height="244" fill="#bac4d4"/>' +
     '<g transform="translate(148 780)">' +
@@ -1680,52 +2055,33 @@ function gtaIILightSvg() {
       '<rect class="ring" x="-18" y="-18" width="36" height="36" fill="none" stroke="#16a34a" stroke-width="3" style="transform-origin:0 0"/>' +
     '</g>' +
   '</g>' +
-  '<g class="cdb-flank-r" shape-rendering="crispEdges" opacity="0.36">' +
-    '<rect x="1344" y="-450" width="92" height="1550" fill="#64748b" opacity="0.55"/>' +
-    '<rect x="1388" y="-450" width="4" height="1550" fill="#d97706" opacity="0.7"/>' +
+  '<g class="cdb-flank-r" shape-rendering="crispEdges" opacity="0.46">' +
+    '<rect x="1340" y="-450" width="96" height="1550" fill="#64748b" opacity="0.65"/>' +
+    '<line x1="1388" y1="-420" x2="1388" y2="1080" stroke="#e2e8f0" stroke-width="4" stroke-dasharray="20 20"/>' +
     '<rect x="1452" y="160" width="124" height="250" fill="#94a3b8"/><rect x="1460" y="168" width="108" height="234" fill="#cbd5e1"/>' +
     '<rect x="1452" y="450" width="124" height="270" fill="#94a3b8"/><rect x="1460" y="458" width="108" height="254" fill="#bac4d4"/>' +
-    '<g transform="translate(1356 0)"><g class="ztype">' +
-      '<rect x="0" y="0" width="28" height="56" fill="#475569"/>' +
-      '<rect x="2" y="4" width="24" height="48" fill="#64748b"/>' +
-      '<rect x="8" y="22" width="12" height="12" fill="#f5b82e"/>' +
-      '<rect x="4" y="12" width="20" height="8" fill="#38bdf8"/>' +
+    '<g transform="translate(1396 460)"><g class="ztype">' +
+      '<rect x="0" y="0" width="30" height="58" rx="3" fill="#334155"/><rect x="2" y="4" width="26" height="50" fill="#475569"/>' +
+      '<rect x="9" y="24" width="12" height="12" fill="#f5b82e"/><rect x="4" y="14" width="22" height="8" fill="#38bdf8"/>' +
     '</g></g>' +
+    '<g transform="translate(1346 310)"><g class="cop2">' + gtaTopDownCar("cop", "down", false) + '</g></g>' +
   '</g>' +
-  '<g class="cdb-flank-lt" shape-rendering="crispEdges" opacity="0.36">' +
-    '<g transform="translate(28 62)">' +
-      '<rect x="0" y="0" width="212" height="84" fill="#94a3b8"/>' +
-      '<rect x="8" y="8" width="20" height="20" fill="#b02a30"/><rect x="12" y="12" width="12" height="4" fill="#f5b82e"/><rect x="12" y="20" width="12" height="4" fill="#f5b82e"/>' +
-      '<rect x="34" y="10" width="168" height="16" fill="#cbd5e1"/>' +
-      '<rect class="meter" x="36" y="12" width="144" height="12" fill="#e0353c"/>' +
-      '<rect x="8" y="32" width="20" height="20" fill="#15803d"/><rect x="14" y="36" width="8" height="12" fill="#fef08a"/>' +
-      '<rect x="34" y="34" width="168" height="16" fill="#cbd5e1"/>' +
-      '<rect class="meter" x="36" y="36" width="112" height="12" fill="#22c55e"/>' +
-      '<rect x="8" y="56" width="20" height="20" fill="#0369a1"/><rect x="14" y="60" width="8" height="12" fill="#e0f2fe"/>' +
-      '<rect x="34" y="58" width="168" height="16" fill="#cbd5e1"/>' +
-      '<rect class="meter" x="36" y="60" width="128" height="12" fill="#06b6d4"/>' +
-    '</g>' +
-  '</g>' +
-  '<g class="cdb-flank-rt" shape-rendering="crispEdges" opacity="0.36">' +
-    '<g transform="translate(1456 62)">' +
-      '<rect x="0" y="0" width="116" height="68" fill="#94a3b8"/>' +
-      '<rect x="12" y="10" width="44" height="10" fill="#b02a30"/>' +
-      '<rect x="44" y="20" width="12" height="12" fill="#b02a30"/>' +
-      '<rect x="12" y="30" width="44" height="10" fill="#b02a30"/>' +
-      '<rect x="12" y="40" width="12" height="12" fill="#b02a30"/>' +
-      '<rect x="12" y="48" width="44" height="10" fill="#b02a30"/>' +
-      '<rect x="68" y="14" width="36" height="8" fill="#d97706"/><rect x="86" y="22" width="12" height="12" fill="#d97706"/><rect x="74" y="34" width="12" height="12" fill="#d97706"/><rect x="68" y="46" width="36" height="8" fill="#d97706"/>' +
-    '</g>' +
-  '</g>' +
+  '<g class="cdb-flank-lt" shape-rendering="crispEdges" opacity="0.72">' + gta2RespectHud(false) + '</g>' +
+  '<g class="cdb-flank-rt" shape-rendering="crispEdges" opacity="0.72">' + gta2TopRightHud(false) + '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function gtaIIDarkSvg() {
   return openSvg(
-    '.ztype{animation:gta2CruiseD 18s steps(36) infinite}' +
+    '.ztype{animation:gta2LoopUpD 15s linear infinite}' +
+    '.cop2{animation:gta2LoopDownD 17s linear infinite}' +
+    '.sirenR{animation:gta2BlinkD 0.45s steps(2,end) infinite}' +
+    '.sirenB{animation:gta2BlinkD 0.45s steps(2,end) infinite reverse}' +
     '.ring{animation:gta2RingD 2.2s steps(4,end) infinite}' +
     '.meter{animation:gta2MeterD 3.6s steps(4,end) infinite alternate}' +
-    '@keyframes gta2CruiseD{from{transform:translateY(1100px)}to{transform:translateY(-200px)}}' +
+    '@keyframes gta2LoopUpD{0%{transform:translateY(0);opacity:1}44%{transform:translateY(-640px);opacity:1}46%{transform:translateY(-640px);opacity:0}47%{transform:translateY(680px);opacity:0}51%{transform:translateY(640px);opacity:1}100%{transform:translateY(0);opacity:1}}' +
+    '@keyframes gta2LoopDownD{0%{transform:translateY(0);opacity:1}44%{transform:translateY(640px);opacity:1}46%{transform:translateY(640px);opacity:0}47%{transform:translateY(-680px);opacity:0}51%{transform:translateY(-640px);opacity:1}100%{transform:translateY(0);opacity:1}}' +
+    '@keyframes gta2BlinkD{from{opacity:1}to{opacity:0.12}}' +
     '@keyframes gta2RingD{0%{opacity:1;transform:scale(0.8)}100%{opacity:0;transform:scale(2)}}' +
     '@keyframes gta2MeterD{from{opacity:0.75}to{opacity:1}}',
     '<linearGradient id="gta2SkyD" x1="0" y1="0" x2="0" y2="1">' +
@@ -1734,6 +2090,8 @@ function gtaIIDarkSvg() {
     '<pattern id="gta2ScanD" width="8" height="6" patternUnits="userSpaceOnUse">' +
       '<rect width="8" height="2" fill="#000000" opacity="0.32"/>' +
     '</pattern>' +
+    radGrad("gta1SirenR", "#ef4444", 0.35) +
+    radGrad("gta1SirenB", "#3b82f6", 0.35) +
     radGrad("gta2RedGlow", "#e0353c", 0.28) +
     radGrad("gta2GreenGlow", "#22c55e", 0.28) +
     radGrad("gta2CyanGlow", "#06b6d4", 0.28) +
@@ -1743,9 +2101,9 @@ function gtaIIDarkSvg() {
   '<g class="cdb-flank-l">' +
     '<circle cx="150" cy="300" r="160" fill="url(#gta2RedGlow)"/>' +
     '<circle cx="150" cy="760" r="140" fill="url(#gta2GreenGlow)"/>' +
-    '<g shape-rendering="crispEdges" opacity="0.65">' +
-      '<rect x="164" y="-450" width="92" height="1550" fill="#101520"/>' +
-      '<rect x="208" y="-450" width="4" height="1550" fill="#f5b82e" opacity="0.65"/>' +
+    '<g shape-rendering="crispEdges" opacity="0.72">' +
+      '<rect x="164" y="-450" width="96" height="1550" fill="#101520"/>' +
+      '<line x1="212" y1="-420" x2="212" y2="1080" stroke="#94a3b8" stroke-width="4" stroke-dasharray="20 20" opacity="0.55"/>' +
       '<rect x="24" y="180" width="124" height="240" fill="#131926"/><rect x="32" y="188" width="108" height="224" fill="#1a2233"/>' +
       '<rect x="44" y="208" width="16" height="16" fill="#e0353c"/><rect x="104" y="340" width="16" height="16" fill="#f5b82e"/>' +
       '<rect x="24" y="460" width="124" height="260" fill="#111722"/><rect x="32" y="468" width="108" height="244" fill="#182030"/>' +
@@ -1759,48 +2117,26 @@ function gtaIIDarkSvg() {
   '<g class="cdb-flank-r">' +
     '<circle cx="1450" cy="320" r="160" fill="url(#gta2CyanGlow)"/>' +
     '<circle cx="1450" cy="740" r="160" fill="url(#gta2RedGlow)"/>' +
-    '<g shape-rendering="crispEdges" opacity="0.65">' +
-      '<rect x="1344" y="-450" width="92" height="1550" fill="#101520"/>' +
-      '<rect x="1388" y="-450" width="4" height="1550" fill="#f5b82e" opacity="0.65"/>' +
+    '<g shape-rendering="crispEdges" opacity="0.72">' +
+      '<rect x="1340" y="-450" width="96" height="1550" fill="#101520"/>' +
+      '<line x1="1388" y1="-420" x2="1388" y2="1080" stroke="#94a3b8" stroke-width="4" stroke-dasharray="20 20" opacity="0.55"/>' +
       '<rect x="1452" y="160" width="124" height="250" fill="#131926"/><rect x="1460" y="168" width="108" height="234" fill="#1a2233"/>' +
       '<rect x="1480" y="196" width="16" height="16" fill="#06b6d4"/><rect x="1532" y="320" width="16" height="16" fill="#06b6d4"/>' +
       '<rect x="1452" y="450" width="124" height="270" fill="#111722"/><rect x="1460" y="458" width="108" height="254" fill="#182030"/>' +
       '<rect x="1480" y="490" width="16" height="16" fill="#e0353c"/><rect x="1528" y="650" width="16" height="16" fill="#f5b82e"/>' +
-      '<g transform="translate(1356 0)"><g class="ztype">' +
-        '<polygon points="2,0 -18,-80 46,-80 26,0" fill="#f5b82e" opacity="0.22"/>' +
-        '<rect x="0" y="0" width="28" height="56" fill="#05070b"/>' +
-        '<rect x="2" y="4" width="24" height="48" fill="#1e293b"/>' +
-        '<rect x="8" y="22" width="12" height="12" fill="#f5b82e"/>' +
-        '<rect x="4" y="12" width="20" height="8" fill="#38bdf8"/>' +
-        '<rect x="4" y="0" width="6" height="4" fill="#f5b82e"/><rect x="18" y="0" width="6" height="4" fill="#f5b82e"/>' +
+      '<g transform="translate(1396 460)"><g class="ztype">' +
+        '<polygon points="2,0 -18,-80 48,-80 28,0" fill="#f5b82e" opacity="0.22"/>' +
+        '<rect x="0" y="0" width="30" height="58" rx="3" fill="#05070b"/>' +
+        '<rect x="2" y="4" width="26" height="50" fill="#1e293b"/>' +
+        '<rect x="9" y="24" width="12" height="12" fill="#f5b82e"/>' +
+        '<rect x="4" y="14" width="22" height="8" fill="#38bdf8"/>' +
+        '<rect x="4" y="0" width="6" height="4" fill="#f5b82e"/><rect x="20" y="0" width="6" height="4" fill="#f5b82e"/>' +
       '</g></g>' +
+      '<g transform="translate(1346 310)"><g class="cop2">' + gtaTopDownCar("cop", "down", true) + '</g></g>' +
     '</g>' +
   '</g>' +
-  '<g class="cdb-flank-lt" shape-rendering="crispEdges" opacity="0.65">' +
-    '<g transform="translate(28 62)">' +
-      '<rect x="0" y="0" width="212" height="84" fill="#06080d"/>' +
-      '<rect x="8" y="8" width="20" height="20" fill="#e0353c"/><rect x="12" y="12" width="12" height="4" fill="#f5b82e"/><rect x="12" y="20" width="12" height="4" fill="#f5b82e"/>' +
-      '<rect x="34" y="10" width="168" height="16" fill="#261014"/>' +
-      '<rect class="meter" x="36" y="12" width="150" height="12" fill="#e0353c"/>' +
-      '<rect x="8" y="32" width="20" height="20" fill="#16a34a"/><rect x="14" y="36" width="8" height="12" fill="#fef08a"/>' +
-      '<rect x="34" y="34" width="168" height="16" fill="#0d2618"/>' +
-      '<rect class="meter" x="36" y="36" width="118" height="12" fill="#22c55e"/>' +
-      '<rect x="8" y="56" width="20" height="20" fill="#0284c7"/><rect x="14" y="60" width="8" height="12" fill="#e0f2fe"/>' +
-      '<rect x="34" y="58" width="168" height="16" fill="#0a2233"/>' +
-      '<rect class="meter" x="36" y="60" width="134" height="12" fill="#06b6d4"/>' +
-    '</g>' +
-  '</g>' +
-  '<g class="cdb-flank-rt" shape-rendering="crispEdges" opacity="0.65">' +
-    '<g transform="translate(1456 62)">' +
-      '<rect x="0" y="0" width="116" height="68" fill="#06080d"/>' +
-      '<rect x="12" y="10" width="44" height="10" fill="#e0353c"/>' +
-      '<rect x="44" y="20" width="12" height="12" fill="#e0353c"/>' +
-      '<rect x="12" y="30" width="44" height="10" fill="#e0353c"/>' +
-      '<rect x="12" y="40" width="12" height="12" fill="#e0353c"/>' +
-      '<rect x="12" y="48" width="44" height="10" fill="#e0353c"/>' +
-      '<rect x="68" y="14" width="36" height="8" fill="#f5b82e"/><rect x="86" y="22" width="12" height="12" fill="#f5b82e"/><rect x="74" y="34" width="12" height="12" fill="#f5b82e"/><rect x="68" y="46" width="36" height="8" fill="#f5b82e"/>' +
-    '</g>' +
-  '</g>' +
+  '<g class="cdb-flank-lt" shape-rendering="crispEdges" opacity="0.92">' + gta2RespectHud(true) + '</g>' +
+  '<g class="cdb-flank-rt" shape-rendering="crispEdges" opacity="0.92">' + gta2TopRightHud(true) + '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#gta2ScanD)"/>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
@@ -1808,6 +2144,27 @@ function gtaIIDarkSvg() {
 // =============================================================================
 // 10. GTA III - 2001 Liberty City 3D Universe Dawn (Light + Dark)
 // =============================================================================
+function gta3CornerHud(isDark) {
+  var cash = isDark ? "#4ade80" : "#16a34a";
+  var clk = isDark ? "#93c5fd" : "#1e3a8a";
+  var boxBg = isDark ? "#070c0e" : "#dbe6e4";
+  var boxStroke = isDark ? "#5ec4b6" : "#1b6b5c";
+  var gunFill = isDark ? "#e2e8f0" : "#1e293b";
+  var stars = gtaStarRow(3, 6, 114, 60, 24, "#f59e0b", isDark ? "#1f2937" : "#94a3b8", "#05070a");
+  return '<g transform="translate(1306 62)">' +
+    pxStr("22:15", 128, 2, 2.5, clk, isDark ? "#05070a" : "") +
+    pxStr("$00148500", 62, 24, 2.5, cash, "#05070a") +
+    '<rect x="114" y="45" width="90" height="8" fill="#05070a"/>' +
+    '<rect x="116" y="47" width="66" height="4" fill="#60a5fa"/>' +
+    '<rect x="114" y="54" width="90" height="4" fill="#ef4444" opacity="0.85"/>' +
+    '<g transform="translate(212 0)">' +
+      '<rect x="0" y="0" width="50" height="48" rx="6" fill="' + boxBg + '" stroke="' + boxStroke + '" stroke-width="2"/>' +
+      '<path d="M10 18h26v6h-8v14h-6V24h-4l-4 7H9l2-7H8v-6z" fill="' + gunFill + '"/>' +
+    '</g>' +
+    (isDark ? '<g class="star">' + stars + '</g>' : stars) +
+  '</g>';
+}
+
 function gtaIIILightSvg() {
   return openSvg(
     '.rain{animation:gta3Rain 3.2s linear infinite}' +
@@ -1838,12 +2195,14 @@ function gtaIIILightSvg() {
     '<g class="rain b" stroke="#52706c" stroke-width="1.5" opacity="0.35">' +
       '<line x1="170" y1="0" x2="146" y2="70"/><line x1="60" y1="260" x2="36" y2="330"/><line x1="210" y1="540" x2="186" y2="610"/>' +
     '</g>' +
-    '<g transform="translate(136 864)" opacity="0.38">' +
+    '<g transform="translate(136 864)" opacity="0.52">' +
       '<circle cx="0" cy="0" r="78" fill="#b4c8c4" stroke="#1b6b5c" stroke-width="5"/>' +
       '<path d="M-74 -12 H74 M-18 -74 V74 M32 -68 V68" stroke="#64827e" stroke-width="4" fill="none"/>' +
       '<g class="sweep" style="transform-origin:0 0"><path d="M0 0 L0 -72 A72 72 0 0 1 52 -50 Z" fill="#1b6b5c" opacity="0.28"/></g>' +
       '<circle cx="-26" cy="-22" r="5" fill="#ec1757"/><circle cx="32" cy="18" r="5" fill="#d97706"/>' +
       '<polygon points="0,-8 6,7 -6,7" fill="#102022"/>' +
+      '<rect x="-10" y="-87" width="20" height="16" rx="3" fill="#1b6b5c"/>' +
+      pxStr("N", -4.5, -83, 1.8, "#ffffff", "") +
     '</g>' +
   '</g>' +
   '<g class="cdb-flank-r">' +
@@ -1858,17 +2217,7 @@ function gtaIIILightSvg() {
       '<line x1="1470" y1="20" x2="1446" y2="90"/><line x1="1390" y1="310" x2="1366" y2="380"/><line x1="1530" y1="560" x2="1506" y2="630"/>' +
     '</g>' +
   '</g>' +
-  '<g class="cdb-flank-rt" opacity="0.38">' +
-    '<g transform="translate(1340 62)">' +
-      '<rect x="60" y="0" width="164" height="28" rx="6" fill="#d2ddda" stroke="#1b6b5c" stroke-width="2"/>' +
-      '<rect x="70" y="8" width="64" height="12" fill="#1b6b5c"/><rect x="144" y="8" width="70" height="12" fill="#ec1757"/>' +
-      '<g fill="#d97706" transform="translate(44 42)">' +
-        '<polygon points="12,0 15,8 24,8 17,13 19,22 12,17 5,22 7,13 0,8 9,8"/>' +
-        '<polygon points="42,0 45,8 54,8 47,13 49,22 42,17 35,22 37,13 30,8 39,8"/>' +
-        '<polygon points="72,0 75,8 84,8 77,13 79,22 72,17 65,22 67,13 60,8 69,8"/>' +
-      '</g>' +
-    '</g>' +
-  '</g>' +
+  '<g class="cdb-flank-rt" opacity="0.62">' + gta3CornerHud(false) + '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
@@ -1909,6 +2258,8 @@ function gtaIIIDarkSvg() {
       '<g class="sweep" style="transform-origin:0 0"><path d="M0 0 L0 -72 A72 72 0 0 1 54 -48 Z" fill="#5ec4b6" opacity="0.28"/></g>' +
       '<circle cx="-28" cy="-24" r="5.5" fill="#ec1757"/><circle cx="30" cy="20" r="5.5" fill="#f09436"/>' +
       '<polygon points="0,-9 6,7 -6,7" fill="#ffffff"/>' +
+      '<rect x="-10" y="-87" width="20" height="16" rx="3" fill="#070d0f" stroke="#5ec4b6" stroke-width="1.5"/>' +
+      pxStr("N", -4.5, -83, 1.8, "#ffffff", "") +
     '</g>' +
   '</g>' +
   '<g class="cdb-flank-r">' +
@@ -1923,26 +2274,32 @@ function gtaIIIDarkSvg() {
       '<line x1="1475" y1="20" x2="1451" y2="100"/><line x1="1385" y1="290" x2="1361" y2="370"/><line x1="1510" y1="530" x2="1486" y2="610"/><line x1="1420" y1="790" x2="1396" y2="870"/>' +
     '</g>' +
   '</g>' +
-  '<g class="cdb-flank-rt" opacity="0.86">' +
-    '<g transform="translate(1340 62)">' +
-      '<rect x="60" y="0" width="164" height="28" rx="6" fill="#070c0e" stroke="#5ec4b6" stroke-width="2"/>' +
-      '<rect x="70" y="8" width="64" height="12" fill="#5ec4b6"/><rect x="144" y="8" width="70" height="12" fill="#ec1757"/>' +
-      '<g transform="translate(44 42)"><g class="star" fill="#f09436">' +
-        '<polygon points="12,0 15,8 24,8 17,13 19,22 12,17 5,22 7,13 0,8 9,8"/>' +
-        '<polygon points="42,0 45,8 54,8 47,13 49,22 42,17 35,22 37,13 30,8 39,8"/>' +
-        '<polygon points="72,0 75,8 84,8 77,13 79,22 72,17 65,22 67,13 60,8 69,8"/>' +
-        '<polygon points="102,0 105,8 114,8 107,13 109,22 102,17 95,22 97,13 90,8 99,8" opacity="0.3"/>' +
-        '<polygon points="132,0 135,8 144,8 137,13 139,22 132,17 125,22 127,13 120,8 129,8" opacity="0.3"/>' +
-        '<polygon points="162,0 165,8 174,8 167,13 169,22 162,17 155,22 157,13 150,8 159,8" opacity="0.3"/>' +
-      '</g></g>' +
-    '</g>' +
-  '</g>' +
+  '<g class="cdb-flank-rt" opacity="0.90">' + gta3CornerHud(true) + '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
 // =============================================================================
 // 11. GTA IV - 2008 Liberty City HD Era / Broker Bridge Noir (Light + Dark)
 // =============================================================================
+function gta4CornerHud(isDark) {
+  var cash = isDark ? "#4ade80" : "#15803d";
+  var stars = gtaStarRow(3, 6, 0, 28, 22, isDark ? "#f59e0b" : "#d97706", isDark ? "#232936" : "#94a3b8", "#05070a");
+  var crestBg = isDark ? "#040301" : "#3a414c";
+  var crestStroke = isDark ? "#ffab00" : "#c47d14";
+  var crestFace = isDark ? "#ffab00" : "#d99622";
+  var crestInk = isDark ? "#040301" : "#181c24";
+  return '<g transform="translate(1292 66)">' +
+      pxStr("$248,500", 0, 0, 3, cash, "#05070a") +
+      stars +
+    '</g>' +
+    '<g transform="translate(1456 62)"><g class="pulse">' +
+      '<rect x="0" y="0" width="88" height="88" rx="16" fill="' + crestBg + '" stroke="' + crestStroke + '" stroke-width="3"/>' +
+      '<rect x="5" y="5" width="78" height="78" rx="12" fill="' + crestFace + '"/>' +
+      '<path d="M20 18 L13 56 H25 L28 42 H37 C41 42 42 44 41 49 L40 56 H52 L53 47 C54 42 51 39 48 38 C53 36 57 32 58 26 C59 20 53 18 43 18 Z M30 26 H40 C44 26 45 28 44 30 C43 33 41 34 38 34 H28 Z" fill="' + crestInk + '"/>' +
+      '<polygon points="62,42 65,52 76,52 67,58 70,69 62,62 53,69 56,58 48,52 59,52" fill="#ffffff" stroke="' + crestInk + '" stroke-width="2"/>' +
+    '</g></g>';
+}
+
 function gtaIVLightSvg() {
   return openSvg(
     '.bokeh{animation:gta4Drift 24s ease-in-out infinite alternate}' +
@@ -1963,11 +2320,15 @@ function gtaIVLightSvg() {
       '<rect x="124" y="380" width="76" height="640"/><rect x="210" y="450" width="58" height="570"/>' +
     '</g>' +
     '<g class="bokeh"><circle cx="180" cy="640" r="80" fill="url(#gta4GoldL)"/></g>' +
-    '<g transform="translate(136 864)" opacity="0.38"><g class="pulse">' +
-      '<circle cx="0" cy="0" r="74" fill="#bcc5d1"/>' +
+    '<g transform="translate(136 864)" opacity="0.54"><g class="pulse">' +
+      '<circle cx="0" cy="0" r="74" fill="#bcc5d1" stroke="#475569" stroke-width="2"/>' +
+      '<path d="M-74 -10 H74 M-12 -74 V74 M34 -68 V68" stroke="#94a3b8" stroke-width="4" fill="none"/>' +
+      '<path d="M0 0 L0 -32 L34 -32 L34 -56" fill="none" stroke="#d97706" stroke-width="4"/>' +
       '<path d="M0 -80 A80 80 0 0 0 0 80" fill="none" stroke="#16a34a" stroke-width="5"/>' +
       '<path d="M0 -80 A80 80 0 0 1 0 80" fill="none" stroke="#2563eb" stroke-width="5"/>' +
       '<circle cx="0" cy="0" r="5" fill="#181c24"/>' +
+      '<rect x="-10" y="-87" width="20" height="16" rx="3" fill="#181c24"/>' +
+      pxStr("N", -4.5, -83, 1.8, "#ffffff", "") +
     '</g></g>' +
   '</g>' +
   '<g class="cdb-flank-r">' +
@@ -1980,14 +2341,7 @@ function gtaIVLightSvg() {
     '</g>' +
     '<g class="bokeh"><circle cx="1420" cy="580" r="95" fill="url(#gta4GoldL)"/></g>' +
   '</g>' +
-  '<g class="cdb-flank-rt" opacity="0.38">' +
-    '<g transform="translate(1448 62)"><g class="pulse">' +
-      '<rect x="0" y="0" width="88" height="88" rx="16" fill="#3a414c" stroke="#c47d14" stroke-width="3"/>' +
-      '<rect x="5" y="5" width="78" height="78" rx="12" fill="#d99622"/>' +
-      '<path d="M20 18 L13 56 H25 L28 42 H37 C41 42 42 44 41 49 L40 56 H52 L53 47 C54 42 51 39 48 38 C53 36 57 32 58 26 C59 20 53 18 43 18 Z M30 26 H40 C44 26 45 28 44 30 C43 33 41 34 38 34 H28 Z" fill="#181c24"/>' +
-      '<polygon points="62,42 65,52 76,52 67,58 70,69 62,62 53,69 56,58 48,52 59,52" fill="#ffffff" stroke="#181c24" stroke-width="2"/>' +
-    '</g></g>' +
-  '</g>' +
+  '<g class="cdb-flank-rt" opacity="0.58">' + gta4CornerHud(false) + '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
@@ -2015,10 +2369,13 @@ function gtaIVDarkSvg() {
     '<g class="bokeh b"><circle cx="110" cy="650" r="55" fill="url(#gta4GoldD)"/></g>' +
     '<g transform="translate(136 864)">' +
       '<circle cx="0" cy="0" r="74" fill="#0c0f14" stroke="#262c3a" stroke-width="3"/>' +
-      '<path d="M-74 -10 H74 M-12 -74 V74" stroke="#1b212d" stroke-width="5"/>' +
+      '<path d="M-74 -10 H74 M-12 -74 V74 M34 -68 V68" stroke="#1b212d" stroke-width="5" fill="none"/>' +
+      '<path d="M0 0 L0 -32 L34 -32 L34 -56" fill="none" stroke="#f59e0b" stroke-width="4"/>' +
       '<path d="M0 -80 A80 80 0 0 0 0 80" fill="none" stroke="#4ade80" stroke-width="5.5"/>' +
       '<path d="M0 -80 A80 80 0 0 1 0 80" fill="none" stroke="#60a5fa" stroke-width="5.5"/>' +
       '<polygon points="0,-8 6,7 -6,7" fill="#ffffff"/>' +
+      '<rect x="-10" y="-87" width="20" height="16" rx="3" fill="#0c0f14" stroke="#f59e0b" stroke-width="1.5"/>' +
+      pxStr("N", -4.5, -83, 1.8, "#ffffff", "") +
     '</g>' +
   '</g>' +
   '<g class="cdb-flank-r">' +
@@ -2032,14 +2389,7 @@ function gtaIVDarkSvg() {
     '<g class="bokeh"><circle cx="1360" cy="610" r="95" fill="url(#gta4GoldD)"/><circle cx="1460" cy="625" r="70" fill="url(#gta4TailD)"/></g>' +
     '<g class="bokeh b"><circle cx="1410" cy="590" r="60" fill="url(#gta4GoldD)"/></g>' +
   '</g>' +
-  '<g class="cdb-flank-rt" opacity="0.88">' +
-    '<g transform="translate(1448 62)"><g class="pulse">' +
-      '<rect x="0" y="0" width="88" height="88" rx="16" fill="#040301" stroke="#ffab00" stroke-width="3"/>' +
-      '<rect x="5" y="5" width="78" height="78" rx="12" fill="#ffab00"/>' +
-      '<path d="M20 18 L13 56 H25 L28 42 H37 C41 42 42 44 41 49 L40 56 H52 L53 47 C54 42 51 39 48 38 C53 36 57 32 58 26 C59 20 53 18 43 18 Z M30 26 H40 C44 26 45 28 44 30 C43 33 41 34 38 34 H28 Z" fill="#040301"/>' +
-      '<polygon points="62,42 65,52 76,52 67,58 70,69 62,62 53,69 56,58 48,52 59,52" fill="#ffffff" stroke="#040301" stroke-width="2"/>' +
-    '</g></g>' +
-  '</g>' +
+  '<g class="cdb-flank-rt" opacity="0.90">' + gta4CornerHud(true) + '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
 }
 
@@ -2062,7 +2412,10 @@ function gtaVLightSvg() {
   '<rect x="-800" width="3200" height="1000" fill="url(#gta5SkyL)"/>' +
   '<g class="cdb-flank-rt">' +
     '<circle cx="1420" cy="230" r="240" fill="url(#gta5SunL)"/>' +
-    '<g transform="translate(1380 62)" fill="#d97706" opacity="0.4">' +
+    '<g transform="translate(1386 60)" opacity="0.62">' +
+      pxStr("$1,420,500", 0, 0, 2.5, "#15803d", "#05070a") +
+    '</g>' +
+    '<g transform="translate(1380 86)" fill="#d97706" opacity="0.56">' +
       '<polygon points="12,0 15,8 24,8 17,13 19,22 12,17 5,22 7,13 0,8 9,8"/>' +
       '<polygon points="44,0 47,8 56,8 49,13 51,22 44,17 37,22 39,13 32,8 41,8"/>' +
       '<polygon points="76,0 79,8 88,8 81,13 83,22 76,17 69,22 71,13 64,8 73,8"/>' +
@@ -2071,17 +2424,23 @@ function gtaVLightSvg() {
     '</g>' +
   '</g>' +
   '<g class="cdb-flank-l">' +
-    '<path d="M-240 780 L-120 690 L140 620 L290 710 L420 780 Z" fill="#8fa38c" opacity="0.28"/>' +
-    '<g class="palm" fill="#4a6e54" opacity="0.32">' +
+    '<path d="M-240 780 L-120 690 L140 620 L290 710 L420 780 Z" fill="#8fa38c" opacity="0.34"/>' +
+    '<g transform="translate(20 618)" opacity="0.58">' +
+      '<rect x="6" y="14" width="96" height="6" fill="#64748b"/>' +
+      pxStr("VINEWOOD", 0, 0, 2.2, "#f8fafc", "#334155") +
+    '</g>' +
+    '<g class="palm" fill="#4a6e54" opacity="0.34">' +
       '<path d="M108 1020 Q118 680 136 420 L146 420 Q130 680 124 1020 Z"/>' +
       '<path d="M140 420 Q70 390 36 435 Q85 420 140 430 Z"/>' +
       '<path d="M140 420 Q80 350 48 370 Q95 380 140 420 Z"/>' +
       '<path d="M140 420 Q200 350 236 375 Q185 380 140 420 Z"/>' +
       '<path d="M140 420 Q210 395 244 440 Q190 420 140 430 Z"/>' +
     '</g>' +
-    '<g transform="translate(44 820)" opacity="0.38">' +
+    '<g transform="translate(44 820)" opacity="0.54">' +
       '<rect x="0" y="0" width="210" height="132" rx="4" fill="#d2cbb8" stroke="#1f7a3a" stroke-width="2.5"/>' +
       '<path d="M0 48 H210 M74 0 V116 M148 0 V116" stroke="#a8a08c" stroke-width="4"/>' +
+      '<path d="M105 58 V48 H148 V18" fill="none" stroke="#9333ea" stroke-width="4"/>' +
+      '<polygon points="105,50 112,66 98,66" fill="#ffffff" stroke="#1f2937" stroke-width="1"/>' +
       '<rect x="4" y="118" width="98" height="10" fill="#359a47"/>' +
       '<rect x="106" y="118" width="50" height="10" fill="#3b82f6"/>' +
       '<rect x="160" y="118" width="46" height="10" fill="#d97706"/>' +
@@ -2132,7 +2491,10 @@ function gtaVDarkSvg() {
   '</g>' +
   '<g class="cdb-flank-rt">' +
     '<polygon class="beam" points="1480,62 1320,820 1640,820" fill="url(#gta5Cone)"/>' +
-    '<g transform="translate(1380 62)" fill="#f5a623" opacity="0.9">' +
+    '<g transform="translate(1386 60)" opacity="0.92">' +
+      pxStr("$1,420,500", 0, 0, 2.5, "#4ec962", "#05070a") +
+    '</g>' +
+    '<g transform="translate(1380 86)" fill="#f5a623" opacity="0.9">' +
       '<polygon points="12,0 15,8 24,8 17,13 19,22 12,17 5,22 7,13 0,8 9,8"/>' +
       '<polygon points="44,0 47,8 56,8 49,13 51,22 44,17 37,22 39,13 32,8 41,8"/>' +
       '<polygon points="76,0 79,8 88,8 81,13 83,22 76,17 69,22 71,13 64,8 73,8"/>' +
@@ -2142,6 +2504,11 @@ function gtaVDarkSvg() {
   '</g>' +
   '<g class="cdb-flank-l">' +
     '<circle cx="150" cy="850" r="200" fill="url(#gta5GreenD)"/>' +
+    '<path d="M-240 780 L-120 690 L140 620 L290 710 L420 780 Z" fill="#09110d"/>' +
+    '<g transform="translate(20 618)" opacity="0.88">' +
+      '<rect x="6" y="14" width="96" height="6" fill="#334155"/>' +
+      pxStr("VINEWOOD", 0, 0, 2.2, "#f8fafc", "#05070a") +
+    '</g>' +
     '<g class="palm" fill="#070c09">' +
       '<path d="M108 1020 Q118 680 136 420 L146 420 Q130 680 124 1020 Z"/>' +
       '<path d="M140 420 Q70 390 36 435 Q85 420 140 430 Z"/>' +
@@ -2152,6 +2519,7 @@ function gtaVDarkSvg() {
     '<g transform="translate(44 820)">' +
       '<rect x="0" y="0" width="210" height="132" rx="4" fill="#09100c" stroke="#359a47" stroke-width="2.5"/>' +
       '<path d="M0 48 H210 M74 0 V116 M148 0 V116" stroke="#182a20" stroke-width="5"/>' +
+      '<path d="M105 58 V48 H148 V18" fill="none" stroke="#c084fc" stroke-width="4"/>' +
       '<polygon points="105,50 112,66 98,66" fill="#ffffff"/>' +
       '<rect x="4" y="118" width="98" height="10" fill="#4ec962"/>' +
       '<rect x="106" y="118" width="50" height="10" fill="#5db6e5"/>' +
@@ -2215,9 +2583,15 @@ function gtaVILightSvg() {
     '</g></g>' +
   '</g>' +
   '<g class="cdb-flank-l">' +
-    '<g opacity="0.34">' +
+    '<g opacity="0.46">' +
       '<rect x="18" y="470" width="110" height="550" fill="#f4b8d4"/><rect x="34" y="440" width="78" height="30" fill="#2fd8ff"/>' +
       '<rect x="28" y="490" width="8" height="420" fill="#d91b7a"/><rect x="112" y="490" width="8" height="420" fill="#06b6d4"/>' +
+      '<rect x="28" y="424" width="88" height="22" rx="4" fill="#9d174d"/>' +
+      pxStr("OCEAN", 42, 430, 2, "#fff1f2", "#4c0519") +
+      '<g transform="translate(56 515)">' +
+        '<path d="M18 0 C6 0 2 14 14 22 C24 28 24 44 10 46 H26 C32 46 34 36 28 30 C18 22 14 12 22 8" fill="none" stroke="#db2777" stroke-width="3.5" stroke-linecap="round"/>' +
+        '<line x1="18" y1="46" x2="18" y2="66" stroke="#db2777" stroke-width="2.5"/>' +
+      '</g>' +
     '</g>' +
     '<g class="palm" fill="#8a3d7c" opacity="0.28">' +
       '<path d="M135 1020 Q145 710 165 460 L175 460 Q158 710 150 1020 Z"/>' +
@@ -2290,6 +2664,11 @@ function gtaVIDarkSvg() {
       '<rect x="26" y="440" width="5" height="450" rx="2.5" fill="#ff2b90"/>' +
       '<rect x="114" y="440" width="5" height="450" rx="2.5" fill="#2fd8ff"/>' +
       '<rect x="38" y="434" width="70" height="4" rx="2" fill="#ffbc24"/>' +
+      pxStr("OCEAN", 42, 412, 2, "#ff7ac8", "#2d0728") +
+      '<g transform="translate(56 510)">' +
+        '<path d="M18 0 C6 0 2 14 14 22 C24 28 24 44 10 46 H26 C32 46 34 36 28 30 C18 22 14 12 22 8" fill="none" stroke="#ff2b90" stroke-width="3.5" stroke-linecap="round"/>' +
+        '<line x1="18" y1="46" x2="18" y2="66" stroke="#ff2b90" stroke-width="2.5"/>' +
+      '</g>' +
     '</g>' +
     '<g class="palm" fill="#1a072e" stroke="#ff2b90" stroke-opacity="0.42" stroke-width="1.5" stroke-linejoin="round">' +
       '<path d="M135 1020 Q145 710 165 450 L176 450 Q158 710 150 1020 Z"/>' +
@@ -2760,7 +3139,7 @@ var GAMING_SCENES = [
   {
     id: "gta-i",
     title: "1997 Pixel Liberty",
-    blurb: "Top-down 8-bit city blocks, yellow sports car vs. flashing red/blue police cruisers, and arcade score digits.",
+    blurb: "Top-down 1997 Pixel Liberty blocks, checkered taxi chased by police cruisers, pager alert, cop-head wanted bar, and green cash HUD.",
     window: "both",
     category: "gaming",
     glass: { blur: 16, tint: "#12151a", lightTint: "#e6e0d2", opacity: 0.56 },

@@ -325,5 +325,54 @@ await runSuite(async () => {
   r.ok(T.backdrop() === "" && T.effectiveBackdrop() === "honu-lagoon",
      "setBackdrop('') restores Follow theme");
 
+  // Authentic game HUD & sprite markers (GTA I police/taxi chase, top-right cop heads & green cash, etc.)
+  const gta1Scene = sceneReg.get("gta-i");
+  const gta1Json = gaming["gta-i"];
+  r.ok(Boolean(gta1Scene &&
+               gta1Scene.lightSvg.includes("gta1TileL") &&
+               gta1Scene.darkSvg.includes("gta1TileD") &&
+               gta1Scene.lightSvg.includes("sirenR") &&
+               gta1Scene.darkSvg.includes("sirenB") &&
+               gta1Scene.lightSvg.includes("chaseUp") &&
+               gta1Scene.lightSvg.includes("#facc15") &&
+               gta1Scene.lightSvg.includes("#fbbf24") &&
+               gta1Scene.lightSvg.includes("#16a34a") &&
+               gta1Scene.darkSvg.includes("#22c55e") &&
+               !gta1Scene.lightSvg.includes("#dc2626")),
+     "gta-i scenes use authentic cop heads, green pixel cash, yellow taxi & police chase loop without blocky red squares");
+  r.ok(Boolean(gta1Json && gta1Json.spinner &&
+               gta1Json.spinner.paths.some((p) => p.fill === "#2563eb") &&
+               gta1Json.spinner.paths.some((p) => p.fill === "#f8fafc") &&
+               Array.isArray(gta1Json.spinner.paths2)),
+     "gta-i spinner uses the 2-frame blue-and-white Police Cruiser with alternating sirens");
+  const hudChecks = [
+    ["gta-ii", ["cop2", "ztype", "#67e8f9", "#f5b82e"]],
+    ["gta-iii", ["#60a5fa", "#5ec4b6"]],
+    ["gta-iv", ["#f59e0b", "gta4Gold"]],
+    ["gta-v", ["#c084fc", "#4ec962"]],
+    ["gta-vi", ["#ff2b90", "gta6"]],
+    ["mario", ["qface", "starman", "piranha"]],
+    ["playstation", ["psTower", "psOrbs"]],
+    ["gameboy", ["lineClr", "tet"]],
+    ["final-fantasy", ["ffHand", "crystal"]],
+    ["zelda", ["tri", "fairy", "#e11d48", "#10b981"]],
+    ["warcraft", ["rune", "#d49b27", "#38bdf8"]],
+    ["dragonball", ["radarBlip", "orb"]]
+  ];
+  const hudGaps = [];
+  for (const [id, markers] of hudChecks) {
+    const sc = sceneReg.get(id);
+    if (!sc || !sc.darkSvg || !sc.lightSvg) {
+      hudGaps.push(id + "(missing)");
+      continue;
+    }
+    for (const m of markers) {
+      if (!sc.darkSvg.includes(m) && !sc.lightSvg.includes(m)) hudGaps.push(id + "(missing " + m + ")");
+    }
+  }
+  r.ok(hudGaps.length === 0,
+     "all upgraded gaming themes render their authentic HUD and sprite markers",
+     hudGaps.join(", "));
+
   r.done();
 });

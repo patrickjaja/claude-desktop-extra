@@ -1232,7 +1232,7 @@
   "gta-i": {
     "name": "GTA I",
     "category": "gaming",
-    "blurb": "1997 top-down 8-bit pixel city blocks, yellow sports car vs. flashing red/blue police cruisers, and arcade score digits.",
+    "blurb": "1997 top-down Pixel Liberty blocks, checkered yellow taxi chased by blue-and-white police cruisers, Motorola pager, cop-head wanted bar, and green dollar HUD.",
     "light": {
       "--bg-000": "42 28.0% 94.0%",
       "--bg-100": "42 24.0% 87.5%",
@@ -1362,16 +1362,20 @@
       "animation": "flip",
       "paths": [
         {
-          "d": "M7 1h7v1h-7ZM6 2h1v2h-1ZM14 2h1v2h-1ZM4 4h2v4h-2ZM15 4h2v4h-2ZM5 8h1v5h-1ZM15 8h1v5h-1ZM4 13h2v4h-2ZM15 13h2v4h-2ZM6 17h1v2h-1ZM14 17h1v2h-1ZM7 19h7v1h-7ZM10 2h1v4h-1ZM10 15h1v4h-1Z",
+          "d": "M7 1h7v1h-7ZM6 2h1v2h-1ZM14 2h1v2h-1ZM4 4h2v4h-2ZM15 4h2v4h-2ZM5 8h1v5h-1ZM15 8h1v5h-1ZM4 13h2v4h-2ZM15 13h2v4h-2ZM6 17h1v2h-1ZM14 17h1v2h-1ZM7 19h7v1h-7Z",
           "fill": "#6b768a"
         },
         {
-          "d": "M7 2h3v4h-3ZM11 2h3v4h-3ZM6 4h1v13h-1ZM14 4h1v13h-1ZM7 9h7v2h-7ZM7 14h3v5h-3ZM11 14h3v5h-3Z",
-          "fill": "#ffab00"
+          "d": "M7 2h7v4h-7ZM6 4h1v2h-1ZM14 4h1v2h-1ZM6 14h1v3h-1ZM14 14h1v3h-1ZM7 14h7v5h-7Z",
+          "fill": "#2563eb"
         },
         {
           "d": "M8 2h1v3h-1ZM12 2h1v3h-1ZM8 15h1v3h-1ZM12 15h1v3h-1Z",
-          "fill": "#ffd166"
+          "fill": "#60a5fa"
+        },
+        {
+          "d": "M6 6h1v8h-1ZM14 6h1v8h-1ZM7 9h7v3h-7Z",
+          "fill": "#f8fafc"
         },
         {
           "d": "M7 6h7v3h-7ZM7 12h7v2h-7Z",
@@ -1392,16 +1396,20 @@
       ],
       "paths2": [
         {
-          "d": "M7 1h7v1h-7ZM6 2h1v2h-1ZM14 2h1v2h-1ZM4 4h2v4h-2ZM15 4h2v4h-2ZM5 8h1v5h-1ZM15 8h1v5h-1ZM4 13h2v4h-2ZM15 13h2v4h-2ZM6 17h1v2h-1ZM14 17h1v2h-1ZM7 19h7v1h-7ZM10 2h1v4h-1ZM10 15h1v4h-1Z",
+          "d": "M7 1h7v1h-7ZM6 2h1v2h-1ZM14 2h1v2h-1ZM4 4h2v4h-2ZM15 4h2v4h-2ZM5 8h1v5h-1ZM15 8h1v5h-1ZM4 13h2v4h-2ZM15 13h2v4h-2ZM6 17h1v2h-1ZM14 17h1v2h-1ZM7 19h7v1h-7Z",
           "fill": "#6b768a"
         },
         {
-          "d": "M7 2h3v4h-3ZM11 2h3v4h-3ZM6 4h1v13h-1ZM14 4h1v13h-1ZM7 9h7v2h-7ZM7 14h3v5h-3ZM11 14h3v5h-3Z",
-          "fill": "#ffab00"
+          "d": "M7 2h7v4h-7ZM6 4h1v2h-1ZM14 4h1v2h-1ZM6 14h1v3h-1ZM14 14h1v3h-1ZM7 14h7v5h-7Z",
+          "fill": "#2563eb"
         },
         {
           "d": "M8 2h1v3h-1ZM12 2h1v3h-1ZM8 15h1v3h-1ZM12 15h1v3h-1Z",
-          "fill": "#ffd166"
+          "fill": "#60a5fa"
+        },
+        {
+          "d": "M6 6h1v8h-1ZM14 6h1v8h-1ZM7 9h7v3h-7Z",
+          "fill": "#f8fafc"
         },
         {
           "d": "M7 6h7v3h-7ZM7 12h7v2h-7Z",
