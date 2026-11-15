@@ -25,6 +25,7 @@ await runSuite(async () => {
     const page = String.raw`<!doctype html><html data-mode="dark"><head><style>
       .dframe-root{--bg-000:251 25.4% 13.1%;--bg-100:251 41.5% 8%;--engine-glass-tint:#0a1430;--engine-glass-opacity:.3;--engine-glass-blur:20px}
       [data-chat-input-container],[data-cds=ChatComposer],[data-composer-card-holder],[data-disclaimer],.bg-page{background:#14111d}
+      [data-chat-input-container]::before,[data-chat-input-container]::after{content:"";background:#14111d;box-shadow:0 0 0 32px #14111d;backdrop-filter:blur(20px)}
       [data-cds=ChatComposer]{height:84px;width:768px}
       .rounded-composer{height:44px;border-radius:14px;background:#272331;border:1px solid #aaa}
       [data-cds=ChatComposerChin]{background:#14111d;box-shadow:0 0 0 32px #14111d}
@@ -42,12 +43,13 @@ await runSuite(async () => {
     const s=id=>getComputedStyle(document.getElementById(id));
     const surfaces=Object.fromEntries(['outer','holder','shell','chin','start','end','gap','disclaimer'].map(id=>[id,{bg:s(id).backgroundColor,blur:s(id).backdropFilter}]));
     document.getElementById('edit').focus();let clicks=0;document.getElementById('send').onclick=()=>clicks++;document.getElementById('send').click();
-    document.getElementById('probe').textContent=JSON.stringify({surfaces,fade:s('fade').backgroundImage,chinShadow:s('chin').boxShadow,field:{bg:s('field').backgroundColor,blur:s('field').backdropFilter,radius:s('field').borderRadius,border:s('field').borderTopWidth},approval:s('approval').backgroundColor,focused:document.activeElement.id,draft:document.getElementById('edit').textContent,clicks});
+    document.getElementById('probe').textContent=JSON.stringify({pseudo:['::before','::after'].map(p=>{const s=getComputedStyle(document.getElementById('outer'),p);return {bg:s.backgroundColor,blur:s.backdropFilter,shadow:s.boxShadow}}),surfaces,fade:s('fade').backgroundImage,chinShadow:s('chin').boxShadow,field:{bg:s('field').backgroundColor,blur:s('field').backdropFilter,radius:s('field').borderRadius,border:s('field').borderTopWidth},approval:s('approval').backgroundColor,focused:document.activeElement.id,draft:document.getElementById('edit').textContent,clicks});
     </script></body></html>`;
     const path = join(out, name + '.html'); writeFileSync(path, page);
     const lines = readProbe(dumpDom(chromium, path), 'probe');
     if (!lines || lines.length !== 1 || !lines[0]) throw new Error('Style probe did not run');
     const probe = JSON.parse(lines[0]);
+    r.ok(probe.pseudo.every(p=>enabled ? p.bg === 'rgba(0, 0, 0, 0)' && p.blur === 'none' && p.shadow === 'none' : p.bg === 'rgb(20, 17, 29)' && p.blur === 'blur(20px)' && p.shadow !== 'none'), name + ': pseudo-element backings follow backdrop state');
     if (enabled) {
       for (const [id, surface] of Object.entries(probe.surfaces)) {
         r.ok(surface.bg === 'rgba(0, 0, 0, 0)' && surface.blur === 'none', name + ': ' + id + ' stays clear', JSON.stringify(surface));

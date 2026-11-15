@@ -574,6 +574,7 @@ return ""
 // Chat's sticky input container is an outer shell, not the rounded field.
 // Clear only its backing layers; cards, focus rings and the field keep their fill.
 +".dframe-root:where([data-engine-backdrop-on]) :is([data-chat-input-container],[data-testid=transcript-bottom-fade],[data-testid=transcript-bottom-backing-start],[data-testid=transcript-bottom-backing-end],[data-testid=transcript-bottom-gap],[data-testid=chat-column] [data-disclaimer]){background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
++".dframe-root:where([data-engine-backdrop-on]) [data-chat-input-container]::before,.dframe-root:where([data-engine-backdrop-on]) [data-chat-input-container]::after{background:transparent!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
 +".dframe-root:where([data-engine-backdrop-on]) [data-chat-input-container] :where([data-composer-card-holder],[data-cds=ChatComposer],.rounded-composer:has([data-cds=ChatComposer])){background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
 +".dframe-root:where([data-engine-backdrop-on]) [data-chat-input-container] [data-cds=ChatComposerChin]{background:transparent!important;box-shadow:none!important}"
 +".dframe-root:where([data-engine-backdrop-on]) :is([data-transcript-fade-strip],[data-scroll-fade],[data-docked-column-edge],.epitaxy-top-scrim,.epitaxy-bottom-scrim){background-image:none!important;background:transparent!important}"
