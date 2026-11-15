@@ -15,6 +15,11 @@ From picking a bundled palette to recoloring the app from your wallpaper, in ord
 
 Every theme is **dual light/dark**: it ships a `light` and a `dark` palette, and the app's own toggle (Settings → Appearance) picks the matching one live. Colors are CSS variables injected into every app window (chat, sidebar, Code/Cowork, pop-out windows, dialogs, Quick Entry), never into third-party pages in the browser pane; every bundled theme is contrast-checked (WCAG AA).
 
+With an animated backdrop active, Chat's message-input backing and controls
+footer stay clear; the glass surface follows the rounded input field instead of
+the full-height square wrapper. Turning backdrops off keeps the original solid
+backing. Approval cards and focus rings retain their own surfaces.
+
 ## 1. Pick a theme
 
 Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> anywhere in the app. A searchable picker opens with every theme available to you, each card showing a dark and a light row of swatches; click one and it applies immediately in every open window, no restart and no config file. Your choice is saved to `claude-desktop-extra.jsonc` with any comments in it left intact. The same list is also in the app's Settings dialog under **Extra → Themes**, next to an **Extra → Anthropic Features** panel that exposes the [feature flags](feature-flags.md) as switches. Both places also show an **Overlay** bar when a [`themeOverlay`](#6-dynamic-themes-from-your-wallpaper-matugen-pywal-wallust) is merged over your theme: it names the overlay, marks the active card with an `overlay` badge, and has a **Turn off** button; when none is active you can pick one of your own themes there and apply it, no config file needed.
