@@ -570,7 +570,7 @@ return {override:null,effective:null,spec:null,json:"null"};
 function __cdb_chatComposerCss(cfg){
 if(!cfg||cfg.transparentChatComposer!==true)return "";
 var css=".dframe-root :is([data-chat-input-container],[data-testid=transcript-bottom-fade],[data-testid=transcript-bottom-backing-start],[data-testid=transcript-bottom-backing-end],[data-testid=transcript-bottom-gap],[data-testid=chat-column] [data-disclaimer]){background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
-+".dframe-root [data-chat-input-container]::before,.dframe-root [data-chat-input-container]::after{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
++".dframe-root [data-chat-input-container]::before,.dframe-root [data-chat-input-container]::after{background:transparent!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
 +".dframe-root [data-chat-input-container] :is([data-composer-card-holder],.rounded-composer:has([data-cds=ChatComposer])){background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
 +".dframe-root [data-chat-input-container] [data-cds=ChatComposerChin]{background:transparent!important;box-shadow:none!important}";
 if(cfg.frostedReplyField===true)return css

@@ -317,7 +317,7 @@ await runSuite(async () => {
     const fixture = String.raw`<!doctype html><html><head><style>
       .dframe-root{--bg-100:251 41.5% 8%;--cds-page-bg:#14111d;--engine-glass-opacity:.3;--engine-glass-blur:20px;--engine-glass-tint:#0a1430}
       [data-chat-input-container]{padding:24px;background:#14111d}
-      [data-chat-input-container]::before{content:"";background:#14111d}
+      [data-chat-input-container]::before{content:"";background:#14111d;box-shadow:0 0 0 32px #14111d}
       [data-testid=transcript-bottom-fade]{background:linear-gradient(to top,var(--cds-page-bg),transparent)}
       .bg-page,[data-disclaimer]{background:var(--cds-page-bg)}
       .rounded-composer{border-radius:14px;background:#272331;border:1px solid #aaa;padding:16px}
@@ -337,7 +337,7 @@ await runSuite(async () => {
       style.textContent=full;
       ['outer','fade','backing','disclaimer'].forEach(id=>ok(css(id).backgroundColor==='rgba(0, 0, 0, 0)' && css(id).backgroundImage==='none',id+' is transparent'));
       ok(css('outer').backdropFilter==='none','outer blur removed');
-      ok(getComputedStyle(document.getElementById('outer'),'::before').backgroundColor==='rgba(0, 0, 0, 0)','outer pseudo backing removed');
+      ok(getComputedStyle(document.getElementById('outer'),'::before').backgroundColor==='rgba(0, 0, 0, 0)' && getComputedStyle(document.getElementById('outer'),'::before').boxShadow==='none','outer pseudo backing and shadow removed');
       ok(/0\.35\)/.test(css('editor').backgroundColor) && css('editor').borderTopWidth==='1px','rounded editor gets translucent fill and keeps its border');
       ok(${frostedReplyField} ? css('shell').backgroundColor==='rgba(0, 0, 0, 0)' && css('shell').backdropFilter==='none' : css('shell').backdropFilter==='blur(20px) saturate(1.2)' && css('shell').borderRadius===css('editor').borderRadius,'shell matches selected frost mode and native corners');
       ok(css('editor').backdropFilter===(${frostedReplyField} ? 'blur(20px) saturate(1.2)' : 'none'),'inner frost follows the placement toggle');

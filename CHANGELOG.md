@@ -4,11 +4,16 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-15
 
-- **Optional message input appearance:** Extra → Themes and Community → App and window offer a rounded frosted outer panel and a compact input-field-only mode. Both apply live with themes on or off; off leaves the current message-input appearance unchanged. The outer panel follows the input field’s corner radius to avoid protruding square edges.
+### Message input appearance: opt-in frosted Chat composer switches (thanks @Reymarch995, #339)
+
+- New **Frosted message input** (`transparentChatComposer`) and **Frost only the input field** (`frostedReplyField`) switches under Settings -> Extra -> Themes -> Message input appearance and Settings -> Extra -> Community Features -> App and window (both off by default, live-applied across active themes or stock, locked when set in `claude-desktop-extra.jsonc`).
+- **Frosted message input** replaces Chat's opaque footer/side backings with a translucent, blurred outer composer panel matching the input field's native corner radius while keeping approval cards, borders and editor controls intact; **Frost only the input field** keeps the outer wrapper clear and confines frost to the inner rounded field.
+
+### Animated backdrops: clear Chat input backing and glass bounds (thanks @Reymarch995, #338)
+
+- Clears Chat's opaque bottom/side backing strips, pseudo-element shadows and outer square composer blur while an animated backdrop is active (`data-engine-backdrop-on`), keeping the frosted-glass surface on the rounded input field and restoring the original solid backing when backdrops are turned off (#337).
 
 ### Custom themes: live animated SVG backdrops, frosted glass, GTA I-VI series and 20 scene themes (#336)
-
-- **Chat backdrop input layers:** removes the opaque footer/side backings and the square blur on the outer input shell when a backdrop is active. The rounded input field keeps its glass surface, and disabling backdrops preserves the original backing.
 
 - **Animated SVG backdrops and frosted-glass panels across Chat, Cowork and Code:** brings the animated SVG backdrop and frosted-glass surface engine from Anthropic's [Claude Code interface mods](https://code.claude.com/docs/en/plugins/mods/interface#put-a-backdrop-behind-the-conversation) (`data-engine-backdrop`, `data-engine-glass`, `--engine-glass-*`) to the entire desktop app - Chat, Cowork, Code and pop-out windows - with no plugin required (`js/backdrop_scenes.js`, `js/backdrop_injector.js`). Animations pause automatically when the window is hidden or `prefers-reduced-motion` is active.
 - **6 new GTA themes (`gta-i` through `gta-vi`) + reworked Gaming & Shows backdrops:** adds `gta-i`, `gta-ii`, `gta-iii`, `gta-iv`, `gta-v` and `gta-vi` (Vice City pink-cyan neon) to the **Gaming & Shows** section, each with dual light/dark palettes, custom SVG spinners and bespoke dual-mode animated SVG scenes. Existing gaming themes (`mario`, `playstation`, `gameboy`, `final-fantasy`, `zelda`, `warcraft`, `dragonball`) now also carry their own dual-mode animated SVG backdrops (`js/gaming_themes.json`).

@@ -1531,6 +1531,14 @@ section("Cowork (Linux): win32 refusals");
   ok(outs.every((o) => J(o) === J({ ok: false, error: "Computer Use status is Linux only" })), "the new cdb-cu-status channels answer Linux only", J(outs));
   const o = await w.call("cdb-extra:open-settings");
   ok(J(o) === J({ ok: false, error: "Linux only" }), "open-settings answers Linux only", J(o));
+  const chatOuts = await Promise.all([
+    w.call("cdb-chat-composer:read"),
+    w.call("cdb-chat-composer:set", true),
+    w.call("cdb-reply-field:read"),
+    w.call("cdb-reply-field:set", true),
+  ]);
+  ok(chatOuts.every((c) => c && c.ok === false && /Linux only/.test(c.error)),
+     "message input appearance channels answer Linux only on win32", J(chatOuts));
 }
 
 server.close();

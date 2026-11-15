@@ -3690,7 +3690,7 @@
       var themes = globalThis.__cdbThemes;
       if (!themes || typeof themes.reload !== "function") return { ok: false, error: "theme engine unavailable" };
       if (__cdbEx_readFileKey(__cdbEx_paths().jsonc, "transparentChatComposer") !== undefined) {
-        return { ok: false, error: "transparentChatComposer is set in claude-desktop-extra.jsonc - edit that file to change it" };
+        return { ok: false, lockedByJsonc: true, error: "transparentChatComposer is set in claude-desktop-extra.jsonc - edit that file to change it" };
       }
       var res = __cdbEx_writeCfg(function (cfg) {
         if (enabled) cfg.transparentChatComposer = true;
@@ -3713,7 +3713,7 @@
       var themes = globalThis.__cdbThemes;
       if (!themes || typeof themes.reload !== "function") return { ok: false, error: "theme engine unavailable" };
       if (__cdbEx_readFileKey(__cdbEx_paths().jsonc, "frostedReplyField") !== undefined) {
-        return { ok: false, error: "frostedReplyField is set in claude-desktop-extra.jsonc - edit that file to change it" };
+        return { ok: false, lockedByJsonc: true, error: "frostedReplyField is set in claude-desktop-extra.jsonc - edit that file to change it" };
       }
       var res = __cdbEx_writeCfg(function (cfg) {
         if (enabled) cfg.frostedReplyField = true;
@@ -4581,6 +4581,8 @@
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "the Auto-fix ready-to-merge wake is Linux only" }; };
       } else if (ch.indexOf("cdb-session-start:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "the session-start dialog is Linux only" }; };
+      } else if (ch.indexOf("cdb-chat-composer:") === 0 || ch.indexOf("cdb-reply-field:") === 0) {
+        __cdbEx_handlers[ch] = function () { return { ok: false, error: "message input appearance is Linux only" }; };
       }
     });
   }

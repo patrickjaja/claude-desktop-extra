@@ -3249,6 +3249,30 @@ async function themesPanel(themesItem) {
     reply.click(); await sleep(20);
     ok(reply.getAttribute("aria-checked")===initial, "reply surroundings can be restored");
   }
+  {
+    const origComposerRead = window.cdbExtra.transparentChatComposerRead;
+    const origFieldRead = window.cdbExtra.frostedReplyFieldRead;
+    window.cdbExtra.transparentChatComposerRead = function () {
+      return Promise.resolve({ ok: false, error: "message input appearance is Linux only" });
+    };
+    window.cdbExtra.frostedReplyFieldRead = function () {
+      return Promise.resolve({ ok: false, error: "message input appearance is Linux only" });
+    };
+    document.getElementById("row-account").click();
+    await sleep(30);
+    themesItem.click();
+    await sleep(80);
+    ok(!document.querySelector('.cdbx-switch[aria-label="Frosted message input"]') &&
+       !document.querySelector('.cdbx-switch[aria-label="Frost only the input field"]') &&
+       Array.from(document.querySelectorAll('.cdbx-sec-h .cdbx-sec-t')).every(e => e.textContent !== 'Message input appearance'),
+       "win32 ('Linux only'): message input appearance rows and heading are hidden");
+    window.cdbExtra.transparentChatComposerRead = origComposerRead;
+    window.cdbExtra.frostedReplyFieldRead = origFieldRead;
+    document.getElementById("row-account").click();
+    await sleep(30);
+    themesItem.click();
+    await sleep(80);
+  }
 
   ok(!document.querySelector(".cdbx-panel .cdbx-switch[aria-label=\"show the Code tab's side panels as tabs instead of a split layout\"]"),
      "the panel tabs switch is NOT in the Themes panel");
