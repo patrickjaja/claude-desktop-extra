@@ -7,9 +7,10 @@
 # blockquote's first line with [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or
 # [!CAUTION]. claude.ai renders that as a plain quote with the marker shown as
 # literal text. This patch injects a main-process module that runs a page script
-# in every claude.ai / claude.com page: it strips the marker, groups the
-# paragraphs under it, and paints them as a callout whose colour, label and
-# optional icon come from a stylesheet inserted with insertCSS.
+# in every claude.ai / claude.com and 3P app://localhost chat page (skipping
+# /setup-desktop-3p): it strips the marker, groups the child elements under it,
+# and paints them as a callout whose colour, label and optional icon come from
+# a stylesheet inserted with insertCSS.
 #
 # One sub-patch:
 #   A  js/github_alerts_main.js, with js/github_alerts_page.js and
@@ -24,8 +25,10 @@
 #
 # The page's DOM anchors are remote claude.ai code that no build can see; they
 # are re-checked at run time and logged as "[cdb-gh-alerts] ..." in
-# claude.ai-web.log. Only text values, classes and one title row are touched,
-# never an upstream node removed.
+# claude.ai-web.log (main-process lines go to claude-patches.log as
+# "[github-alerts] ..."). Editable surfaces (.ProseMirror, contenteditable,
+# textarea), document prose and upstream-handled alert/reply blocks are skipped,
+# and turning the switch off restores the stripped markers in place.
 #
 # Idempotency: a rerun requires the exact current injection to be present once.
 

@@ -4,9 +4,9 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-16
 
-### GitHub alert callouts in the chat (thanks @MatejZeman02, #343)
+### GitHub alert callouts in the chat (thanks @MatejZeman02, #344)
 
-- A blockquote that opens with `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` renders as a coloured callout with an accent bar and a label instead of the literal marker, in every claude.ai page (`js/github_alerts_page.js`, inserted by `patches/community/add_feature_github_alerts.nim`). claude.ai merges adjacent quotes into one blockquote, so the page groups each marker paragraph with the paragraphs under it, strips the marker, and repaints on every mutation so a streaming answer converges.
+- A blockquote that opens with `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` renders as a coloured callout with an accent bar and a label instead of the literal marker, in every 1P (`claude.ai` / `claude.com`) and 3P (`app://localhost`) chat page (`js/github_alerts_page.js`, inserted by `patches/community/add_feature_github_alerts.nim`; closes #343). Adjacent merged quotes are split into per-alert runs, continuation blocks (`ul`, `ol`, `pre`, nested quotes) keep the accent bar, editable/native nodes (`.ProseMirror`, `.epitaxy-document-prose`, `blockquote[data-alert]`, `[data-reply-quote-block]`) and inline `<code>` stay untouched, and switching the feature off restores the literal markers in place.
 - Settings -> Extra -> Community Features has **GitHub alert callouts** (off by default, applies live) and **Alert icons** (off by default). The `.jsonc` keys `githubAlerts` / `githubAlertIcons` lock them.
 
 ### Custom models: adaptive thinking for Claude 4.6+, Fable 5.x and Mythos 5.x behind a compatible endpoint (thanks @aliveoutside, #342)

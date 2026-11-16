@@ -3,11 +3,10 @@
  * injected by patches/community/add_feature_github_alerts.nim.
  *
  * Runs js/github_alerts_page.js (embedded below) in every claude.ai / claude.com
- * page on dom-ready, after inserting js/github_alerts.css with insertCSS (not
- * subject to the page CSP and scoped to the live document, so it is re-inserted
- * per document with the previous key dropped). app://localhost (3P mode) is
- * skipped: the chat there is served by the ion-dist bundle, which this patch
- * does not touch.
+ * and 3P app://localhost chat page (skipping /setup-desktop-3p) on dom-ready,
+ * after inserting js/github_alerts.css with insertCSS (not subject to the page
+ * CSP and scoped to the live document, so it is re-inserted per document with
+ * the previous key dropped).
  *
  * Both switches live in claude-desktop-extra.json / .jsonc and are read here on
  * every page load, so a change applies to the next page and no restart:
@@ -18,8 +17,8 @@
  * the app use.
  *
  * globalThis.__cdbGithubAlertsRefresh() (called by the Extra settings handlers
- * after a switch or a lock changes) re-runs the page script in every open
- * claude.ai page, including the teardown call when the feature is switched off.
+ * after a switch or a lock changes) re-runs the page script in every open chat
+ * page, including the teardown call when the feature is switched off.
  */
 ;/*__CDB_GITHUB_ALERTS__*/(function () {
   "use strict";
@@ -34,6 +33,27 @@
   // Both placeholders are replaced by the patch with escaped source strings.
   var PAGE_SRC = "__CDB_GH_ALERTS_PAGE_SRC__";
   var PAGE_CSS = "__CDB_GH_ALERTS_CSS__";
+
+  // __cdbDiag (claude-patches.log) is defined inside upstream's app "ready"
+  // handler, which runs after this IIFE, so lines logged before the sink
+  // exists are queued and flushed one tick after "ready".
+  var logQueue = [];
+  function emitLog(line) {
+    try { (globalThis.__cdbDiag || console.log)(line); } catch (e) {}
+  }
+  function flushLog() {
+    var q = logQueue;
+    logQueue = null;
+    for (var i = 0; q && i < q.length; i++) emitLog(q[i]);
+  }
+  function log(m) {
+    var line = "[github-alerts] " + m;
+    if (logQueue && typeof globalThis.__cdbDiag !== "function") { logQueue.push(line); return; }
+    flushLog();
+    emitLog(line);
+  }
+  try { _electron.app.whenReady().then(function () { setTimeout(flushLog, 0); }, function () {}); }
+  catch (e) { setTimeout(flushLog, 0); }
 
   // JSONC comment + trailing-comma stripping. Byte-identical in behavior to
   // __cdbEx_strip() in js/extra_settings_main.js and stripJsonComments() in
@@ -79,8 +99,9 @@
   }
 
   function settings() {
+    try { (globalThis.__cdbCfgMigrate || function () {})(); } catch (e) {}
     var ud;
-    try { ud = _electron.app.getPath("userData"); } catch (e) { return { enabled: false, icons: true }; }
+    try { ud = _electron.app.getPath("userData"); } catch (e) { return { enabled: false, icons: false }; }
     var json = _path.join(ud, "claude-desktop-extra.json");
     var jsonc = _path.join(ud, "claude-desktop-extra.jsonc");
     var jcOn = readKey(jsonc, "githubAlerts");
@@ -94,10 +115,14 @@
   }
 
   // Only decides where to run the page script; the IPC handlers re-check the
-  // sender's exact origin. 1P hosts only (no app://localhost).
+  // sender's exact origin. Covers 1P hosts and 3P app://localhost chat pages
+  // (excluding the 3P setup wizard).
   function injectHost(rawUrl) {
     var u;
     try { u = new _URL(String(rawUrl)); } catch (e) { return false; }
+    if (u.protocol === "app:" && u.host === "localhost") {
+      return !/^\/+setup-desktop-3p(?:\/|$)/i.test(u.pathname || "");
+    }
     if (u.protocol !== "https:") return false;
     var host = u.hostname;
     return host === "claude.ai" || host.endsWith(".claude.ai") ||
@@ -105,6 +130,7 @@
   }
 
   var cssKeys = new WeakMap(); // webContents -> the insertCSS key of the live document
+  var cssGen = new WeakMap(); // webContents -> generation counter to drop stale insertCSS resolves
   var injected = new WeakSet(); // webContents that already carry the page script
 
   function runPage(wc, opts) {
@@ -115,6 +141,8 @@
   }
 
   function dropCss(wc) {
+    var g = (cssGen.get(wc) || 0) + 1;
+    cssGen.set(wc, g);
     var old = cssKeys.get(wc);
     cssKeys.delete(wc);
     if (old) { var r = wc.removeInsertedCSS(old); if (r && r.catch) r.catch(function () {}); }
@@ -122,7 +150,12 @@
 
   function inject(wc) {
     try {
-      if (!wc || wc.isDestroyed() || !injectHost(wc.getURL() || "")) return;
+      if (!wc || wc.isDestroyed()) return;
+      if (!injectHost(wc.getURL() || "")) {
+        if (cssGen.has(wc)) dropCss(wc);
+        injected.delete(wc);
+        return;
+      }
       var opts = settings();
       if (!opts.enabled) {
         dropCss(wc);
@@ -131,8 +164,19 @@
         return;
       }
       dropCss(wc);
+      var myGen = cssGen.get(wc);
       var q = wc.insertCSS(PAGE_CSS);
-      if (q && q.then) q.then(function (k) { if (!wc.isDestroyed()) cssKeys.set(wc, k); }, function () {});
+      if (q && q.then) {
+        q.then(function (k) {
+          if (wc.isDestroyed()) return;
+          if (cssGen.get(wc) !== myGen) {
+            var r = wc.removeInsertedCSS(k);
+            if (r && r.catch) r.catch(function () {});
+            return;
+          }
+          cssKeys.set(wc, k);
+        }, function () {});
+      }
       runPage(wc, opts);
     } catch (e) {}
   }
@@ -142,6 +186,13 @@
   });
 
   globalThis.__cdbGithubAlertsRefresh = function () {
+    var opts = settings();
+    log("refresh: githubAlerts=" + opts.enabled + ", githubAlertIcons=" + opts.icons);
     try { _electron.webContents.getAllWebContents().forEach(inject); } catch (e) {}
   };
+
+  setTimeout(function () {
+    var opts = settings();
+    log("installed (main); githubAlerts=" + opts.enabled + ", githubAlertIcons=" + opts.icons);
+  }, 0);
 })();

@@ -1,21 +1,25 @@
 /*
  * github_alerts_page.js - GitHub alert blockquotes as coloured callouts, in
- * claude.ai's chat. Embedded by js/github_alerts_main.js (which the patch
- * patches/community/add_feature_github_alerts.nim injects into the bundle).
+ * claude.ai / claude.com and 3P app://localhost chats. Embedded by
+ * js/github_alerts_main.js (which patches/community/add_feature_github_alerts.nim
+ * injects into the bundle).
  *
- * The renderer is remote claude.ai code and leaves a blockquote that opens with
- * `[!NOTE]` (or TIP / IMPORTANT / WARNING / CAUTION) as literal text. claude.ai
- * also merges adjacent quoted blocks into ONE <blockquote> whose <p> children
- * each start with a marker line, so the unit of work is a paragraph run: every
- * <p> whose text opens with a marker starts a callout, and the following
- * siblings up to the next marker belong to it.
+ * The renderer leaves a blockquote that opens with `[!NOTE]` (or TIP /
+ * IMPORTANT / WARNING / CAUTION) as literal text. Adjacent quoted blocks may
+ * also be merged into ONE <blockquote> whose <p> children each start with a
+ * marker line, so the unit of work is a child run: every <p> whose leading
+ * plain text opens with a marker starts a callout, and the following siblings
+ * up to the next marker belong to it.
  *
  * Only text values are changed and classes are added, plus one small title row
  * (an inline SVG icon and the label) when icons are on. Inline SVG is used
- * because the page CSP blocks data: images but not DOM nodes. Every inserted
- * title is checked for before an insert, and a stripped marker is remembered in
- * data-cdb-alert-type, so a later pass (React re-render, our own observer)
- * rebuilds the same state instead of dropping it.
+ * because the page CSP blocks data: images but not DOM nodes. Editable
+ * surfaces (ProseMirror, contenteditable, textarea), Extra settings, document
+ * prose and upstream-handled alert/reply blocks are skipped. Every stripped
+ * marker is remembered in data-cdb-alert-type and data-cdb-alert-raw (with the
+ * touched Text node tracked in a WeakMap) so later passes rebuild or clear
+ * state accurately on React re-renders/reuse and live teardown restores the
+ * literal marker text in place.
  *
  * The main half calls this file once per document with
  *   var __CDB_GH_ALERTS_OPTS = {"enabled":true,"icons":true};
@@ -40,9 +44,11 @@
     WARNING: { cls: "cdb-alert-warning", label: "Warning", icon: "warning" },
     CAUTION: { cls: "cdb-alert-caution", label: "Caution", icon: "caution" }
   };
-  var MARKER = /^[ \t]*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*\r?\n?/i;
-  var OWN = [
-    "cdb-alert-host", "cdb-alert-seg", "cdb-alert-head", "cdb-alert-head-empty",
+  var MARKER = /^[ \t]*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\](?:[ \t]*\r?\n|[ \t]+|[ \t]*$)/i;
+  var SKIP_ANCESTORS = '[contenteditable="true"], [contenteditable=""], .ProseMirror, textarea, .cdbx-root, .epitaxy-document-prose';
+  var HOST_CLS = "cdb-alert-host";
+  var SEG_OWN = [
+    "cdb-alert-seg", "cdb-alert-head", "cdb-alert-head-empty",
     "cdb-alert-first", "cdb-alert-last", "cdb-alert-only", "cdb-alert-titled",
     "cdb-alert-note", "cdb-alert-tip", "cdb-alert-important",
     "cdb-alert-warning", "cdb-alert-caution"
@@ -83,6 +89,7 @@
   var ICONS = true;
   var pending = false;
   var queue = [];
+  var strippedNodes = typeof WeakMap === "function" ? new WeakMap() : null;
 
   function log(msg) {
     try { if (window.console && console.log) console.log("[cdb-gh-alerts] " + msg); } catch (e) {}
@@ -92,15 +99,43 @@
     return el && el.tagName ? String(el.tagName).toLowerCase() : "";
   }
 
+  function isTitle(n) {
+    return !!(n && n.nodeType === 1 && n.classList && n.classList.contains("cdb-alert-title"));
+  }
+
+  function shouldSkip(bq) {
+    if (!bq || bq.nodeType !== 1 || tagOf(bq) !== "blockquote") return true;
+    if (bq.isContentEditable) return true;
+    if (bq.hasAttribute && (bq.hasAttribute("data-alert") || bq.hasAttribute("data-reply-quote-block"))) return true;
+    if (bq.closest && bq.closest(SKIP_ANCESTORS + ", blockquote[data-alert], [data-reply-quote-block]")) return true;
+    return false;
+  }
+
   function dotY(d) {
     var m = /^M8 ([0-9.]+)h/.exec(d);
     return m ? m[1] : "8";
   }
 
-  function stripPrefix(host, len) {
-    var walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, null);
-    var left = len, node, t;
-    while (left > 0 && (node = walker.nextNode())) {
+  function leadingRun(head) {
+    var kids = head.childNodes, nodes = [], parts = [], afterEl = null, i, n;
+    for (i = 0; i < kids.length; i++) {
+      n = kids[i];
+      if (isTitle(n)) continue;
+      if (n.nodeType === 3) {
+        nodes.push(n);
+        parts.push(n.nodeValue || "");
+      } else if (n.nodeType === 1) {
+        afterEl = n;
+        break;
+      }
+    }
+    return { nodes: nodes, text: parts.join(""), afterEl: afterEl };
+  }
+
+  function stripRun(nodes, len) {
+    var left = len, i, node, t;
+    for (i = 0; i < nodes.length && left > 0; i++) {
+      node = nodes[i];
       t = node.nodeValue || "";
       if (t.length <= left) {
         left -= t.length;
@@ -109,19 +144,44 @@
         node.nodeValue = t.slice(left);
         left = 0;
       }
+      if (strippedNodes) strippedNodes.set(node, node.nodeValue);
     }
   }
 
-  function dropOwn(el) {
+  function runMatchesStripped(nodes) {
+    if (!strippedNodes) return true;
+    if (!nodes.length || !strippedNodes.has(nodes[0])) return false;
+    for (var i = 0; i < nodes.length; i++) {
+      if (strippedNodes.has(nodes[i]) && strippedNodes.get(nodes[i]) !== nodes[i].nodeValue) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function dropSegOwn(el) {
     if (!el || !el.classList) return;
-    for (var i = 0; i < OWN.length; i++) el.classList.remove(OWN[i]);
+    for (var i = 0; i < SEG_OWN.length; i++) el.classList.remove(SEG_OWN[i]);
+  }
+
+  function clearLeadBr(el) {
+    var kids = el && el.children, i;
+    if (!kids) return;
+    for (i = 0; i < kids.length; i++) {
+      if (tagOf(kids[i]) === "br" && kids[i].classList) {
+        kids[i].classList.remove("cdb-alert-lead-br");
+      }
+    }
   }
 
   function reset(bq) {
     var i, kids;
-    dropOwn(bq);
+    if (bq && bq.classList) bq.classList.remove(HOST_CLS);
     kids = bq.children;
-    for (i = 0; i < kids.length; i++) dropOwn(kids[i]);
+    for (i = 0; i < kids.length; i++) {
+      dropSegOwn(kids[i]);
+      clearLeadBr(kids[i]);
+    }
   }
 
   function buildIcon(name) {
@@ -154,17 +214,28 @@
   function titleRow(head) {
     var kids = head.children, i;
     for (i = 0; i < kids.length; i++) {
-      if (kids[i].className && String(kids[i].className).indexOf("cdb-alert-title") > -1) return kids[i];
+      if (isTitle(kids[i])) return kids[i];
     }
     return null;
   }
 
+  function dropTitle(head) {
+    var row = titleRow(head);
+    if (row && row.parentNode) row.parentNode.removeChild(row);
+    if (head && head.classList) head.classList.remove("cdb-alert-titled");
+  }
+
   function ensureTitle(head, type) {
     var row = titleRow(head);
+    if (row && row.getAttribute("data-cdb-icon") !== type.icon) {
+      dropTitle(head);
+      row = null;
+    }
     if (!row) {
       row = document.createElement("span");
       row.className = "cdb-alert-title";
       row.setAttribute("contenteditable", "false");
+      row.setAttribute("data-cdb-icon", type.icon);
       var name = document.createElement("span");
       name.className = "cdb-alert-name";
       name.textContent = type.label;
@@ -175,33 +246,62 @@
     head.classList.add("cdb-alert-titled");
   }
 
-  function dropTitle(head) {
-    var row = titleRow(head);
-    if (row && row.parentNode) row.parentNode.removeChild(row);
-    head.classList.remove("cdb-alert-titled");
+  function syncHeadBody(head) {
+    clearLeadBr(head);
+    var kids = head.childNodes, i, n, leadBr = null, sawBody = false;
+    for (i = 0; i < kids.length; i++) {
+      n = kids[i];
+      if (isTitle(n)) continue;
+      if (n.nodeType === 3) {
+        if ((n.nodeValue || "").trim().length > 0) sawBody = true;
+      } else if (n.nodeType === 1) {
+        if (!leadBr && tagOf(n) === "br") {
+          leadBr = n;
+          if (n.classList) n.classList.add("cdb-alert-lead-br");
+        } else {
+          sawBody = true;
+        }
+      }
+      if (sawBody) break;
+    }
+    if (head.classList) {
+      if (!sawBody) head.classList.add("cdb-alert-head-empty");
+      else head.classList.remove("cdb-alert-head-empty");
+    }
   }
 
   function typeOf(el) {
     if (tagOf(el) !== "p") return null;
-    var m = MARKER.exec(el.textContent || "");
-    if (m) {
+    var run = leadingRun(el);
+    var m = run.text ? MARKER.exec(run.text) : null;
+    if (m && (!run.afterEl || tagOf(run.afterEl) === "br" || /\s$/.test(m[0]))) {
       var t = TYPES[m[1].toUpperCase()];
       if (!t) return null;
-      stripPrefix(el, m[0].length);
+      stripRun(run.nodes, m[0].length);
       if (el.setAttribute) {
         el.setAttribute("data-cdb-alert-type", m[1].toLowerCase());
-        // Remembered while the paragraph still holds no title row, so a later
-        // pass keeps the empty-head styling after the title is inserted.
-        el.setAttribute("data-cdb-alert-empty", (el.textContent || "").trim() ? "0" : "1");
+        el.setAttribute("data-cdb-alert-raw", m[0]);
       }
       return t;
     }
     var a = el.getAttribute ? el.getAttribute("data-cdb-alert-type") : null;
-    return a && TYPES[String(a).toUpperCase()] ? TYPES[String(a).toUpperCase()] : null;
+    if (!a || !TYPES[String(a).toUpperCase()]) return null;
+    if (
+      (run.nodes.length > 0 && !runMatchesStripped(run.nodes)) ||
+      (run.nodes.length === 0 && (!run.afterEl || tagOf(run.afterEl) !== "br"))
+    ) {
+      if (el.removeAttribute) {
+        el.removeAttribute("data-cdb-alert-type");
+        el.removeAttribute("data-cdb-alert-raw");
+      }
+      dropTitle(el);
+      return null;
+    }
+    return TYPES[String(a).toUpperCase()];
   }
 
   function upgrade(bq) {
-    if (!bq || bq.nodeType !== 1 || tagOf(bq) !== "blockquote") return false;
+    if (shouldSkip(bq)) return false;
     reset(bq);
 
     var kids = bq.children, i, el, type;
@@ -219,7 +319,7 @@
     }
     if (!groups.length) return false;
 
-    bq.classList.add("cdb-alert-host");
+    bq.classList.add(HOST_CLS);
     for (i = 0; i < groups.length; i++) {
       var g = groups[i], k, s;
       for (k = 0; k < g.segs.length; k++) {
@@ -230,9 +330,7 @@
         if (g.segs.length === 1) s.classList.add("cdb-alert-only");
       }
       var head = g.segs[0];
-      if (head.getAttribute && head.getAttribute("data-cdb-alert-empty") === "1") {
-        head.classList.add("cdb-alert-head-empty");
-      }
+      syncHeadBody(head);
       if (ICONS) ensureTitle(head, g.type);
       else dropTitle(head);
     }
@@ -244,11 +342,12 @@
     var list, i, n = 0;
     try { list = scope.querySelectorAll("blockquote"); } catch (e) { list = []; }
     for (i = 0; i < list.length; i++) if (upgrade(list[i])) n++;
+    if (scope === document) { try { obs.takeRecords(); } catch (e) {} }
     return n;
   }
 
   function push(bq) {
-    if (!bq || queue.indexOf(bq) > -1) return;
+    if (!bq || shouldSkip(bq) || queue.indexOf(bq) > -1) return;
     queue.push(bq);
   }
 
@@ -261,6 +360,7 @@
       if (batch[i].isConnected === false) continue;
       if (upgrade(batch[i])) n++;
     }
+    try { obs.takeRecords(); } catch (e) {}
     if (n) log("upgraded " + n + " blockquote(s)");
   }
 
@@ -271,13 +371,13 @@
     else window.setTimeout(flush, 16);
   }
 
-  function noteAncestors(node) {
+  function noteNode(node, isAdded) {
     if (!node) return;
-    if (node.nodeType !== 1) node = node.parentNode;
-    if (!node || node.nodeType !== 1) return;
-    var bq = node.closest ? node.closest("blockquote") : null;
-    if (bq) { push(bq); return; }
-    if (node.querySelectorAll) {
+    var el = node.nodeType === 1 ? node : node.parentNode;
+    if (!el || el.nodeType !== 1) return;
+    var bq = el.closest ? el.closest("blockquote") : null;
+    if (bq) push(bq);
+    if (isAdded && node.nodeType === 1 && node.querySelectorAll) {
       var list = node.querySelectorAll("blockquote"), i;
       for (i = 0; i < list.length; i++) push(list[i]);
     }
@@ -287,9 +387,9 @@
     if (!ENABLED) return;
     var i, j, added;
     for (i = 0; i < muts.length; i++) {
-      noteAncestors(muts[i].target);
+      noteNode(muts[i].target, false);
       added = muts[i].addedNodes;
-      if (added) for (j = 0; j < added.length; j++) noteAncestors(added[j]);
+      if (added) for (j = 0; j < added.length; j++) noteNode(added[j], true);
     }
     if (queue.length) schedule();
   });
@@ -306,9 +406,44 @@
     try { obs.disconnect(); } catch (e) {}
     queue.length = 0;
     pending = false;
-    var list, i, kids, j;
+
+    var marked, i, el, raw, bq;
+    try { marked = document.querySelectorAll("[data-cdb-alert-type]"); } catch (e) { marked = []; }
+    for (i = 0; i < marked.length; i++) {
+      el = marked[i];
+      if (!el || el.nodeType !== 1) continue;
+      if (el.isContentEditable) continue;
+      if (el.closest && el.closest(SKIP_ANCESTORS)) continue;
+      bq = el.closest ? el.closest("blockquote") : null;
+      if (bq && shouldSkip(bq)) continue;
+      dropTitle(el);
+      clearLeadBr(el);
+      raw = el.getAttribute ? el.getAttribute("data-cdb-alert-raw") || "" : "";
+      if (raw) {
+        var run = leadingRun(el), k;
+        if (run.nodes.length > 0) {
+          if (runMatchesStripped(run.nodes)) {
+            run.nodes[0].nodeValue = raw + (run.nodes[0].nodeValue || "");
+          }
+          if (strippedNodes) {
+            for (k = 0; k < run.nodes.length; k++) strippedNodes.delete(run.nodes[k]);
+          }
+        } else if (run.afterEl && tagOf(run.afterEl) === "br") {
+          el.insertBefore(document.createTextNode(raw), run.afterEl);
+        } else if (!run.afterEl && !el.firstChild) {
+          el.appendChild(document.createTextNode(raw));
+        }
+      }
+      if (el.removeAttribute) {
+        el.removeAttribute("data-cdb-alert-type");
+        el.removeAttribute("data-cdb-alert-raw");
+      }
+    }
+
+    var list, kids, j;
     try { list = document.querySelectorAll("blockquote"); } catch (e) { list = []; }
     for (i = 0; i < list.length; i++) {
+      if (shouldSkip(list[i])) continue;
       reset(list[i]);
       kids = list[i].children;
       for (j = 0; j < kids.length; j++) dropTitle(kids[j]);

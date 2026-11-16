@@ -127,6 +127,14 @@ ok(JSON.stringify(calls) === '[["cdb-chat-composer:read"],["cdb-chat-composer:se
 calls.length = 0;
 api.frostedReplyFieldRead(); api.frostedReplyFieldSet("yes"); api.frostedReplyFieldSet(true);
 ok(JSON.stringify(calls) === '[["cdb-reply-field:read"],["cdb-reply-field:set",false],["cdb-reply-field:set",true]]', "frost placement uses fixed channels and booleans");
+calls.length = 0;
+api.githubAlertsRead(); api.githubAlertsSet("yes"); api.githubAlertsSet(true);
+ok(JSON.stringify(calls) === '[["cdb-github-alerts:read"],["cdb-github-alerts:set",false],["cdb-github-alerts:set",true]]',
+   "GitHub alert callouts use fixed channels and boolean arguments");
+calls.length = 0;
+api.githubAlertIconsRead(); api.githubAlertIconsSet("yes"); api.githubAlertIconsSet(true);
+ok(JSON.stringify(calls) === '[["cdb-alert-icons:read"],["cdb-alert-icons:set",false],["cdb-alert-icons:set",true]]',
+   "Alert icons use fixed channels and boolean arguments");
 ok(typeof api.invoke !== "function" && typeof api.send !== "function", "no generic passthrough to arbitrary channels");
 
 console.log(`\n${pass} passed, ${fail} failed`);
