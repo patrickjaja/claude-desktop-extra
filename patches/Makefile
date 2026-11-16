@@ -185,6 +185,11 @@ core/add_tool_path_resolver: ../js/tool_path.js
 
 linux/fix_open_external_tool_path: ../js/open_external_tool_path.js
 
+community/add_feature_github_alerts: \
+  ../js/github_alerts_main.js \
+  ../js/github_alerts_page.js \
+  ../js/github_alerts.css
+
 community/add_feature_jira_tracker: \
   ../js/jira_tracker_adf.js \
   ../js/jira_tracker_client.js \

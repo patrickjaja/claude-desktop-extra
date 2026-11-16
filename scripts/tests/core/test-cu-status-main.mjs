@@ -1549,6 +1549,14 @@ section("Cowork (Linux): win32 refusals");
   ]);
   ok(chatOuts.every((c) => c && c.ok === false && /Linux only/.test(c.error)),
      "message input appearance channels answer Linux only on win32", J(chatOuts));
+  const alertOuts = await Promise.all([
+    w.call("cdb-github-alerts:read"),
+    w.call("cdb-github-alerts:set", true),
+    w.call("cdb-alert-icons:read"),
+    w.call("cdb-alert-icons:set", true),
+  ]);
+  ok(alertOuts.every((c) => J(c) === J({ ok: false, error: "GitHub alert callouts are Linux only" })),
+     "GitHub alert channels answer Linux only on win32", J(alertOuts));
 }
 
 server.close();

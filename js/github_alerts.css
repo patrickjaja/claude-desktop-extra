@@ -1,0 +1,157 @@
+/*
+ * Styling for the callouts js/github_alerts_page.js builds. Inserted into
+ * claude.ai / claude.com and 3P app://localhost chat pages with
+ * webContents.insertCSS (not subject to the page CSP) by
+ * js/github_alerts_main.js.
+ *
+ * claude.ai merges adjacent quoted blocks into one <blockquote>, so the visual
+ * unit is the child run, not the blockquote: the quote itself is made
+ * invisible and each run paints its own accent bar, label and icon (while any
+ * leading non-alert quote paragraph keeps a standard quote border).
+ *
+ * The look follows GitHub's alerts and the Antigravity editor: an accent bar
+ * with rounded end caps, a small icon and a sentence-case label in the accent
+ * colour, no fill, no border radius on the body, and a clear gap above each
+ * callout.
+ *
+ * Colours come from claude.ai's own HSL triplet tokens, so light and dark mode
+ * follow, and a theme's tokens win when it redefines them. The fallback in each
+ * var() keeps a callout readable on a page that ships none of them.
+ */
+blockquote.cdb-alert-host {
+  border: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  quotes: none !important;
+  font-style: normal !important;
+}
+
+blockquote.cdb-alert-host > .cdb-alert-seg {
+  margin: 0 !important;
+  padding: 0.2rem 0 0.2rem 0.85rem;
+  border-left: 3px solid var(--cdb-accent, hsl(var(--accent-100, 215 80% 55%))) !important;
+  font-style: normal !important;
+  quotes: none !important;
+}
+
+blockquote.cdb-alert-host > :not(pre).cdb-alert-seg {
+  border-top: 0 !important;
+  border-right: 0 !important;
+  border-bottom: 0 !important;
+  background: none !important;
+}
+
+blockquote.cdb-alert-host > p.cdb-alert-seg {
+  padding-top: 0.1rem;
+  padding-bottom: 0.1rem;
+}
+
+blockquote.cdb-alert-host > pre.cdb-alert-seg {
+  padding: 0.5rem 0.75rem 0.5rem 0.85rem;
+}
+
+blockquote.cdb-alert-host > ul.cdb-alert-seg,
+blockquote.cdb-alert-host > ol.cdb-alert-seg {
+  padding-left: 2rem;
+}
+
+blockquote.cdb-alert-host > :not(.cdb-alert-seg) {
+  padding-left: 0.85rem;
+  border-left: 2px solid hsl(var(--border-200, 0 0% 50% / 0.35));
+}
+
+/* The label sits on the head paragraph. Its own line box is collapsed when it
+   holds nothing but the marker, so no empty line appears under the label. */
+blockquote.cdb-alert-host > p.cdb-alert-head {
+  padding-top: 0.12rem;
+}
+
+blockquote.cdb-alert-host > p.cdb-alert-head-empty {
+  line-height: 0;
+  padding-bottom: 0.1rem;
+}
+
+/* Without icons the label is drawn by the paragraph's ::before. */
+blockquote.cdb-alert-host > p.cdb-alert-head::before {
+  content: var(--cdb-label, "Note");
+  display: block;
+  font-weight: 700;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--cdb-accent, hsl(var(--accent-100, 215 80% 55%)));
+  margin: 0 0 0.35rem;
+}
+
+/* With icons the label lives in the inserted title row, so the CSS label is
+   switched off. */
+blockquote.cdb-alert-host > p.cdb-alert-titled::before {
+  content: none;
+}
+
+blockquote.cdb-alert-host > p.cdb-alert-head > .cdb-alert-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.4rem;
+  font-weight: 700;
+  font-size: 0.875rem;
+  line-height: 1.25;
+  color: var(--cdb-accent, hsl(var(--accent-100, 215 80% 55%)));
+  user-select: none;
+}
+
+blockquote.cdb-alert-host .cdb-alert-ico {
+  width: 1em;
+  height: 1em;
+  flex: none;
+}
+
+/* A marker line followed by content on the next line leaves a leading <br>
+   behind. Hiding only that <br> removes the blank line without disturbing
+   mid-paragraph line breaks or React's DOM. */
+blockquote.cdb-alert-host > p.cdb-alert-head > br.cdb-alert-lead-br {
+  display: none;
+}
+
+blockquote.cdb-alert-host > p.cdb-alert-head:not(:first-child) {
+  margin-top: 1.5rem !important;
+}
+
+blockquote.cdb-alert-host > .cdb-alert-last {
+  padding-bottom: 0.2rem;
+}
+
+/* Round the ends of the accent bar: the first segment of a callout carries the
+   top cap, the last one the bottom cap. */
+blockquote.cdb-alert-host > .cdb-alert-first {
+  border-top-left-radius: 3px;
+}
+
+blockquote.cdb-alert-host > .cdb-alert-last {
+  border-bottom-left-radius: 3px;
+}
+
+blockquote.cdb-alert-host > .cdb-alert-note {
+  --cdb-accent: hsl(var(--accent-100, 215 80% 55%));
+  --cdb-label: "Note";
+}
+
+blockquote.cdb-alert-host > .cdb-alert-tip {
+  --cdb-accent: hsl(var(--success-100, 150 60% 40%));
+  --cdb-label: "Tip";
+}
+
+blockquote.cdb-alert-host > .cdb-alert-important {
+  --cdb-accent: hsl(var(--accent-pro-100, 265 70% 60%));
+  --cdb-label: "Important";
+}
+
+blockquote.cdb-alert-host > .cdb-alert-warning {
+  --cdb-accent: hsl(var(--warning-100, 35 90% 50%));
+  --cdb-label: "Warning";
+}
+
+blockquote.cdb-alert-host > .cdb-alert-caution {
+  --cdb-accent: hsl(var(--danger-100, 0 75% 55%));
+  --cdb-label: "Caution";
+}

@@ -1104,7 +1104,7 @@ async function featuresPanel(featuresItem) {
     ok(titlesIn(subGroup[0]).join("|") === "Trusted Auto-fix PR authors|Auto-fix notices: ready to merge, comments after merge|Auto-archive delay after a PR merges or closes",
        "Pull requests rows: " + titlesIn(subGroup[0]).join("|"));
     // The harness bridge has no tray or developer-tools halves, so those two rows are skipped here.
-    const appOrder = ["Hide window controls", "Native titlebar", "Transparent window", "Always use the white tray icon", "Theme picker", "Frosted message input", "Frost only the input field", "Developer tools"];
+    const appOrder = ["Hide window controls", "Native titlebar", "Transparent window", "Always use the white tray icon", "Theme picker", "Frosted message input", "Frost only the input field", "GitHub alert callouts", "Alert icons", "Developer tools"];
     ok(titlesIn(topGroups[1]).join("|") === appOrder.filter(function (t) { return titlesIn(topGroups[1]).indexOf(t) >= 0; }).join("|") &&
        titlesIn(topGroups[1]).length >= 4,
        "App and window rows in order: " + titlesIn(topGroups[1]).join("|"));
@@ -1261,6 +1261,42 @@ async function featuresPanel(featuresItem) {
     const lp = document.querySelector(".cdbx-panel");
     ok(Array.from(lp.querySelectorAll(".cdbx-group")).some(function (g) { return g.style.display !== "none" && g.firstElementChild.textContent === "Computer Use"; }),
        "Linux again: the Computer Use group is back");
+  }
+  // GitHub alert callouts & Alert icons: toggle live in Community Features, and
+  // hide on the downstream Windows build when main answers "Linux only".
+  {
+    const gaSel = '.cdbx-switch[aria-label="GitHub alert callouts"]';
+    const giSel = '.cdbx-switch[aria-label="Alert icons"]';
+    const gp = document.querySelector(".cdbx-panel");
+    const ga = gp && gp.querySelector(gaSel);
+    const gi = gp && gp.querySelector(giSel);
+    ok(!!ga && !!gi, "renders the GitHub alert callouts and Alert icons switches");
+    if (ga && gi) {
+      ok(ga.getAttribute("aria-checked") === "false" && gi.getAttribute("aria-checked") === "false",
+         "both GitHub alert switches start off by default");
+      ga.click();
+      await sleep(40);
+      gi.click();
+      await sleep(40);
+      ok((window.__ghAlertsCalls || []).join(",") === "true" && ga.getAttribute("aria-checked") === "true" &&
+         (window.__ghIconsCalls || []).join(",") === "true" && gi.getAttribute("aria-checked") === "true",
+         "both GitHub alert switches toggle live");
+      ga.click();
+      await sleep(40);
+      gi.click();
+      await sleep(40);
+      ok(ga.getAttribute("aria-checked") === "false" && gi.getAttribute("aria-checked") === "false",
+         "and both GitHub alert switches restore cleanly");
+    }
+    window.__ghAlertsState = { ok: false, error: "GitHub alert callouts are Linux only" };
+    window.__ghIconsState = { ok: false, error: "GitHub alert callouts are Linux only" };
+    featuresItem.click();
+    await sleep(150);
+    const wp2 = document.querySelector(".cdbx-panel");
+    ok(!wp2.querySelector(gaSel) && !wp2.querySelector(giSel),
+       "win32 ('Linux only'): both GitHub alert switches hide");
+    window.__ghAlertsState = undefined;
+    window.__ghIconsState = undefined;
   }
   // Jira issue tracker: the i beside the token label holds the scope list (hover or focus shows it,
   // a click pins it, Escape or a click outside closes it); Test connection reports one line per feature.
@@ -4114,6 +4150,10 @@ window.cdbExtra = {
   frostedReplyFieldSet: function (on) { window.__frostedField=on; return Promise.resolve({ok:true}); },
   transparentChatComposerRead: function () { return Promise.resolve({ok:true, enabled:!!window.__transparentReply}); },
   transparentChatComposerSet: function (on) { window.__transparentReply=on; return Promise.resolve({ok:true}); },
+  githubAlertsRead: function () { return Promise.resolve(window.__ghAlertsState || { ok: true, enabled: !!window.__ghAlertsOn, lockedByJsonc: null }); },
+  githubAlertsSet: function (on) { window.__ghAlertsCalls = (window.__ghAlertsCalls || []).concat([on]); window.__ghAlertsOn = on; return Promise.resolve({ ok: true, enabled: on }); },
+  githubAlertIconsRead: function () { return Promise.resolve(window.__ghIconsState || { ok: true, enabled: !!window.__ghIconsOn, lockedByJsonc: null }); },
+  githubAlertIconsSet: function (on) { window.__ghIconsCalls = (window.__ghIconsCalls || []).concat([on]); window.__ghIconsOn = on; return Promise.resolve({ ok: true, enabled: on }); },
   themesList: stub({ ok: true, entries: window.__themes, active: "mario",
     configPath: "/home/u/.config/Claude/claude-desktop-extra.jsonc",
     savePath: "/home/u/.config/Claude/claude-desktop-extra.json" }),
