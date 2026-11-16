@@ -1,23 +1,22 @@
 # Palette catalog
 
-Every palette bundled with the package - **124** of them: the **7 curated built-in
-themes**, **13 gaming & show palettes** (`js/gaming_themes.json`), **20 animated Scene
-palettes** (`js/scene_themes.json`), and **84 community palettes** (`104` swatch cards below).
+Every palette bundled with the package - **150** of them: the **7 curated built-in
+themes**, **15 Linux distro palettes** (`js/linux_themes.json`), **12 gaming
+palettes** (`js/gaming_themes.json`), **12 Lollipop show palettes**
+(`js/lollipop_themes.json`), **20 animated Scene palettes** (`js/scene_themes.json`),
+and **84 community palettes** (`130` swatch cards below).
 Nothing here needs a `themes` block in your config - each one is a complete dual
 light/dark token set that lives inside the package, so the app's own light/dark toggle
 (Settings -> Appearance) keeps working whichever you pick.
 
 **Every one of them also ships a custom loading spinner**, drawn from the palette's name
-or colors: Claude's brand star becomes Lollipop & Pin for BFDI, a stag for Everdeer, a
-great-wave curl for the Kanagawa family, a curled cat for the Catppuccins, a d-pad for
-Game Boy. Switching theme reshapes the glyph immediately, in every open window. The
-shapes and their spec format are catalogued in
-[baseline/SPINNER_SHAPES.md](../baseline/SPINNER_SHAPES.md).
+or colors: Claude's brand star becomes Firey & Leafy for Season 1 BFDI, Lollipop & Pin for `bfdi-lollipop-pin`, official distro logos for CachyOS / Arch / Ubuntu / Fedora / NixOS / Mint / LFS, a stag for Everdeer, a great-wave curl for Kanagawa, a curled cat for the Catppuccins, a d-pad for Game Boy. Switching theme reshapes the glyph immediately, in every open window. The shapes and their spec format are catalogued in [baseline/SPINNER_SHAPES.md](../baseline/SPINNER_SHAPES.md).
 
-Mario ships as one of the seven built-ins but carries the gaming category, so the app
-groups it into the **Gaming & Shows** section - and so does this catalog: the section
-below has fourteen cards (`mario`, `playstation`, `gameboy`, `final-fantasy`, `zelda`,
-`warcraft`, `dragonball`, `gta-i`..`gta-vi`, and `bfdi`).
+Mario ships as one of the seven built-ins but carries `"category": "gaming"`, so the app
+groups it into the **Gaming** section alongside the twelve palettes in `js/gaming_themes.json`
+(`mario`, `playstation`, `gameboy`, `final-fantasy`, `zelda`, `warcraft`, `dragonball`,
+`gta-i`..`gta-vi`). The **Linux** section sits near the top after **Your themes**, and
+the **Lollipop** section sits at the end after **Common**.
 
 ## How to activate a palette
 
@@ -48,7 +47,11 @@ surface, text, primary accent, secondary accent, error, warning, success, border
 
 **Built-in:** [Sweet](#sweet) · [Nord](#nord) · [Catppuccin Mocha](#catppuccin-mocha) · [Catppuccin Macchiato](#catppuccin-macchiato) · [Catppuccin Frappe](#catppuccin-frappe) · [Catppuccin Latte](#catppuccin-latte)
 
-**Gaming & Shows:** [Mario](#mario) · [PlayStation](#playstation) · [Game Boy](#game-boy) · [Final Fantasy](#final-fantasy) · [Zelda](#zelda) · [Warcraft](#warcraft) · [Dragon Ball](#dragon-ball) · [GTA I](#gta-i) · [GTA II](#gta-ii) · [GTA III](#gta-iii) · [GTA IV](#gta-iv) · [GTA V](#gta-v) · [GTA VI](#gta-vi) · [Battle for Dream Island](#battle-for-dream-island)
+**Linux:** [Arch Linux](#arch-linux) · [CachyOS](#cachyos) · [Ubuntu](#ubuntu) · [Linux Mint](#linux-mint) · [Fedora](#fedora) · [Debian](#debian) · [NixOS](#nixos) · [openSUSE](#opensuse) · [Pop!_OS](#pop_os) · [Manjaro](#manjaro) · [EndeavourOS](#endeavouros) · [Kali Linux](#kali-linux) · [Gentoo](#gentoo) · [Zorin OS](#zorin-os) · [Linux From Scratch](#linux-from-scratch)
+
+**Gaming:** [Mario](#mario) · [PlayStation](#playstation) · [Game Boy](#game-boy) · [Final Fantasy](#final-fantasy) · [Zelda](#zelda) · [Warcraft](#warcraft) · [Dragon Ball](#dragon-ball) · [GTA I](#gta-i) · [GTA II](#gta-ii) · [GTA III](#gta-iii) · [GTA IV](#gta-iv) · [GTA V](#gta-v) · [GTA VI](#gta-vi)
+
+**Lollipop:** [Battle for Dream Island](#battle-for-dream-island) · [BFDI Lollipop and Pin](#bfdi-lollipop-and-pin) · [BFDIA](#bfdia) · [IDFB](#idfb) · [BFB](#bfb) · [TPOT](#tpot) · [BFDIE](#bfdie) · [Inanimate Insanity](#inanimate-insanity) · [Inanimate Insanity II](#inanimate-insanity-ii) · [Inanimate Insanity Invitational](#inanimate-insanity-invitational) · [Inanimate Insanity IV](#inanimate-insanity-iv) · [Numberblocks](#numberblocks)
 
 **Community:**
 
@@ -77,7 +80,7 @@ surface, text, primary accent, secondary accent, error, warning, success, border
 
 The curated themes, each with a hand-drawn loading spinner. Details and the spinner spec
 are in [README.md](README.md#built-in-themes-dual-variant). Mario is the seventh; it is
-catalogued under [Gaming & Shows](#gaming--shows-themes).
+catalogued under [Gaming](#gaming-themes).
 
 ### Sweet
 
@@ -115,15 +118,103 @@ catalogued under [Gaming & Shows](#gaming--shows-themes).
 
 ![Catppuccin Latte palette](palettes/catppuccin-latte.svg)
 
-## Gaming & Shows themes
+## Linux themes
 
-Fourteen palettes drawn from games and shows, each with a custom spinner and dual-mode
-animated SVG backdrop. They get their own divider-separated **Gaming & Shows** section
-in the <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> picker and in Settings -> Extra ->
-Themes. All fourteen resolve at built-in rank, so `activeTheme` plus the slug is all a
-config needs; the thirteen besides Mario (`playstation`, `gameboy`, `final-fantasy`,
-`zelda`, `warcraft`, `dragonball`, `gta-i`..`gta-vi`, `bfdi`) are authored in
-`js/gaming_themes.json`.
+Fifteen minimal palettes drawn from popular Linux distributions, each with its official logo SVG spinner and a quiet geometric animated backdrop (`js/linux_themes.json`). They appear in the **Linux** section right after **Your themes**.
+
+### Arch Linux
+
+`"activeTheme": "arch-linux"` - ice porcelain & Arch blue (light) / slate & Arch cyan (dark), Arch spear spinner.
+
+![Arch Linux palette](palettes/arch-linux.svg)
+
+### CachyOS
+
+`"activeTheme": "cachyos"` - mint porcelain & oceanic teal (light) / dark carbon teal & cyan (dark), faceted C & orbs `flip` spinner.
+
+![CachyOS palette](palettes/cachyos.svg)
+
+### Ubuntu
+
+`"activeTheme": "ubuntu"` - Yaru warm ivory & Canonical orange (light) / aubergine charcoal (dark), Circle of Friends spinner.
+
+![Ubuntu palette](palettes/ubuntu.svg)
+
+### Linux Mint
+
+`"activeTheme": "linux-mint"` - sage paper & Mint leaf green (light) / Cinnamon dark slate (dark), LM leaf crest spinner.
+
+![Linux Mint palette](palettes/linux-mint.svg)
+
+### Fedora
+
+`"activeTheme": "fedora"` - Adwaita cool porcelain & Fedora blue (light) / deep Adwaita slate (dark), infinity-f spinner.
+
+![Fedora palette](palettes/fedora.svg)
+
+### Debian
+
+`"activeTheme": "debian"` - warm paper & Debian crimson (light) / burgundy-slate & ruby swirl (dark), Debian spiral spinner.
+
+![Debian palette](palettes/debian.svg)
+
+### NixOS
+
+`"activeTheme": "nixos"` - frost porcelain & Nix blue (light) / functional slate & sky lambdas (dark), 6-lambda snowflake spinner.
+
+![NixOS palette](palettes/nixos.svg)
+
+### openSUSE
+
+`"activeTheme": "opensuse"` - Tumbleweed mist & Geeko green (light) / pine slate & emerald-teal (dark), Geeko chameleon spinner.
+
+![openSUSE palette](palettes/opensuse.svg)
+
+### Pop!_OS
+
+`"activeTheme": "pop-os"` - System76 warm cream & teal (light) / Pop-Dark charcoal & COSMIC amber (dark), `P!_` `flip` spinner.
+
+![Pop!_OS palette](palettes/pop-os.svg)
+
+### Manjaro
+
+`"activeTheme": "manjaro"` - Breath mint paper (light) / Breath dark slate & Maia jade (dark), 3-pillar M spinner.
+
+![Manjaro palette](palettes/manjaro.svg)
+
+### EndeavourOS
+
+`"activeTheme": "endeavouros"` - starlight lavender (light) / deep space indigo & periwinkle/coral (dark), tri-color sail spinner.
+
+![EndeavourOS palette](palettes/endeavouros.svg)
+
+### Kali Linux
+
+`"activeTheme": "kali-linux"` - cool steel & cobalt (light) / obsidian cyber slate & Kali blue (dark), coiled dragon spinner.
+
+![Kali Linux palette](palettes/kali-linux.svg)
+
+### Gentoo
+
+`"activeTheme": "gentoo"` - silver-lavender & Portage amethyst (light) / graphite-violet (dark), Gentoo `g`-signet spinner.
+
+![Gentoo palette](palettes/gentoo.svg)
+
+### Zorin OS
+
+`"activeTheme": "zorin-os"` - frost azure & sky blue (light) / midnight glass & electric azure (dark), hexagonal `Z` chevron spinner.
+
+![Zorin OS palette](palettes/zorin-os.svg)
+
+### Linux From Scratch
+
+`"activeTheme": "linux-from-scratch"` - DocBook paper & LFS navy (light) / classic TTY dark & phosphor green (dark), Tux-in-jigsaw `flip` spinner.
+
+![Linux From Scratch palette](palettes/linux-from-scratch.svg)
+
+## Gaming themes
+
+Thirteen palettes drawn from classic and modern games, each with a custom spinner and dual-mode animated SVG backdrop (`mario` + 12 entries in `js/gaming_themes.json`). They appear in the **Gaming** section.
 
 ### Mario
 
@@ -203,11 +294,81 @@ config needs; the thirteen besides Mario (`playstation`, `gameboy`, `final-fanta
 
 ![GTA VI palette](palettes/gta-vi.svg)
 
+## Lollipop themes
+
+Twelve object-show and kids palettes (`js/lollipop_themes.json`), each with a 2-frame `flip` character spinner and dual-mode animated SVG backdrop. Grouped at the end of the picker and Settings -> Extra -> Themes after **Common**.
+
 ### Battle for Dream Island
 
-`"activeTheme": "bfdi"` - Goiky sunlit cyan sky with Heliotrope violet accent (light) / starry Yoyleland indigo-purple night with Yoyleberry violet accent (dark). Spinner: Lollipop & upright Pin duo (`flip`).
+`"activeTheme": "bfdi"` - Season 1 Goiky sky-blue & emerald meadows (light) / starry Goiky night illuminated by Firey (dark), Firey & Leafy `flip` spinner.
 
 ![Battle for Dream Island palette](palettes/bfdi.svg)
+
+### BFDI Lollipop and Pin
+
+`"activeTheme": "bfdi-lollipop-pin"` - Goiky sunlit cyan sky with Heliotrope violet accent (light) / starry Yoyleland indigo-purple night (dark), Lollipop & upright Pin duo `flip` spinner.
+
+![BFDI Lollipop and Pin palette](palettes/bfdi-lollipop-pin.svg)
+
+### BFDIA
+
+`"activeTheme": "bfdia"` - warm tangerine & gold (light) / Evil Forest crimson night (dark), BFDIA Challenge/Prize Wheel `flip` spinner.
+
+![BFDIA palette](palettes/bfdia.svg)
+
+### IDFB
+
+`"activeTheme": "idfb"` - overcast Yoyle ivory & antique gold (light) / Yoyle City twilight violet (dark), Wall Teleporter / Yoyle Needy `flip` spinner.
+
+![IDFB palette](palettes/idfb.svg)
+
+### BFB
+
+`"activeTheme": "bfb"` - Pillary sky, Four blue & X gold (light) / Algebra twilight (dark), Four & X duo `flip` spinner.
+
+![BFB palette](palettes/bfb.svg)
+
+### TPOT
+
+`"activeTheme": "tpot"` - Goiky mint & Two emerald (light) / starry TPOT night & power gold (dark), Algebralien Two `flip` spinner.
+
+![TPOT palette](palettes/tpot.svg)
+
+### BFDIE
+
+`"activeTheme": "bfdie"` - pale aqua & olive-chartreuse (light) / Nightmare Island pine & crimson mist (dark), `ELSEWHERE...` wooden signpost `flip` spinner.
+
+![BFDIE palette](palettes/bfdie.svg)
+
+### Inanimate Insanity
+
+`"activeTheme": "ii"` - Miyazaki Verdant green & sky cyan (light) / Elimination night slate (dark), MePhone4 (+ cookie) `flip` spinner.
+
+![Inanimate Insanity palette](palettes/ii.svg)
+
+### Inanimate Insanity II
+
+`"activeTheme": "ii2"` - MeOS silver-sky & royal blue (light) / storm-navy & dramatic crimson (dark), circular `II` Meeple seal `flip` spinner.
+
+![Inanimate Insanity II palette](palettes/ii2.svg)
+
+### Inanimate Insanity Invitational
+
+`"activeTheme": "iii"` - Paradise lagoon sand & tropical palm green (light) / bioluminescent night lagoon (dark), `III` Volcano & 3-Palm crest `flip` spinner.
+
+![Inanimate Insanity Invitational palette](palettes/iii.svg)
+
+### Inanimate Insanity IV
+
+`"activeTheme": "ii4"` - mint-cyan daylight, Test Tube emerald & Fan coral (light) / live-show twilight stage (dark), Test Tube (`I`) + Fan (`V`) `flip` spinner.
+
+![Inanimate Insanity IV palette](palettes/ii4.svg)
+
+### Numberblocks
+
+`"activeTheme": "numberblocks"` - bright Numberland rainbow sky (light) / starry Numberland cosmic space (dark), Numberblock One `flip` spinner.
+
+![Numberblocks palette](palettes/numberblocks.svg)
 
 ## Community palettes
 

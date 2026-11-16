@@ -44,6 +44,8 @@ await runSuite(async () => {
   const r = reporter("Theme engine (main process)");
   const { themes: T, appEvents, diag } = installEngine({ config: CONFIG });
   const gaming = readJson("js/gaming_themes.json");
+  const linuxThemes = readJson("js/linux_themes.json");
+  const lollipopThemes = readJson("js/lollipop_themes.json");
   const community = readJson("js/community_themes.json");
 
   r.section("[1] registry: source is the resolution tier, category is the grouping");
@@ -54,10 +56,20 @@ await runSuite(async () => {
   r.ok(entries.every((e) => typeof e.category === "string"),
      "every entry carries a category string");
   const gslugs = Object.keys(gaming);
-  r.ok(gslugs.length > 0 && gslugs.every((s) => by[s] && by[s].source === "builtin" &&
+  const lslugs = Object.keys(linuxThemes);
+  const pslugs = Object.keys(lollipopThemes);
+  r.ok(gslugs.length === 12 && gslugs.every((s) => by[s] && by[s].source === "builtin" &&
        by[s].category === "gaming"),
-     "bundled gaming palettes are builtin-tier, gaming-category",
+     "bundled gaming palettes (12) are builtin-tier, gaming-category",
      gslugs.length + " palettes: " + gslugs.join(","));
+  r.ok(lslugs.length === 15 && lslugs.every((s) => by[s] && by[s].source === "builtin" &&
+       by[s].category === "linux" && by[s].light && by[s].dark),
+     "bundled linux palettes (15) are builtin-tier, linux-category with both variants",
+     lslugs.length + " palettes");
+  r.ok(pslugs.length === 12 && pslugs.every((s) => by[s] && by[s].source === "builtin" &&
+       by[s].category === "lollipop" && by[s].light && by[s].dark),
+     "bundled lollipop palettes (12) are builtin-tier, lollipop-category with both variants",
+     pslugs.length + " palettes");
   r.ok(gslugs.every((s) => by[s].light && by[s].dark), "gaming entries expose both variants");
   r.ok(by["mario"] && by["mario"].category === "gaming", "mario is categorised gaming",
      by["mario"] && JSON.stringify(by["mario"].category));
@@ -118,17 +130,19 @@ await runSuite(async () => {
   // Data-driven: whatever js/gaming_themes.json ships today must arrive unchanged. The
   // same __cdb_buildCss line reads `theme.spinner` for community palettes, so community
   // entries are covered by the loop below as soon as they carry one.
-  let checkedGaming = 0;
-  for (const slug of gslugs) {
-    if (!gaming[slug].spinner) continue;
-    T.apply(slug);
-    await settle();
-    r.ok(JSON.stringify(pushedSpec(wc)) === JSON.stringify(gaming[slug].spinner),
-       "gaming '" + slug + "' spinner pushed verbatim", gaming[slug].spinner.animation);
-    checkedGaming++;
+  let checkedBundled = 0;
+  for (const [label, col] of [["gaming", gaming], ["linux", linuxThemes], ["lollipop", lollipopThemes]]) {
+    for (const slug of Object.keys(col)) {
+      if (!col[slug].spinner) continue;
+      T.apply(slug);
+      await settle();
+      r.ok(JSON.stringify(pushedSpec(wc)) === JSON.stringify(col[slug].spinner),
+         label + " '" + slug + "' spinner pushed verbatim", col[slug].spinner.animation);
+      checkedBundled++;
+    }
   }
-  r.ok(checkedGaming > 0, "at least one bundled gaming spinner was checked",
-     checkedGaming + " of " + gslugs.length);
+  r.ok(checkedBundled === 39, "all 39 bundled linux/gaming/lollipop spinners were checked",
+     checkedBundled + " of " + (gslugs.length + lslugs.length + pslugs.length));
   const cWithSpinner = cslugs.filter((s) => community[s].spinner);
   if (cWithSpinner.length === 0) {
     r.note("0 community palettes carry a spinner yet; the extraction path they will use " +
@@ -172,20 +186,21 @@ await runSuite(async () => {
 
   r.section("[11] animated SVG backdrops + scene themes");
   const backdrops = T.backdrops();
-  r.ok(Array.isArray(backdrops) && backdrops.length === 34,
-     "backdrops() lists all 34 scenes (20 upstream + 14 gaming)",
+  r.ok(Array.isArray(backdrops) && backdrops.length === 60,
+     "backdrops() lists all 60 scenes (20 upstream + 15 linux + 13 gaming + 12 lollipop)",
      String(backdrops && backdrops.length));
   const sceneReg = globalThis.__cdbBackdropScenes;
+  const dualCats = new Set(["linux", "gaming", "lollipop"]);
   r.ok(backdrops.every((b) => {
     const s = sceneReg && sceneReg.get && sceneReg.get(b.id);
     if (!s || typeof s.svg !== "string" || !s.svg.startsWith("<svg")) return false;
-    if (b.category === "gaming") {
+    if (dualCats.has(b.category)) {
       return typeof s.lightSvg === "string" && s.lightSvg.startsWith("<svg") &&
              typeof s.darkSvg === "string" && s.darkSvg.startsWith("<svg") &&
              s.lightSvg !== s.darkSvg;
     }
     return true;
-  }), "all 34 scenes evaluate valid <svg> markup, and all 14 gaming scenes have distinct lightSvg + darkSvg");
+  }), "all 60 scenes evaluate valid <svg> markup, and all 40 bespoke scenes have distinct lightSvg + darkSvg");
   function findTransformAnimCollisions(svg) {
     const styleMatch = /<style>([\s\S]*?)<\/style>/.exec(svg);
     if (!styleMatch) return [];
@@ -222,7 +237,7 @@ await runSuite(async () => {
     return hits;
   }
   const transformCollisions = [];
-  for (const b of backdrops.filter((x) => x.category === "gaming")) {
+  for (const b of backdrops.filter((x) => dualCats.has(x.category))) {
     const s = sceneReg && sceneReg.get && sceneReg.get(b.id);
     if (!s) continue;
     for (const variant of ["svg", "lightSvg", "darkSvg"]) {
@@ -232,33 +247,33 @@ await runSuite(async () => {
     }
   }
   r.ok(transformCollisions.length === 0,
-     "no gaming scene mixes SVG transform attribute with a transform-animating CSS class",
+     "no bespoke scene mixes SVG transform attribute with a transform-animating CSS class",
      transformCollisions.join("; "));
-  const gamingBackdropGaps = [];
-  for (const b of backdrops.filter((x) => x.category === "gaming")) {
+  const bespokeBackdropGaps = [];
+  for (const b of backdrops.filter((x) => dualCats.has(x.category))) {
     const s = sceneReg && sceneReg.get && sceneReg.get(b.id);
     for (const variant of ["lightSvg", "darkSvg"]) {
       const svg = s && s[variant];
       if (typeof svg !== "string") {
-        gamingBackdropGaps.push(b.id + ":" + variant + "(missing)");
+        bespokeBackdropGaps.push(b.id + ":" + variant + "(missing)");
         continue;
       }
-      if (!/\bcdb-flank-l\b/.test(svg)) gamingBackdropGaps.push(b.id + ":" + variant + "(no cdb-flank-l)");
-      if (!/\bcdb-flank-r\b/.test(svg)) gamingBackdropGaps.push(b.id + ":" + variant + "(no cdb-flank-r)");
-      if (!/width=["']3200["']/.test(svg)) gamingBackdropGaps.push(b.id + ":" + variant + "(no width=3200 bleed)");
+      if (!/\bcdb-flank-l\b/.test(svg)) bespokeBackdropGaps.push(b.id + ":" + variant + "(no cdb-flank-l)");
+      if (!/\bcdb-flank-r\b/.test(svg)) bespokeBackdropGaps.push(b.id + ":" + variant + "(no cdb-flank-r)");
+      if (!/width=["']3200["']/.test(svg)) bespokeBackdropGaps.push(b.id + ":" + variant + "(no width=3200 bleed)");
       const tagRe2 = /<[A-Za-z][\w:-]*\b([^>]*)>/g;
       let tm;
       while ((tm = tagRe2.exec(svg)) !== null) {
         if (/\bclass\s*=\s*["'][^"']*\bcdb-(?:flank-(?:l|r|lt|rt)|pane-c)\b/.test(tm[1]) &&
             /\btransform\s*=/.test(tm[1])) {
-          gamingBackdropGaps.push(b.id + ":" + variant + "(flank tag also has SVG transform)");
+          bespokeBackdropGaps.push(b.id + ":" + variant + "(flank tag also has SVG transform)");
         }
       }
     }
   }
-  r.ok(gamingBackdropGaps.length === 0,
-     "all gaming scenes include .cdb-flank-l, .cdb-flank-r, and width=3200 full-bleed layers in both lightSvg and darkSvg",
-     gamingBackdropGaps.join("; "));
+  r.ok(bespokeBackdropGaps.length === 0,
+     "all 40 bespoke scenes include .cdb-flank-l, .cdb-flank-r, and width=3200 full-bleed layers in both lightSvg and darkSvg",
+     bespokeBackdropGaps.join("; "));
   const honuScene = sceneReg && sceneReg.get && sceneReg.get("honu-lagoon");
   const reefScene = sceneReg && sceneReg.get && sceneReg.get("night-reef");
   const honuSpec = sceneReg && typeof sceneReg.buildSpec === "function" && sceneReg.buildSpec("honu-lagoon");
@@ -271,14 +286,31 @@ await runSuite(async () => {
   r.ok(gtaIds.every((id) => T.list().some((e) => e.name === id && e.category === "gaming" && e.backdrop === id)),
      "list() includes all 6 GTA gaming themes (gta-i..gta-vi) paired with their backdrop scenes");
   const bfdiEntry = T.list().find((e) => e.name === "bfdi");
+  const bfdiPinEntry = T.list().find((e) => e.name === "bfdi-lollipop-pin");
   r.ok(Boolean(bfdiEntry && bfdiEntry.displayName === "Battle for Dream Island" &&
-               bfdiEntry.category === "gaming" && bfdiEntry.backdrop === "bfdi"),
-     "list() includes BFDI with displayName='Battle for Dream Island', category='gaming', backdrop='bfdi'",
+               bfdiEntry.category === "lollipop" && bfdiEntry.backdrop === "bfdi"),
+     "list() includes BFDI Season 1 with displayName='Battle for Dream Island', category='lollipop', backdrop='bfdi'",
      bfdiEntry && JSON.stringify({ displayName: bfdiEntry.displayName, category: bfdiEntry.category, backdrop: bfdiEntry.backdrop }));
-  const flipIds = ["bfdi", "gta-iii", "gta-iv", "gta-v", "gta-vi"];
+  r.ok(Boolean(bfdiPinEntry && bfdiPinEntry.displayName === "BFDI Lollipop and Pin" &&
+               bfdiPinEntry.category === "lollipop" && bfdiPinEntry.backdrop === "bfdi-lollipop-pin"),
+     "list() includes migrated BFDI Lollipop and Pin under category='lollipop'",
+     bfdiPinEntry && JSON.stringify({ displayName: bfdiPinEntry.displayName, category: bfdiPinEntry.category, backdrop: bfdiPinEntry.backdrop }));
+  r.ok(lslugs.every((id) => T.list().some((e) => e.name === id && e.category === "linux" && e.backdrop === id)),
+     "list() includes all 15 Linux distro themes paired with their backdrop scenes");
+  r.ok(pslugs.every((id) => T.list().some((e) => e.name === id && e.category === "lollipop" && e.backdrop === id)),
+     "list() includes all 12 Lollipop show themes paired with their backdrop scenes");
+  const aliasPairs = [["arch", "arch-linux"], ["mint", "linux-mint"], ["mintos", "linux-mint"], ["lfs", "linux-from-scratch"], ["ii3", "iii"]];
+  r.ok(aliasPairs.every(([alias, target]) => {
+    const res = T.apply(alias);
+    return res && res.ok === true && T.active() === target;
+  }), "alias slugs (arch, mint, mintos, lfs, ii3) resolve to canonical theme names");
+  const flipIds = ["gta-iii", "gta-iv", "gta-v", "gta-vi"];
   r.ok(flipIds.every((id) => gaming[id] && gaming[id].spinner && gaming[id].spinner.animation === "flip" &&
                              Array.isArray(gaming[id].spinner.paths2) && gaming[id].spinner.paths2.length > 0),
-     "bfdi and gta-iii..gta-vi ship 2-frame flip spinners with paths2");
+     "gta-iii..gta-vi ship 2-frame flip spinners with paths2");
+  r.ok(pslugs.every((id) => lollipopThemes[id] && lollipopThemes[id].spinner && lollipopThemes[id].spinner.animation === "flip" &&
+                             Array.isArray(lollipopThemes[id].spinner.paths2) && lollipopThemes[id].spinner.paths2.length > 0),
+     "all 12 lollipop themes ship 2-frame flip spinners with paths2");
   const sceneThemes = T.list().filter((e) => e.category === "scenes");
   r.ok(sceneThemes.length === 20, "list() includes all 20 category='scenes' themes",
      String(sceneThemes.length));

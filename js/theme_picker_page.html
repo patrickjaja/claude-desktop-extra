@@ -380,13 +380,21 @@ kbd{
       <h2 class="eyebrow">Your themes <span class="badge" id="count-custom">0</span></h2>
       <div class="grid" id="grid-custom"></div>
     </section>
+    <section id="sec-linux" class="section-split" hidden>
+      <h2 class="eyebrow">Linux <span class="badge" id="count-linux">0</span></h2>
+      <div class="grid" id="grid-linux"></div>
+    </section>
     <section id="sec-gaming" class="section-split" hidden>
-      <h2 class="eyebrow">Gaming &amp; Shows <span class="badge" id="count-gaming">0</span></h2>
+      <h2 class="eyebrow">Gaming <span class="badge" id="count-gaming">0</span></h2>
       <div class="grid" id="grid-gaming"></div>
     </section>
     <section id="sec-common" hidden>
       <h2 class="eyebrow">Common <span class="badge" id="count-common">0</span></h2>
       <div class="grid" id="grid-common"></div>
+    </section>
+    <section id="sec-lollipop" class="section-split" hidden>
+      <h2 class="eyebrow">Lollipop <span class="badge" id="count-lollipop">0</span></h2>
+      <div class="grid" id="grid-lollipop"></div>
     </section>
   </main>
 
@@ -402,8 +410,8 @@ kbd{
 "use strict";
 (function () {
   var SWATCH = ["--bg-000", "--text-000", "--accent-brand", "--accent-pro-100", "--danger-100", "--warning-100", "--success-100"];
-  var SECTIONS = ["custom", "scenes", "gaming", "common"];
-  var LABEL = { custom: "Your themes", scenes: "Scenes", gaming: "Gaming & Shows", common: "Common" };
+  var SECTIONS = ["custom", "linux", "scenes", "gaming", "common", "lollipop"];
+  var LABEL = { custom: "Your themes", linux: "Linux", scenes: "Scenes", gaming: "Gaming", common: "Common", lollipop: "Lollipop" };
   var state = { entries: [], active: null, cards: [], overlay: null, overlays: [], backdrop: "", backdropEffective: null, backdrops: [] };
   var toastTimer = null;
 
@@ -452,9 +460,11 @@ kbd{
     b.type = "button";
     b.setAttribute("aria-pressed", "false");
     b.dataset.name = entry.name;
+    var catTag = "";
+    if (entry.category === "linux") catTag = " linux distro distros";
+    else if (entry.category === "lollipop" || entry.category === "shows" || entry.category === "kids") catTag = " lollipop shows kids cartoons";
     b.dataset.hay = (entry.displayName + " " + entry.name + " " + entry.source +
-                     " " + (entry.category || "") +
-                     (entry.category === "gaming" || entry.category === "shows" ? " gaming shows" : "") +
+                     " " + (entry.category || "") + catTag +
                      " " + (entry.backdrop || "") + " " + (entry.blurb || "")).toLowerCase();
 
     var head = el("span", "card-head");
@@ -631,7 +641,7 @@ kbd{
     return Promise.all([t.backdrop(), t.backdrops()]).then(function (res) {
       var b = res[0], l = res[1];
       state.backdrop = (b && b.ok && typeof b.backdrop === "string") ? b.backdrop : "";
-      state.backdropEffective = (b && b.ok && b.effective) ? String(b.effective) : null;
+      state.backdropEffective = (b && b.ok && (b.effectiveBackdrop || b.effective)) ? String(b.effectiveBackdrop || b.effective) : null;
       state.backdrops = (l && l.ok && Array.isArray(l.entries)) ? l.entries : [];
     }, function () {
       state.backdrop = "";
@@ -656,8 +666,8 @@ kbd{
         var where = r.saved || "claude-desktop-extra.jsonc";
         var entry = state.backdropEffective ? backdropEntry(state.backdropEffective) : null;
         var label = state.backdrop === "off" ? "Backdrop off"
-          : state.backdrop ? ("Backdrop " + ((entry && entry.displayName) || state.backdrop))
-          : ("Backdrop follows theme" + (entry ? " (" + entry.displayName + ")" : ""));
+          : state.backdrop ? ("Backdrop " + ((entry && (entry.displayName || entry.title)) || state.backdrop))
+          : ("Backdrop follows theme" + (entry ? " (" + (entry.displayName || entry.title || entry.id) + ")" : ""));
         toast(label + " - saved to " + where);
       });
     }, function (e) {
@@ -683,26 +693,34 @@ kbd{
     var off = el("option", null, "Off (solid surfaces)");
     off.value = "off";
     sel.appendChild(off);
+    var linuxGroup = el("optgroup");
+    linuxGroup.label = "Linux Scenes";
     var scenesGroup = el("optgroup");
     scenesGroup.label = "Animated Scenes";
     var gamingGroup = el("optgroup");
-    gamingGroup.label = "Gaming & Show Scenes";
+    gamingGroup.label = "Gaming Scenes";
+    var lollipopGroup = el("optgroup");
+    lollipopGroup.label = "Lollipop Scenes";
     for (var i = 0; i < state.backdrops.length; i++) {
       var b = state.backdrops[i];
-      var opt = el("option", null, b.displayName || b.id);
+      var opt = el("option", null, b.displayName || b.title || b.id);
       opt.value = b.id;
-      if (b.category === "gaming") gamingGroup.appendChild(opt);
+      if (b.category === "linux") linuxGroup.appendChild(opt);
+      else if (b.category === "gaming") gamingGroup.appendChild(opt);
+      else if (b.category === "lollipop" || b.category === "shows" || b.category === "kids") lollipopGroup.appendChild(opt);
       else scenesGroup.appendChild(opt);
     }
+    if (linuxGroup.children.length) sel.appendChild(linuxGroup);
     if (scenesGroup.children.length) sel.appendChild(scenesGroup);
     if (gamingGroup.children.length) sel.appendChild(gamingGroup);
+    if (lollipopGroup.children.length) sel.appendChild(lollipopGroup);
     sel.value = state.backdrop || "";
     sel.addEventListener("change", function () { setBackdrop(sel.value); });
     bar.appendChild(sel);
     var eff = state.backdropEffective ? backdropEntry(state.backdropEffective) : null;
     var noteText = state.backdrop === "off"
       ? "solid surfaces — animated backdrop and frosted glass disabled"
-      : eff ? ((state.backdrop ? "" : eff.displayName + " · ") + (eff.blurb || "animated SVG backdrop + frosted glass"))
+      : eff ? ((state.backdrop ? "" : (eff.displayName || eff.title || eff.id) + " · ") + (eff.blurb || "animated SVG backdrop + frosted glass"))
       : "pick a scene or let the active theme supply its paired backdrop";
     bar.appendChild(el("span", "overlay-note", noteText));
     bar.hidden = false;
@@ -751,7 +769,7 @@ kbd{
   function filter(q) {
     q = q.trim().toLowerCase();
     var shown = 0;
-    var perSection = { custom: 0, scenes: 0, gaming: 0, common: 0, stock: 0 };
+    var perSection = { custom: 0, linux: 0, scenes: 0, gaming: 0, common: 0, lollipop: 0, stock: 0 };
     for (var i = 0; i < state.cards.length; i++) {
       var c = state.cards[i];
       var hit = !q || c.dataset.hay.indexOf(q) >= 0;
@@ -855,8 +873,10 @@ kbd{
   // ships as is a packaging detail, not a reason to look in a different list.
   function bucketOf(entry) {
     if (entry.source === "stock") return "stock";
+    if (entry.category === "linux") return "linux";
     if (entry.category === "scenes") return "scenes";
-    if (entry.category === "gaming" || entry.category === "shows") return "gaming";
+    if (entry.category === "gaming") return "gaming";
+    if (entry.category === "lollipop" || entry.category === "shows" || entry.category === "kids") return "lollipop";
     if (entry.source === "custom") return "custom";
     return "common";
   }
@@ -886,7 +906,7 @@ kbd{
   }
 
   function render() {
-    var buckets = { stock: [], custom: [], scenes: [], gaming: [], common: [] };
+    var buckets = { stock: [], custom: [], linux: [], scenes: [], gaming: [], common: [], lollipop: [] };
     for (var i = 0; i < state.entries.length; i++) {
       var e = state.entries[i];
       var b = bucketOf(e);

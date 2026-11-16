@@ -3325,23 +3325,30 @@ async function themesPanel(themesItem) {
     ok(!h.classList.contains("cdbx-sheen-play"), "animationend removes it again");
   }
   const secs = sections();
-  ok(labels() === "Your themes:1 | Gaming & Shows:3 | Common:5 | More:1",
+  ok(labels() === "Your themes:1 | Linux:1 | Gaming:3 | Common:5 | Lollipop:2 | More:1",
      "section order and counts: " + labels());
-  ok(secs.length === 4, "four sections for this list (" + secs.length + ")");
+  ok(secs.length === 6, "six sections for this list (" + secs.length + ")");
 
-  const gaming = secs[1];
-  ok(gaming.cards.indexOf("Mario") >= 0, "the built-in mario is under Gaming & Shows, not lost in Common");
-  ok(gaming.cards.indexOf("Zelda") >= 0, "a community gaming palette is under Gaming & Shows");
-  ok(gaming.cards.indexOf("My-neon") >= 0, "a user gaming theme is under Gaming & Shows");
-  ok(gaming.cards.join(",") === "Mario,My-neon,Zelda", "Gaming & Shows is alphabetical: " + gaming.cards.join(","));
+  const linuxSec = secs[1];
+  const gaming = secs[2];
+  const commonSec = secs[3];
+  const lollipopSec = secs[4];
+  const moreSec = secs[5];
+  ok(linuxSec.cards.join(",") === "Cachyos", "Linux category sits right after Your themes");
+  ok(gaming.cards.indexOf("Mario") >= 0, "the built-in mario is under Gaming, not lost in Common");
+  ok(gaming.cards.indexOf("Zelda") >= 0, "a community gaming palette is under Gaming");
+  ok(gaming.cards.indexOf("My-neon") >= 0, "a user gaming theme is under Gaming");
+  ok(gaming.cards.join(",") === "Mario,My-neon,Zelda", "Gaming is alphabetical: " + gaming.cards.join(","));
   ok(secs[0].cards.join(",") === "My-own", "Your themes holds the non-gaming custom theme only");
   // Built-in and community share one section: the packaging tier is not
   // something a user picks a theme by.
-  ok(secs[2].cards.join(",") === "Almond,Catppuccin-mocha,Dracula,Nord,Solarized",
+  ok(commonSec.cards.join(",") === "Almond,Catppuccin-mocha,Dracula,Nord,Solarized",
      "Common merges built-in and community, alphabetically, and keeps the entry with no category field: " +
-     secs[2].cards.join(","));
-  ok(secs[3].cards.join(",") === "Mystery", "an unknown source tier is still shown, under More");
-  ok(secs.reduce(function (n, s) { return n + s.cards.length; }, 0) === 10,
+     commonSec.cards.join(","));
+  ok(lollipopSec.cards.join(",") === "Bfdi,My-show",
+     "Lollipop collects lollipop and shows categories at the end after Common: " + lollipopSec.cards.join(","));
+  ok(moreSec.cards.join(",") === "Mystery", "an unknown source tier is still shown, under More");
+  ok(secs.reduce(function (n, s) { return n + s.cards.length; }, 0) === 13,
      "every theme appears exactly once across the sections");
 
   // The active card keeps its highlight and its badge wherever it is sectioned.
@@ -3355,15 +3362,19 @@ async function themesPanel(themesItem) {
   // Filtering searches across sections and takes empty headings with it.
   await type("nord");
   ok(labels() === "Common:1", "filtering to one theme leaves one section: " + labels());
+  await type("linux");
+  ok(labels() === "Linux:1", "the filter also matches the linux category: " + labels());
   await type("gaming");
-  ok(labels() === "Gaming & Shows:3", "the filter also matches the category: " + labels());
+  ok(labels() === "Gaming:3", "the filter also matches the gaming category: " + labels());
+  await type("lollipop");
+  ok(labels() === "Lollipop:2", "the filter also matches the lollipop category: " + labels());
   await type("shows");
-  ok(labels() === "Gaming & Shows:3", "the filter also matches 'shows' for Gaming & Shows: " + labels());
+  ok(labels() === "Lollipop:2", "the filter also matches 'shows' for Lollipop: " + labels());
   await type("zzzz");
   ok(labels() === "", "no section heading survives a filter that matches nothing");
   ok(!!document.querySelector(".cdbx-panel .cdbx-empty"), "the empty message is shown instead");
   await type("");
-  ok(labels() === "Your themes:1 | Gaming & Shows:3 | Common:5 | More:1",
+  ok(labels() === "Your themes:1 | Linux:1 | Gaming:3 | Common:5 | Lollipop:2 | More:1",
      "clearing the filter brings every section back");
 
   // The config file we write is a link, not just text - and it must be the file
@@ -3398,7 +3409,7 @@ async function themesPanel(themesItem) {
   await sleep(40);
   ok(window.__revealCalls.indexOf("config-jsonc:open") >= 0,
      "and the link follows it too: " + window.__revealCalls.join(","));
-  ok(labels() === "Your themes:1 | Gaming & Shows:3 | Common:5 | More:1",
+  ok(labels() === "Your themes:1 | Linux:1 | Gaming:3 | Common:5 | Lollipop:2 | More:1",
      "the sections survive a re-render after apply");
 
   // The overlay row: what themeOverlay merges over the picked theme, above the
@@ -3448,7 +3459,7 @@ async function themesPanel(themesItem) {
     ok(!!row && row.querySelector(".cdbx-id").textContent === "Overlay: My-own",
        "the row names the new overlay: " + (row ? row.querySelector(".cdbx-id").textContent : "no row"));
     ok(/active \+ overlay/.test(activeBadge()), "and the badge is back: " + activeBadge());
-    ok(labels() === "Your themes:1 | Gaming & Shows:3 | Common:5 | More:1",
+    ok(labels() === "Your themes:1 | Linux:1 | Gaming:3 | Common:5 | Lollipop:2 | More:1",
        "the sections survive the overlay re-render");
   }
 }
@@ -3977,9 +3988,12 @@ function theme(name, source, category) {
 window.__themes = [
   theme("nord", "builtin", ""),
   theme("catppuccin-mocha", "builtin", ""),
+  theme("cachyos", "builtin", "linux"),
   theme("mario", "builtin", "gaming"),
   theme("zelda", "community", "gaming"),
   theme("my-neon", "custom", "gaming"),
+  theme("bfdi", "builtin", "lollipop"),
+  theme("my-show", "custom", "shows"),
   theme("solarized", "community", ""),
   theme("dracula", "community"),
   theme("my-own", "custom", ""),

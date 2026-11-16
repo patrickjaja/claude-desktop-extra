@@ -6,7 +6,7 @@ From picking a bundled palette to recoloring the app from your wallpaper, in ord
 |------|--------------|
 | [1. Pick a theme](#1-pick-a-theme) | a new look in two keystrokes, no file |
 | [2. Set it in the config file](#2-set-it-in-the-config-file) | one line, survives reinstalls |
-| [3. Themes that ship with the app](#3-themes-that-ship-with-the-app) | 124 palettes and 34 animated SVG backdrops to choose from |
+| [3. Themes that ship with the app](#3-themes-that-ship-with-the-app) | 150 palettes and 60 animated SVG backdrops to choose from |
 | [4. Tweak a theme with `extends`](#4-tweak-a-theme-with-extends) | a bundled theme with your accent |
 | [5. Write your own theme](#5-write-your-own-theme) | full control over every color |
 | [6. Dynamic themes from your wallpaper](#6-dynamic-themes-from-your-wallpaper-matugen-pywal-wallust) | wallpaper accents on any theme, live |
@@ -24,7 +24,7 @@ backing. Approval cards and focus rings retain their own surfaces.
 
 Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> anywhere in the app. A searchable picker opens with every theme available to you, each card showing a dark and a light row of swatches; click one and it applies immediately in every open window, no restart and no config file. Your choice is saved to `claude-desktop-extra.jsonc` with any comments in it left intact. The same list is also in the app's Settings dialog under **Extra → Themes**, next to an **Extra → Anthropic Features** panel that exposes the [feature flags](feature-flags.md) as switches. Both places also show an **Overlay** bar when a [`themeOverlay`](#6-dynamic-themes-from-your-wallpaper-matugen-pywal-wallust) is merged over your theme: it names the overlay, marks the active card with an `overlay` badge, and has a **Turn off** button; when none is active you can pick one of your own themes there and apply it, no config file needed.
 
-![Settings → Extra → Themes: the Overlay bar, your own themes, then the Gaming & Shows and Common sections](extra/themes.png)
+![Settings → Extra → Themes: the Overlay bar, your own themes, then Linux, Scenes, Gaming, Common and Lollipop sections](extra/themes.png)
 
 ## 2. Set it in the config file
 
@@ -54,7 +54,11 @@ The Mario theme ships a **light "overworld"** and a **dark "underground"** varia
 | `catppuccin-frappe` | Latte | Frappe | cat |
 | `catppuccin-latte` | Latte | Mocha | coffee cup |
 
-**13 gaming & show palettes** form their own **Gaming & Shows** section in the picker and in Settings → Extra → Themes, with Mario joining them (14 total, each paired with a bespoke dual-mode animated SVG backdrop): `bfdi` (**Battle for Dream Island**: Goiky plains, Dream Island's golden gates & Yoyleland night meadow with a Lollipop & Pin flip duo spinner), `gta-i` (top-down neon pager grid), `gta-ii` (dusk Zaibatsu respect meters), `gta-iii` (Liberty City pager & radar rain), `gta-iv` (Broker Bridge fog & bowling pins), `gta-v` (Los Santos sunset palms & HUD wheel), `gta-vi` (Vice City pink-cyan neon palms), `playstation` (PS1 console gray / charcoal, button-symbol status colors, floating △○✕□ symbols), `gameboy` (DMG shell / pea-green LCD, d-pad), `final-fantasy` (parchment / menu blue, spinning crystal & Lifestream motes), `zelda` (forest green and gold, Triforce & Lost Woods fairies), `warcraft` (parchment gold / dark brown, arcane runes & forge embers) and `dragonball` (sky and white / deep blue, flying Nimbus, Shenron & 7 Dragon Balls). They resolve at built-in rank, so `"activeTheme": "bfdi"` or `"activeTheme": "gta-vi"` is enough (themes categorized `"gaming"` or `"shows"` land in **Gaming & Shows**).
+**15 Linux distro palettes** form the **Linux** section right after your own themes in the picker and in Settings → Extra → Themes (`arch-linux`, `cachyos`, `ubuntu`, `linux-mint`, `fedora`, `debian`, `nixos`, `opensuse`, `pop-os`, `manjaro`, `endeavouros`, `kali-linux`, `gentoo`, `zorin-os`, `linux-from-scratch`), each pairing its official distro logo spinner with a quiet, minimal architectural SVG backdrop.
+
+**12 gaming palettes** form the **Gaming** section with Mario joining them (13 total, each paired with a bespoke dual-mode animated SVG backdrop): `gta-i` (top-down neon pager grid), `gta-ii` (dusk Zaibatsu respect meters), `gta-iii` (Liberty City pager & radar rain), `gta-iv` (Broker Bridge fog & bowling pins), `gta-v` (Los Santos sunset palms & HUD wheel), `gta-vi` (Vice City pink-cyan neon palms), `playstation` (PS1 console gray / charcoal, button-symbol status colors, floating △○✕□ symbols), `gameboy` (DMG shell / pea-green LCD, d-pad), `final-fantasy` (parchment / menu blue, spinning crystal & Lifestream motes), `zelda` (forest green and gold, Triforce & Lost Woods fairies), `warcraft` (parchment gold / dark brown, arcane runes & forge embers) and `dragonball` (sky and white / deep blue, flying Nimbus, Shenron & 7 Dragon Balls).
+
+**12 Lollipop palettes** sit at the end of the picker and Settings → Extra → Themes (after Common) for object-show and kids themes, each with a 2-frame `flip` character spinner and animated dual-mode backdrop: `bfdi` (**Battle for Dream Island**, Season 1 with Firey & Leafy), `bfdi-lollipop-pin` (**BFDI Lollipop and Pin**), `bfdia`, `idfb`, `bfb`, `tpot`, `bfdie`, `ii`, `ii2`, `iii`, `ii4` and `numberblocks` (`"category": "lollipop"` or `"shows"`). All resolve at built-in rank, so `"activeTheme": "cachyos"`, `"activeTheme": "gta-vi"` or `"activeTheme": "bfdi"` works out of the box.
 
 ![GTA I theme with live animated police-and-taxi chase, pager and wanted HUD](extra/themes-gta-i.gif)
 
@@ -180,7 +184,7 @@ The whole desktop setup this was tested with (matugen config, GTK color template
 ## Reference
 
 - [themes/README.md](../themes/README.md) - JSON schema, `extends`, reloading, token reference, spinners, `chatFont`, `customCss`, contrast tips.
-- [themes/PALETTES.md](../themes/PALETTES.md) - all 97 bundled palettes with swatches.
+- [themes/PALETTES.md](../themes/PALETTES.md) - 130 generated palette swatch cards (150 bundled palettes total with the 20 Scenes palettes).
 - [contrib/matugen/README.md](../contrib/matugen/README.md) - the four matugen templates, the mode script and their setup.
 - [feature-flags.md](feature-flags.md) - the Extra → Anthropic Features panel next to the theme list.
 

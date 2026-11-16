@@ -1088,19 +1088,23 @@
   // so a source tier we do not know yet is still shown instead of dropped.
   var THEME_SECTIONS = [
     { key: "custom", label: "Your themes" },
+    { key: "linux", label: "Linux" },
     { key: "scenes", label: "Scenes" },
-    { key: "gaming", label: "Gaming & Shows" },
+    { key: "gaming", label: "Gaming" },
     { key: "common", label: "Common" },
+    { key: "lollipop", label: "Lollipop" },
     { key: "other", label: "More" }
   ];
 
-  // Category wins over source, so a gaming palette is in Gaming wherever it came
-  // from. An entry with no category (or from a registry that does not report one
-  // yet) is bucketed by source exactly as before.
+  // Category wins over source, so linux/scenes/gaming/lollipop palettes stay
+  // in their sections wherever they came from. An entry with no category (or
+  // from a registry that does not report one yet) falls back to source.
   function themeBucket(entry) {
     var cat = entry.category || "";
+    if (cat === "linux") return "linux";
     if (cat === "scenes") return "scenes";
-    if (cat === "gaming" || cat === "shows") return "gaming";
+    if (cat === "gaming") return "gaming";
+    if (cat === "lollipop" || cat === "shows" || cat === "kids") return "lollipop";
     var source = entry.source || "";
     if (source === "custom") return "custom";
     if (source === "builtin" || source === "community") return "common";
@@ -3771,18 +3775,26 @@
       off.value = "off";
       select.appendChild(off);
 
+      var linuxGroup = el("optgroup");
+      linuxGroup.label = "Linux Scenes";
       var scenesGroup = el("optgroup");
       scenesGroup.label = "Animated Scenes";
       var gamingGroup = el("optgroup");
-      gamingGroup.label = "Gaming & Show Scenes";
+      gamingGroup.label = "Gaming Scenes";
+      var lollipopGroup = el("optgroup");
+      lollipopGroup.label = "Lollipop Scenes";
       state.entries.forEach(function (e) {
         var opt = el("option", null, e.displayName || e.id);
         opt.value = e.id;
-        if (e.category === "gaming") gamingGroup.appendChild(opt);
+        if (e.category === "linux") linuxGroup.appendChild(opt);
+        else if (e.category === "gaming") gamingGroup.appendChild(opt);
+        else if (e.category === "lollipop" || e.category === "shows" || e.category === "kids") lollipopGroup.appendChild(opt);
         else scenesGroup.appendChild(opt);
       });
+      if (linuxGroup.children.length) select.appendChild(linuxGroup);
       if (scenesGroup.children.length) select.appendChild(scenesGroup);
       if (gamingGroup.children.length) select.appendChild(gamingGroup);
+      if (lollipopGroup.children.length) select.appendChild(lollipopGroup);
       select.value = state.backdrop || "";
 
       select.addEventListener("change", function () {
@@ -4002,11 +4014,15 @@
         var buckets = {};
         var shown = 0;
         result.entries.forEach(function (entry) {
+          var catMatch =
+            (entry.category === "linux" && "linux distro distros".indexOf(needle) >= 0) ||
+            ((entry.category === "lollipop" || entry.category === "shows" || entry.category === "kids") &&
+              "lollipop shows kids cartoons".indexOf(needle) >= 0);
           if (needle &&
               (entry.displayName || "").toLowerCase().indexOf(needle) < 0 &&
               (entry.name || "").toLowerCase().indexOf(needle) < 0 &&
               (entry.category || "").toLowerCase().indexOf(needle) < 0 &&
-              !((entry.category === "gaming" || entry.category === "shows") && "gaming & shows".indexOf(needle) >= 0) &&
+              !catMatch &&
               (entry.backdrop || "").toLowerCase().indexOf(needle) < 0 &&
               (entry.blurb || "").toLowerCase().indexOf(needle) < 0) return;
           var key = themeBucket(entry);

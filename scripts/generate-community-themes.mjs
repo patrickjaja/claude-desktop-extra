@@ -123,6 +123,8 @@ const OUT_SVG_DIR = path.join(REPO, 'themes', 'palettes');
 const THEME_PATCH = path.join(REPO, 'patches', 'core', 'add_feature_custom_themes.nim');
 const SPINNERS_JSON = path.join(REPO, 'scripts', 'community-spinners.json');
 const GAMING_JSON = path.join(REPO, 'js', 'gaming_themes.json');
+const LINUX_JSON = path.join(REPO, 'js', 'linux_themes.json');
+const LOLLIPOP_JSON = path.join(REPO, 'js', 'lollipop_themes.json');
 
 const BUILTIN_NAMES = new Set([
   'catppuccin-frappe', 'catppuccin-latte', 'catppuccin-macchiato',
@@ -739,21 +741,21 @@ function serialize(themes, spinners) {
   return `{\n${body}\n}\n`;
 }
 
-/** Hand-authored gaming themes, consumed read-only for their swatch cards. */
-function readGamingThemes(warnings, errors) {
-  if (!fs.existsSync(GAMING_JSON)) return {};
+/** Hand-authored themed collections (gaming, linux, lollipop), consumed read-only for swatch cards. */
+function readThemeCollection(file, label, warnings, errors) {
+  if (!fs.existsSync(file)) return {};
   let data;
   try {
-    data = JSON.parse(fs.readFileSync(GAMING_JSON, 'utf8'));
+    data = JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (e) {
-    errors.push(`${GAMING_JSON}: invalid JSON: ${e.message}`);
+    errors.push(`${file}: invalid JSON: ${e.message}`);
     return {};
   }
   const out = {};
   for (const slug of Object.keys(data).sort()) {
     const t = data[slug];
     if (!t || typeof t.light !== 'object' || typeof t.dark !== 'object') {
-      warnings.push(`gaming theme "${slug}": no light/dark token maps, no swatch emitted`);
+      warnings.push(`${label} theme "${slug}": no light/dark token maps, no swatch emitted`);
       continue;
     }
     out[slug] = { name: t.name || slug, light: t.light, dark: t.dark };
@@ -838,7 +840,9 @@ function main() {
 
   /* curated spinner glyphs (hard gate: every theme, every spec well formed) */
   const spinners = readSpinners(themes, errors);
-  const gaming = readGamingThemes(warnings, errors);
+  const gaming = readThemeCollection(GAMING_JSON, 'gaming', warnings, errors);
+  const linux = readThemeCollection(LINUX_JSON, 'linux', warnings, errors);
+  const lollipop = readThemeCollection(LOLLIPOP_JSON, 'lollipop', warnings, errors);
 
   if (errors.length) {
     console.error('[generate-community-themes] FAILED:');
@@ -851,7 +855,7 @@ function main() {
   fs.writeFileSync(OUT_JSON, serialize(themes, spinners));
   JSON.parse(fs.readFileSync(OUT_JSON, 'utf8')); // re-parse guard
 
-  /* write swatches: community themes + built-ins + gaming themes */
+  /* write swatches: community themes + built-ins + gaming + linux + lollipop */
   fs.mkdirSync(OUT_SVG_DIR, { recursive: true });
   const svgWritten = [];
   const svgTargets = new Map();
@@ -864,11 +868,13 @@ function main() {
     }
     svgTargets.set(slug, { name: slug, theme: builtins[slug] });
   }
-  for (const slug of Object.keys(gaming).sort()) {
-    if (svgTargets.has(slug)) {
-      warnings.push(`swatch name collision: gaming slug "${slug}" also names a community/built-in theme; gaming swatch wins`);
+  for (const [label, col] of [['gaming', gaming], ['linux', linux], ['lollipop', lollipop]]) {
+    for (const slug of Object.keys(col).sort()) {
+      if (svgTargets.has(slug)) {
+        warnings.push(`swatch name collision: ${label} slug "${slug}" already exists; ${label} swatch wins`);
+      }
+      svgTargets.set(slug, { name: col[slug].name, theme: col[slug] });
     }
-    svgTargets.set(slug, { name: gaming[slug].name, theme: gaming[slug] });
   }
   for (const [slug, t] of [...svgTargets.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
     const file = path.join(OUT_SVG_DIR, `${slug}.svg`);
@@ -882,7 +888,7 @@ function main() {
   console.log(`[generate-community-themes] themes: ${slugs.length}`);
   console.log(`[generate-community-themes] wrote:  ${path.relative(REPO, OUT_JSON)} (${fs.statSync(OUT_JSON).size} bytes)`);
   console.log(`[generate-community-themes] wrote:  ${svgWritten.length} swatches in ${path.relative(REPO, OUT_SVG_DIR)}/`
-    + ` (${slugs.length} community + ${Object.keys(builtins).length} built-in + ${Object.keys(gaming).length} gaming)`);
+    + ` (${slugs.length} community + ${Object.keys(builtins).length} built-in + ${Object.keys(gaming).length} gaming + ${Object.keys(linux).length} linux + ${Object.keys(lollipop).length} lollipop)`);
   const flips = slugs.filter((s) => spinners[s].animation === 'flip');
   const fills = slugs.filter((s) => spinners[s].paths.some((p) => p.fill));
   console.log(`[generate-community-themes] spinners: ${slugs.length} validated`

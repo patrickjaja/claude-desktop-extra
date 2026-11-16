@@ -7,10 +7,11 @@ theme authors see it).
 This doc catalogs the spinner SVG shapes shipped per theme: what each shape is, its path
 data, its color strategy, and how to swap/test one live in the running app.
 
-**Every bundled palette ships a spinner.** All 124 - the 7 curated built-ins, the 13 gaming & show
-palettes (`js/gaming_themes.json`), the 20 scene palettes (`js/scene_themes.json`), and the 84
-community palettes (`js/community_themes.json`) - replace claude.ai's brand star with a glyph
-drawn for that palette's name or colors.
+**Every bundled palette ships a spinner.** All 150 - the 7 curated built-ins, 15 Linux
+distro palettes (`js/linux_themes.json`), 12 gaming palettes (`js/gaming_themes.json`),
+12 Lollipop palettes (`js/lollipop_themes.json`), 20 scene palettes (`js/scene_themes.json`),
+and 84 community palettes (`js/community_themes.json`) - replace claude.ai's brand star
+with a glyph drawn for that palette's name or colors.
 
 - **Runtime engine:** `js/spinner_injector.js` (a self-guarding ES5 IIFE that installs
   `window.__cdbSpinnerApply(spec|null)` once per window).
@@ -18,7 +19,9 @@ drawn for that palette's name or colors.
   | Tier | Spec source |
   |------|-------------|
   | curated built-ins (7) | inline in `patches/core/add_feature_custom_themes.nim` |
-  | gaming & shows (13) | `js/gaming_themes.json` |
+  | linux (15) | `js/linux_themes.json` |
+  | gaming (12) | `js/gaming_themes.json` |
+  | lollipop (12) | `js/lollipop_themes.json` |
   | scenes (20) | `js/scene_themes.json` |
   | community (84) | curated in `scripts/community-spinners.json`, merged into `js/community_themes.json` by `scripts/generate-community-themes.mjs` |
   | your own themes | the `spinner` key of your theme in `claude-desktop-extra.jsonc` |
@@ -54,9 +57,9 @@ drawn for that palette's name or colors.
 }
 ```
 
-A theme object may also carry a top-level **`category`** string. `"category": "gaming"`
-(or `"shows"`) puts the theme in the **Gaming & Shows** section of the picker and of
-Settings -> Extra -> Themes, independently of which tier it resolves from.
+A theme object may also carry a top-level **`category`** string (`"linux"`, `"gaming"`,
+`"scenes"`, or `"lollipop"` / legacy `"shows"`) to put the theme in the matching section
+of the picker and Settings -> Extra -> Themes, independently of which tier it resolves from.
 
 **Color strategy:** a path with **no `fill`** (or `fill: "currentColor"`) inherits the
 theme accent through the `<svg>`'s `fill-current` class (which resolves `currentColor`
@@ -190,10 +193,10 @@ M23 54 L65 54 L60 84 L28 84 Z M22 87 L66 87 L61 91 L27 91 Z M65 57 A 13 13 0 1 1
 
 ---
 
-## The 13 gaming & show shapes (`js/gaming_themes.json`)
+## The 12 gaming shapes (`js/gaming_themes.json`)
 
 Defined in `js/gaming_themes.json` next to their palettes; each carries
-`"category": "gaming"`. (Mario is the 14th entry in **Gaming & Shows**, inline built-in.)
+`"category": "gaming"`. (Mario is the 13th entry in **Gaming**, inline built-in.)
 
 | Theme | Shape | Frames | Color | Animation |
 |-------|-------|--------|-------|-----------|
@@ -209,12 +212,23 @@ Defined in `js/gaming_themes.json` next to their palettes; each carries
 | `gta-iv` | Rockstar NYC `R*` gold badge (shimmering star) | 2 | multi-color | `flip` |
 | `gta-v` | Vinewood banknote `V` crest (3-character ribbon shimmer) | 2 | multi-color | `flip` |
 | `gta-vi` | Vice City synthwave `VI` neon crest (palm gleam) | 2 | multi-color | `flip` |
-| `bfdi` | Battle for Dream Island: crossed Lollipop (BFB) + upright Pin (smug wink + star tip glint) | 2 | multi-color (`#cd78fb`, `#e51400`, `#c0c0c0`, `#fff3b0`) | `flip` |
 
 Every `flip` outer rim clears >= 2.6:1 contrast against both its light and dark `--bg-100`
 surface so dark-mode sidebars/headers never lose the glyph contour. Every multi-path pair
 keeps identical outer-rim geometry across `paths` and `paths2` so the sprite toggles
 without edge jitter.
+
+---
+
+## The 15 Linux distro shapes (`js/linux_themes.json`)
+
+Each entry carries `"category": "linux"` and scales the official distribution mark into `viewBox "0 0 100 100"`: monochrome `currentColor` (`pulse`/`spin`) for single-ink logos (`arch-linux`, `ubuntu`, `linux-mint`, `fedora`, `debian`, `opensuse`, `manjaro`, `kali-linux`, `gentoo`, `zorin-os`) and contrast-checked multi-color paths (`>= 2.5:1` on both surfaces) for `cachyos` (`flip`), `nixos` (`spin`), `pop-os` (`flip`), `endeavouros` (`pulse`) and `linux-from-scratch` (`flip` Tux-in-jigsaw).
+
+---
+
+## The 12 Lollipop show shapes (`js/lollipop_themes.json`)
+
+Each entry carries `"category": "lollipop"` and uses a two-frame `flip` character/emblem sprite: `bfdi` (Firey & Leafy duo), `bfdi-lollipop-pin` (crossed Lollipop & upright Pin duo), `bfdia` (spinning BFDIA Challenge/Prize Wheel), `idfb` (Wall Teleporter / Yoyle Needy spire), `bfb` (Four & X duo), `tpot` (Algebralien Two), `bfdie` (wooden `ELSEWHERE...` left-arrow signpost), `ii` (MePhone4 + cookie), `ii2` (circular `II` Meeple seal), `iii` (`III` Tropical Volcano & 3-Palm crest), `ii4` (Test Tube `I` + Fan `V`) and `numberblocks` (Numberblock One + Numberling).
 
 ---
 

@@ -4,6 +4,12 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-16
 
+### Linux distro themes & Lollipop section (#345)
+
+- **15 minimal Linux distribution themes (`js/linux_themes.json`, new `Linux` section):** adds `arch-linux`, `cachyos`, `ubuntu`, `linux-mint`, `fedora`, `debian`, `nixos`, `opensuse`, `pop-os`, `manjaro`, `endeavouros`, `kali-linux`, `gentoo`, `zorin-os` and `linux-from-scratch` as dual light/dark palettes (`150` bundled palettes and `60` animated SVG backdrops total) with official distro logo SVG spinners and quiet, geometric architectural backdrops (`LINUX_SCENES` in `js/backdrop_scenes.js`), placed right after **Your themes** in <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> and Settings -> Extra -> Themes.
+- **New `Lollipop` section at the end of the picker & Settings (`js/lollipop_themes.json`, `LOLLIPOP_SCENES`):** moves object-show and kids themes out of Gaming (reverting **Gaming & Shows** back to **Gaming** / **Gaming Scenes**) into a dedicated **Lollipop** section (`category: "lollipop"`, also matching legacy `"shows"` / `"kids"`) placed after **Common**.
+- **12 animated Lollipop themes:** `bfdi` now delivers Season 1 **Battle for Dream Island** (Firey & Leafy flip spinner, sunlit/starry Goiky meadows & Announcer), while the original Lollipop & Pin theme moves to `bfdi-lollipop-pin` (**BFDI Lollipop and Pin**), joined by `bfdia`, `idfb`, `bfb`, `tpot`, `bfdie`, `ii`, `ii2`, `iii`, `ii4` and `numberblocks` — each with dual light/dark palettes, a two-frame `flip` spinner and animated dual-mode SVG flanks (`js/theme_picker_page.html`, `js/extra_settings_page.js`, `patches/core/add_feature_custom_themes.nim`).
+
 ### GitHub alert callouts in the chat (thanks @MatejZeman02, #344)
 
 - A blockquote that opens with `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` renders as a coloured callout with an accent bar and a label instead of the literal marker, in every 1P (`claude.ai` / `claude.com`) and 3P (`app://localhost`) chat page (`js/github_alerts_page.js`, inserted by `patches/community/add_feature_github_alerts.nim`; closes #343). Adjacent merged quotes are split into per-alert runs, continuation blocks (`ul`, `ol`, `pre`, nested quotes) keep the accent bar, editable/native nodes (`.ProseMirror`, `.epitaxy-document-prose`, `blockquote[data-alert]`, `[data-reply-quote-block]`) and inline `<code>` stay untouched, and switching the feature off restores the literal markers in place.
