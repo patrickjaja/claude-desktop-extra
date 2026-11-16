@@ -3730,6 +3730,49 @@
       if (!applied.ok) return { ok: false, error: "saved, but could not apply: " + applied.error };
       return { ok: true, enabled: enabled, path: res.path };
     },
+    // GitHub alert callouts (patches/community/add_feature_github_alerts.nim).
+    // The patch reads both keys on every page load, so the set handler only has
+    // to save and ask the main half to re-run the page script in open windows.
+    "cdb-github-alerts:read": function () {
+      var p = __cdbEx_paths();
+      var jsonc = __cdbEx_readFileKey(p.jsonc, "githubAlerts");
+      var json = __cdbEx_readFileKey(p.json, "githubAlerts");
+      return { ok: true, enabled: (jsonc === undefined ? json : jsonc) === true,
+        lockedByJsonc: jsonc !== undefined ? true : null };
+    },
+    "cdb-github-alerts:set": function (enabled) {
+      if (typeof enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
+      if (__cdbEx_readFileKey(__cdbEx_paths().jsonc, "githubAlerts") !== undefined) {
+        return { ok: false, lockedByJsonc: true, error: "githubAlerts is set in claude-desktop-extra.jsonc - edit that file to change it" };
+      }
+      var res = __cdbEx_writeCfg(function (cfg) {
+        if (enabled) cfg.githubAlerts = true;
+        else delete cfg.githubAlerts;
+      });
+      if (!res.ok) return res;
+      if (typeof globalThis.__cdbGithubAlertsRefresh === "function") globalThis.__cdbGithubAlertsRefresh();
+      return { ok: true, enabled: enabled, path: res.path };
+    },
+    "cdb-alert-icons:read": function () {
+      var p = __cdbEx_paths();
+      var jsonc = __cdbEx_readFileKey(p.jsonc, "githubAlertIcons");
+      var json = __cdbEx_readFileKey(p.json, "githubAlertIcons");
+      return { ok: true, enabled: (jsonc === undefined ? json : jsonc) === true,
+        lockedByJsonc: jsonc !== undefined ? true : null };
+    },
+    "cdb-alert-icons:set": function (enabled) {
+      if (typeof enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
+      if (__cdbEx_readFileKey(__cdbEx_paths().jsonc, "githubAlertIcons") !== undefined) {
+        return { ok: false, lockedByJsonc: true, error: "githubAlertIcons is set in claude-desktop-extra.jsonc - edit that file to change it" };
+      }
+      var res = __cdbEx_writeCfg(function (cfg) {
+        if (enabled) cfg.githubAlertIcons = true;
+        else delete cfg.githubAlertIcons;
+      });
+      if (!res.ok) return res;
+      if (typeof globalThis.__cdbGithubAlertsRefresh === "function") globalThis.__cdbGithubAlertsRefresh();
+      return { ok: true, enabled: enabled, path: res.path };
+    },
     // Reduced projection of the theme registry. cdb-themes:apply / :active stay
     // owned by the theme picker patch; only this list is ours, because the full
     // entries carry every token of every palette.
@@ -4589,6 +4632,8 @@
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "the session-start dialog is Linux only" }; };
       } else if (ch.indexOf("cdb-chat-composer:") === 0 || ch.indexOf("cdb-reply-field:") === 0) {
         __cdbEx_handlers[ch] = function () { return { ok: false, error: "message input appearance is Linux only" }; };
+      } else if (ch.indexOf("cdb-github-alerts:") === 0 || ch.indexOf("cdb-alert-icons:") === 0) {
+        __cdbEx_handlers[ch] = function () { return { ok: false, error: "GitHub alert callouts are Linux only" }; };
       }
     });
   }

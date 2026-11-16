@@ -57,6 +57,18 @@
     frostedReplyFieldSet: function (enabled) {
       return ipcRenderer.invoke("cdb-reply-field:set", enabled === true);
     },
+    githubAlertsRead: function () {
+      return ipcRenderer.invoke("cdb-github-alerts:read");
+    },
+    githubAlertsSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-github-alerts:set", enabled === true);
+    },
+    githubAlertIconsRead: function () {
+      return ipcRenderer.invoke("cdb-alert-icons:read");
+    },
+    githubAlertIconsSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-alert-icons:set", enabled === true);
+    },
     themesActive: function () {
       return ipcRenderer.invoke("cdb-themes:active");
     },

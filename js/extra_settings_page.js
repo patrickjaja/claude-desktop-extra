@@ -3854,6 +3854,45 @@
     });
   }
 
+  function renderGithubAlertsRow(panel) {
+    return renderToggleRow(panel, {
+      section: "Chat appearance",
+      title: "GitHub alert callouts",
+      note: "Render markdown alerts (a blockquote opening with [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or " +
+        "[!CAUTION]) as coloured callouts with a label instead of the literal marker. Applies live to open chats.",
+      keywords: "markdown alert note tip warning caution callout blockquote github admonition",
+      ariaLabel: "GitHub alert callouts",
+      read: "githubAlertsRead", write: "githubAlertsSet",
+      hideIf: function (res) { return failed(res) && /Linux only/.test(reason(res)); },
+      isOn: function (r) { return r.enabled === true; },
+      writeArg: function (on) { return on; },
+      describe: function (on) { return on ? "on - alerts render as callouts" : "off - alert markers stay literal text"; },
+      lockFile: "claude-desktop-extra.jsonc",
+      errorPrefix: "Could not change alert rendering: ",
+      toast: function (on) { return on ? "GitHub alert callouts enabled" : "Alert rendering restored"; }
+    });
+  }
+
+  function renderGithubAlertIconsRow(panel) {
+    return renderToggleRow(panel, {
+      section: "Chat appearance",
+      sharedSection: true,
+      title: "Alert icons",
+      note: "Show a small icon before the label of every callout. Off by default: the accent bar and the label " +
+        "highlight the alert on their own. Requires GitHub alert callouts. Applies live.",
+      keywords: "markdown alert callout icon glyph label",
+      ariaLabel: "Alert icons",
+      read: "githubAlertIconsRead", write: "githubAlertIconsSet",
+      hideIf: function (res) { return failed(res) && /Linux only/.test(reason(res)); },
+      isOn: function (r) { return r.enabled === true; },
+      writeArg: function (on) { return on; },
+      describe: function (on) { return on ? "on - icon before each label" : "off - label only"; },
+      lockFile: "claude-desktop-extra.jsonc",
+      errorPrefix: "Could not change alert icons: ",
+      toast: function (on) { return on ? "Alert icons enabled" : "Alert icons off"; }
+    });
+  }
+
   function renderThemes(panel) {
     clear(panel);
     panel.appendChild(el("div", "cdbx-h1", "Themes"));
@@ -4061,6 +4100,8 @@
       renderThemePickerRow,
       renderTransparentChatComposerRow,
       renderFrostedReplyFieldRow,
+      renderGithubAlertsRow,
+      renderGithubAlertIconsRow,
       renderDevToolsRow
     ] },
     { title: "Models and 3P", sub: "Extra models and gateway options", items: [
