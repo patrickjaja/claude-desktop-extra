@@ -2581,8 +2581,16 @@ async function modelsPanel(modelsItem) {
     subagentModel: "", subagentModelLocked: false, announce: true, announceLocked: false,
     announceText: "Custom models available in this app (claude-desktop-extra), served by the user's own providers: claude-deepseek-flash[1m] (DeepSeek Flash, deepseek; sub-agent type deepseek-flash).",
     anthropicModels: [{ id: "claude-opus-5", name: "Opus 5" }, { id: "claude-haiku-4-5-20251001", name: "Haiku 4.5" }],
-    presets: [{ id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic", keyHint: "sk-...",
-      modelsUrl: "https://api.deepseek.com/v1/models", effort: ["low", "high", "max"], context: "1m" }],
+    presets: [
+      { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic", keyHint: "sk-...",
+        modelsUrl: "https://api.deepseek.com/v1/models", effort: ["low", "high", "max"], context: "1m" },
+      { id: "opencode", label: "OpenCode Console (Zen)", baseUrl: "https://opencode.ai/inference/anthropic", keyHint: "oc_sk_...",
+        modelsUrl: "https://opencode.ai/inference/v1/models", sessionHeader: "x-opencode-session",
+        userAgent: "claude-desktop-extra/1.0", stripBillingHeader: true },
+      { id: "opencode-go", label: "OpenCode Go", baseUrl: "https://opencode.ai/inference/go/anthropic", keyHint: "oc_sk_...",
+        modelsUrl: "https://opencode.ai/inference/go/v1/models", sessionHeader: "x-opencode-session",
+        userAgent: "claude-desktop-extra/1.0", stripBillingHeader: true }
+    ],
     paths: { json: "/home/u/.config/Claude/claude-desktop-extra.json", jsonc: "/home/u/.config/Claude/claude-desktop-extra.jsonc",
       secrets: "/home/u/.config/Claude/custom-models/secrets.json", routes: "/home/u/.config/Claude/custom-models/routes.json" },
     providers: [
@@ -2761,14 +2769,25 @@ async function modelsPanel(modelsItem) {
   ok(!!addForm, "Add a provider opens the form under the button");
   if (addForm) {
     const preset = addForm.querySelector("select");
-    preset.value = "deepseek";
+    preset.value = "opencode-go";
     preset.dispatchEvent(new Event("change", { bubbles: true }));
     const f = addForm.querySelectorAll("input.cdbx-input");
-    ok(f[0].value === "deepseek" && f[1].value === "https://api.deepseek.com/anthropic" && f[3].value === "https://api.deepseek.com/v1/models" && f.length === 5,
-       "the preset prefills id, base URL and models URL");
-    ok(fieldControl(addForm, "User-Agent") === f[4] && f[4].value === "" && fieldControl(addForm, "Drop the billing line").checked === false,
-       "a new provider's User-Agent starts empty and the billing line is kept");
+    ok(f.length === 6 && f[0].value === "opencode-go" && f[1].value === "https://opencode.ai/inference/go/anthropic" &&
+       f[3].value === "https://opencode.ai/inference/go/v1/models" &&
+       fieldControl(addForm, "User-Agent") === f[4] && f[4].value === "claude-desktop-extra/1.0" &&
+       fieldControl(addForm, "Session header") === f[5] && f[5].value === "x-opencode-session" &&
+       fieldControl(addForm, "Drop the billing line").checked === true,
+       "opencode-go preset prefills id, URLs, User-Agent, Session header and billing-line switch");
+    preset.value = "deepseek";
+    preset.dispatchEvent(new Event("change", { bubbles: true }));
+    ok(f[0].value === "deepseek" && f[1].value === "https://api.deepseek.com/anthropic" && f[3].value === "https://api.deepseek.com/v1/models" && f.length === 6,
+       "the preset prefills id, base URL and models URL (and resets User-Agent / Session header / billing line)");
+    ok(fieldControl(addForm, "User-Agent") === f[4] && f[4].value === "" &&
+       fieldControl(addForm, "Session header") === f[5] && f[5].value === "" &&
+       fieldControl(addForm, "Drop the billing line").checked === false,
+       "a new deepseek provider's User-Agent and Session header start empty and the billing line is kept");
     f[4].value = "MyAgent/1.0";
+    f[5].value = "x-opencode-session";
     fieldControl(addForm, "Drop the billing line").checked = true;
     const plv = addForm.querySelectorAll(".cdbx-models-level input[type=checkbox]");
     ok(plv.length === 5 && Array.from(plv).map((c) => c.checked).join(",") === "true,false,true,false,true",
@@ -2783,8 +2802,8 @@ async function modelsPanel(modelsItem) {
     ok(window.__cmWrites.some((w) => w === "provider-set:ds2:https://api.deepseek.com/anthropic:key:deepseek:https://api.deepseek.com/v1/models:low/high/max"),
        "Add provider sends the id, URL, key, preset, models URL and effort levels: " + JSON.stringify(window.__cmWrites));
     const sentP = (window.__cmProviderPayloads || []).filter((p) => p.id === "ds2").pop();
-    ok(!!sentP && sentP.userAgent === "MyAgent/1.0" && sentP.stripBillingHeader === true,
-       "and the User-Agent and the billing-line switch: " + JSON.stringify(sentP));
+    ok(!!sentP && sentP.userAgent === "MyAgent/1.0" && sentP.sessionHeader === "x-opencode-session" && sentP.stripBillingHeader === true,
+       "and the User-Agent, Session header and billing-line switch: " + JSON.stringify(sentP));
     ok(!window.__cmWrites.some((w) => /^model-set:ds2/.test(w)), "no model is added silently - fetch models is the next step");
     ok(!/sk-secret-123456/.test(panel.textContent), "the key never appears in the panel");
     // By hand (no preset): the provider alone, the card's Add a model is next.
@@ -2799,7 +2818,8 @@ async function modelsPanel(modelsItem) {
     ok(window.__cmWrites.length === 1 && window.__cmWrites[0] === "provider-set:gw2:https://gw.example/anthropic:nokey:::low/medium/high/xhigh/max",
        "by hand: only the provider is created, no preset, all five levels: " + JSON.stringify(window.__cmWrites));
     const sentG = (window.__cmProviderPayloads || []).filter((p) => p.id === "gw2").pop();
-    ok(!!sentG && sentG.userAgent === "" && sentG.stripBillingHeader === false, "untouched, they go empty and off: " + JSON.stringify(sentG));
+    ok(!!sentG && sentG.userAgent === "" && sentG.sessionHeader === "" && sentG.stripBillingHeader === false,
+       "untouched, they go empty and off: " + JSON.stringify(sentG));
 
   // Edit the existing provider: detect is live there and ticks what the
   // provider accepted.
@@ -2858,12 +2878,63 @@ async function modelsPanel(modelsItem) {
       return card.querySelector(".cdbx-models-form");
     };
     window.__cmConfig.providers[0].userAgent = "Other/2.0";
+    window.__cmConfig.providers[0].sessionHeader = "x-opencode-session";
     window.__cmConfig.providers[0].stripBillingHeader = true;
     await saveVia(panel.querySelectorAll(".cdbx-models-card")[0]);
+    const cardState0 = panel.querySelectorAll(".cdbx-models-card")[0].querySelector(".cdbx-state").textContent;
+    const cardState1 = panel.querySelectorAll(".cdbx-models-card")[1].querySelector(".cdbx-state").textContent;
+    ok(cardState0.indexOf(" - session header x-opencode-session") !== -1 && cardState1.indexOf("session header") === -1,
+       "provider card shows session header when set and omits it when empty: " + cardState0);
     let ef = await editedForm();
-    ok(fieldControl(ef, "User-Agent").value === "Other/2.0" && fieldControl(ef, "Drop the billing line").checked === true,
-       "a compatible provider's form shows its User-Agent and its billing-line switch");
+    ok(fieldControl(ef, "User-Agent").value === "Other/2.0" &&
+       fieldControl(ef, "Session header").value === "x-opencode-session" &&
+       fieldControl(ef, "Drop the billing line").checked === true,
+       "a compatible provider's form shows its User-Agent, Session header and its billing-line switch");
     Array.from(ef.querySelectorAll("button")).find((b) => b.textContent === "cancel").click();
+
+    // Edit an existing opencode-go provider, clear its preset defaults and Save:
+    window.__cmConfig = JSON.parse(JSON.stringify(cfg));
+    window.__cmConfig.providers[0] = Object.assign({}, cfg.providers[0], {
+      id: "ocgo", preset: "opencode-go", baseUrl: "https://opencode.ai/inference/go/anthropic",
+      userAgent: "claude-desktop-extra/1.0", sessionHeader: "x-opencode-session", stripBillingHeader: true
+    });
+    await saveVia(panel.querySelectorAll(".cdbx-models-card")[0]);
+    const editOc = await editedForm();
+    ok(!editOc.querySelector("select") && fieldControl(editOc, "Provider id").disabled === true &&
+       fieldControl(editOc, "User-Agent").value === "claude-desktop-extra/1.0" &&
+       fieldControl(editOc, "Session header").value === "x-opencode-session" &&
+       fieldControl(editOc, "Drop the billing line").checked === true,
+       "editing an existing opencode-go provider locks id, hides Preset, and pre-fills its defaults");
+    fieldControl(editOc, "User-Agent").value = "";
+    fieldControl(editOc, "Session header").value = "";
+    fieldControl(editOc, "Drop the billing line").checked = false;
+    Array.from(editOc.querySelectorAll("button")).find((b) => b.textContent === "Save").click();
+    await sleep(60);
+    const savedOc = (window.__cmProviderPayloads || []).filter((p) => p.id === "ocgo").pop();
+    ok(!!savedOc && savedOc.preset === "opencode-go" && savedOc.userAgent === "" &&
+       savedOc.sessionHeader === "" && savedOc.stripBillingHeader === false,
+       "clearing fields on an edited opencode-go provider submits empty/false overrides: " + JSON.stringify(savedOc));
+
+    // DOM XSS safety on p.sessionHeader and Add-a-provider keyCleared toast without TypeError:
+    window.__cmConfig = JSON.parse(JSON.stringify(cfg));
+    window.__cmConfig.providers[0].sessionHeader = '<img src=x onerror="window.__xss=5">';
+    await saveVia(panel.querySelectorAll(".cdbx-models-card")[0]);
+    const xssCard = panel.querySelectorAll(".cdbx-models-card")[0];
+    ok(xssCard.querySelector(".cdbx-state").textContent.indexOf('<img src=x onerror="window.__xss=5">') !== -1 &&
+       xssCard.querySelectorAll("img").length === 0 && window.__xss === undefined,
+       "p.sessionHeader renders as literal text with zero HTML execution");
+
+    window.__cmConfig = Object.assign({}, cfg, { keyCleared: true });
+    panel.querySelector(".cdbx-models-add-provider").click();
+    await sleep(30);
+    const addCleared = panel.querySelector(".cdbx-models-form-provider-new");
+    const acIn = addCleared.querySelectorAll("input.cdbx-input");
+    acIn[0].value = "deepseek"; acIn[1].value = "https://other.example/anthropic";
+    Array.from(addCleared.querySelectorAll("button")).find((b) => b.textContent === "Add provider").click();
+    await sleep(60);
+    const tCleared = document.querySelector(".cdbx-toast");
+    ok(!!tCleared && /Provider deepseek saved - its base URL moved to another host/.test(tCleared.textContent),
+       "adding a provider that matches an existing id on a new origin handles keyCleared without null crash");
     window.__cmConfig = JSON.parse(JSON.stringify(cfg));
     window.__cmConfig.providers[0].shadowed = ["claude-opus-5-5", "claude-sonnet-5-5"];
     window.__cmConfig.providers[0].native = true;
@@ -3590,7 +3661,42 @@ async function run() {
     ok(items.length === 1, "Windows: one row was added (" + items.length + ")");
     ok(items.length === 1 && items[0].textContent.trim() === "Models",
        "Windows: the row is Models (" + (items[0] ? items[0].textContent.trim() : "none") + ")");
-    if (items.length === 1) await assertPanelMounts(items[0]);
+    window.__cmConfig = { ok: true, enabled: true, configured: true, lockedByJsonc: false, source: "default",
+      surfaces: ["ccd", "code"], models: 1, webSearch: "", webSearchLocked: false,
+      smallFastModel: "", smallFastModelLocked: false, searchConflict: "", subagentModel: "", subagentModelLocked: false,
+      announce: true, announceLocked: false, announceText: "", anthropicModels: [],
+      presets: [
+        { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/anthropic", keyHint: "sk-..." },
+        { id: "opencode-go", label: "OpenCode Go", baseUrl: "https://opencode.ai/inference/go/anthropic",
+          modelsUrl: "https://opencode.ai/inference/go/v1/models", sessionHeader: "x-opencode-session",
+          userAgent: "claude-desktop-extra/1.0", stripBillingHeader: true }
+      ],
+      paths: { json: "C:\\Users\\u\\AppData\\Roaming\\Claude\\claude-desktop-extra.json" },
+      providers: [{ id: "ocgo", baseUrl: "https://opencode.ai/inference/go/anthropic", locked: false, keyOk: true,
+        keySource: "stored", preset: "opencode-go", sessionHeader: "x-opencode-session", effort: ["low", "max"], context: "1m",
+        models: [{ id: "glm-5.3", alias: "claude-glm-5.3", listedAs: ["claude-glm-5.3[1m]"], name: "GLM-5.3",
+          description: "", vision: false, thinking: true, context: "1m", effort: ["low", "max"], effortDefault: "max", badge: "", agent: false }] }] };
+    if (items.length === 1) {
+      await assertPanelMounts(items[0]);
+      const winPanel = document.querySelector(".cdbx-panel");
+      const winCard = winPanel && winPanel.querySelector(".cdbx-models-card");
+      ok(!!winCard && /session header x-opencode-session/.test(winCard.querySelector(".cdbx-state").textContent),
+         "Windows: Models panel renders provider cards and session header state");
+      const addBtn = winPanel && winPanel.querySelector(".cdbx-models-add-provider");
+      if (addBtn) {
+        addBtn.click();
+        await sleep(30);
+        const fWin = winPanel.querySelector(".cdbx-models-form-provider-new");
+        const selWin = fWin && fWin.querySelector("select");
+        if (selWin) {
+          selWin.value = "opencode-go";
+          selWin.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        const fWinInputs = fWin ? fWin.querySelectorAll("input.cdbx-input") : [];
+        ok(fWinInputs.length === 6 && fWinInputs[4].value === "claude-desktop-extra/1.0" && fWinInputs[5].value === "x-opencode-session",
+           "Windows: opencode-go preset prefills User-Agent and Session header in Add a provider");
+      }
+    }
     return;
   }
 

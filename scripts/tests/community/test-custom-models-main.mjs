@@ -524,6 +524,16 @@ async function settle() { await new Promise((r) => setTimeout(r, 10)); }
   const opper = r.presets.find((x) => x.id === "opper");
   ok(opper && opper.baseUrl === "https://eu.gw.opper.ai" && opper.modelsUrl === "https://eu.gw.opper.ai/v1/models",
      "the Opper preset: EU gateway, its model list on the same host");
+  const oc = r.presets.find((x) => x.id === "opencode");
+  const ocGo = r.presets.find((x) => x.id === "opencode-go");
+  ok(oc && oc.label === "OpenCode Console (Zen)" && oc.baseUrl === "https://opencode.ai/inference/anthropic" &&
+     oc.modelsUrl === "https://opencode.ai/inference/v1/models" && oc.sessionHeader === "x-opencode-session" &&
+     oc.userAgent === "claude-desktop-extra/1.0" && oc.stripBillingHeader === true,
+     "the OpenCode Console (Zen) preset carries endpoint, modelsUrl, x-opencode-session, userAgent and stripBillingHeader");
+  ok(ocGo && ocGo.label === "OpenCode Go" && ocGo.baseUrl === "https://opencode.ai/inference/go/anthropic" &&
+     ocGo.modelsUrl === "https://opencode.ai/inference/go/v1/models" && ocGo.sessionHeader === "x-opencode-session" &&
+     ocGo.userAgent === "claude-desktop-extra/1.0" && ocGo.stripBillingHeader === true,
+     "the OpenCode Go preset carries Go endpoint, modelsUrl, x-opencode-session, userAgent and stripBillingHeader");
   ok(r.webSearch === "" && r.webSearchLocked === false, "web search defaults to Anthropic");
   ok(r.configured === false && r.providers[0].models.length === 0, "a provider without a model is listed but not usable");
   const json = JSON.parse(readFileSync(join(dir, "claude-desktop-extra.json"), "utf8"));
@@ -772,6 +782,32 @@ async function settle() { await new Promise((r) => setTimeout(r, 10)); }
      "a list that states every model's context is not completed from /v1/model/info: " + sandbox.__fetchCalls.map((c) => c.url).join(" "));
   r = await h["cdb-cm:provider-delete"](okSenderEv, "gw");
   ok(r.ok === true, "the gateway provider is removed again");
+  // OpenCode's shape: limit.context, modalities.input, capabilities.reasoning.supported.
+  r = await h["cdb-cm:provider-set"](okSenderEv, { id: "ocgo", baseUrl: "https://opencode.ai/inference/go/anthropic", apiKey: "oc_sk_secret_123456", preset: "opencode-go" });
+  ok(r.ok === true, "an OpenCode Go provider is saved");
+  sandbox.__fetchCalls.length = 0;
+  sandbox.__fetchImpl = () => Promise.resolve(new Response(JSON.stringify({ object: "list", data: [
+    { id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash 1017", modalities: { input: ["text", "image/jpeg"] }, capabilities: { reasoning: { supported: true } }, limit: { context: 1000000 } },
+    { id: "glm-5.3", name: "GLM-5.3", modalities: { input: ["text"] }, capabilities: { reasoning: { supported: true } }, limit: { context: 1000000 } },
+    { id: "small-model", name: "Small Model", modalities: { input: ["text"] }, capabilities: { reasoning: { supported: false } }, limit: { context: 200000 } },
+    { id: "explicit-len", name: "Explicit", context_length: 200000, limit: { context: 1000000 } },
+    { id: "zero-len", name: "Zero Len", context_length: 0, modalities: { input: [] }, capabilities: { reasoning: false }, limit: { context: 1000000 } }
+  ] }), { status: 200 }));
+  r = await h["cdb-cm:models-list"](okSenderEv, "ocgo");
+  const ocById = Object.fromEntries((r.models || []).map((m) => [m.id, m]));
+  ok(r.ok === true && ocById["deepseek-v4.1-flash"].context === "1m" && !("vision" in ocById["deepseek-v4.1-flash"]) && !("thinking" in ocById["deepseek-v4.1-flash"]),
+     "OpenCode model metadata: 1M context from limit.context, vision/thinking kept on when supported: " + JSON.stringify(ocById["deepseek-v4.1-flash"]));
+  ok(ocById["glm-5.3"].context === "1m" && ocById["glm-5.3"].vision === false && !("thinking" in ocById["glm-5.3"]),
+     "OpenCode text-only model gets vision=false: " + JSON.stringify(ocById["glm-5.3"]));
+  ok(ocById["small-model"].context === "200k" && ocById["small-model"].vision === false && ocById["small-model"].thinking === false,
+     "OpenCode 200k non-reasoning model gets context=200k, vision=false, thinking=false: " + JSON.stringify(ocById["small-model"]));
+  ok(ocById["explicit-len"].context === "200k", "explicit context_length wins over limit.context fallback");
+  ok(ocById["zero-len"].context === "1m" && !("vision" in ocById["zero-len"]) && ocById["zero-len"].thinking === false,
+     "context_length:0 falls back to limit.context, empty modalities.input keeps vision, flat reasoning:false sets thinking=false");
+  r = await h["cdb-cm:provider-delete"](okSenderEv, "ocgo");
+  ok(r.ok === true, "OpenCode Go test provider removed");
+  sandbox.__fetchImpl = () => Promise.resolve(new Response(JSON.stringify({ id: "msg" }), { status: 200 }));
+
   // Anthropic's own API serves no /v1/model/info: not asked.
   r = await h["cdb-cm:provider-set"](okSenderEv, { id: "antinfo", baseUrl: "https://api.anthropic.com", apiKey: "sk-ant-api-1234567890" });
   ok(r.ok === true, "an Anthropic API provider is saved: " + JSON.stringify(r).slice(0, 200));
@@ -921,6 +957,100 @@ async function settle() { await new Promise((r) => setTimeout(r, 10)); }
   const sent = sandbox.__fetchCalls[0].init.headers;
   ok(Object.keys(sent).filter((k) => k.toLowerCase() === "user-agent").length === 1 && sent["user-agent"] === "Hand/2.0",
      "the app's own request carries one User-Agent, userAgent's: " + JSON.stringify(sent));
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// --- per-provider Session header (OpenCode Go and generic gateways) ------------------
+{
+  const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const dir = mkdtempSync(join(tmpdir(), "cdb-cm-main-"));
+  switchOn(dir);
+  const { h, sandbox, api } = load(dir);
+  const routes = () => JSON.parse(readFileSync(join(dir, "custom-models", "routes.json"), "utf8"));
+  const jsonProvider = (id) => JSON.parse(readFileSync(join(dir, "claude-desktop-extra.json"), "utf8")).customModels.providers.find((p) => p.id === id);
+
+  let r = await h["cdb-cm:provider-set"](okSenderEv, { id: "gw", baseUrl: "https://gw.example/anthropic", apiKey: "sk-gw-1234567890",
+    sessionHeader: " x-opencode-session " });
+  ok(r.ok === true && r.providers[0].sessionHeader === "x-opencode-session",
+     "provider-set trims and returns sessionHeader: " + JSON.stringify(r.providers && r.providers[0]));
+  await h["cdb-cm:model-set"](okSenderEv, "gw", { id: "m1" });
+  ok(routes().providers[0].sessionHeader === "x-opencode-session", "sessionHeader reaches routes.json");
+
+  // Probes: test and effort-probe attach UUID v4; models-list does not.
+  sandbox.__fetchCalls.length = 0;
+  await h["cdb-cm:provider-test"](okSenderEv, "gw");
+  const testHdrs = sandbox.__fetchCalls[0].init.headers;
+  ok(UUID_V4_RE.test(testHdrs["x-opencode-session"] || ""),
+     "provider-test attaches a generated UUID v4 in sessionHeader: " + JSON.stringify(testHdrs));
+  sandbox.__fetchCalls.length = 0;
+  sandbox.__fetchImpl = () => Promise.resolve(new Response(JSON.stringify({ data: [{ id: "m1" }] }), { status: 200 }));
+  await h["cdb-cm:models-list"](okSenderEv, "gw");
+  ok(sandbox.__fetchCalls.length >= 1 && sandbox.__fetchCalls.every((c) => !("x-opencode-session" in c.init.headers)),
+     "models-list (GET) does not send sessionHeader");
+  sandbox.__fetchImpl = () => Promise.resolve(new Response(JSON.stringify({ id: "msg" }), { status: 200 }));
+  sandbox.__fetchCalls.length = 0;
+  await h["cdb-cm:effort-probe"](okSenderEv, "gw", "");
+  ok(sandbox.__fetchCalls.length === 5 &&
+     sandbox.__fetchCalls.every((c) => UUID_V4_RE.test(c.init.headers["x-opencode-session"] || "")) &&
+     new Set(sandbox.__fetchCalls.map((c) => c.init.headers["x-opencode-session"])).size === 1,
+     "effort-probe attaches one generated UUID v4 in sessionHeader across its parallel requests");
+
+  // Omitting sessionHeader on edit keeps it; moving baseUrl keeps it; "" clears it cleanly.
+  r = await h["cdb-cm:provider-set"](okSenderEv, { id: "gw", baseUrl: "https://gw.example/anthropic", apiKey: "" });
+  ok(r.ok === true && r.providers[0].sessionHeader === "x-opencode-session", "an edit that omits sessionHeader keeps it");
+  r = await h["cdb-cm:provider-set"](okSenderEv, { id: "gw", baseUrl: "https://other.example/anthropic", apiKey: "" });
+  ok(r.ok === true && r.providers[0].sessionHeader === "x-opencode-session", "moving baseUrl to another host keeps sessionHeader");
+  r = await h["cdb-cm:provider-set"](okSenderEv, { id: "gw", baseUrl: "https://other.example/anthropic", apiKey: "", sessionHeader: "" });
+  ok(r.ok === true && r.providers[0].sessionHeader === "" && !("sessionHeader" in jsonProvider("gw")),
+     "setting sessionHeader to '' clears it from config and omits it from .json");
+
+  // Validation: malformed and reserved headers are rejected.
+  for (const badHdr of ["bad header", "bad\r\nx: 1", "x".repeat(101), "Authorization", "X-Api-Key", "Content-Type",
+      "User-Agent", "Host", "Cookie", "Anthropic-Version", "Anthropic-Beta", "Accept", "Content-Length", "Transfer-Encoding",
+      "Keep-Alive", "Expect", "__proto__", "constructor", "prototype"]) {
+    r = await h["cdb-cm:provider-set"](okSenderEv, { id: "gw", baseUrl: "https://other.example/anthropic", apiKey: "", sessionHeader: badHdr });
+    ok(r.ok === false && /Session header/.test(r.error), "rejects invalid/reserved sessionHeader " + JSON.stringify(badHdr) + ": " + r.error);
+  }
+
+  // Preset inheritance and explicit clear overrides on opencode-go.
+  r = await h["cdb-cm:provider-set"](okSenderEv, { id: "ocgo", baseUrl: "https://opencode.ai/inference/go/anthropic",
+    apiKey: "oc_sk_1234567890", preset: "opencode-go", sessionHeader: "", userAgent: "", stripBillingHeader: false });
+  ok(r.ok === true && r.providers[0].sessionHeader === "" && r.providers[0].userAgent === "" && r.providers[0].stripBillingHeader === false,
+     "explicit empty/false overrides on an opencode-go provider persist over preset defaults: " + JSON.stringify(r.providers[0]));
+  const cReload = api.readConfig().allProviders.find((p) => p.id === "ocgo");
+  ok(cReload && !cReload.sessionHeader && !cReload.userAgent && !cReload.stripBillingHeader,
+     "readConfig honours explicit clear overrides instead of re-applying opencode-go preset defaults");
+  // Moving an opencode-go provider off opencode.ai detaches its preset and garbage-collects empty/false clear overrides.
+  r = await h["cdb-cm:provider-set"](okSenderEv, { id: "ocgo", baseUrl: "https://other.example/anthropic", apiKey: "sk-new-1234567890" });
+  const ocMovedJson = jsonProvider("ocgo");
+  ok(r.ok === true && !("preset" in ocMovedJson) && !("sessionHeader" in ocMovedJson) &&
+     !("userAgent" in ocMovedJson) && !("stripBillingHeader" in ocMovedJson),
+     "moving opencode-go baseUrl off-host detaches preset and cleans empty/false overrides from .json: " + JSON.stringify(ocMovedJson));
+  rmSync(dir, { recursive: true, force: true });
+}
+{
+  // Hand-written .jsonc: opencode-go preset defaults inherit; explicit static headers win on case mismatch; invalid sessionHeader dropped & logged.
+  const dir = mkdtempSync(join(tmpdir(), "cdb-cm-main-"));
+  writeFileSync(join(dir, "claude-desktop-extra.jsonc"), `{ "customModels": { "enabled": true, "providers": [
+    { "id": "oc", "baseUrl": "https://opencode.ai/inference/go/anthropic", "preset": "opencode-go", "apiKey": "oc_sk_1234567890",
+      "models": [{ "id": "glm-5.3" }] },
+    { "id": "pin", "baseUrl": "https://pin.example/anthropic", "apiKey": "sk-test-1234567890", "sessionHeader": "x-opencode-session",
+      "headers": { "X-Opencode-Session": "pinned" }, "models": [{ "id": "m1" }] },
+    { "id": "badsh", "baseUrl": "https://bad.example/anthropic", "apiKey": "sk-test-1234567890", "sessionHeader": "Authorization",
+      "models": [{ "id": "m2" }] }] } }`);
+  const { h, sandbox, diag } = load(dir);
+  const cfg = await h["cdb-cm:config-read"](okSenderEv);
+  const oc = cfg.providers.find((p) => p.id === "oc"), bad = cfg.providers.find((p) => p.id === "badsh");
+  ok(oc.sessionHeader === "x-opencode-session" && oc.userAgent === "claude-desktop-extra/1.0" && oc.stripBillingHeader === true,
+     "hand-written .jsonc with preset opencode-go inherits sessionHeader, userAgent and stripBillingHeader");
+  ok(bad.sessionHeader === "" && diag.some((l) => /badsh.*sessionHeader/.test(l)),
+     "reserved sessionHeader in .jsonc is dropped and logged");
+  sandbox.__fetchCalls.length = 0;
+  await h["cdb-cm:provider-test"](okSenderEv, "pin");
+  const sent = sandbox.__fetchCalls[0].init.headers;
+  const matchingKeys = Object.keys(sent).filter((k) => k.toLowerCase() === "x-opencode-session");
+  ok(matchingKeys.length === 1 && sent[matchingKeys[0]] === "pinned",
+     "static p.headers wins without duplicate keys on sessionHeader case mismatch: " + JSON.stringify(sent));
   rmSync(dir, { recursive: true, force: true });
 }
 

@@ -70,16 +70,27 @@ ok(calls[1][1][0] === "github.com/my-app[bot]" && calls[2][1] === null, "bridge 
   ok(calls[0][0] === "cdb-cm:provider-set" && p.id === "openrouter" && p.apiKey === "sk-x" && p.preset === "openrouter" &&
      p.modelsUrl === "https://openrouter.ai/api/v1/models" && p.effort.join(",") === "low,max" && !("secret" in p),
      "provider-set forwards its fields and nothing else");
-  ok(p.userAgent === undefined && p.stripBillingHeader === undefined, "provider-set leaves out userAgent and stripBillingHeader when the page does not send them");
+  ok(p.userAgent === undefined && p.sessionHeader === undefined && p.stripBillingHeader === undefined,
+     "provider-set leaves out userAgent, sessionHeader and stripBillingHeader when the page does not send them");
 }
 {
   calls.length = 0;
-  api.customModelsProviderSet({ id: "openrouter", baseUrl: "https://openrouter.ai/api", apiKey: "", userAgent: "MyAgent/1.0", stripBillingHeader: true });
+  api.customModelsProviderSet({ id: "openrouter", baseUrl: "https://openrouter.ai/api", apiKey: "", userAgent: "MyAgent/1.0",
+    sessionHeader: "x-opencode-session", stripBillingHeader: true });
   const p = calls[0][1];
-  ok(p.userAgent === "MyAgent/1.0" && p.stripBillingHeader === true, "provider-set forwards userAgent and stripBillingHeader");
+  ok(p.userAgent === "MyAgent/1.0" && p.sessionHeader === "x-opencode-session" && p.stripBillingHeader === true,
+     "provider-set forwards userAgent, sessionHeader and stripBillingHeader");
   calls.length = 0;
-  api.customModelsProviderSet({ id: "openrouter", baseUrl: "https://openrouter.ai/api", apiKey: "", userAgent: "", stripBillingHeader: "yes" });
-  ok(calls[0][1].userAgent === "" && calls[0][1].stripBillingHeader === undefined, "an empty userAgent goes (it clears); a non-boolean switch does not");
+  api.customModelsProviderSet({ id: "openrouter", baseUrl: "https://openrouter.ai/api", apiKey: "", userAgent: "", sessionHeader: "", stripBillingHeader: "yes" });
+  ok(calls[0][1].userAgent === "" && calls[0][1].sessionHeader === "" && calls[0][1].stripBillingHeader === undefined,
+     "an empty userAgent or sessionHeader goes (it clears); a non-boolean switch does not");
+  calls.length = 0;
+  api.customModelsProviderSet({ id: "openrouter", baseUrl: "https://openrouter.ai/api", apiKey: "", sessionHeader: 123, userAgent: 456, stripBillingHeader: false });
+  ok(calls[0][1].sessionHeader === undefined && calls[0][1].userAgent === undefined && calls[0][1].stripBillingHeader === false,
+     "non-string sessionHeader/userAgent are omitted while boolean false is forwarded");
+  calls.length = 0;
+  api.customModelsProviderSet("not-an-object");
+  ok(JSON.stringify(calls[0][1]) === "{}", "a non-object provider is sent as {} for main to refuse");
 }
 {
   calls.length = 0;

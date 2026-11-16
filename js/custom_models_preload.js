@@ -36,6 +36,7 @@
   var SELFTEST = process.env.CDB_CUSTOM_MODELS_SELFTEST === "1";
   var path = require("node:path");
   var fs = require("node:fs");
+  var crypto = require("node:crypto");
 
   // Read-and-scrub.
   var rawJson = process.env.CDB_CUSTOM_MODELS_JSON;
@@ -483,15 +484,58 @@
     return out;
   }
 
-  function outHeaders(init, p) {
-    var src = new Headers(init.headers || {});
-    var h = new Headers();
-    ["content-type", "accept", "anthropic-version"].forEach(function (k) {
-      var v = src.get(k);
-      if (v) h.set(k, v);
-    });
-    if (!h.has("content-type")) h.set("content-type", "application/json");
-    h.set("x-api-key", String(p.apiKey).trim()); // never the Anthropic OAuth Authorization
+  var HEADER_NAME_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+  var SESSION_HEADER_MAX = 100;
+  var RESERVED_SESSION_HEADERS = Object.assign(Object.create(null), {
+    authorization: 1, "proxy-authorization": 1, "x-api-key": 1, cookie: 1, "set-cookie": 1,
+    host: 1, "content-length": 1, "content-type": 1, "content-encoding": 1, "transfer-encoding": 1,
+    accept: 1, "anthropic-version": 1, "anthropic-beta": 1, "user-agent": 1,
+    connection: 1, upgrade: 1, te: 1, trailer: 1, "keep-alive": 1, expect: 1, origin: 1, referer: 1,
+    constructor: 1, prototype: 1
+  });
+  RESERVED_SESSION_HEADERS["__proto__"] = 1;
+  function validSessionHeader(s) {
+    return typeof s === "string" && s.length > 0 && s.length <= SESSION_HEADER_MAX &&
+      HEADER_NAME_RE.test(s) && !RESERVED_SESSION_HEADERS[s.toLowerCase()];
+  }
+  var SESSION_ID_RE = /^[\x21-\x7e]{1,200}$/;
+  var fallbackSessionId = "";
+  function sessionIdOf(init, body) {
+    try {
+      var src = init && init.headers ? new Headers(init.headers) : null;
+      var hdr = src ? src.get("x-claude-code-session-id") : null;
+      if (typeof hdr === "string") {
+        hdr = hdr.trim();
+        if (SESSION_ID_RE.test(hdr)) return hdr;
+      }
+    } catch (e) {}
+    var uid = body && body.metadata && typeof body.metadata.user_id === "string" ? body.metadata.user_id.trim() : "";
+    if (uid) {
+      if (uid.charAt(0) === "{") {
+        try {
+          var parsed = JSON.parse(uid);
+          if (parsed && typeof parsed.session_id === "string") {
+            var jsid = parsed.session_id.trim();
+            if (SESSION_ID_RE.test(jsid)) return jsid;
+          }
+        } catch (e) {}
+      }
+      var m = /_session_([A-Za-z0-9_-]{8,128})$/.exec(uid);
+      if (m && SESSION_ID_RE.test(m[1])) return m[1];
+    }
+    if (!fallbackSessionId) fallbackSessionId = crypto.randomUUID();
+    return fallbackSessionId;
+  }
+  function applyProviderHeaders(h, p, sid) {
+    if (typeof p.sessionHeader === "string") {
+      var sh = p.sessionHeader.trim();
+      if (validSessionHeader(sh) && sid) {
+        try { h.set(sh, sid); }
+        catch (e) { warnHeader(p.id, sh); }
+      } else if (sh) {
+        warnHeader(p.id, p.sessionHeader);
+      }
+    }
     if (p.headers && typeof p.headers === "object") {
       Object.keys(p.headers).forEach(function (k) {
         if (typeof p.headers[k] !== "string") return;
@@ -502,6 +546,18 @@
       });
     }
     return withUserAgent(h, p);
+  }
+
+  function outHeaders(init, p, sid) {
+    var src = new Headers(init.headers || {});
+    var h = new Headers();
+    ["content-type", "accept", "anthropic-version"].forEach(function (k) {
+      var v = src.get(k);
+      if (v) h.set(k, v);
+    });
+    if (!h.has("content-type")) h.set("content-type", "application/json");
+    h.set("x-api-key", String(p.apiKey).trim()); // never the Anthropic OAuth Authorization
+    return applyProviderHeaders(h, p, sid);
   }
   // The provider's User-Agent, over the runtime's (Bun/x.y.z here), the CLI's
   // (claude-cli/... (external, claude-desktop...) on the native path) and any
@@ -546,7 +602,7 @@
 
   // Anthropic's own API on the user's API key: the CLI's headers as they are,
   // minus the subscription's login (its OAuth token and the oauth beta).
-  function nativeHeaders(init, p) {
+  function nativeHeaders(init, p, sid) {
     var h = new Headers(init.headers || {});
     h.delete("authorization");
     h.delete("content-length");
@@ -555,14 +611,7 @@
     var betas = (h.get("anthropic-beta") || "").split(",").map(function (t) { return t.trim(); })
       .filter(function (t) { return t && !/^oauth-/.test(t); });
     if (betas.length) h.set("anthropic-beta", betas.join(",")); else h.delete("anthropic-beta");
-    if (p.headers && typeof p.headers === "object") {
-      Object.keys(p.headers).forEach(function (k) {
-        if (typeof p.headers[k] !== "string") return;
-        try { h.set(k, p.headers[k]); }
-        catch (e) { warnHeader(p.id, k); }
-      });
-    }
-    return withUserAgent(h, p);
+    return applyProviderHeaders(h, p, sid);
   }
 
   var warnedHeaders = Object.create(null);
@@ -879,10 +928,12 @@
         return hops >= 3 ? res : post(next.href, opts, hops + 1);
       });
     }
+    var sid = typeof p.sessionHeader === "string" && validSessionHeader(p.sessionHeader.trim())
+      ? sessionIdOf(init, body) : "";
     function send(stripThinking, dropEffort) {
       return post(target, {
         method: init.method || "POST",
-        headers: native ? nativeHeaders(init, p) : outHeaders(init, p),
+        headers: native ? nativeHeaders(init, p, sid) : outHeaders(init, p, sid),
         // Native: the request as the CLI wrote it (cache_control, betas,
         // signed thinking...), only the model id is the provider's.
         body: native ? JSON.stringify(nativeBody(body, m, stripThinking))

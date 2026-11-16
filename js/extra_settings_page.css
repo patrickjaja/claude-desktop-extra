@@ -891,6 +891,7 @@
   border-radius: 10px;
 }
 .cdbx-models-card > .cdbx-row { border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent); }
+.cdbx-models-card .cdbx-state { overflow-wrap: anywhere; }
 .cdbx-models-locked { opacity: 0.8; }
 .cdbx-models-list { margin: 0 8px; }
 .cdbx-models-add-provider { margin: 10px 0 4px; }

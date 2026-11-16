@@ -1,6 +1,6 @@
 # Custom models
 
-Use models from other providers in the Code tab, next to Anthropic's. Any endpoint that speaks the Anthropic Messages API works: DeepSeek, Kimi, GLM, MiniMax, Qwen, OpenRouter, Opper, a gateway such as LiteLLM, or Anthropic's own API on your API credit. A session on a custom model talks to that provider with your key. Everything else stays on your subscription.
+Use models from other providers in the Code tab, next to Anthropic's. Any endpoint that speaks the Anthropic Messages API works: DeepSeek, Kimi, GLM, MiniMax, Qwen, OpenRouter, Opper, OpenCode Go, OpenCode Console (Zen), a gateway such as LiteLLM, or Anthropic's own API on your API credit. A session on a custom model talks to that provider with your key. Everything else stays on your subscription.
 
 This is not [third-party inference](third-party-inference.md), which replaces the subscription with a single gateway. Here the login, the Chat tab and the Claude models stay as they are.
 
@@ -68,6 +68,7 @@ The same settings can be written by hand under `customModels` in `claude-desktop
       "context": "1m",                   // "200k", "1m" or "both" (default: "1m")
       "headers": { "x-extra": "1" },     // optional, added to every request
       "userAgent": "MyAgent/1.0",        // optional, the User-Agent of every request to it
+      "sessionHeader": "x-opencode-session", // optional, sends the conversation UUID on every /v1/messages request
       "stripBillingHeader": true,        // optional, leaves out the CLI's billing line (not on Anthropic's API)
       "effortMap": { "xhigh": "high" },  // optional, renames a level for this API
       "models": [
@@ -114,7 +115,7 @@ The CLI reads a model's context window from its id: an id it does not know gets 
 | `"200k"` | `claude-<id>` | one entry |
 | `"both"` | both ids | `<name>` and `<name> 1M` |
 
-**Fetch models** sets the window of each model from the provider's list when it gives one (OpenRouter does). For a provider on the **Anthropic-compatible gateway** preset, or on no preset, whose list does not give it, Fetch models also asks the host's `/v1/model/info`, which a LiteLLM proxy and gateways built on one serve: `max_input_tokens` sets the window, `supports_vision` or `supports_reasoning` set to false turn the model's vision or thinking off, and a model whose `mode` is not `chat` or `responses` (an embedding, speech or transcription model) is left out of the checklist, with a note naming it. A field it does not state keeps the default, and a host without that endpoint changes nothing. Set `"200k"` on a model with a smaller window, such as Haiku or most local models: past its real window the provider refuses the request instead of the session compacting.
+**Fetch models** sets the window of each model from the provider's list when it gives one (OpenRouter does; catalogs exposing `limit.context`, `modalities.input`, or `capabilities.reasoning`, such as OpenCode Go and OpenCode Console, also populate context window, vision, and thinking defaults). For a provider on the **Anthropic-compatible gateway** preset, or on no preset, whose list does not give it, Fetch models also asks the host's `/v1/model/info`, which a LiteLLM proxy and gateways built on one serve: `max_input_tokens` sets the window, `supports_vision` or `supports_reasoning` set to false turn the model's vision or thinking off, and a model whose `mode` is not `chat` or `responses` (an embedding, speech or transcription model) is left out of the checklist, with a note naming it. A field it does not state keeps the default, and a host without that endpoint changes nothing. Set `"200k"` on a model with a smaller window, such as Haiku or most local models: past its real window the provider refuses the request instead of the session compacting.
 
 ### Web search and WebFetch
 
@@ -149,6 +150,7 @@ Some differences between providers and Anthropic are handled locally:
 What identifies the client can be set per provider, in its form or in the file:
 
 - **User-Agent.** Without one, a session's requests carry the runtime's own (`Bun/<version>`), the requests made from Settings (fetch models, test, detect) carry `node`, and on Anthropic's API the CLI's (`claude-cli/<version> (external, claude-desktop, …)`) goes. With `userAgent` set, every request to that provider carries it instead, over a `user-agent` in `headers`. Printable ASCII, 300 characters at most.
+- **Session header.** Empty/off by default. When set to a valid header name (100 characters at most; reserved auth, framing, and prototype keys are refused), `/v1/messages` requests carry a stable per-conversation UUID under that header - derived from Claude Code's session ID across turns, retries, sub-agents, sidecars, and `--resume` - while Settings probes (`test`, `detect`) send a fresh UUID. The **OpenCode Go** and **OpenCode Console (Zen)** presets prefill `sessionHeader: "x-opencode-session"`, `userAgent: "claude-desktop-extra/1.0"`, and `stripBillingHeader: true`.
 - **The billing line.** Claude Code starts the system prompt with a block for Anthropic's billing (`x-anthropic-billing-header: cc_version=…; cc_entrypoint=claude-desktop; …`). `stripBillingHeader` leaves that block out of requests to the provider; the rest of the system prompt, which tells the model it runs in Claude Code, is unchanged. Not offered for Anthropic's API, which uses the line.
 
 **Anthropic's API** (the **Anthropic API** preset) is the exception: the CLI's request goes through unchanged, prompt caching and betas included, with your API key in place of the subscription's login. One line is changed: the attribution block at the top of the system prompt says `cc_entrypoint=cli` instead of `cc_entrypoint=claude-desktop`, because the API refuses `claude-desktop` on an API key. `cli` is what Claude Code itself sends when it runs interactively on an API key. Requests are billed to your API account at its normal rates.

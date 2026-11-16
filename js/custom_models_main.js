@@ -67,6 +67,7 @@
   var _fs = require("fs");
   var _path = require("path");
   var _os = require("os");
+  var _crypto = require("crypto");
   var _URL = require("url").URL;
 
   var PRELOAD_SRC = "__CDB_CM_PRELOAD_SRC__";
@@ -165,6 +166,19 @@
   // shadow one gets the provider id appended.
   var AGENT_NAME_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
   var HEADER_NAME_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+  var SESSION_HEADER_MAX = 100;
+  var RESERVED_SESSION_HEADERS = Object.assign(Object.create(null), {
+    authorization: 1, "proxy-authorization": 1, "x-api-key": 1, cookie: 1, "set-cookie": 1,
+    host: 1, "content-length": 1, "content-type": 1, "content-encoding": 1, "transfer-encoding": 1,
+    accept: 1, "anthropic-version": 1, "anthropic-beta": 1, "user-agent": 1,
+    connection: 1, upgrade: 1, te: 1, trailer: 1, "keep-alive": 1, expect: 1, origin: 1, referer: 1,
+    constructor: 1, prototype: 1
+  });
+  RESERVED_SESSION_HEADERS["__proto__"] = 1;
+  function validSessionHeader(s) {
+    return typeof s === "string" && s.length > 0 && s.length <= SESSION_HEADER_MAX &&
+      HEADER_NAME_RE.test(s) && !RESERVED_SESSION_HEADERS[s.toLowerCase()];
+  }
   // A provider's User-Agent: printable ASCII only - fetch refuses a header
   // value with a line break or a character above 0xFF, and every request to
   // the provider would then fail as a network error.
@@ -384,6 +398,7 @@
     // key instead of the subscription's login.
     p.native = originOf(baseUrl) === ANTHROPIC_API_ORIGIN;
     if (typeof raw.preset === "string" && presetOf(raw.preset)) p.preset = raw.preset;
+    var pr = p.preset ? presetOf(p.preset) : null;
     // The effort values the provider's API accepts under the app's names -
     // an API convention, so it lives on the provider; a model may still
     // override it in the file. Absent: the preset's knowledge, else all five.
@@ -392,7 +407,7 @@
       levels = EFFORT_ORDER.filter(function (l) { return raw.effort.indexOf(l) !== -1; });
       if (!levels.length) levels = null;
     }
-    if (!levels && p.preset && presetOf(p.preset) && presetOf(p.preset).effort) levels = presetOf(p.preset).effort.slice();
+    if (!levels && pr && pr.effort) levels = pr.effort.slice();
     p.effort = levels || EFFORT_ORDER.slice();
     // An explicit list is sent as it is by the preload; without one, the
     // preload's default table (DeepSeek's convention) applies.
@@ -400,30 +415,51 @@
     // The context window its models are exposed with (CONTEXT_MODES): the
     // file's value, else the preset's knowledge, else DEFAULT_CONTEXT.
     if (CONTEXT_MODES.indexOf(raw.context) !== -1) p.context = raw.context;
-    else if (p.preset && presetOf(p.preset) && presetOf(p.preset).context) p.context = presetOf(p.preset).context;
+    else if (pr && pr.context) p.context = pr.context;
     else p.context = DEFAULT_CONTEXT;
     if (typeof raw.modelsUrl === "string" && /^https?:\/\/[^\s]+$/.test(raw.modelsUrl.trim())) p.modelsUrl = raw.modelsUrl.trim();
     if (isObj(raw.headers)) {
       // Only what fetch accepts: a malformed header would make every request
       // to the provider fail as a network error.
-      p.headers = {};
+      p.headers = Object.create(null);
       Object.keys(raw.headers).forEach(function (k) {
         var v = raw.headers[k];
-        if (typeof v === "string" && HEADER_NAME_RE.test(k) && !/[\r\n\0]/.test(v)) p.headers[k] = v;
+        if (k !== "__proto__" && k !== "constructor" && k !== "prototype" &&
+            typeof v === "string" && HEADER_NAME_RE.test(k) && !/[^\t\x20-\x7e\x80-\xff]/.test(v)) p.headers[k] = v;
         else warnOnce("hdr" + id + k, "provider " + id + ": header " + JSON.stringify(k) + " is not a valid HTTP header - not sent");
       });
     }
+    // Optional header name carrying a stable per-conversation session id
+    // (e.g. x-opencode-session). Inherited from the preset only when omitted.
+    if (raw.sessionHeader !== undefined) {
+      var sh = typeof raw.sessionHeader === "string" ? raw.sessionHeader.trim() : "";
+      if (validSessionHeader(sh)) p.sessionHeader = sh;
+      else if (sh || typeof raw.sessionHeader !== "string") {
+        warnOnce("shdr" + id, "provider " + id + ": sessionHeader must be a valid non-reserved HTTP header name, at most 100 characters - not sent");
+      }
+    } else if (pr && pr.sessionHeader && validSessionHeader(pr.sessionHeader)) {
+      p.sessionHeader = pr.sessionHeader;
+    }
     // The User-Agent every request to this endpoint carries - the sessions'
-    // and the app's own (fetch models, test, detect). Absent: the runtime's.
-    var ua = typeof raw.userAgent === "string" ? raw.userAgent.trim() : "";
-    if (USER_AGENT_RE.test(ua)) p.userAgent = ua;
-    else if (ua || (raw.userAgent !== undefined && typeof raw.userAgent !== "string")) {
-      warnOnce("ua" + id, "provider " + id + ": userAgent must be printable ASCII, at most 300 characters - not sent");
+    // and the app's own (fetch models, test, detect). Absent: the preset's
+    // default if any, else the runtime's.
+    if (raw.userAgent !== undefined) {
+      var ua = typeof raw.userAgent === "string" ? raw.userAgent.trim() : "";
+      if (USER_AGENT_RE.test(ua)) p.userAgent = ua;
+      else if (ua || typeof raw.userAgent !== "string") {
+        warnOnce("ua" + id, "provider " + id + ": userAgent must be printable ASCII, at most 300 characters - not sent");
+      }
+    } else if (pr && pr.userAgent && USER_AGENT_RE.test(pr.userAgent)) {
+      p.userAgent = pr.userAgent;
     }
     // The CLI's billing line (cc_entrypoint=claude-desktop, first block of
     // the system prompt) is meaningless to another provider: dropped there on
     // request. Anthropic's API uses it, so never for a native provider.
-    if (raw.stripBillingHeader === true && !p.native) p.stripBillingHeader = true;
+    if (raw.stripBillingHeader !== undefined) {
+      if (raw.stripBillingHeader === true && !p.native) p.stripBillingHeader = true;
+    } else if (pr && pr.stripBillingHeader === true && !p.native) {
+      p.stripBillingHeader = true;
+    }
     if (isObj(raw.effortMap)) p.effortMap = raw.effortMap;
     if (typeof raw.webSearch === "string" && raw.webSearch.trim()) p.webSearch = raw.webSearch.trim();
     (Array.isArray(raw.models) ? raw.models : []).forEach(function (m, i) {
@@ -1214,6 +1250,7 @@
         }) };
       if (p.native) o.native = true;
       if (p.headers) o.headers = p.headers;
+      if (p.sessionHeader) o.sessionHeader = p.sessionHeader;
       if (p.userAgent) o.userAgent = p.userAgent;
       if (p.stripBillingHeader) o.stripBillingHeader = true;
       if (p.effortExplicit) o.effort = p.effort.slice();
@@ -1475,7 +1512,7 @@
         id: p.id, baseUrl: p.baseUrl, locked: p.locked, preset: p.preset || "", modelsUrl: p.modelsUrl || "",
         keyOk: p.apiKey.length > 8, keySource: p.keySource, effort: p.effort.slice(), context: p.context,
         shadowed: p.shadowed.slice(), native: p.native === true,
-        userAgent: p.userAgent || "", stripBillingHeader: p.stripBillingHeader === true,
+        sessionHeader: p.sessionHeader || "", userAgent: p.userAgent || "", stripBillingHeader: p.stripBillingHeader === true,
         models: p.models.map(function (m) {
           return { id: m.id, alias: m.alias, listedAs: listedIds(m), name: m.name, description: m.description,
             vision: m.vision, thinking: m.thinking, webSearch: m.webSearch, context: m.context || p.context,
@@ -1536,6 +1573,16 @@
       modelsUrl: "https://api.moonshot.ai/v1/models", keyHint: "sk-... from platform.moonshot.ai" },
     { id: "minimax", label: "MiniMax (international)", baseUrl: "https://api.minimax.io/anthropic",
       keyHint: "from platform.minimax.io" },
+    // OpenCode Console (Zen pay-as-you-go) and OpenCode Go (subscription):
+    // both serve an Anthropic Messages endpoint and accept x-opencode-session
+    // for routing and prompt caching; Go requires it together with a non-generic
+    // harness User-Agent.
+    { id: "opencode", label: "OpenCode Console (Zen)", baseUrl: "https://opencode.ai/inference/anthropic",
+      modelsUrl: "https://opencode.ai/inference/v1/models", keyHint: "oc_sk_... from opencode.ai",
+      sessionHeader: "x-opencode-session", userAgent: "claude-desktop-extra/1.0", stripBillingHeader: true },
+    { id: "opencode-go", label: "OpenCode Go", baseUrl: "https://opencode.ai/inference/go/anthropic",
+      modelsUrl: "https://opencode.ai/inference/go/v1/models", keyHint: "oc_sk_... from opencode.ai",
+      sessionHeader: "x-opencode-session", userAgent: "claude-desktop-extra/1.0", stripBillingHeader: true },
     // OpenRouter: one key, hundreds of models (Qwen, GLM, DeepSeek, Kimi, the
     // Claude models...), Anthropic-compatible /v1/messages, public /v1/models
     // that carries each model's context length.
@@ -1598,8 +1645,13 @@
       if (!picked.length) return { error: "offer at least one effort level" };
       out.effort = picked;
     }
-    // Both optional: a patch that does not name them leaves them as they are;
-    // an empty User-Agent or false clears them.
+    // Optional: a patch that does not name them leaves them as they are;
+    // an empty string or false clears them.
+    if (typeof input.sessionHeader === "string") {
+      var sh = input.sessionHeader.trim();
+      if (sh && !validSessionHeader(sh)) return { error: "Session header: valid HTTP header name only (max 100 characters, not a reserved header)" };
+      out.sessionHeader = sh;
+    }
     if (typeof input.userAgent === "string") {
       var ua = input.userAgent.trim();
       if (ua && !USER_AGENT_RE.test(ua)) return { error: "User-Agent: printable ASCII only, at most 300 characters" };
@@ -1757,7 +1809,7 @@
       return { ok: false, error: "provider " + pp.value.id + " is set in " + JSONC_NAME + " - edit that file to change it" };
     }
     var key = typeof input.apiKey === "string" ? input.apiKey.trim() : "";
-    if (key && (key.length < 8 || key.length > 512 || /\s/.test(key))) return { ok: false, error: "that does not look like an API key" };
+    if (key && (key.length < 8 || key.length > 512 || !/^[\x21-\x7e]+$/.test(key))) return { ok: false, error: "that does not look like an API key" };
     // SECURITY: the key stays with the endpoint it was stored for. A new
     // provider, or one whose base URL moves to another origin, keeps no key
     // it was not given in this very call - neither the stored one nor a key
@@ -1795,9 +1847,12 @@
       if (pr && pr.baseUrl && !sameOrigin(pr.baseUrl, next.baseUrl)) { delete next.preset; pr = null; }
       // The models URL is a plain field: empty clears it.
       if (!pp.value.modelsUrl) delete next.modelsUrl;
-      // Not credentials: they stay when the base URL changes host.
-      if (pp.value.userAgent === "") delete next.userAgent;
-      if (pp.value.stripBillingHeader === false) delete next.stripBillingHeader;
+      // Not credentials: they stay when the base URL changes host. Keep an
+      // explicit clear override in .json when the preset defines a default so
+      // normaliseProvider does not re-apply the preset's value on reload.
+      if (next.userAgent === "" && !(pr && pr.userAgent)) delete next.userAgent;
+      if (next.sessionHeader === "" && !(pr && pr.sessionHeader)) delete next.sessionHeader;
+      if (next.stripBillingHeader === false && !(pr && pr.stripBillingHeader)) delete next.stripBillingHeader;
       if (pp.value.effort && pp.value.effort.length === EFFORT_ORDER.length && !(pr && pr.effort)) delete next.effort;
       if (key) next.apiKeyStored = true;
       if (!Array.isArray(next.models)) next.models = [];
@@ -2006,16 +2061,26 @@
     return detail(readConfig());
   });
 
-  // The provider's custom headers onto a request of the app's own, then its
-  // User-Agent - over any spelling of one in those headers, so exactly one
-  // goes, the same the sessions send.
-  function withProviderHeaders(p, headers) {
-    if (p.headers) Object.keys(p.headers).forEach(function (k) { if (typeof p.headers[k] === "string") headers[k] = p.headers[k]; });
-    if (p.userAgent) {
-      Object.keys(headers).forEach(function (k) { if (k.toLowerCase() === "user-agent") delete headers[k]; });
-      headers["user-agent"] = p.userAgent;
-    }
+  function setHeaderCI(headers, name, val) {
+    var lower = name.toLowerCase();
+    Object.keys(headers).forEach(function (k) { if (k.toLowerCase() === lower) delete headers[k]; });
+    headers[name] = val;
+  }
+  // The provider's session header (when probing /v1/messages), its custom
+  // headers (winning over sessionHeader on collision), then its User-Agent -
+  // over any spelling of one in those headers, so exactly one goes, the same
+  // the sessions send.
+  function withProviderHeaders(p, headers, sessionId) {
+    if (p.sessionHeader && sessionId) setHeaderCI(headers, p.sessionHeader, sessionId);
+    if (p.headers) Object.keys(p.headers).forEach(function (k) {
+      if (typeof p.headers[k] === "string") setHeaderCI(headers, k, p.headers[k]);
+    });
+    if (p.userAgent) setHeaderCI(headers, "user-agent", p.userAgent);
     return headers;
+  }
+  function probeHeaders(p) {
+    var h = Object.assign(Object.create(null), { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": p.apiKey });
+    return withProviderHeaders(p, h, p.sessionHeader ? _crypto.randomUUID() : "");
   }
   // Every request that carries a provider's key: a redirect is followed while
   // it stays on the same origin (3 hops at most) and refused when it leaves -
@@ -2056,10 +2121,21 @@
         else if (typeof m.name === "string" && m.name.trim() && m.name !== id) name = m.name.trim();
       }
       var e = { id: id, name: name };
-      // A listing that states the context length (OpenRouter's does) settles
-      // the model's context mode: 1M when it serves at least that.
-      var cl = isObj(m) ? (typeof m.context_length === "number" ? m.context_length : (typeof m.context_window === "number" ? m.context_window : null)) : null;
+      // A listing that states the context length (OpenRouter's or OpenCode's)
+      // settles the model's context mode: 1M when it serves at least that.
+      var cl = isObj(m) ? (typeof m.context_length === "number" && isFinite(m.context_length) && m.context_length > 0 ? m.context_length
+        : (typeof m.context_window === "number" && isFinite(m.context_window) && m.context_window > 0 ? m.context_window
+          : (isObj(m.limit) && typeof m.limit.context === "number" && isFinite(m.limit.context) && m.limit.context > 0 ? m.limit.context : null))) : null;
       if (cl !== null) e.context = cl >= 1000000 ? "1m" : "200k";
+      if (isObj(m) && isObj(m.modalities) && Array.isArray(m.modalities.input) && m.modalities.input.length > 0 &&
+          !m.modalities.input.some(function (x) { return typeof x === "string" && /^image(?:\/|$)/i.test(x.trim()); })) {
+        e.vision = false;
+      }
+      if (isObj(m) && isObj(m.capabilities) &&
+          (m.capabilities.reasoning === false ||
+           (isObj(m.capabilities.reasoning) && m.capabilities.reasoning.supported === false))) {
+        e.thinking = false;
+      }
       out.push(e);
     });
     return { models: out, nextAfter: nextAfter };
@@ -2245,8 +2321,7 @@
     if (!p.apiKey) return { ok: false, error: "no API key for provider " + providerId };
     if (!modelId && p.models.length) modelId = p.models[0].id;
     if (!ID_RE.test(modelId)) return { ok: false, error: "add a model first - the probe sends it one minimal request with each level" };
-    var headers = { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": p.apiKey };
-    withProviderHeaders(p, headers);
+    var headers = probeHeaders(p);
     var adaptive = adaptiveClaude(modelId);
     return Promise.all(EFFORT_ORDER.map(function (level) {
       var body = { model: modelId, max_tokens: 1025, messages: [{ role: "user", content: "Reply with OK." }],
@@ -2298,8 +2373,7 @@
     if (!p.models.length) return { ok: false, error: "add a model first - the test sends a minimal request to it" };
     var model = p.models[0];
     var body = { model: model.id, max_tokens: 16, messages: [{ role: "user", content: "ping" }] };
-    var headers = { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": p.apiKey };
-    withProviderHeaders(p, headers);
+    var headers = probeHeaders(p);
     var ctl = new AbortController();
     var timer = setTimeout(function () { ctl.abort(); }, 20000);
     return fetchSameOrigin(p.baseUrl + "/v1/messages", { method: "POST", headers: headers, body: JSON.stringify(body), signal: ctl.signal })

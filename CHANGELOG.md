@@ -4,6 +4,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-16
 
+### Custom models: per-conversation session header and OpenCode presets (#346)
+- **Per-conversation session header (`sessionHeader`)**: Added an optional **Session header** setting per provider in **Settings → Extra → Models** and `claude-desktop-extra.jsonc` (`<= 100` chars, reserved auth/framing/prototype keys refused, overridable to empty) plus stable per-conversation UUID forwarding in the preload (`X-Claude-Code-Session-Id` header → `metadata.user_id` session UUID / legacy suffix → lazy per-process UUID) and fresh probe UUIDs on Settings `test` / `detect` requests.
+- **OpenCode Go & OpenCode Console (Zen) presets**: Added `opencode` (`https://opencode.ai/inference/anthropic`) and `opencode-go` (`https://opencode.ai/inference/go/anthropic`) presets prefilling `sessionHeader: "x-opencode-session"`, `userAgent: "claude-desktop-extra/1.0"`, and `stripBillingHeader: true`, and taught `/v1/models` parsing to map `limit.context`, `modalities.input`, and `capabilities.reasoning` (`supported: false` / `false`).
+
 ### Linux distro themes & Lollipop section (#345)
 
 - **15 minimal Linux distribution themes (`js/linux_themes.json`, new `Linux` section):** adds `arch-linux`, `cachyos`, `ubuntu`, `linux-mint`, `fedora`, `debian`, `nixos`, `opensuse`, `pop-os`, `manjaro`, `endeavouros`, `kali-linux`, `gentoo`, `zorin-os` and `linux-from-scratch` as dual light/dark palettes (`150` bundled palettes and `60` animated SVG backdrops total) with official distro logo SVG spinners and quiet, geometric architectural backdrops (`LINUX_SCENES` in `js/backdrop_scenes.js`), placed right after **Your themes** in <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> and Settings -> Extra -> Themes.

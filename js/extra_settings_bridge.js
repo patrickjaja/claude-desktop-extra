@@ -288,6 +288,7 @@
         effort: Array.isArray(provider.effort) ? provider.effort.map(String) : undefined,
         // Absent stays absent: the main process keeps the stored values then.
         userAgent: typeof provider.userAgent === "string" ? provider.userAgent : undefined,
+        sessionHeader: typeof provider.sessionHeader === "string" ? provider.sessionHeader : undefined,
         stripBillingHeader: typeof provider.stripBillingHeader === "boolean" ? provider.stripBillingHeader : undefined
       } : {});
     },

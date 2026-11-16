@@ -4602,7 +4602,8 @@
         ? "API key: " + ({ value: "in the config file", env: "from the environment", file: "from a key file", stored: "stored" })[p.keySource]
         : "API key: MISSING - sessions on these models fail until one is set";
       main.appendChild(el("div", "cdbx-state" + (p.keyOk ? "" : " cdbx-models-warn"), keyLine +
-        " - effort levels " + (p.effort || []).join("/")));
+        " - effort levels " + (p.effort || []).join("/") +
+        (p.sessionHeader ? " - session header " + p.sessionHeader : "")));
       // Models skipped because even under this provider's prefix they would
       // be listed with one of Anthropic's own ids (a provider named "opus"):
       // they are not in the list below, so they are named here, with a way
@@ -4900,6 +4901,9 @@
         "Sent with every request to this endpoint: the sessions', and fetch models, test and detect here. Empty: " +
         "Claude Code's runtime default (Bun/<version>), or on Anthropic's API the CLI's own. Printable ASCII, " +
         "300 characters at most.");
+      var sessionHeader = field(form, "Session header", input("text", existing ? existing.sessionHeader || "" : "", "optional, e.g. x-opencode-session"),
+        "Header carrying a stable per-conversation ID on every Messages request (and on test and detect here) for " +
+        "routing and prompt caching - OpenCode Go requires x-opencode-session. Empty: none sent.");
       // Anthropic's API uses the billing line: not offered there.
       var stripBilling = existing && existing.native ? null
         : field(form, "Drop the billing line", checkbox(existing ? existing.stripBillingHeader : false),
@@ -4960,6 +4964,9 @@
           url.value = pr.baseUrl;
           key.placeholder = pr.keyHint || "API key";
           modelsUrl.value = pr.modelsUrl || "";
+          userAgent.value = pr.userAgent || "";
+          sessionHeader.value = pr.sessionHeader || "";
+          if (stripBilling) stripBilling.checked = pr.stripBillingHeader === true;
           var lv = pr.effort || EFFORT_LEVELS;
           EFFORT_LEVELS.forEach(function (l) { levelBoxes[l].checked = lv.indexOf(l) !== -1; });
         });
@@ -4970,13 +4977,14 @@
       save.addEventListener("click", function () {
         save.disabled = true;
         var payload = { id: id.value, baseUrl: url.value, apiKey: key.value, preset: chosenPreset, modelsUrl: modelsUrl.value,
-          userAgent: userAgent.value, effort: EFFORT_LEVELS.filter(function (lv) { return levelBoxes[lv].checked; }) };
+          userAgent: userAgent.value, sessionHeader: sessionHeader.value,
+          effort: EFFORT_LEVELS.filter(function (lv) { return levelBoxes[lv].checked; }) };
         if (stripBilling) payload.stripBillingHeader = stripBilling.checked;
         api.customModelsProviderSet(payload).then(function (r) {
           if (failed(r)) { save.disabled = false; toast("Could not save: " + reason(r), true); return; }
           refresh(r);
           if (r.keyCleared || r.headersCleared) {
-            toast("Provider " + existing.id + " saved - its base URL moved to another host, so " +
+            toast("Provider " + (existing ? existing.id : payload.id.trim()) + " saved - its base URL moved to another host, so " +
               (r.keyCleared && r.headersCleared ? "the stored key and the custom headers were" : r.keyCleared ? "the stored key was" : "the custom headers were") +
               " cleared" + (r.keyCleared ? ": paste the key again" : " (add them again in the config file)"), true);
           }

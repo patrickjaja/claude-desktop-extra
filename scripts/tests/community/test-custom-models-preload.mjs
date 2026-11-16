@@ -529,6 +529,129 @@ const ANTHROPIC = "https://api.anthropic.com/v1/messages";
   ok(/cc_entrypoint=cli;/.test(JSON.parse(cn[0].init.body).system[0].text), "a native request keeps its billing line: Anthropic uses it");
 }
 
+// --- per-provider Session header (x-opencode-session etc.) --------------------------
+{
+  const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  // 1. Without sessionHeader on provider, X-Claude-Code-Session-Id is NOT forwarded.
+  {
+    const { hooked, calls } = load(CONFIG);
+    await hooked(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100, messages: [{ role: "user", content: "hi" }] },
+      { headers: { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-claude-code-session-id": "11111111-1111-4111-8111-111111111111" } }));
+    const hd = calls[0].init.headers;
+    ok(!hd.has("x-opencode-session") && !hd.has("x-claude-code-session-id"), "without sessionHeader, no session header leaves");
+  }
+  // 2. With sessionHeader: X-Claude-Code-Session-Id across turns, 400 retry, and rotation; plus metadata.user_id & UUID fallback.
+  {
+    const cfg = JSON.parse(JSON.stringify(CONFIG));
+    cfg.providers[0].sessionHeader = "x-opencode-session";
+    cfg.providers[0].userAgent = "claude-desktop-extra/1.0";
+    const { hooked, calls } = load(cfg, { responses: [
+      new Response(JSON.stringify({ error: { message: "bad effort" } }), { status: 400 }),
+      new Response("{}", { status: 200 }),
+      new Response("{}", { status: 200 }),
+      new Response("{}", { status: 200 }),
+      new Response("{}", { status: 200 }),
+      new Response("{}", { status: 200 }),
+      new Response("{}", { status: 200 })
+    ] });
+    // Turn 1 (triggers a 400 effort retry -> 2 calls)
+    await hooked(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100, output_config: { effort: "high" },
+      messages: [{ role: "user", content: "turn1" }] },
+      { headers: { "content-type": "application/json", "anthropic-version": "2023-06-01", "X-Claude-Code-Session-Id": "22222222-2222-4222-8222-222222222222" } }));
+    ok(calls.length === 2 && calls[0].init.headers.get("x-opencode-session") === "22222222-2222-4222-8222-222222222222" &&
+       calls[1].init.headers.get("x-opencode-session") === "22222222-2222-4222-8222-222222222222" &&
+       calls[0].init.headers.get("user-agent") === "claude-desktop-extra/1.0",
+       "X-Claude-Code-Session-Id is sent as x-opencode-session across 400 retry alongside userAgent");
+    // Session change (/clear or fork -> new X-Claude-Code-Session-Id)
+    await hooked(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100, messages: [{ role: "user", content: "cleared" }] },
+      { headers: { "content-type": "application/json", "anthropic-version": "2023-06-01", "X-Claude-Code-Session-Id": "33333333-3333-4333-8333-333333333333" } }));
+    ok(calls[2].init.headers.get("x-opencode-session") === "33333333-3333-4333-8333-333333333333",
+       "a changed X-Claude-Code-Session-Id updates the header immediately");
+    // Fallback 1: metadata.user_id JSON shape
+    await hooked(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100,
+      metadata: { user_id: JSON.stringify({ device_id: "d", session_id: "ses-json-123" }) },
+      messages: [{ role: "user", content: "json-meta" }] }));
+    ok(calls[3].init.headers.get("x-opencode-session") === "ses-json-123",
+       "falls back to metadata.user_id JSON session_id when header is absent");
+    // Fallback 2: metadata.user_id legacy string shape
+    await hooked(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100,
+      metadata: { user_id: "user_abc_account_def_session_550e8400-e29b-41d4-a716-446655440000" },
+      messages: [{ role: "user", content: "legacy-meta" }] }));
+    ok(calls[4].init.headers.get("x-opencode-session") === "550e8400-e29b-41d4-a716-446655440000",
+       "falls back to legacy metadata.user_id _session_<id> suffix");
+    // Fallback 3: lazy per-process UUID v4, identical across consecutive requests
+    await hooked(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100, messages: [{ role: "user", content: "uuid1" }] }));
+    await hooked(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100, messages: [{ role: "user", content: "uuid2" }] }));
+    const u1 = calls[5].init.headers.get("x-opencode-session"), u2 = calls[6].init.headers.get("x-opencode-session");
+    ok(UUID_V4_RE.test(u1 || "") && u1 === u2, "without header or metadata, generates one stable per-process UUID v4: " + u1);
+  }
+  // 3. Native provider, static p.headers override, and reserved sessionHeader rejection.
+  {
+    const native = { providers: [{ id: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-ant-api-1234567890", native: true,
+      sessionHeader: "x-custom-session", models: [{ id: "claude-opus-5-5", alias: "claude-anthropic-opus-5-5" }] }] };
+    const { hooked: hn, calls: cn } = load(native);
+    await hn("https://api.anthropic.com/v1/messages?beta=true", messagesInit({ model: "claude-anthropic-opus-5-5", max_tokens: 100,
+      messages: [{ role: "user", content: "x" }] },
+      { headers: { "content-type": "application/json", "x-claude-code-session-id": "44444444-4444-4444-8444-444444444444" } }));
+    ok(new Headers(cn[0].init.headers).get("x-custom-session") === "44444444-4444-4444-8444-444444444444",
+       "nativeHeaders attaches sessionHeader as well");
+
+    const pinned = JSON.parse(JSON.stringify(CONFIG));
+    pinned.providers[0].sessionHeader = "x-opencode-session";
+    pinned.providers[0].userAgent = "claude-desktop-extra/1.0";
+    pinned.providers[0].headers = { "X-Opencode-Session": "static-pin", "user-agent": "ignored" };
+    const { hooked: hp, calls: cp } = load(pinned);
+    await hp(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100, messages: [{ role: "user", content: "hi" }] },
+      { headers: { "content-type": "application/json", "x-claude-code-session-id": "55555555-5555-4555-8555-555555555555" } }));
+    ok(cp[0].init.headers.get("x-opencode-session") === "static-pin" && cp[0].init.headers.get("user-agent") === "claude-desktop-extra/1.0",
+       "explicit static p.headers overrides sessionHeader while userAgent still owns user-agent");
+
+    const evil = JSON.parse(JSON.stringify(CONFIG));
+    evil.providers[0].sessionHeader = "x-api-key";
+    const { hooked: he, calls: ce } = load(evil);
+    await he(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100, messages: [{ role: "user", content: "hi" }] },
+      { headers: { "content-type": "application/json", "x-claude-code-session-id": "66666666-6666-4666-8666-666666666666" } }));
+    ok(ce[0].init.headers.get("x-api-key") === "sk-test-1234567890",
+       "reserved sessionHeader (x-api-key) in routes.json is ignored and never overwrites x-api-key");
+
+    const protoCfg = JSON.parse(JSON.stringify(CONFIG));
+    protoCfg.providers[0].sessionHeader = "__proto__";
+    const { hooked: hProto, calls: cProto } = load(protoCfg);
+    await hProto(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100, messages: [{ role: "user", content: "hi" }] },
+      { headers: { "content-type": "application/json", "x-claude-code-session-id": "77777777-7777-4777-8777-777777777777" } }));
+    ok(!cProto[0].init.headers.has("__proto__"), "reserved __proto__ sessionHeader is rejected");
+
+    // Headers instance, tuple-array headers, malformed metadata JSON / oversized session id, and off-origin 302 refusal.
+    const hdrCfg = JSON.parse(JSON.stringify(CONFIG));
+    hdrCfg.providers[0].sessionHeader = "x-opencode-session";
+    const { hooked: hh, calls: ch } = load(hdrCfg, { responses: [
+      new Response("{}", { status: 200 }),
+      new Response("{}", { status: 200 }),
+      new Response("{}", { status: 200 }),
+      new Response("{}", { status: 200 }),
+      new Response(null, { status: 302, headers: { location: "https://evil.example/leak" } })
+    ] });
+    await hh(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100, messages: [{ role: "user", content: "hi" }] },
+      { headers: new Headers({ "content-type": "application/json", "x-claude-code-session-id": "hdr-instance-id" }) }));
+    await hh(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100, messages: [{ role: "user", content: "hi" }] },
+      { headers: [["content-type", "application/json"], ["X-Claude-Code-Session-Id", "tuple-array-id"]] }));
+    await hh(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100,
+      metadata: { user_id: "{not valid json" }, messages: [{ role: "user", content: "hi" }] },
+      { headers: { "content-type": "application/json", "x-claude-code-session-id": "bad id with spaces" } }));
+    await hh(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100,
+      metadata: { user_id: JSON.stringify({ session_id: "x".repeat(201) }) }, messages: [{ role: "user", content: "hi" }] }));
+    const offRes = await hh(ANTHROPIC, messagesInit({ model: "claude-deepseek-flash", max_tokens: 100, messages: [{ role: "user", content: "hi" }] },
+      { headers: { "content-type": "application/json", "x-claude-code-session-id": "88888888-8888-4888-8888-888888888888" } }));
+    const fb1 = ch[2].init.headers.get("x-opencode-session"), fb2 = ch[3].init.headers.get("x-opencode-session");
+    ok(ch[0].init.headers.get("x-opencode-session") === "hdr-instance-id" &&
+       ch[1].init.headers.get("x-opencode-session") === "tuple-array-id",
+       "reads x-claude-code-session-id from Headers instances and header pair arrays");
+    ok(UUID_V4_RE.test(fb1 || "") && fb1 === fb2,
+       "malformed JSON / invalid / oversized session IDs fall back to the per-process UUID: " + fb1);
+    ok(ch.length === 5 && offRes.status === 400, "off-origin redirect is blocked without a second fetch carrying sessionHeader");
+  }
+}
+
 // --- the keys live in routes.json, not in the environment ------------------------------
 {
   const dir = mkdtempSync(join(tmpdir(), "cdb-cm-keys-"));
