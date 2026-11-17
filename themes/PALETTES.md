@@ -1,22 +1,20 @@
 # Palette catalog
 
-Every palette bundled with the package - **150** of them: the **7 curated built-in
+Every palette bundled with the package - **138** of them: the **7 curated built-in
 themes**, **15 Linux distro palettes** (`js/linux_themes.json`), **12 gaming
-palettes** (`js/gaming_themes.json`), **12 Lollipop show palettes**
-(`js/lollipop_themes.json`), **20 animated Scene palettes** (`js/scene_themes.json`),
-and **84 community palettes** (`130` swatch cards below).
+palettes** (`js/gaming_themes.json`), **20 animated Scene palettes**
+(`js/scene_themes.json`), and **84 community palettes** (`118` swatch cards below).
 Nothing here needs a `themes` block in your config - each one is a complete dual
 light/dark token set that lives inside the package, so the app's own light/dark toggle
 (Settings -> Appearance) keeps working whichever you pick.
 
 **Every one of them also ships a custom loading spinner**, drawn from the palette's name
-or colors: Claude's brand star becomes Firey & Leafy for Season 1 BFDI, Lollipop & Pin for `bfdi-lollipop-pin`, official distro logos for CachyOS / Arch / Ubuntu / Fedora / NixOS / Mint / LFS, a stag for Everdeer, a great-wave curl for Kanagawa, a curled cat for the Catppuccins, a d-pad for Game Boy. Switching theme reshapes the glyph immediately, in every open window. The shapes and their spec format are catalogued in [baseline/SPINNER_SHAPES.md](../baseline/SPINNER_SHAPES.md).
+or colors: Claude's brand star becomes official distro logos for CachyOS / Arch / Ubuntu / Fedora / NixOS / Mint / LFS, a stag for Everdeer, a great-wave curl for Kanagawa, a curled cat for the Catppuccins, a d-pad for Game Boy. Switching theme reshapes the glyph immediately, in every open window. The shapes and their spec format are catalogued in [baseline/SPINNER_SHAPES.md](../baseline/SPINNER_SHAPES.md).
 
 Mario ships as one of the seven built-ins but carries `"category": "gaming"`, so the app
 groups it into the **Gaming** section alongside the twelve palettes in `js/gaming_themes.json`
 (`mario`, `playstation`, `gameboy`, `final-fantasy`, `zelda`, `warcraft`, `dragonball`,
-`gta-i`..`gta-vi`). The **Linux** section sits near the top after **Your themes**, and
-the **Lollipop** section sits at the end after **Common**.
+`gta-i`..`gta-vi`). The **Linux** section sits near the top after **Your themes**.
 
 ## How to activate a palette
 
@@ -50,8 +48,6 @@ surface, text, primary accent, secondary accent, error, warning, success, border
 **Linux:** [Arch Linux](#arch-linux) · [CachyOS](#cachyos) · [Ubuntu](#ubuntu) · [Linux Mint](#linux-mint) · [Fedora](#fedora) · [Debian](#debian) · [NixOS](#nixos) · [openSUSE](#opensuse) · [Pop!_OS](#pop_os) · [Manjaro](#manjaro) · [EndeavourOS](#endeavouros) · [Kali Linux](#kali-linux) · [Gentoo](#gentoo) · [Zorin OS](#zorin-os) · [Linux From Scratch](#linux-from-scratch)
 
 **Gaming:** [Mario](#mario) · [PlayStation](#playstation) · [Game Boy](#game-boy) · [Final Fantasy](#final-fantasy) · [Zelda](#zelda) · [Warcraft](#warcraft) · [Dragon Ball](#dragon-ball) · [GTA I](#gta-i) · [GTA II](#gta-ii) · [GTA III](#gta-iii) · [GTA IV](#gta-iv) · [GTA V](#gta-v) · [GTA VI](#gta-vi)
-
-**Lollipop:** [Battle for Dream Island](#battle-for-dream-island) · [BFDI Lollipop and Pin](#bfdi-lollipop-and-pin) · [BFDIA](#bfdia) · [IDFB](#idfb) · [BFB](#bfb) · [TPOT](#tpot) · [BFDIE](#bfdie) · [Inanimate Insanity](#inanimate-insanity) · [Inanimate Insanity II](#inanimate-insanity-ii) · [Inanimate Insanity Invitational](#inanimate-insanity-invitational) · [Inanimate Insanity IV](#inanimate-insanity-iv) · [Numberblocks](#numberblocks)
 
 **Community:**
 
@@ -293,82 +289,6 @@ Thirteen palettes drawn from classic and modern games, each with a custom spinne
 `"activeTheme": "gta-vi"` - Leonida rose sky (light) / Vice synthwave sunset (dark), neon VI `flip` spinner.
 
 ![GTA VI palette](palettes/gta-vi.svg)
-
-## Lollipop themes
-
-Twelve object-show and kids palettes (`js/lollipop_themes.json`), each with a 2-frame `flip` character spinner and dual-mode animated SVG backdrop. Grouped at the end of the picker and Settings -> Extra -> Themes after **Common**.
-
-### Battle for Dream Island
-
-`"activeTheme": "bfdi"` - Season 1 Goiky sky-blue & emerald meadows (light) / starry Goiky night illuminated by Firey (dark), Firey & Leafy `flip` spinner.
-
-![Battle for Dream Island palette](palettes/bfdi.svg)
-
-### BFDI Lollipop and Pin
-
-`"activeTheme": "bfdi-lollipop-pin"` - Goiky sunlit cyan sky with Heliotrope violet accent (light) / starry Yoyleland indigo-purple night (dark), Lollipop & upright Pin duo `flip` spinner.
-
-![BFDI Lollipop and Pin palette](palettes/bfdi-lollipop-pin.svg)
-
-### BFDIA
-
-`"activeTheme": "bfdia"` - warm tangerine & gold (light) / Evil Forest crimson night (dark), BFDIA Challenge/Prize Wheel `flip` spinner.
-
-![BFDIA palette](palettes/bfdia.svg)
-
-### IDFB
-
-`"activeTheme": "idfb"` - overcast Yoyle ivory & antique gold (light) / Yoyle City twilight violet (dark), Wall Teleporter / Yoyle Needy `flip` spinner.
-
-![IDFB palette](palettes/idfb.svg)
-
-### BFB
-
-`"activeTheme": "bfb"` - Pillary sky, Four blue & X gold (light) / Algebra twilight (dark), Four & X duo `flip` spinner.
-
-![BFB palette](palettes/bfb.svg)
-
-### TPOT
-
-`"activeTheme": "tpot"` - Goiky mint & Two emerald (light) / starry TPOT night & power gold (dark), Algebralien Two `flip` spinner.
-
-![TPOT palette](palettes/tpot.svg)
-
-### BFDIE
-
-`"activeTheme": "bfdie"` - pale aqua & olive-chartreuse (light) / Nightmare Island pine & crimson mist (dark), `ELSEWHERE...` wooden signpost `flip` spinner.
-
-![BFDIE palette](palettes/bfdie.svg)
-
-### Inanimate Insanity
-
-`"activeTheme": "ii"` - Miyazaki Verdant green & sky cyan (light) / Elimination night slate (dark), MePhone4 (+ cookie) `flip` spinner.
-
-![Inanimate Insanity palette](palettes/ii.svg)
-
-### Inanimate Insanity II
-
-`"activeTheme": "ii2"` - MeOS silver-sky & royal blue (light) / storm-navy & dramatic crimson (dark), circular `II` Meeple seal `flip` spinner.
-
-![Inanimate Insanity II palette](palettes/ii2.svg)
-
-### Inanimate Insanity Invitational
-
-`"activeTheme": "iii"` - Paradise lagoon sand & tropical palm green (light) / bioluminescent night lagoon (dark), `III` Volcano & 3-Palm crest `flip` spinner.
-
-![Inanimate Insanity Invitational palette](palettes/iii.svg)
-
-### Inanimate Insanity IV
-
-`"activeTheme": "ii4"` - mint-cyan daylight, Test Tube emerald & Fan coral (light) / live-show twilight stage (dark), Test Tube (`I`) + Fan (`V`) `flip` spinner.
-
-![Inanimate Insanity IV palette](palettes/ii4.svg)
-
-### Numberblocks
-
-`"activeTheme": "numberblocks"` - bright Numberland rainbow sky (light) / starry Numberland cosmic space (dark), Numberblock One `flip` spinner.
-
-![Numberblocks palette](palettes/numberblocks.svg)
 
 ## Community palettes
 

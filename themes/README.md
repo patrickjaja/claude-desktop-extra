@@ -57,7 +57,7 @@ The same registry is also reachable without a hotkey. Open Claude's Settings dia
 you'll find an **Extra** group in the nav with two entries:
 
 - **Themes** - every theme available to you as a row with color dots, in the same
-  sections as the picker (your themes, Linux, Scenes, Gaming, Common, Lollipop). Clicking one applies
+  sections as the picker (your themes, Linux, Scenes, Gaming, Common). Clicking one applies
   it live - colors and spinner both - and saves `activeTheme` the same way the picker
   does, into `claude-desktop-extra.jsonc` with your comments intact.
 - **Features** - the 387 catalogued GrowthBook feature flags as switches, so you can
@@ -133,9 +133,9 @@ Notes:
 - `mario` carries `"category": "gaming"`, so the picker and Settings -> Extra -> Themes
   list it in the **Gaming** section below. It still resolves as a built-in.
 
-## Linux, Gaming & Lollipop themes
+## Linux & Gaming themes
 
-Three curated theme collections merge into the built-ins at startup (same resolution rank, each with a custom SVG spinner and dual-mode animated SVG backdrop):
+Two curated theme collections merge into the built-ins at startup (same resolution rank, each with a custom SVG spinner and dual-mode animated SVG backdrop):
 
 - **Linux (`js/linux_themes.json`, `"category": "linux"`):** 15 minimal distro palettes placed right after **Your themes** (`arch-linux`, `cachyos`, `ubuntu`, `linux-mint`, `fedora`, `debian`, `nixos`, `opensuse`, `pop-os`, `manjaro`, `endeavouros`, `kali-linux`, `gentoo`, `zorin-os`, `linux-from-scratch`), using official distro logo spinners and quiet geometric backdrops.
 - **Gaming (`js/gaming_themes.json`, `"category": "gaming"`):** 12 gaming palettes plus `mario` (13 total) in the **Gaming** section:
@@ -155,11 +155,9 @@ Three curated theme collections merge into the built-ins at startup (same resolu
 | `gta-v` | Los Santos warm daylight, emerald banknote | twilight harbor, banknote green & sky | Vinewood banknote V crest (`flip`) |
 | `gta-vi` | Leonida pastel sky, magenta accent | Vice sunset synthwave, pink & cyan neon | Vice City VI neon emblem (`flip`) |
 
-- **Lollipop (`js/lollipop_themes.json`, `"category": "lollipop"`):** 12 object-show & kids themes grouped at the very end after **Common** (also matching `"shows"` / `"kids"`): `bfdi` (**Battle for Dream Island**, Season 1 with Firey & Leafy), `bfdi-lollipop-pin` (**BFDI Lollipop and Pin**), `bfdia`, `idfb`, `bfb`, `tpot`, `bfdie`, `ii`, `ii2`, `iii`, `ii4`, and `numberblocks` — each with a 2-frame `flip` character spinner and dual-mode animated scene.
+Multi-color spinners (`playstation`, `dragonball`, `warcraft`, `gta-i..vi`, `cachyos`, `nixos`, `pop-os`, `endeavouros`, and `linux-from-scratch`) keep characteristic palette fills checked against both variants' surfaces; single-color logos follow the theme accent.
 
-Multi-color spinners (`playstation`, `dragonball`, `warcraft`, `gta-i..vi`, `cachyos`, `nixos`, `endeavouros`, `linux-from-scratch`, and the 12 Lollipop themes) keep characteristic palette fills checked against both variants' surfaces; single-color logos follow the theme accent.
-
-A theme of your own can join any section by setting `"category": "linux"`, `"category": "gaming"`, or `"category": "lollipop"` alongside its `light`/`dark` blocks.
+A theme of your own can join either section by setting `"category": "linux"` or `"category": "gaming"` alongside its `light`/`dark` blocks.
 
 ## Scene & Community palettes
 
@@ -183,7 +181,7 @@ slugs, because families share a shape on purpose. The glyphs are curated in
 `scripts/community-spinners.json` and merged into the palettes by
 `scripts/generate-community-themes.mjs`, so refreshing the collection stays one command.
 
-A visual catalog of 130 generated palette swatches (84 community + 7 built-ins + 15 Linux + 12 Gaming + 12 Lollipop; 150 bundled themes total with the 20 Scenes palettes) is in [PALETTES.md](PALETTES.md).
+A visual catalog of 118 generated palette swatches (84 community + 7 built-ins + 15 Linux + 12 Gaming; 138 bundled themes total with the 20 Scenes palettes) is in [PALETTES.md](PALETTES.md).
 
 Resolution order is **your themes > built-ins > community palettes**, so defining a
 theme under `themes` with the same slug as a community palette overrides it rather

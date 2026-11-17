@@ -146,9 +146,6 @@ const GAMING_THEMES_JSON = staticRead("../../js/gaming_themes.json")
 # Bundled Linux distro palettes: 15 minimal dual palettes under "category":"linux".
 const LINUX_THEMES_JSON = staticRead("../../js/linux_themes.json")
 
-# Bundled Lollipop object-show & kids palettes: 12 dual palettes under "category":"lollipop".
-const LOLLIPOP_THEMES_JSON = staticRead("../../js/lollipop_themes.json")
-
 # Bundled upstream animated scene themes: { "<slug>": {name, category:"scenes",
 # blurb, backdrop{}, spinner{}, light{}, dark{}} }.
 const SCENE_THEMES_JSON = staticRead("../../js/scene_themes.json")
@@ -227,8 +224,6 @@ const COMMUNITY_JSON =
 const GAMING_JSON =
   validateThemeMap(GAMING_THEMES_JSON, "js/gaming_themes.json", "gaming")
 const LINUX_JSON = validateThemeMap(LINUX_THEMES_JSON, "js/linux_themes.json", "linux")
-const LOLLIPOP_JSON =
-  validateThemeMap(LOLLIPOP_THEMES_JSON, "js/lollipop_themes.json", "lollipop")
 const SCENES_JSON =
   validateThemeMap(SCENE_THEMES_JSON, "js/scene_themes.json", "scenes")
 
@@ -238,14 +233,11 @@ proc jsonLen(raw: string): int {.compileTime.} =
 const COMMUNITY_COUNT = jsonLen(COMMUNITY_THEMES_JSON)
 const GAMING_COUNT = jsonLen(GAMING_THEMES_JSON)
 const LINUX_COUNT = jsonLen(LINUX_THEMES_JSON)
-const LOLLIPOP_COUNT = jsonLen(LOLLIPOP_THEMES_JSON)
 const SCENES_COUNT = jsonLen(SCENE_THEMES_JSON)
 static:
   doAssert GAMING_COUNT == 12, "js/gaming_themes.json must contain all 12 gaming themes"
   doAssert LINUX_COUNT == 15,
     "js/linux_themes.json must contain all 15 Linux distro themes"
-  doAssert LOLLIPOP_COUNT == 12,
-    "js/lollipop_themes.json must contain all 12 Lollipop themes"
   doAssert SCENES_COUNT == 20,
     "js/scene_themes.json must contain all 20 upstream scenes"
 
@@ -364,11 +356,6 @@ var __cdb_linux="""
 const THEME_INJECTION_JS_LINUX_B =
   """;
 for(var __cdb_lk in __cdb_linux)__cdb_builtins[__cdb_lk]=__cdb_linux[__cdb_lk];
-var __cdb_lollipop="""
-
-const THEME_INJECTION_JS_LOLLIPOP_B =
-  """;
-for(var __cdb_pk in __cdb_lollipop)__cdb_builtins[__cdb_pk]=__cdb_lollipop[__cdb_pk];
 var __cdb_scenes="""
 
 const THEME_INJECTION_JS_SCENES_B =
@@ -385,8 +372,8 @@ var __cdb_community="""
 
 const THEME_INJECTION_JS_MID_B =
   """;
-// nordic is an alias for the nord built-in (CONTRACT 5), plus convenience distro/show slugs.
-var __cdb_aliases={"nordic":"nord","arch":"arch-linux","mint":"linux-mint","mintos":"linux-mint","nix":"nixos","suse":"opensuse","popos":"pop-os","endeavour":"endeavouros","kali":"kali-linux","zorin":"zorin-os","lfs":"linux-from-scratch","ii3":"iii"};
+// nordic is an alias for the nord built-in (CONTRACT 5), plus convenience distro slugs.
+var __cdb_aliases={"nordic":"nord","arch":"arch-linux","mint":"linux-mint","mintos":"linux-mint","nix":"nixos","suse":"opensuse","popos":"pop-os","endeavour":"endeavouros","kali":"kali-linux","zorin":"zorin-os","lfs":"linux-from-scratch"};
 var __cdb_marker="__cdb_dualvariant";
 var __cdb_cfgPath=_path.join(_app.getPath("userData"),"claude-desktop-extra.json");
 var __cdb_cfgPathC=_path.join(_app.getPath("userData"),"claude-desktop-extra.jsonc");
@@ -1214,10 +1201,10 @@ __cdb_log("Injected CSS+JS into "+url+(pop?" (popout child of "+po+")":""));
 # staticRead'd spinner & backdrop injectors as JS string literals, then TAIL.
 const THEME_INJECTION_JS =
   THEME_INJECTION_JS_HEAD & THEME_INJECTION_JS_GAMING_A & GAMING_JSON &
-  THEME_INJECTION_JS_GAMING_B & LINUX_JSON & THEME_INJECTION_JS_LINUX_B & LOLLIPOP_JSON &
-  THEME_INJECTION_JS_LOLLIPOP_B & SCENES_JSON & THEME_INJECTION_JS_SCENES_B & "\n" &
-  BACKDROP_SCENES_JS & "\n" & THEME_INJECTION_JS_MID_A & COMMUNITY_JSON &
-  THEME_INJECTION_JS_MID_B & "\nvar __cdb_spinnerSrc=" & escapeJson(SPINNER_INJECTOR_JS) &
+  THEME_INJECTION_JS_GAMING_B & LINUX_JSON & THEME_INJECTION_JS_LINUX_B & SCENES_JSON &
+  THEME_INJECTION_JS_SCENES_B & "\n" & BACKDROP_SCENES_JS & "\n" &
+  THEME_INJECTION_JS_MID_A & COMMUNITY_JSON & THEME_INJECTION_JS_MID_B &
+  "\nvar __cdb_spinnerSrc=" & escapeJson(SPINNER_INJECTOR_JS) &
   ";\nvar __cdb_backdropSrc=" & escapeJson(BACKDROP_INJECTOR_JS) & ";\n" &
   THEME_INJECTION_JS_TAIL
 
@@ -1229,7 +1216,6 @@ const MARKERS = [
   "__cdb_dualvariant", "globalThis.__cdbThemes=", "function __cdb_chatComposerCss(",
   "__cdb_builtins[__cdb_gk]=__cdb_gaming[__cdb_gk]",
   "__cdb_builtins[__cdb_lk]=__cdb_linux[__cdb_lk]",
-  "__cdb_builtins[__cdb_pk]=__cdb_lollipop[__cdb_pk]",
   "__cdb_builtins[__cdb_sk]=__cdb_scenes[__cdb_sk]", "window.__cdbSpinnerApply",
   "window.__cdbBackdropApply", "reload:__cdb_reload", "function __cdb_effective(",
   "setOverlay:__cdb_setOverlay", "setBackdrop:__cdb_setBackdrop",
@@ -1280,8 +1266,6 @@ proc apply*(input: string): string =
     " (builtin tier, Linux picker section)"
   echo "  [OK] Bundled gaming palettes: " & $GAMING_COUNT &
     " (builtin tier, Gaming picker section)"
-  echo "  [OK] Bundled lollipop palettes: " & $LOLLIPOP_COUNT &
-    " (builtin tier, Lollipop picker section)"
   echo "  [OK] Bundled scene palettes: " & $SCENES_COUNT &
     " (builtin tier, Scenes picker section)"
 

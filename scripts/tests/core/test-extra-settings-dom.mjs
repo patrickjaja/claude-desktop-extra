@@ -3396,15 +3396,14 @@ async function themesPanel(themesItem) {
     ok(!h.classList.contains("cdbx-sheen-play"), "animationend removes it again");
   }
   const secs = sections();
-  ok(labels() === "Your themes:1 | Linux:1 | Gaming:3 | Common:5 | Lollipop:2 | More:1",
+  ok(labels() === "Your themes:1 | Linux:1 | Gaming:3 | Common:5 | More:1",
      "section order and counts: " + labels());
-  ok(secs.length === 6, "six sections for this list (" + secs.length + ")");
+  ok(secs.length === 5, "five sections for this list (" + secs.length + ")");
 
   const linuxSec = secs[1];
   const gaming = secs[2];
   const commonSec = secs[3];
-  const lollipopSec = secs[4];
-  const moreSec = secs[5];
+  const moreSec = secs[4];
   ok(linuxSec.cards.join(",") === "Cachyos", "Linux category sits right after Your themes");
   ok(gaming.cards.indexOf("Mario") >= 0, "the built-in mario is under Gaming, not lost in Common");
   ok(gaming.cards.indexOf("Zelda") >= 0, "a community gaming palette is under Gaming");
@@ -3416,10 +3415,8 @@ async function themesPanel(themesItem) {
   ok(commonSec.cards.join(",") === "Almond,Catppuccin-mocha,Dracula,Nord,Solarized",
      "Common merges built-in and community, alphabetically, and keeps the entry with no category field: " +
      commonSec.cards.join(","));
-  ok(lollipopSec.cards.join(",") === "Bfdi,My-show",
-     "Lollipop collects lollipop and shows categories at the end after Common: " + lollipopSec.cards.join(","));
   ok(moreSec.cards.join(",") === "Mystery", "an unknown source tier is still shown, under More");
-  ok(secs.reduce(function (n, s) { return n + s.cards.length; }, 0) === 13,
+  ok(secs.reduce(function (n, s) { return n + s.cards.length; }, 0) === 11,
      "every theme appears exactly once across the sections");
 
   // The active card keeps its highlight and its badge wherever it is sectioned.
@@ -3437,15 +3434,11 @@ async function themesPanel(themesItem) {
   ok(labels() === "Linux:1", "the filter also matches the linux category: " + labels());
   await type("gaming");
   ok(labels() === "Gaming:3", "the filter also matches the gaming category: " + labels());
-  await type("lollipop");
-  ok(labels() === "Lollipop:2", "the filter also matches the lollipop category: " + labels());
-  await type("shows");
-  ok(labels() === "Lollipop:2", "the filter also matches 'shows' for Lollipop: " + labels());
   await type("zzzz");
   ok(labels() === "", "no section heading survives a filter that matches nothing");
   ok(!!document.querySelector(".cdbx-panel .cdbx-empty"), "the empty message is shown instead");
   await type("");
-  ok(labels() === "Your themes:1 | Linux:1 | Gaming:3 | Common:5 | Lollipop:2 | More:1",
+  ok(labels() === "Your themes:1 | Linux:1 | Gaming:3 | Common:5 | More:1",
      "clearing the filter brings every section back");
 
   // The config file we write is a link, not just text - and it must be the file
@@ -3480,7 +3473,7 @@ async function themesPanel(themesItem) {
   await sleep(40);
   ok(window.__revealCalls.indexOf("config-jsonc:open") >= 0,
      "and the link follows it too: " + window.__revealCalls.join(","));
-  ok(labels() === "Your themes:1 | Linux:1 | Gaming:3 | Common:5 | Lollipop:2 | More:1",
+  ok(labels() === "Your themes:1 | Linux:1 | Gaming:3 | Common:5 | More:1",
      "the sections survive a re-render after apply");
 
   // The overlay row: what themeOverlay merges over the picked theme, above the
@@ -3530,7 +3523,7 @@ async function themesPanel(themesItem) {
     ok(!!row && row.querySelector(".cdbx-id").textContent === "Overlay: My-own",
        "the row names the new overlay: " + (row ? row.querySelector(".cdbx-id").textContent : "no row"));
     ok(/active \+ overlay/.test(activeBadge()), "and the badge is back: " + activeBadge());
-    ok(labels() === "Your themes:1 | Linux:1 | Gaming:3 | Common:5 | Lollipop:2 | More:1",
+    ok(labels() === "Your themes:1 | Linux:1 | Gaming:3 | Common:5 | More:1",
        "the sections survive the overlay re-render");
   }
 }
@@ -4098,8 +4091,6 @@ window.__themes = [
   theme("mario", "builtin", "gaming"),
   theme("zelda", "community", "gaming"),
   theme("my-neon", "custom", "gaming"),
-  theme("bfdi", "builtin", "lollipop"),
-  theme("my-show", "custom", "shows"),
   theme("solarized", "community", ""),
   theme("dracula", "community"),
   theme("my-own", "custom", ""),

@@ -7,11 +7,11 @@ theme authors see it).
 This doc catalogs the spinner SVG shapes shipped per theme: what each shape is, its path
 data, its color strategy, and how to swap/test one live in the running app.
 
-**Every bundled palette ships a spinner.** All 150 - the 7 curated built-ins, 15 Linux
+**Every bundled palette ships a spinner.** All 138 - the 7 curated built-ins, 15 Linux
 distro palettes (`js/linux_themes.json`), 12 gaming palettes (`js/gaming_themes.json`),
-12 Lollipop palettes (`js/lollipop_themes.json`), 20 scene palettes (`js/scene_themes.json`),
-and 84 community palettes (`js/community_themes.json`) - replace claude.ai's brand star
-with a glyph drawn for that palette's name or colors.
+20 scene palettes (`js/scene_themes.json`), and 84 community palettes
+(`js/community_themes.json`) - replace claude.ai's brand star with a glyph drawn for that
+palette's name or colors.
 
 - **Runtime engine:** `js/spinner_injector.js` (a self-guarding ES5 IIFE that installs
   `window.__cdbSpinnerApply(spec|null)` once per window).
@@ -21,7 +21,6 @@ with a glyph drawn for that palette's name or colors.
   | curated built-ins (7) | inline in `patches/core/add_feature_custom_themes.nim` |
   | linux (15) | `js/linux_themes.json` |
   | gaming (12) | `js/gaming_themes.json` |
-  | lollipop (12) | `js/lollipop_themes.json` |
   | scenes (20) | `js/scene_themes.json` |
   | community (84) | curated in `scripts/community-spinners.json`, merged into `js/community_themes.json` by `scripts/generate-community-themes.mjs` |
   | your own themes | the `spinner` key of your theme in `claude-desktop-extra.jsonc` |
@@ -58,8 +57,8 @@ with a glyph drawn for that palette's name or colors.
 ```
 
 A theme object may also carry a top-level **`category`** string (`"linux"`, `"gaming"`,
-`"scenes"`, or `"lollipop"` / legacy `"shows"`) to put the theme in the matching section
-of the picker and Settings -> Extra -> Themes, independently of which tier it resolves from.
+or `"scenes"`) to put the theme in the matching section of the picker and Settings -> Extra ->
+Themes, independently of which tier it resolves from.
 
 **Color strategy:** a path with **no `fill`** (or `fill: "currentColor"`) inherits the
 theme accent through the `<svg>`'s `fill-current` class (which resolves `currentColor`
@@ -223,12 +222,6 @@ without edge jitter.
 ## The 15 Linux distro shapes (`js/linux_themes.json`)
 
 Each entry carries `"category": "linux"` and scales the official distribution mark into `viewBox "0 0 100 100"`: monochrome `currentColor` (`pulse`/`spin`) for single-ink logos (`arch-linux`, `ubuntu`, `linux-mint`, `fedora`, `debian`, `opensuse`, `manjaro`, `kali-linux`, `gentoo`, `zorin-os`) and contrast-checked multi-color paths (`>= 2.5:1` on both surfaces) for `cachyos` (`flip`), `nixos` (`spin`), `pop-os` (`flip`), `endeavouros` (`pulse`) and `linux-from-scratch` (`flip` Tux-in-jigsaw).
-
----
-
-## The 12 Lollipop show shapes (`js/lollipop_themes.json`)
-
-Each entry carries `"category": "lollipop"` and uses a two-frame `flip` character/emblem sprite: `bfdi` (Firey & Leafy duo), `bfdi-lollipop-pin` (crossed Lollipop & upright Pin duo), `bfdia` (spinning BFDIA Challenge/Prize Wheel), `idfb` (Wall Teleporter / Yoyle Needy spire), `bfb` (Four & X duo), `tpot` (Algebralien Two), `bfdie` (wooden `ELSEWHERE...` left-arrow signpost), `ii` (MePhone4 + cookie), `ii2` (circular `II` Meeple seal), `iii` (`III` Tropical Volcano & 3-Palm crest), `ii4` (Test Tube `I` + Fan `V`) and `numberblocks` (Numberblock One + Numberling).
 
 ---
 

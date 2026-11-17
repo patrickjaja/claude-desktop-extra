@@ -191,7 +191,7 @@ Check it with `curl -fsSL https://patrickjaja.github.io/claude-desktop-extra/gpg
 
 Settings → **Extra** holds everything this project adds, no config file or `sudo` needed:
 
-- **[Themes](docs/themes.md)** - pick one of 123 palettes and 33 animated SVG backdrops (or your own), applied live across Chat, Cowork and Code.
+- **[Themes](docs/themes.md)** - pick one of 138 palettes and 48 animated SVG backdrops (or your own), applied live across Chat, Cowork and Code.
 - **[Community](docs/patches.md#community-features)** - opt-in switches such as Files quick open, panel tabs, diff view modes, custom models and Escape stops Computer Use (see [Computer Use](docs/cu-escape-abort.md)).
 - **[Models](docs/custom-models.md)** - providers and models for the Code tab's model picker.
 - **[Anthropic](docs/feature-flags.md)** - every upstream feature flag as a switch.
@@ -237,7 +237,7 @@ Settings → Extra → **Cowork (Linux)** shows whether it works here and holds 
 
 ## Custom Themes
 
-150 dual light/dark palettes and 60 live animated SVG backdrops with frosted-glass panels across **Chat, Cowork and Code** - including a minimal **Linux** distro section (`cachyos`, `arch-linux`, `ubuntu`, `linux-mint`, `fedora`, `debian`, `nixos`, `opensuse`, `pop-os`, `manjaro`, `endeavouros`, `kali-linux`, `gentoo`, `zorin-os`, `linux-from-scratch`), **Gaming** (the **GTA I-VI** series, `mario`, `zelda`, `final-fantasy`, `warcraft`, `dragonball`, `playstation`, `gameboy`), 20 **Scenes** from Anthropic's [Claude Code interface mod examples](https://code.claude.com/docs/en/plugins/mods/interface#put-a-backdrop-behind-the-conversation) (no plugin needed), 84 community palettes, and a **Lollipop** animated show section (`bfdi`, `bfdi-lollipop-pin`, `bfdia`, `idfb`, `bfb`, `tpot`, `bfdie`, `ii`..`ii4`, `numberblocks`). Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> (or open Settings → Extra → Themes) to switch themes and backdrops live, or combine them with **Transparent window**. Theme files reload live for [matugen](https://github.com/InioX/matugen), pywal and wallust. PRs with your own light/dark palettes, animated SVG backdrops and custom SVG spinners are very welcome! Guide: [docs/themes.md](docs/themes.md), gallery: [themes/PALETTES.md](themes/PALETTES.md).
+138 dual light/dark palettes and 48 live animated SVG backdrops with frosted-glass panels across **Chat, Cowork and Code** - including a minimal **Linux** distro section (`cachyos`, `arch-linux`, `ubuntu`, `linux-mint`, `fedora`, `debian`, `nixos`, `opensuse`, `pop-os`, `manjaro`, `endeavouros`, `kali-linux`, `gentoo`, `zorin-os`, `linux-from-scratch`), **Gaming** (the **GTA I-VI** series, `mario`, `zelda`, `final-fantasy`, `warcraft`, `dragonball`, `playstation`, `gameboy`), 20 **Scenes** from Anthropic's [Claude Code interface mod examples](https://code.claude.com/docs/en/plugins/mods/interface#put-a-backdrop-behind-the-conversation) (no plugin needed) and 84 community palettes. Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> (or open Settings → Extra → Themes) to switch themes and backdrops live, or combine them with **Transparent window**. Theme files reload live for [matugen](https://github.com/InioX/matugen), pywal and wallust. PRs with your own light/dark palettes, animated SVG backdrops and custom SVG spinners are very welcome! Guide: [docs/themes.md](docs/themes.md), gallery: [themes/PALETTES.md](themes/PALETTES.md).
 
 | GTA I (1997 top-down chase) | GTA VI (Vice City neon) | Winter / Snow Pines |
 |---|---|---|

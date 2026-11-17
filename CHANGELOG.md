@@ -2,6 +2,11 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-17
+
+### Custom themes: remove the Lollipop show section
+- Removed `js/lollipop_themes.json`, the 12 object-show and kids themes/scenes (`bfdi`, `bfdi-lollipop-pin`, `bfdia`, `idfb`, `bfb`, `tpot`, `bfdie`, `ii`..`ii4`, `numberblocks`) and the `Lollipop` picker/Settings section (`138` bundled palettes and `48` animated SVG backdrops remain).
+
 ## 2026-11-16
 
 ### Custom models: per-conversation session header and OpenCode presets (#346)
