@@ -296,6 +296,7 @@ To add a feature, write one patch following [Adding your own feature](docs/patch
 
 ## See Also
 
+- [claude-desktop-extra for Windows](https://github.com/stratosjl/claude-desktop-extra/releases/latest) - portable Windows 11 build with profiles, themes, custom models and Settings → Extra. Download the `.zip`, unzip and run `Install.cmd`. Thanks to maintainer [@stratosjl](https://github.com/stratosjl) for supporting it.
 - [tweakcc](https://github.com/Piebald-AI/tweakcc) - a CLI tool for customizing Claude Code (system prompts, themes, UI). Same patching-JS-to-make-it-yours energy. Thanks to the Piebald team.
 - [agent-skills](https://github.com/addyosmani/agent-skills) - production-grade engineering skills for AI coding agents; the maintainer uses them to spec, plan and build changes here.
 
