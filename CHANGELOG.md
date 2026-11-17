@@ -2,6 +2,12 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-18
+
+### Transparent window: no darker box round the message input once a conversation has messages
+
+- With **Transparent window** on, Chat's sticky input container, its card holder, the square `ChatComposer` shell and chin, and the transcript's bottom fade backings (and in the Code tab the composer column and docked column backing) painted the page colour over `.dframe-root`, a second alpha layer that showed as a darker hard-edged band round the input. They now go clear inside the frame; the rounded input field and notice cards keep their solid ground, and the opt-in **Frosted message input** rules still win (`js/window_transparency.js`). The animated-backdrop case of the same strips was #337.
+
 ## 2026-11-17
 
 ### Custom themes: remove the Lollipop show section

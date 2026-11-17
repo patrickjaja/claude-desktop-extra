@@ -575,6 +575,25 @@
       "html [role=menu],html [role=listbox]{background-color:var(--cds-surface-3)!important}" +
       "html [class*=approval-dock]{background:transparent!important}" +
       "html .sticky.bottom-0.pointer-events-none[class*=\"bg-[var(--epitaxy-transcript-surface\"]{background-color:" + mix("--cds-surface-1") + "!important}" +
+      // The composer dock. Once a conversation has messages, Chat's sticky input
+      // container ([data-chat-input-container], bg-page), its card holder
+      // (in-data-cds-dock-masked:bg-page), the square ChatComposer shell and its
+      // chin, and the transcript's bottom fade with its bg-page side backings
+      // paint the page colour over the frame; in the Code tab the composer column
+      // and the docked column's backing/edge do the same with
+      // --epitaxy-transcript-surface. Each is a second alpha layer on
+      // .dframe-root, so a darker hard-edged box shows round the input (the
+      // backdrop case of the same strips is #337/#338). Inside the frame they go
+      // clear; the rounded input field and the notice cards keep their solid
+      // ground (rules above). :where() keeps the ChatComposer shell below the
+      // opt-in Frosted message input rules (transparentChatComposer), which
+      // paint it on purpose; !important still beats upstream's own fills.
+      "html .dframe-root :where([data-chat-input-container],[data-cds=ChatComposer],.rounded-composer:has([data-cds=ChatComposer]),[data-testid=transcript-bottom-backing-start],[data-testid=transcript-bottom-backing-end],[data-testid=transcript-bottom-gap],[data-testid=chat-column] [data-disclaimer]){background:transparent!important}" +
+      "html .dframe-root [data-chat-input-container] [data-composer-card-holder]{background:transparent!important}" +
+      "html .dframe-root :where([data-chat-input-container])::before,html .dframe-root :where([data-chat-input-container])::after,html .dframe-root :where([data-cds=ChatComposerChin]){background:transparent!important;box-shadow:none!important}" +
+      "html .dframe-root :where([data-transcript-fade-strip],[data-scroll-fade]){background-image:none!important;background-color:transparent!important}" +
+      "html .dframe-root :where([data-code-composer-column],[data-docked-column-backing],[data-docked-column-edge]){--epitaxy-transcript-surface:transparent!important;background-color:transparent!important}" +
+      "html .dframe-root .sticky.bottom-0.pointer-events-none[class*=\"bg-[var(--epitaxy-transcript-surface\"]{background-color:transparent!important}" +
       "html .scroll-fade-strip-top,html .scroll-fade-strip-bottom,html .page-fade-t,html .page-fade-b{opacity:" + FADE + "!important}";
   }
   // The window's own shell page (title bar / boot placeholder / error UI).
