@@ -146,7 +146,12 @@ const sender = { sender: { getURL: () => "https://claude.ai/x", isDestroyed: () 
   ok(/\[data-cds=Dialog\]\.bg-surface-2\{background-color:var\(--cds-surface-2\)!important\}/.test(css),
      "the claude.ai CSS carries the solid-dialog rule");
   ok(css.includes("html .dframe-root :where([data-chat-input-container],[data-cds=ChatComposer],") &&
-     css.includes("html .dframe-root [data-chat-input-container] [data-composer-card-holder]{background:transparent!important}") &&
+     css.includes("[data-testid=transcript-bottom-fade]") &&
+     css.includes("[data-cds-dock-card]") &&
+     css.includes("[data-cds-dock-item]") &&
+     css.includes("[data-composer-block-stack]") &&
+     css.includes("html .dframe-root [data-cds-dock-masked] .in-data-cds-dock-masked\\:bg-page,html .dframe-root [data-chat-input-container] [data-composer-card-holder]{background:transparent!important}") &&
+     css.includes("html .dframe-root :where([data-transcript-fade-strip],[data-scroll-fade],[data-docked-column-edge]){background-image:none!important;background-color:transparent!important}") &&
      css.includes("html .dframe-root :where([data-code-composer-column],[data-docked-column-backing],[data-docked-column-edge]){--epitaxy-transcript-surface:transparent!important"),
      "the claude.ai CSS clears the composer dock's backings inside the frame");
   // The Frosted message input rules (custom themes, opt-in) paint the ChatComposer
@@ -178,6 +183,14 @@ html:not([data-sim-native-hole]) .dframe-root:not([data-engine-backdrop-on]) [da
 .bg-page{background-color:var(--cds-page-bg)}
 [data-cds-dock-masked] .in-data-cds-dock-masked\\:bg-page{background-color:var(--cds-page-bg)}
 [data-chat-input-container]::before{content:"";background:var(--cds-page-bg);box-shadow:0 -8px 16px #111}
+.page-fade-b{background-image:linear-gradient(to top,var(--cds-page-bg),transparent)}
+.before\\:page-fade-b-soft::before,[data-cds-dock-masked] .in-data-cds-dock-masked\\:before\\:page-fade-b-soft::before{content:"";background-image:linear-gradient(to top,var(--cds-page-bg),transparent)}
+[data-cds-dock-masked] .in-data-cds-dock-masked\\:bg-linear-to-b{background-image:linear-gradient(to bottom,var(--cds-page-bg),var(--cds-page-bg))}
+.scroll-fade-strip-bottom{background:linear-gradient(to top,var(--cds-scroll-fade-strip-color,var(--cds-surface-1)),rgb(from var(--cds-scroll-fade-strip-color,var(--cds-surface-1)) r g b / .85) 13%,transparent)}
+.stacks\\:bg-page{background-color:var(--cds-page-bg)}
+.dframe-root:where([data-test-frost]) [data-chat-input-container] [data-cds=ChatComposer]{background:color-mix(in srgb,#222 30%,transparent)!important;backdrop-filter:blur(20px) saturate(1.2)!important}
+.dframe-root:where([data-test-frost-field]) [data-chat-input-container] [data-cds=ChatComposer]{background:transparent!important;backdrop-filter:none!important}
+.dframe-root:where([data-test-frost-field]) [data-chat-input-container] .rounded-composer:has([data-cds=ChatComposerEditor]){background:color-mix(in srgb,#222 35%,transparent)!important;backdrop-filter:blur(20px) saturate(1.2)!important}
 </style><style>${css}</style>
 <div id="dlg" data-cds="Dialog" class="bg-surface-2 rounded-card"></div>
 <div id="card" class="bg-surface-2 rounded-card"></div>
@@ -187,6 +200,7 @@ html:not([data-sim-native-hole]) .dframe-root:not([data-engine-backdrop-on]) [da
 <div id="ownscroll" class="own-scroll-layer"></div>
 <div class="own-scroll-layer-host"><div id="owninhost" class="own-scroll-layer-in-host"></div></div>
 <div id="menu" role="menu" class="own-scroll-layer"></div>
+<div id="menufade" role="menu" data-scroll-fade="bottom" class="scroll-fade-strip-bottom"></div>
 <div id="elevscroll" class="bg-surface-2 rounded-card shadow-panel-lg own-scroll-layer"></div>
 <div id="panel" class="rounded-card bg-surface-2" data-surface="panel" style="background:#1a1a19">
 <div id="term" class="group/terminal" style="background-color:rgb(26,26,25)"><div id="xterm" class="xterm-scrollable-element" style="background-color:rgb(26,26,25)"></div></div>
@@ -210,13 +224,15 @@ html:not([data-sim-native-hole]) .dframe-root:not([data-engine-backdrop-on]) [da
 <iframe id="pifr" srcdoc="<body>no background</body>"></iframe></div>
 <div data-tiles-line style="--tile-shell-ground:#111"><div id="ptiles" class="tiles-shell"><div id="pcorner" style="background:var(--tile-shell-ground)"></div></div></div></div></div></div>
 <div data-tiles-line style="--tile-shell-ground:#111"><div id="otiles" class="tiles-shell"></div></div>
-<div class="dframe-root" id="kframe"><div data-testid="chat-column"><div data-testid="transcript-bottom-fade" class="page-fade-b"><div id="kbs" data-testid="transcript-bottom-backing-start" class="bg-page"></div><div id="kbe" data-testid="transcript-bottom-backing-end" class="bg-page"></div><div id="kgap" data-testid="transcript-bottom-gap" class="bg-page"></div></div><div id="kdock" data-chat-input-container class="sticky bottom-0 bg-page"><div data-cds-dock-masked><div id="kholder" data-composer-card-holder class="relative in-data-cds-dock-masked:bg-page"><div id="knotice" class="flex rounded-composer bg-surface-1 shadow-card-ring"></div><div id="kwrap" class="pointer-events-auto relative rounded-composer" style="background-color:#111"><div id="kshell" data-cds="ChatComposer" style="background-color:#111"><div id="kfield" class="bg-surface-popover rounded-composer shadow-composer"></div></div><div id="kchin" data-cds="ChatComposerChin" style="background-color:#111;box-shadow:0 0 8px #111"></div></div></div></div></div><div id="kdisc" data-disclaimer style="background-color:#111"></div></div><div style="--epitaxy-transcript-surface:#1a1a19"><div id="kcol" data-code-composer-column style="background-color:var(--epitaxy-transcript-surface)"><div id="ksticky" class="sticky bottom-0 pointer-events-none bg-[var(--epitaxy-transcript-surface)]"></div></div><div id="kback" data-docked-column-backing style="background-color:#1a1a19"></div><div id="kedge" data-docked-column-edge style="background-color:#1a1a19"></div><div id="kfade" data-transcript-fade-strip style="background-image:linear-gradient(#111,#111)"></div></div></div>
+<div class="dframe-root" id="kframe"><div data-testid="chat-column"><div id="kbfade" data-testid="transcript-bottom-fade" class="page-fade-b"><div id="kbs" data-testid="transcript-bottom-backing-start" class="bg-page"></div><div id="kbe" data-testid="transcript-bottom-backing-end" class="bg-page"></div><div id="kgap" data-testid="transcript-bottom-gap" class="bg-page"></div></div><div id="kdock" data-chat-input-container class="sticky bottom-0 bg-page"><div data-cds-dock-masked><div id="kdcard" data-cds-dock-card class="relative z-0 bg-page before:page-fade-b-soft"><div id="kbanner" data-cds="Banner" class="rounded-composer stacks:bg-page"></div></div><div id="kditem" data-cds-dock-item class="in-data-cds-dock-masked:bg-page in-data-cds-dock-masked:before:page-fade-b-soft"><div id="kditemcard" class="rounded-composer bg-surface-1"></div></div><div id="kbstack" data-composer-block-stack class="in-data-cds-dock-masked:bg-linear-to-b"></div><div id="ksband" class="in-data-cds-dock-masked:bg-page"></div><div id="kholder" data-composer-card-holder class="relative in-data-cds-dock-masked:bg-page"><div id="knotice" class="flex rounded-composer bg-surface-1 shadow-card-ring"></div><div id="kwrap" class="pointer-events-auto relative rounded-composer" style="background-color:#111"><div id="kshell" data-cds="ChatComposer" style="background-color:#111"><div id="kfield" class="bg-surface-popover rounded-composer shadow-composer"></div></div><div id="kchin" data-cds="ChatComposerChin" style="background-color:#111;box-shadow:0 0 8px #111"></div></div></div></div></div><div id="kdisc" data-disclaimer style="background-color:#111"></div></div><div style="--epitaxy-transcript-surface:#1a1a19"><div id="kcol" data-code-composer-column style="background-color:var(--epitaxy-transcript-surface)"><div id="ksticky" class="sticky bottom-0 pointer-events-none bg-[var(--epitaxy-transcript-surface)]"></div></div><div id="kback" data-docked-column-backing style="background-color:#1a1a19"></div><div id="kedge" data-docked-column-edge class="scroll-fade-strip-bottom" style="--cds-scroll-fade-strip-color:var(--epitaxy-transcript-surface,var(--cds-surface-1))"></div><div id="kfade" data-transcript-fade-strip style="background-image:linear-gradient(#111,#111)"></div></div></div>
+<div class="dframe-root" id="fframe" data-test-frost><div data-chat-input-container><div id="fshell" data-cds="ChatComposer" style="background-color:#111"></div></div></div>
+<div class="dframe-root" id="fframe2" data-test-frost-field><div data-chat-input-container><div id="fshell2" data-cds="ChatComposer" style="background-color:#111"><div id="ffield2" class="bg-surface-popover rounded-composer"><div data-cds="ChatComposerEditor"></div></div></div></div></div>
 <div id="odock" data-chat-input-container class="bg-page"><div data-cds="ChatComposer" id="oshell" style="background-color:#111"></div></div>
 <div class="dframe-root" id="mframe"><div data-tiles-line style="--tile-shell-ground:#111"><div id="mtiles" class="tiles-shell is-moving"></div></div></div>
 <style>.dframe-root:where([data-engine-glass]) .dframe-sidebar{background-color:rgba(20,20,20,0.4)!important;backdrop-filter:blur(14px)!important}</style>
 <div class="dframe-root" id="bframe" data-engine-backdrop-on data-engine-glass><aside id="bside" class="dframe-sidebar"></aside><main class="dframe-content"><div id="bd" data-engine-backdrop="mario"><svg><rect width="100" height="100" fill="#112233"/></svg></div><div data-cds="Toolbar"><div id="btground" data-cds-part="toolbar-ground"></div></div></main></div>
 <pre id="o"></pre>
-<script>var r={};["dlg","card","ground","frame","side","navscroll","ownscroll","owninhost","episcroll","menu","elevscroll","cpeek","cnav","page","panel","term","xterm","code","cm","gut","fdlg","ifr","ifw","pframe","pcontent","pground","pcard","pifr","tiles","corner","ptiles","pcorner","otiles","mtiles","tground","hground","elev","elev2","elev3","flow","ring","pane","fpane","bframe","bside","btground","kbs","kbe","kgap","kdock","kholder","knotice","kwrap","kshell","kfield","kchin","kdisc","kcol","ksticky","kback","kedge","kfade","odock","oshell"].forEach(function(k){r[k]=getComputedStyle(document.getElementById(k)).backgroundColor});r.bdOpacity=getComputedStyle(document.getElementById("bd")).opacity;r.bsideFilter=getComputedStyle(document.getElementById("bside")).backdropFilter;r.body=getComputedStyle(document.body).backgroundColor;r.kchinShadow=getComputedStyle(document.getElementById("kchin")).boxShadow;r.kdockBefore=getComputedStyle(document.getElementById("kdock"),"::before").backgroundColor;r.kdockBeforeShadow=getComputedStyle(document.getElementById("kdock"),"::before").boxShadow;r.kfadeImage=getComputedStyle(document.getElementById("kfade")).backgroundImage;r.kcolVar=getComputedStyle(document.getElementById("kcol")).getPropertyValue("--epitaxy-transcript-surface").trim();o.textContent="CDB-BEGIN"+JSON.stringify(r)+"CDB-END"</script>`);
+<script>var r={};["dlg","card","ground","frame","side","navscroll","ownscroll","owninhost","episcroll","menu","menufade","elevscroll","cpeek","cnav","page","panel","term","xterm","code","cm","gut","fdlg","ifr","ifw","pframe","pcontent","pground","pcard","pifr","tiles","corner","ptiles","pcorner","otiles","mtiles","tground","hground","elev","elev2","elev3","flow","ring","pane","fpane","bframe","bside","btground","kbfade","kbs","kbe","kgap","kdock","kdcard","kbanner","kditem","kditemcard","kbstack","ksband","kholder","knotice","kwrap","kshell","kfield","kchin","kdisc","kcol","ksticky","kback","kedge","kfade","fshell","fshell2","ffield2","odock","oshell"].forEach(function(k){r[k]=getComputedStyle(document.getElementById(k)).backgroundColor});r.bdOpacity=getComputedStyle(document.getElementById("bd")).opacity;r.bsideFilter=getComputedStyle(document.getElementById("bside")).backdropFilter;r.body=getComputedStyle(document.body).backgroundColor;r.kchinShadow=getComputedStyle(document.getElementById("kchin")).boxShadow;r.kdockBefore=getComputedStyle(document.getElementById("kdock"),"::before").backgroundColor;r.kdockBeforeShadow=getComputedStyle(document.getElementById("kdock"),"::before").boxShadow;r.kdcardBeforeBg=getComputedStyle(document.getElementById("kdcard"),"::before").backgroundColor;r.kdcardBeforeImg=getComputedStyle(document.getElementById("kdcard"),"::before").backgroundImage;r.kditemBeforeBg=getComputedStyle(document.getElementById("kditem"),"::before").backgroundColor;r.kditemBeforeImg=getComputedStyle(document.getElementById("kditem"),"::before").backgroundImage;r.kbfadeImg=getComputedStyle(document.getElementById("kbfade")).backgroundImage;r.kbstackImg=getComputedStyle(document.getElementById("kbstack")).backgroundImage;r.kedgeImg=getComputedStyle(document.getElementById("kedge")).backgroundImage;r.kfadeImage=getComputedStyle(document.getElementById("kfade")).backgroundImage;r.kcolVar=getComputedStyle(document.getElementById("kcol")).getPropertyValue("--epitaxy-transcript-surface").trim();r.fshellFilter=getComputedStyle(document.getElementById("fshell")).backdropFilter;r.ffield2Filter=getComputedStyle(document.getElementById("ffield2")).backdropFilter;o.textContent="CDB-BEGIN"+JSON.stringify(r)+"CDB-END"</script>`);
     const dump = execFileSync(chromium, ["--headless", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=2000",
       "--dump-dom", "file://" + f], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     const m = /CDB-BEGIN(\{.*?\})CDB-END/.exec(dump.replace(/&quot;/g, '"'));
@@ -233,8 +249,8 @@ html:not([data-sim-native-hole]) .dframe-root:not([data-engine-backdrop-on]) [da
     ok(clear(got.navscroll) && clear(got.ownscroll) && clear(got.owninhost) && clear(got.episcroll),
        "sub-2x own-scroll-layers (.dframe-nav-scroll, .own-scroll-layer, .own-scroll-layer-in-host, .epitaxy-own-scroll-layer) stay clear (#340): " +
        JSON.stringify({ navscroll: got.navscroll, ownscroll: got.ownscroll, owninhost: got.owninhost, episcroll: got.episcroll }));
-    ok(got.menu === "rgb(51, 51, 51)" && got.elevscroll === "rgb(38, 38, 36)",
-       "solid menus and elevated cards carrying .own-scroll-layer stay opaque (" + got.menu + ", " + got.elevscroll + ")");
+    ok(got.menu === "rgb(51, 51, 51)" && got.menufade === "rgb(51, 51, 51)" && got.elevscroll === "rgb(38, 38, 36)",
+       "solid menus (even carrying [data-scroll-fade]) and elevated cards carrying .own-scroll-layer stay opaque (" + got.menu + ", " + got.menufade + ", " + got.elevscroll + ")");
     ok(got.cpeek === "rgb(48, 48, 48)" && clear(got.cnav),
        "collapsed sidebar hover-peek keeps its opaque popover surface while .dframe-nav-scroll inside stays clear (" + got.cpeek + ", " + got.cnav + ")");
     ok(/^rgb\(38, 38, 36\)$/.test(got.fdlg || ""), "a Dialog inside the frame stays solid (" + got.fdlg + ")");
@@ -266,15 +282,26 @@ html:not([data-sim-native-hole]) .dframe-root:not([data-engine-backdrop-on]) [da
        "with an animated SVG backdrop active, [data-engine-backdrop] carries the window alpha while the frame, sidebar and toolbar ground go clear (" +
        JSON.stringify({ bframe: got.bframe, bside: got.bside, btground: got.btground, bdOpacity: got.bdOpacity, bsideFilter: got.bsideFilter }) + ")");
     // The composer dock: once a conversation has messages, Chat's input container,
-    // card holder, ChatComposer shell, chin and the transcript's bottom backings,
-    // and the Code tab's composer column and docked backing, painted the page
-    // colour over the frame - a second alpha layer, a darker box round the input.
-    const dstacked = ["kbs", "kbe", "kgap", "kdock", "kholder", "kwrap", "kshell", "kchin", "kdisc", "kcol", "ksticky", "kback", "kedge", "kfade"].filter((k) => !clear(got[k]));
-    ok(dstacked.length === 0 && clear(got.kdockBefore) && got.kdockBeforeShadow === "none" && got.kchinShadow === "none" && got.kfadeImage === "none" && got.kcolVar === "transparent",
+    // dock cards/items/block stacks, card holder, ChatComposer shell, chin and
+    // the transcript's bottom backings/fade, and the Code tab's composer column
+    // and docked backing/edge, painted the page colour over the frame - a second
+    // alpha layer (or an 85% black relative-color fade edge), a darker box round
+    // the input.
+    const dstacked = ["kbfade", "kbs", "kbe", "kgap", "kdock", "kdcard", "kditem", "kbstack", "ksband", "kholder", "kwrap", "kshell", "kchin", "kdisc", "kcol", "ksticky", "kback", "kedge", "kfade"].filter((k) => !clear(got[k]));
+    ok(dstacked.length === 0 && clear(got.kdockBefore) && got.kdockBeforeShadow === "none" &&
+       clear(got.kdcardBeforeBg) && got.kdcardBeforeImg === "none" &&
+       clear(got.kditemBeforeBg) && got.kditemBeforeImg === "none" &&
+       got.kchinShadow === "none" && got.kbfadeImg === "none" && got.kbstackImg === "none" &&
+       got.kedgeImg === "none" && got.kfadeImage === "none" && got.kcolVar === "transparent",
        "the composer dock (Chat and Code) adds no second layer on the frame" + (dstacked.length ? ": " + dstacked.map((k) => k + "=" + got[k]).join(", ") : "") +
-       " " + JSON.stringify({ before: got.kdockBefore, beforeShadow: got.kdockBeforeShadow, chinShadow: got.kchinShadow, fade: got.kfadeImage, colVar: got.kcolVar }));
-    ok(got.kfield === "rgb(51, 51, 51)" && got.knotice === "rgb(26, 26, 25)",
-       "the rounded input field and a notice card in the dock keep their solid ground (" + got.kfield + ", " + got.knotice + ")");
+       " " + JSON.stringify({ before: got.kdockBefore, beforeShadow: got.kdockBeforeShadow, kdcardBefore: [got.kdcardBeforeBg, got.kdcardBeforeImg], kditemBefore: [got.kditemBeforeBg, got.kditemBeforeImg], chinShadow: got.kchinShadow, bfade: got.kbfadeImg, bstack: got.kbstackImg, edge: got.kedgeImg, fade: got.kfadeImage, colVar: got.kcolVar }));
+    ok(got.kfield === "rgb(51, 51, 51)" && got.knotice === "rgb(26, 26, 25)" &&
+       got.kbanner === "rgb(17, 17, 17)" && got.kditemcard === "rgb(26, 26, 25)",
+       "the rounded input field and notice cards in the dock keep their solid ground (" + got.kfield + ", " + got.knotice + ", " + got.kbanner + ", " + got.kditemcard + ")");
+    ok(!clear(got.fshell) && got.fshellFilter !== "none",
+       "opt-in frosted ChatComposer keeps its frosted fill and blur over the :where() clear rule (" + got.fshell + ", " + got.fshellFilter + ")");
+    ok(clear(got.fshell2) && !clear(got.ffield2) && got.ffield2 !== "rgb(51, 51, 51)" && got.ffield2Filter !== "none",
+       "opt-in frostedReplyField keeps the shell clear and frosts the inner field (" + got.fshell2 + ", " + got.ffield2 + ", " + got.ffield2Filter + ")");
     ok(!clear(got.odock) && got.oshell === "rgb(17, 17, 17)", "outside a frame the dock keeps its fills (" + got.odock + ", " + got.oshell + ")");
     rmSync(d, { recursive: true });
   }
