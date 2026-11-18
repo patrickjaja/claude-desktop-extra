@@ -124,6 +124,24 @@
     pickerSet: function (enabled) {
       return ipcRenderer.invoke("cdb-picker:set", enabled === true);
     },
+    customShortcutsRead: function () {
+      return ipcRenderer.invoke("cdb-shortcuts:pref-read");
+    },
+    customShortcutsSet: function (enabled) {
+      return ipcRenderer.invoke("cdb-shortcuts:pref-set", enabled === true);
+    },
+    customShortcutsBind: function (actionId, accelerator) {
+      return ipcRenderer.invoke("cdb-shortcuts:bind", String(actionId || ""), String(accelerator || ""));
+    },
+    customShortcutsScope: function (actionId, scope) {
+      return ipcRenderer.invoke("cdb-shortcuts:scope", String(actionId || ""), String(scope || ""));
+    },
+    customShortcutsReset: function () {
+      return ipcRenderer.invoke("cdb-shortcuts:reset");
+    },
+    customShortcutsRecording: function (active) {
+      return ipcRenderer.invoke("cdb-shortcuts:recording", active === true);
+    },
 
     // Always use the white tray icon. Both channels are the settings patch's
     // own; the tray patch (patches/linux/fix_tray_icon_theme.nim) only reads the

@@ -614,8 +614,8 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
   // page is the status block, then an Options heading it draws once, then the
   // two switches in this order. None of them is left in Community Features.
   const navKinds = ((/var NAV_ITEMS = \[([\s\S]*?)\n {2}\];/.exec(page) || [])[1] || "").match(/kind: "(\w+)"/g) || [];
-  check("page: nav order themes, features, cu, models, flags, deploy", navKinds.join(","),
-    'kind: "themes",kind: "features",kind: "cu",kind: "models",kind: "flags",kind: "deploy"');
+  check("page: nav order themes, features, cu, models, shortcuts, flags, deploy", navKinds.join(","),
+    'kind: "themes",kind: "features",kind: "cu",kind: "models",kind: "shortcuts",kind: "flags",kind: "deploy"');
   check("page: the cu entry is labelled Cowork (Linux) and not carried on Windows",
     /\{ kind: "cu", label: "Cowork \(Linux\)", icon: ICON_CU, tooltip: "Cowork and Computer Use on Linux" \}/.test(page) && /var WINDOWS_NAV = \{ models: true \};/.test(page) &&
     /cu: renderCu,/.test(page), true);

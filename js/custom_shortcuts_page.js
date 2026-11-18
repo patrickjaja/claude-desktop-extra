@@ -1,0 +1,685 @@
+/*
+ * custom_shortcuts_page.js - page-side action executor for Custom Shortcuts
+ * (issues #350, #352).
+ *
+ * Embedded by patches/community/add_feature_custom_shortcuts.nim into
+ * js/custom_shortcuts_main.js and executed via webContents.executeJavaScript()
+ * on claude.ai / claude.com / app://localhost (non-setup) views that carry
+ * window.cdbExtra.
+ *
+ * Exposes window.__cdbCustomShortcuts:
+ *   trigger(actionId, opts)      -> Promise<{ ok, action, detail?, reason? }>
+ *   isRecordingShortcut()        -> boolean
+ *   state()                      -> diagnostic snapshot
+ *
+ * Anchors (derived from ion-dist 5.11492.5, inventoried in
+ * baseline/CUSTOM_SHORTCUTS_ANCHORS.md):
+ *   - Read Aloud:
+ *       [data-testid="assistant-message"][data-is-streaming]
+ *       [data-testid="action-bar-read-aloud"][data-state]
+ *       [data-testid="message-actions"][data-deferred],
+ *       [data-cds="MessageActions"][data-deferred]
+ *   - Voice Mode:
+ *       button[aria-label="Use voice mode"]
+ *       React fiber props: qR ({ state, onStart, onEnd, onCancel, onToggleMute }),
+ *       xR ({ onPrimaryClick, items })
+ *   - Recording guard:
+ *       [data-keyboard-shortcut-input]
+ *
+ * Every missing anchor degrades cleanly to a short floating notice and a
+ * deduped [cdb-shortcuts] warning (console.warn + cdbExtra.diag) — never throws.
+ */
+(function () {
+  "use strict";
+
+  if (window.__cdbCustomShortcuts && window.__cdbCustomShortcuts._installed) {
+    return "custom-shortcuts: already installed";
+  }
+
+  var api = window.cdbExtra;
+  if (!api || typeof api.diag !== "function") {
+    return "custom-shortcuts: skipped, no cdbExtra in this view";
+  }
+
+  var SETTINGS_DIALOG_SEL = '[role="dialog"]';
+  var ASSISTANT_MSG_SEL = '[data-testid="assistant-message"]';
+  var READ_ALOUD_SEL = '[data-testid="action-bar-read-aloud"]';
+  var DEFERRED_ACTIONS_SEL =
+    '[data-testid="message-actions"][data-deferred], [data-cds="MessageActions"][data-deferred]';
+  var ACTIONS_BOX_SEL = '[data-testid="message-actions"], [data-cds="MessageActions"]';
+  var VOICE_BTN_SEL = 'button[aria-label="Use voice mode"]';
+  var RECORDING_INPUT_SEL = "[data-keyboard-shortcut-input]";
+
+  var MAX_FIBER_HOPS = 25;
+  var DEFERRED_WAIT_FRAMES = 18;
+  var NEW_CHAT_POLL_MS = 60;
+  var NEW_CHAT_TIMEOUT_MS = 4500;
+  var VOICE_MISTAP_SETTLE_MS = 400;
+
+  var warned = {};
+  function warnOnce(key, msg) {
+    if (warned[key]) return;
+    warned[key] = true;
+    var line = "[cdb-shortcuts] " + key + ": " + msg;
+    try { console.warn(line); } catch (e) {}
+    try { api.diag(line); } catch (e2) {}
+  }
+
+  var toastEl = null;
+  var toastTimer = null;
+  function showNotice(text, isError) {
+    try {
+      if (!document.body) return;
+      if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+      if (!toastEl || !toastEl.isConnected) {
+        toastEl = document.createElement("div");
+        toastEl.className = "cdb-sc-toast";
+        toastEl.setAttribute("role", "status");
+        toastEl.setAttribute("aria-live", "polite");
+        toastEl.style.cssText = [
+          "position:fixed",
+          "right:22px",
+          "bottom:22px",
+          "z-index:2147483647",
+          "max-width:min(360px,80vw)",
+          "padding:9px 14px",
+          "border-radius:10px",
+          "font-size:12px",
+          "line-height:1.4",
+          "pointer-events:none",
+          "box-shadow:0 8px 24px rgba(0,0,0,0.22)",
+          "backdrop-filter:blur(12px)",
+          "transition:opacity 0.16s ease",
+          "opacity:0"
+        ].join(";");
+        document.body.appendChild(toastEl);
+      }
+      toastEl.style.background = "var(--cds-surface-popover, rgba(24,24,28,0.92))";
+      toastEl.style.color = "var(--cds-text-primary, #f4f4f6)";
+      toastEl.style.border = isError
+        ? "1px solid rgba(229, 72, 77, 0.7)"
+        : "1px solid var(--cds-border, rgba(160,160,175,0.28))";
+      toastEl.textContent = String(text || "");
+      void toastEl.offsetWidth;
+      toastEl.style.opacity = "1";
+      toastTimer = setTimeout(function () {
+        if (toastEl) toastEl.style.opacity = "0";
+      }, 2400);
+    } catch (e) {}
+  }
+
+  function isRecordingShortcut() {
+    try {
+      var ae = document.activeElement;
+      return !!(ae && typeof ae.closest === "function" && ae.closest(RECORDING_INPUT_SEL));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Keep main's before-input-event / globalShortcut suppression in sync
+  // whenever ANY shortcut recorder input in the view (both ours and
+  // upstream's Desktop app ones) takes or drops focus. Always emit true on
+  // focusin so redraws that detach the prior focused pill never leave main out
+  // of sync.
+  var lastRecordingNotified = false;
+  function notifyRecording(active) {
+    var next = active === true;
+    lastRecordingNotified = next;
+    try {
+      if (typeof api.customShortcutsRecording === "function") {
+        api.customShortcutsRecording(next);
+      }
+    } catch (e) {}
+  }
+  try {
+    document.addEventListener("focusin", function () {
+      if (isRecordingShortcut()) notifyRecording(true);
+      else if (lastRecordingNotified) notifyRecording(false);
+    }, true);
+    document.addEventListener("focusout", function () {
+      setTimeout(function () {
+        if (!isRecordingShortcut() && lastRecordingNotified) notifyRecording(false);
+      }, 0);
+    }, true);
+    window.addEventListener("blur", function () {
+      if (lastRecordingNotified) notifyRecording(false);
+    });
+  } catch (e) {}
+
+  function fiberOf(node) {
+    if (!node || typeof node !== "object") return null;
+    try {
+      var keys = Object.keys(node);
+      for (var i = 0; i < keys.length; i++) {
+        if (keys[i].indexOf("__reactFiber$") === 0 || keys[i].indexOf("__reactInternalInstance$") === 0) {
+          return node[keys[i]];
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function findFiberAncestorProps(node, predicate) {
+    var f = fiberOf(node);
+    for (var i = 0; f && i < MAX_FIBER_HOPS; i++, f = f.return) {
+      var p = f.memoizedProps;
+      if (p && typeof p === "object" && predicate(p)) return p;
+    }
+    return null;
+  }
+
+  function isVisible(el) {
+    if (!el || !el.isConnected) return false;
+    try {
+      var cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden") return false;
+      var r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  function scopeForMessage(msgEl) {
+    if (!msgEl) return null;
+    try {
+      var replyScope = msgEl.closest("[data-reply-scope]");
+      if (replyScope) {
+        if (replyScope.parentElement && replyScope.parentElement.querySelectorAll(ASSISTANT_MSG_SEL).length <= 1) {
+          return replyScope.parentElement;
+        }
+        if (replyScope.querySelectorAll(ASSISTANT_MSG_SEL).length <= 1) {
+          return replyScope;
+        }
+      }
+      if (msgEl.parentElement && msgEl.parentElement.querySelectorAll(ASSISTANT_MSG_SEL).length <= 1) {
+        return msgEl.parentElement;
+      }
+    } catch (e) {}
+    return msgEl;
+  }
+
+  function findReadAloudButtonInMessage(msgEl) {
+    if (!msgEl) return null;
+    var roots = [msgEl];
+    var scope = scopeForMessage(msgEl);
+    if (scope && scope !== msgEl) roots.push(scope);
+
+    for (var i = 0; i < roots.length; i++) {
+      var btn = roots[i].querySelector(READ_ALOUD_SEL);
+      if (btn && !btn.disabled) return btn;
+    }
+
+    // Fallback when data-testid changed: locate SpeakAction via fiber props or aria-label.
+    var fallbackRe = /^(Read aloud|Pause|Resume|Stop)$/i;
+    for (var j = 0; j < roots.length; j++) {
+      var box = roots[j].querySelector(ACTIONS_BOX_SEL) || roots[j];
+      var btns = box.querySelectorAll("button");
+      for (var k = 0; k < btns.length; k++) {
+        var b = btns[k];
+        if (b.disabled) continue;
+        var props = findFiberAncestorProps(b, function (p) {
+          return typeof p.onReadAloud === "function" ||
+            (typeof p.messageUuid === "string" && typeof p.getText === "function");
+        });
+        if (props) {
+          warnOnce("read-aloud-testid-fallback", "matched Read Aloud button via fiber props");
+          return b;
+        }
+        var al = (b.getAttribute("aria-label") || "").trim();
+        if (fallbackRe.test(al)) {
+          warnOnce("read-aloud-label-fallback", "matched Read Aloud button via aria-label");
+          return b;
+        }
+      }
+    }
+    return null;
+  }
+
+  function findDeferredActionsInMessage(msgEl) {
+    if (!msgEl) return null;
+    var el = msgEl.querySelector(DEFERRED_ACTIONS_SEL);
+    if (el) return el;
+    var scope = scopeForMessage(msgEl);
+    return scope ? scope.querySelector(DEFERRED_ACTIONS_SEL) : null;
+  }
+
+  function hydrateDeferredActions(deferredEl) {
+    if (!deferredEl) return;
+    var prevFocus = document.activeElement;
+    try {
+      deferredEl.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true }));
+      if (typeof PointerEvent === "function") {
+        deferredEl.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, cancelable: true }));
+        deferredEl.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false, cancelable: false }));
+      }
+    } catch (e) {}
+    try {
+      var srBtn = deferredEl.querySelector("button.sr-only, button");
+      if (srBtn && !srBtn.disabled) srBtn.click();
+    } catch (e2) {}
+    try {
+      if (prevFocus && prevFocus !== document.activeElement && typeof prevFocus.focus === "function") {
+        prevFocus.focus({ preventScroll: true });
+      }
+    } catch (e3) {}
+  }
+
+  function waitForReadAloudButton(msgEl, framesLeft) {
+    return new Promise(function (resolve) {
+      function step(left) {
+        var btn = findReadAloudButtonInMessage(msgEl);
+        if (btn) { resolve(btn); return; }
+        if (left <= 0) { resolve(null); return; }
+        var raf = typeof requestAnimationFrame === "function"
+          ? requestAnimationFrame
+          : function (fn) { return setTimeout(fn, 16); };
+        raf(function () { step(left - 1); });
+      }
+      step(framesLeft);
+    });
+  }
+
+  function triggerReadAloud() {
+    // 1. If any Read Aloud button is currently playing or loading, toggle it immediately.
+    var allBtns = document.querySelectorAll(READ_ALOUD_SEL);
+    for (var i = 0; i < allBtns.length; i++) {
+      var st = allBtns[i].getAttribute("data-state") || "";
+      if ((st === "playing" || st === "loading") && !allBtns[i].disabled) {
+        allBtns[i].click();
+        return Promise.resolve({ ok: true, action: "readAloud", detail: "toggled-active:" + st });
+      }
+    }
+
+    // 2. Locate the newest completed assistant reply.
+    var msgs = document.querySelectorAll(ASSISTANT_MSG_SEL);
+    if (!msgs.length) {
+      showNotice("No Claude reply to read aloud in this view");
+      return Promise.resolve({ ok: false, action: "readAloud", reason: "no-message" });
+    }
+
+    var target = null;
+    var sawStreaming = false;
+    for (var m = msgs.length - 1; m >= 0; m--) {
+      if (msgs[m].getAttribute("data-is-streaming") === "true") {
+        sawStreaming = true;
+        // If a streaming reply already exposes its button, allow reading it; otherwise prefer latest completed.
+        if (findReadAloudButtonInMessage(msgs[m])) {
+          target = msgs[m];
+          break;
+        }
+        continue;
+      }
+      target = msgs[m];
+      break;
+    }
+
+    if (!target) {
+      showNotice(sawStreaming ? "Wait for Claude to finish responding" : "No completed Claude reply to read aloud");
+      return Promise.resolve({ ok: false, action: "readAloud", reason: sawStreaming ? "streaming" : "no-message" });
+    }
+
+    var direct = findReadAloudButtonInMessage(target);
+    if (direct) {
+      direct.click();
+      return Promise.resolve({ ok: true, action: "readAloud", detail: "clicked:" + (direct.getAttribute("data-state") || "idle") });
+    }
+
+    var deferred = findDeferredActionsInMessage(target);
+    if (deferred) {
+      hydrateDeferredActions(deferred);
+      return waitForReadAloudButton(target, DEFERRED_WAIT_FRAMES).then(function (btn) {
+        if (btn) {
+          btn.click();
+          return { ok: true, action: "readAloud", detail: "clicked-after-hydrate" };
+        }
+        warnOnce("read-aloud-missing-after-hydrate", "deferred message actions did not reveal Read Aloud button");
+        showNotice("Read Aloud is not available on this message");
+        return { ok: false, action: "readAloud", reason: "missing-button" };
+      });
+    }
+
+    warnOnce("read-aloud-missing", "assistant-message has neither Read Aloud button nor deferred actions");
+    showNotice("Read Aloud is not available on this message");
+    return Promise.resolve({ ok: false, action: "readAloud", reason: "missing-button" });
+  }
+
+  function closeSettingsIfOpen() {
+    try {
+      var dialogs = document.querySelectorAll(SETTINGS_DIALOG_SEL);
+      for (var i = 0; i < dialogs.length; i++) {
+        var dlg = dialogs[i];
+        var isSettings = !!(dlg.querySelector('nav[aria-label="Settings"], .cdbx-item, [data-testid="general-settings"]'));
+        if (!isSettings) continue;
+        var closeBtn = dlg.querySelector('button[aria-label="Close"], button[aria-label="close"]');
+        if (closeBtn && !closeBtn.disabled) {
+          closeBtn.click();
+          return true;
+        }
+        // Fallback: dispatch Escape on dialog.
+        dlg.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true }));
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function isVoiceUnsupportedRoute() {
+    var p = "";
+    try { p = String(location.pathname || ""); } catch (e) {}
+    return /^\/(code|epitaxy|cowork)(\/|$)/.test(p);
+  }
+
+  function findActiveVoiceBar() {
+    var btns = document.querySelectorAll("button");
+    for (var i = 0; i < btns.length; i++) {
+      var b = btns[i];
+      if (!isVisible(b)) continue;
+      var props = findFiberAncestorProps(b, function (p) {
+        return (p.state === "active" || p.state === "connecting") &&
+          (typeof p.onEnd === "function" || typeof p.onCancel === "function");
+      });
+      if (props) return { btn: b, props: props };
+    }
+    // DOM fallback if fiber props changed: look for Stop/Cancel voice pill next to held-voice-mode-button or Mic mute button.
+    var stopLabels = ["Stop", "Cancel", "End voice mode"];
+    for (var j = 0; j < btns.length; j++) {
+      var bj = btns[j];
+      if (bj.disabled || !isVisible(bj)) continue;
+      var txt = (bj.textContent || "").trim();
+      var aria = (bj.getAttribute("aria-label") || "").trim();
+      if (stopLabels.indexOf(txt) >= 0 || aria === "End voice mode") {
+        // Confirm it belongs to a voice bar (sibling or ancestor has Turn off/on microphone or audio-visualizer bars).
+        var parent = bj.parentElement && bj.parentElement.parentElement;
+        if (parent && parent.querySelector('button[aria-label="Turn off microphone"], button[aria-label="Turn on microphone"], [data-testid="held-voice-mode-button"], [data-testid="held-voice-control"]')) {
+          warnOnce("voice-active-dom-fallback", "matched active voice bar via DOM fallback");
+          return { btn: bj, props: null };
+        }
+      }
+    }
+    return null;
+  }
+
+  function findReactElementInTree(node, predicate, depth) {
+    if (!node || depth > 12) return null;
+    if (Array.isArray(node)) {
+      for (var i = 0; i < node.length; i++) {
+        var hit = findReactElementInTree(node[i], predicate, depth + 1);
+        if (hit) return hit;
+      }
+      return null;
+    }
+    if (typeof node !== "object") return null;
+    var p = node.props;
+    if (p && typeof p === "object") {
+      if (predicate(node)) return node;
+      if (p.children) return findReactElementInTree(p.children, predicate, depth + 1);
+    }
+    return null;
+  }
+
+  function findIdleVoiceStarter() {
+    // 1. Direct qR idle pill (fiber props state === "idle" && onStart).
+    var btns = document.querySelectorAll("button");
+    for (var i = 0; i < btns.length; i++) {
+      var bi = btns[i];
+      if (bi.disabled || !isVisible(bi)) continue;
+      var qrProps = findFiberAncestorProps(bi, function (p) {
+        return p.state === "idle" && typeof p.onStart === "function";
+      });
+      if (qrProps) {
+        return { kind: "qr", btn: bi, props: qrProps };
+      }
+    }
+
+    // 2. Direct "Use voice mode" button (standalone OR or split button pinned to voice).
+    var direct = document.querySelectorAll(VOICE_BTN_SEL);
+    for (var j = 0; j < direct.length; j++) {
+      if (!direct[j].disabled && isVisible(direct[j])) {
+        return { kind: "direct", btn: direct[j] };
+      }
+    }
+
+    // 3. Split / compact Voice input button (xR) when Dictate is currently pinned.
+    for (var k = 0; k < btns.length; k++) {
+      var bk = btns[k];
+      if (bk.disabled || !isVisible(bk)) continue;
+      var xrProps = findFiberAncestorProps(bk, function (p) {
+        return "items" in p && ("onPrimaryClick" in p || p.menuLabel === "Voice input" || p.menuLabel === "Microphone");
+      });
+      if (xrProps && xrProps.items) {
+        // Compact menu carries a direct "Phone" Voice mode item whose onClick is handleStartVoice.
+        var phoneItem = findReactElementInTree(xrProps.items, function (el) {
+          return el.props && el.props.icon === "Phone" && typeof el.props.onClick === "function";
+        }, 0);
+        if (phoneItem) {
+          return { kind: "item-click", onClick: phoneItem.props.onClick };
+        }
+        // Split menu carries a "Voice" radio item that pins voice as the primary button.
+        var voiceRadio = findReactElementInTree(xrProps.items, function (el) {
+          return el.props && el.props.icon === "Voice" && typeof el.props.onClick === "function";
+        }, 0);
+        if (voiceRadio) {
+          return { kind: "pin-then-start", pinVoice: voiceRadio.props.onClick, btn: bk };
+        }
+      }
+    }
+    return null;
+  }
+
+  function invokeStarterOnce(starter) {
+    if (!starter) return Promise.resolve(false);
+    if (starter.kind === "qr" && starter.props && typeof starter.props.onStart === "function") {
+      starter.props.onStart();
+      return Promise.resolve(true);
+    }
+    if (starter.kind === "item-click" && typeof starter.onClick === "function") {
+      starter.onClick();
+      return Promise.resolve(true);
+    }
+    if (starter.kind === "pin-then-start") {
+      starter.pinVoice();
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          var next = findIdleVoiceStarter();
+          if (next && next.kind !== "pin-then-start") {
+            invokeStarterOnce(next).then(resolve);
+          } else {
+            resolve(false);
+          }
+        }, 50);
+      });
+    }
+    if (starter.btn && !starter.btn.disabled) {
+      starter.btn.click();
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(false);
+  }
+
+  function startVoiceInComposer(bypassMistap) {
+    var starter = findIdleVoiceStarter();
+    if (!starter) return Promise.resolve(false);
+    var needsSettle = bypassMistap || starter.kind === "pin-then-start";
+    return invokeStarterOnce(starter).then(function (didInvoke) {
+      if (!didInvoke) return false;
+      if (!needsSettle) return true;
+      // ER() enforces a 350 ms mistap suppression window after composer mount
+      // or when pinning Voice flips startsVoice -> true.
+      // Check shortly after click; if voice mode stayed idle, retry once after the window.
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          if (findActiveVoiceBar()) { resolve(true); return; }
+          setTimeout(function () {
+            if (findActiveVoiceBar()) { resolve(true); return; }
+            var retryStarter = findIdleVoiceStarter();
+            if (!retryStarter) { resolve(false); return; }
+            invokeStarterOnce(retryStarter).then(function (ok2) { resolve(ok2); });
+          }, VOICE_MISTAP_SETTLE_MS);
+        }, 60);
+      });
+    });
+  }
+
+  function stopActiveVoiceBar(active) {
+    if (!active) return false;
+    try {
+      if (active.props) {
+        if (active.props.state === "active" && typeof active.props.onEnd === "function") {
+          active.props.onEnd();
+          return true;
+        }
+        if (active.props.state === "connecting" && typeof active.props.onCancel === "function") {
+          active.props.onCancel();
+          return true;
+        }
+      }
+      if (active.btn && !active.btn.disabled) {
+        active.btn.click();
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function triggerVoiceMode() {
+    closeSettingsIfOpen();
+    var active = findActiveVoiceBar();
+    if (active) {
+      if (stopActiveVoiceBar(active)) {
+        return Promise.resolve({ ok: true, action: "voiceMode", detail: "stopped" });
+      }
+      warnOnce("voice-stop-failed", "failed to trigger active Voice mode stop control");
+      return Promise.resolve({ ok: false, action: "voiceMode", reason: "stop-failed" });
+    }
+
+    if (isVoiceUnsupportedRoute()) {
+      showNotice("Voice mode is only available in Chat");
+      return Promise.resolve({ ok: false, action: "voiceMode", reason: "unsupported-route" });
+    }
+
+    return startVoiceInComposer(false).then(function (started) {
+      if (started) return { ok: true, action: "voiceMode", detail: "started" };
+      warnOnce("voice-button-missing", "no Voice mode trigger found in current view");
+      showNotice("Voice mode is not available in this view");
+      return { ok: false, action: "voiceMode", reason: "missing-button" };
+    });
+  }
+
+  function clickNewChatFallback() {
+    var selectors = [
+      'a[href="/new"]',
+      'a[href="/new/"]',
+      '[data-testid="new-chat-trigger"]',
+      'button[aria-label="New chat"]',
+      'a[aria-label="New chat"]'
+    ];
+    for (var i = 0; i < selectors.length; i++) {
+      var el = document.querySelector(selectors[i]);
+      if (el && !el.disabled && isVisible(el)) {
+        el.click();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function isNewChatReady() {
+    var path = "";
+    try { path = String(location.pathname || ""); } catch (e) {}
+    if (path !== "/new" && path !== "/") return false;
+    if (findActiveVoiceBar()) return false;
+    return !!findIdleVoiceStarter();
+  }
+
+  function waitForNewChatAndStart(opts) {
+    var startedAt = Date.now();
+    var navigatedByMain = !!(opts && opts.navigatedByMain);
+    var stoppedActive = !!(opts && opts.stoppedActive);
+
+    // If we are already in a clean empty /new composer with no conversation turns
+    // and did not just trigger an active voice bar teardown, start immediately.
+    if (!stoppedActive && isNewChatReady() && !document.querySelector(ASSISTANT_MSG_SEL)) {
+      return startVoiceInComposer(true).then(function (ok) {
+        if (ok) return { ok: true, action: "newVoiceChat", detail: "started-in-new" };
+        showNotice("Voice mode is not available in this view");
+        return { ok: false, action: "newVoiceChat", reason: "missing-button" };
+      });
+    }
+
+    if (!navigatedByMain) {
+      if (!clickNewChatFallback()) {
+        warnOnce("new-chat-nav-missing", "no navigation dispatcher or New chat link available");
+      }
+    }
+
+    return new Promise(function (resolve) {
+      function poll() {
+        if (isNewChatReady()) {
+          // Wait briefly past ER's 350 ms mistap window after /new composer mounts.
+          setTimeout(function () {
+            startVoiceInComposer(true).then(function (ok) {
+              if (ok) {
+                resolve({ ok: true, action: "newVoiceChat", detail: "started" });
+              } else {
+                warnOnce("new-voice-button-missing", "Voice mode trigger missing on /new");
+                showNotice("Voice mode is not available in this view");
+                resolve({ ok: false, action: "newVoiceChat", reason: "missing-button" });
+              }
+            });
+          }, VOICE_MISTAP_SETTLE_MS);
+          return;
+        }
+        if (Date.now() - startedAt >= NEW_CHAT_TIMEOUT_MS) {
+          warnOnce("new-chat-timeout", "timed out waiting for /new Voice mode composer");
+          showNotice("Timed out opening a new voice chat", true);
+          resolve({ ok: false, action: "newVoiceChat", reason: "timeout" });
+          return;
+        }
+        setTimeout(poll, NEW_CHAT_POLL_MS);
+      }
+      setTimeout(poll, NEW_CHAT_POLL_MS);
+    });
+  }
+
+  function triggerNewVoiceChat(opts) {
+    closeSettingsIfOpen();
+    var active = findActiveVoiceBar();
+    var stoppedActive = stopActiveVoiceBar(active);
+    var nextOpts = Object.assign({}, opts || {}, { stoppedActive: stoppedActive });
+    return waitForNewChatAndStart(nextOpts);
+  }
+
+  function trigger(actionId, opts) {
+    if (actionId === "readAloud") return triggerReadAloud();
+    if (actionId === "voiceMode") return triggerVoiceMode();
+    if (actionId === "newVoiceChat") return triggerNewVoiceChat(opts);
+    return Promise.resolve({ ok: false, action: String(actionId || ""), reason: "unknown-action" });
+  }
+
+  window.__cdbCustomShortcuts = {
+    _installed: true,
+    trigger: trigger,
+    isRecordingShortcut: isRecordingShortcut,
+    state: function () {
+      var msgs = document.querySelectorAll(ASSISTANT_MSG_SEL);
+      var readBtns = document.querySelectorAll(READ_ALOUD_SEL);
+      var playing = 0;
+      for (var i = 0; i < readBtns.length; i++) {
+        if (readBtns[i].getAttribute("data-state") === "playing") playing++;
+      }
+      return {
+        path: String((location && location.pathname) || ""),
+        recording: isRecordingShortcut(),
+        assistantMessages: msgs.length,
+        readAloudButtons: readBtns.length,
+        readAloudPlaying: playing,
+        voiceActive: !!findActiveVoiceBar(),
+        voiceIdleAvailable: !!findIdleVoiceStarter()
+      };
+    }
+  };
+
+  return "custom-shortcuts: installed";
+})();

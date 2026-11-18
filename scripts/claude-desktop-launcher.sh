@@ -3278,6 +3278,59 @@ _diagnose() {
     fi
 }
 
+# Shared Unix-socket command roundtrip for running-instance CLI subcommands
+# (--reload-theme, --trigger-shortcut). Returns 0 on {"ok":true,...}, 1 when
+# the command failed or no instance is running, and 2 when the socket is dead
+# but an active SingletonLock exists (caller falls through to Electron).
+_qe_socket_roundtrip() {
+    local cmd="$1" flag_label="$2"
+    local sock="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/claude-desktop-qe${profile_suffix}.sock"
+    local reply=""
+    if [[ -S "$sock" ]]; then
+        if command -v socat >/dev/null 2>&1; then
+            # -t 8: keep reading the reply for up to 8 s after stdin EOF.
+            reply="$(printf '%s\n' "$cmd" | socat -t 8 - "UNIX-CLIENT:$sock" 2>/dev/null)" || reply=""
+        elif command -v python3 >/dev/null 2>&1; then
+            reply="$(python3 -c '
+import socket,sys
+s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(8);s.connect(sys.argv[1])
+s.sendall((sys.argv[2]+"\n").encode("utf-8"));s.shutdown(socket.SHUT_WR)
+buf=b""
+while True:
+    d=s.recv(4096)
+    if not d: break
+    buf+=d
+sys.stdout.write(buf.decode("utf-8","replace"))' "$sock" "$cmd" 2>/dev/null)" || reply=""
+        else
+            echo "[launcher] socket exists but no client (socat/python3) found - falling back to Electron" >&2
+        fi
+        if [[ -n "$reply" ]]; then
+            printf '%s\n' "$reply"
+            case "$reply" in
+                *'"ok":true'*) return 0 ;;
+                *) return 1 ;;
+            esac
+        fi
+    fi
+    local _running="" _lock _lock_pid
+    for _lock in "$config_dir/SingletonLock" "${config_dir}-3p/SingletonLock" \
+                 "${XDG_CONFIG_HOME:-$HOME/.config}/Claude-3p${profile_suffix}/SingletonLock"; do
+        if [[ -L "$_lock" ]]; then
+            _lock_pid="$(readlink "$_lock" 2>/dev/null)"; _lock_pid="${_lock_pid##*-}"
+            if [[ "$_lock_pid" =~ ^[0-9]+$ ]] && kill -0 "$_lock_pid" 2>/dev/null; then
+                _running=1
+                break
+            fi
+        fi
+    done
+    if [[ -z "$_running" ]]; then
+        echo >&2 'Claude Desktop is not running'
+        return 1
+    fi
+    echo "[launcher] Quick Entry socket unavailable - delivering $flag_label via Electron second-instance" >&2
+    return 2
+}
+
 case "${1:-}" in
     --help|-h)
         cat <<'HELP'
@@ -3293,6 +3346,12 @@ Options:
   --reload-theme            Ask the running app to re-read its theme config and
                             re-apply it (prints a one-line JSON result). Exits 1
                             if Claude Desktop is not running.
+  --trigger-shortcut ACTION Trigger a configured Custom Shortcuts action on the
+                            running app (~5-25 ms via Unix socket; exits 1 if
+                            not running). ACTION is one of:
+                            voice-mode, new-voice-chat, read-aloud.
+                            Bind this in compositors without GlobalShortcuts
+                            portal (sway, niri, river, Hyprland, GNOME <48).
   --install-gnome-hotkey [ACCEL]
                             Install a GNOME custom keybinding for Quick Entry.
                             Default accelerator: <Primary><Alt>space
@@ -3454,53 +3513,31 @@ HELP
         # ({ok,changed,name,windows}) and closes. Falls through to Electron's
         # second-instance path only when the app is actually running (a reload
         # without a running app is meaningless, so never start it from here).
-        _SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/claude-desktop-qe${profile_suffix}.sock"
-        _reply=""
-        if [ -S "$_SOCK" ]; then
-            if command -v socat >/dev/null 2>&1; then
-                # -t 5: keep reading the reply for up to 5 s after stdin EOF.
-                _reply="$(printf 'reload-theme\n' | socat -t 5 - "UNIX-CLIENT:$_SOCK" 2>/dev/null)" || _reply=""
-            elif command -v python3 >/dev/null 2>&1; then
-                _reply="$(python3 -c '
-import socket,sys
-s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(5);s.connect(sys.argv[1])
-s.sendall(b"reload-theme\n");s.shutdown(socket.SHUT_WR)
-buf=b""
-while True:
-    d=s.recv(4096)
-    if not d: break
-    buf+=d
-sys.stdout.write(buf.decode("utf-8","replace"))' "$_SOCK" 2>/dev/null)" || _reply=""
-            else
-                echo "[launcher] socket exists but no client (socat/python3) found - falling back to Electron" >&2
-            fi
-            if [[ -n "$_reply" ]]; then
-                printf '%s\n' "$_reply"
-                case "$_reply" in
-                    *'"ok":true'*) exit 0 ;;
-                    *) exit 1 ;;
-                esac
-            fi
+        _qe_socket_roundtrip "reload-theme" "--reload-theme" && exit 0 || {
+            _rc=$?
+            (( _rc == 2 )) || exit "$_rc"
+        }
+        ;;
+    --trigger-shortcut|--trigger-shortcut=*)
+        if [[ "$1" == --trigger-shortcut=* ]]; then
+            _sc_arg="${1#--trigger-shortcut=}"
+        else
+            _sc_arg="${2:-}"
         fi
-        # Socket missing, refused, or silent: only hand over to Electron's
-        # second-instance handler when an instance holds the SingletonLock
-        # (default, per-profile, and the upstream `-3p` relocated userData).
-        _running=""
-        for _lock in "$config_dir/SingletonLock" "${config_dir}-3p/SingletonLock" \
-                     "${XDG_CONFIG_HOME:-$HOME/.config}/Claude-3p${profile_suffix}/SingletonLock"; do
-            if [[ -L "$_lock" ]]; then
-                _lock_pid="$(readlink "$_lock" 2>/dev/null)"; _lock_pid="${_lock_pid##*-}"
-                if [[ "$_lock_pid" =~ ^[0-9]+$ ]] && kill -0 "$_lock_pid" 2>/dev/null; then
-                    _running=1
-                    break
-                fi
-            fi
-        done
-        if [[ -z "$_running" ]]; then
-            echo >&2 'Claude Desktop is not running'
-            exit 1
-        fi
-        echo "[launcher] Quick Entry socket unavailable - delivering --reload-theme via Electron second-instance" >&2
+        case "$_sc_arg" in
+            voice-mode|voiceMode) _sc_slug="voice-mode" ;;
+            new-voice-chat|newVoiceChat) _sc_slug="new-voice-chat" ;;
+            read-aloud|readAloud) _sc_slug="read-aloud" ;;
+            *)
+                echo >&2 "claude-desktop: invalid --trigger-shortcut action '$_sc_arg' (expected: voice-mode, new-voice-chat, or read-aloud)"
+                exit 2
+                ;;
+        esac
+        _qe_socket_roundtrip "shortcut:${_sc_slug}" "--trigger-shortcut" && exit 0 || {
+            _rc=$?
+            (( _rc == 2 )) || exit "$_rc"
+        }
+        set -- "--trigger-shortcut=${_sc_slug}"
         ;;
     --reset-screen-sharing)
         # Ends only the bridges' session daemons, never a running app: its

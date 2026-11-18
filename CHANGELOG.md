@@ -4,6 +4,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-18
 
+### Custom Shortcuts for Voice mode, New voice chat, and Read Aloud (#350, #352)
+- Added **Settings -> Extra -> Custom Shortcuts** (between **Models** and **Anthropic**) plus an opt-in **Custom shortcuts** switch in **Community Features** (off and unbound by default; upstream **Desktop app** shortcuts stay untouched), backed by [`patches/community/add_feature_custom_shortcuts.nim`](patches/community/add_feature_custom_shortcuts.nim), [`js/custom_shortcuts_main.js`](js/custom_shortcuts_main.js), and [`js/custom_shortcuts_page.js`](js/custom_shortcuts_page.js) ([guide](docs/custom-shortcuts.md)).
+- Supports **Voice mode in current chat** (`voice-mode`), **New voice chat** (`new-voice-chat`), and **Read aloud latest reply** (`read-aloud`) with click-to-record shortcut pills (`[data-keyboard-shortcut-input]`), reserved/conflict/`AltGr` checks, layout-aware X11/Wayland `before-input-event` matching (QWERTZ, non-Latin `Key*` fallback), optional `In-app`/`Global` scope (`electron.globalShortcut` + `org.freedesktop.portal.GlobalShortcuts` probe), and fast `claude-desktop --trigger-shortcut <action>` Unix-socket dispatch (`patches/core/fix_quick_entry_cli_toggle.nim`, `scripts/claude-desktop-launcher.sh`) for compositors without portal support (`sway`, `Hyprland`, `niri`, `river`).
+
 ### Transparent window: no darker box round the message input (thanks @sidlikesgrapess, #349)
 
 - With **Transparent window** on, Chat's sticky input container, `ChatComposerDock` slot/card/stack wrappers and notice backings, the square `ChatComposer` shell and chin, and the transcript's bottom fade strips (and in the Code tab the composer column, docked column backing and relative-color fade edge) painted an extra alpha layer or dark gradient over `.dframe-root` once a conversation had messages. They now go clear inside the frame while the rounded input field, notice and approval cards, and the opt-in **Frosted message input** switch keep their ground (`js/window_transparency.js`).

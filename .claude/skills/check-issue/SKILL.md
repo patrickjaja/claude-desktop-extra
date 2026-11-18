@@ -97,6 +97,7 @@ Ask the real design forks with AskUserQuestion: one question per fork, with the 
 - Live checks run on scratch trees only.
 - Scratch budget: `/tmp` is a 16 GB tmpfs. A worker keeps its scratch under 2 GB and deletes it when done (one reviewer's 11 GB repo copy filled the disk and put a "Low disk space" toast into the after screenshots).
 - A runtime global that one patch defines and others consume (`globalThis.__cdbX`) gets its idempotency marker from the DEFINING line (`globalThis.__cdbX = Object.freeze(`), never the bare name: consumers injected earlier in basename order mention the name, and a bare-name marker reads as a partial injection on a pristine build.
+- Patches running before `fix_host_tool_paths_linux` must use `globalThis.__cdbToolPath.which(...)` without literal `/usr/bin/<tool>` strings; Chromium DOM harnesses hitting an in-process `http.createServer` must spawn Chromium asynchronously instead of synchronous `execFileSync` (event-loop deadlock).
 
 **Reviews:**
 - Every task gets an independent per-task review.
@@ -119,7 +120,7 @@ touch patches/linux/<embedding>.nim && (cd patches && make -j"$(nproc)")
 python3 scripts/check-upstream-absorbed.py tmp/app.asar.contents tmp/extract/usr/lib/claude-desktop/resources/ion-dist.asar
 bash scripts/check-patch-sibling-noop.sh
 nph --check $(git diff --name-only HEAD -- 'patches/*.nim'; git ls-files --others --exclude-standard 'patches/*.nim')   # the pre-commit hook rejects unformatted patches; later fix rounds unformat them
-bash scripts/run-feature-tests.sh linux   # plus core and community
+bash scripts/run-feature-tests.sh linux   # plus core and community; run without args when changing Extra Settings nav order
 python3 scripts/apply_patches.py patches <stage_dir>   # stage_dir holds app.asar.contents/ + resources/ion-dist/ (from ion-dist.asar)
 # then: node --check on every patched chunk
 ```
@@ -196,5 +197,3 @@ Before reporting done, update **this file**: `.claude/skills/check-issue/SKILL.m
 - 2026-10-30 (#305): `nativeTheme.shouldUseDarkColors` follows Claude's own Appearance setting, not the desktop or panel; offer a switch for the mismatch instead of guessing the panel color, and call upstream's own wrapper rather than the inner function it wraps.
 - 2026-11-02 (#293): upstream main has no task-end signal for cloud Cowork sessions (`worker_status` in `refreshRemoteChromeSessionMode`, cookie-authenticated, flips to idle with `result`; poll it instead of guessing with a timer).
 - 2026-11-10 (#319): run the released build through odd repro steps before calling a regression; changing window identity also changes the KDE portal app id.
-- 2026-11-10 (#323): harnesses spawning fake child processes must clean them and temp dirs on exit and signals (worker `rm` in shared `/tmp` can be denied).
-- 2026-11-10 (#319): tell live-check workers up front that the maintainer may log in to a started instance, so they never quit one.

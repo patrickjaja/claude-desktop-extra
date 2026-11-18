@@ -1052,3 +1052,127 @@
 .cdbx-cus-what { margin-top: 6px; }
 .cdbx-cus-what > summary { cursor: pointer; user-select: none; }
 .cdbx-cus-what > .cdbx-note { margin-top: 6px; }
+/* Custom Shortcuts panel (Settings -> Extra -> Custom Shortcuts). */
+.cdbx-sc-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.cdbx-sc-scope {
+  width: auto;
+  min-width: 92px;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.cdbx-sc-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 176px;
+  max-width: 240px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--cdbx-ink, CanvasText) 22%, transparent);
+  background: color-mix(in srgb, var(--cdbx-ink, CanvasText) 4%, var(--cdbx-surface, Canvas));
+  color: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease, background-color 0.14s ease;
+}
+.cdbx-sc-pill:hover:not(.cdbx-sc-locked) {
+  border-color: color-mix(in srgb, var(--cdbx-ink, CanvasText) 38%, transparent);
+}
+.cdbx-sc-pill:focus-visible,
+.cdbx-sc-pill.cdbx-sc-recording {
+  border-color: var(--accent-brand, #c15f3c);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-brand, #c15f3c) 26%, transparent);
+}
+.cdbx-sc-pill.cdbx-sc-bad {
+  border-color: #e5484d;
+  box-shadow: 0 0 0 2px rgba(229, 72, 77, 0.22);
+}
+.cdbx-sc-pill.cdbx-sc-locked {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.cdbx-sc-pill-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cdbx-sc-pill.cdbx-sc-unset .cdbx-sc-pill-text {
+  opacity: 0.68;
+  font-weight: 400;
+}
+.cdbx-sc-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cdbx-ink, CanvasText) 16%, transparent);
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.cdbx-sc-clear:hover {
+  background: color-mix(in srgb, var(--cdbx-ink, CanvasText) 28%, transparent);
+}
+.cdbx-sc-err {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #e5484d;
+}
+.cdbx-sc-warn {
+  margin-top: 6px;
+  font-size: 12px;
+  color: color-mix(in srgb, #e0a030 85%, currentColor);
+}
+.cdbx-sc-sess {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--cdbx-ink, CanvasText) 14%, transparent);
+  background: color-mix(in srgb, var(--cdbx-ink, CanvasText) 3%, transparent);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.cdbx-sc-cli {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.cdbx-sc-cli-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.cdbx-sc-cli-row code {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--cdbx-ink, CanvasText) 8%, transparent);
+  overflow-wrap: anywhere;
+}
+.cdbx-sc-foot {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}

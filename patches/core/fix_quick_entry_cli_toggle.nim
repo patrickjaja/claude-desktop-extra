@@ -1,13 +1,15 @@
 # @patch-target: app.asar.contents/.vite/build/index.js
 # @patch-type: nim
-# Enable `claude-desktop --toggle` and `claude-desktop --reload-theme` CLI
-# triggers (Quick Entry toggle; theme config re-read, GitHub issue #242).
+# Enable `claude-desktop --toggle`, `--reload-theme`, and
+# `--trigger-shortcut <action>` CLI triggers (Quick Entry toggle; theme config
+# re-read, GitHub issue #242; Custom Shortcuts CLI dispatch, #350/#352).
 # Four sub-patches:
 #   A - capture the Quick Entry show handler into globalThis.__ceQuickEntryShow
 #       with a 100ms debounce guard (prevents GNOME double-firing second-instance)
 #   B - prepend argv check to second-instance handler (warm-start path):
 #       --toggle / --toggle-quick-entry -> Quick Entry, --reload-theme -> theme
-#       engine reload (globalThis.__cdbThemes.reload, add_feature_custom_themes)
+#       engine reload (globalThis.__cdbThemes.reload), --trigger-shortcut ->
+#       globalThis.__cdbCustomShortcuts.trigger(slug, "second-instance")
 #   C - schedule first-instance check after 250ms (cold-start: app just launched
 #       with --toggle; reduced from 500ms, enough for Electron init)
 #   D - create Unix domain socket at $XDG_RUNTIME_DIR/claude-desktop-qe.sock
@@ -15,11 +17,10 @@
 #       newline-terminated command per connection (buffer capped at 256 bytes;
 #       decided on first newline, on `end`, or after a 300 ms fallback timer,
 #       whichever comes first, exactly once):
-#         ""  / "toggle"  -> __ceQuickEntryShow()   (connect+close = toggle, so
-#                             the hotkey client stays fast: `end` fires at once)
-#         "reload-theme"  -> __cdbThemes.reload("socket"); one-line JSON result
-#                             {ok,changed,name,windows} written back, then end
-#         anything else   -> logged as unknown, connection ended
+#         ""  / "toggle"    -> __ceQuickEntryShow()   (connect+close = toggle)
+#         "reload-theme"    -> __cdbThemes.reload("socket"); one-line JSON
+#         "shortcut:<slug>" -> __cdbCustomShortcuts.trigger(slug, "socket"); JSON
+#         anything else     -> logged as unknown, connection ended
 #   E - Quick Entry window probe: one "[quick-entry] shown WxH@x,y focused=..
 #       {textarea,focused,font,color,placeholder,fonts,...}" line per show
 #       (public Electron APIs; diagnostics for reports like #281)
@@ -39,9 +40,13 @@ const TRIGGER_FLAG_SHORT = "--toggle"
 const HANDLER_GLOBAL = "__ceQuickEntryShow"
 const RELOAD_FLAG = "--reload-theme"
 const RELOAD_CMD = "reload-theme"
-# Positive end-state marker for sub-patch D's command dispatch (Rule 6): the
-# literal comparison the injected server performs on the trimmed payload.
+const SHORTCUT_FLAG_EQ = "--trigger-shortcut="
+const SHORTCUT_CMD_PREFIX = "shortcut:"
+# Positive end-state markers for sub-patch D's command dispatch (Rule 6): the
+# literal comparisons the injected server performs on the trimmed payload.
 const SOCKET_RELOAD_MARKER = "_c===\"" & RELOAD_CMD & "\""
+const SOCKET_SHORTCUT_MARKER = "_c.indexOf(\"" & SHORTCUT_CMD_PREFIX & "\")===0"
+const SOCKET_HALFOPEN_MARKER = "{allowHalfOpen:true}"
 const EXPECTED = 3
 
 # JS expression (IIFE) that asks the theme engine to re-read its config and
@@ -58,26 +63,38 @@ proc reloadJs(src: string): string =
     "(globalThis.__cdbDiag||console.warn)(\"[quick-entry] reload-theme (" & src &
     "): \"+JSON.stringify(r));" & "return r})()"
 
+proc shortcutArgvJs(argvExpr: string): string =
+  "(function(a){if(!Array.isArray(a))return \"\";for(var i=0;i<a.length;i++){var s=String(a[i]||\"\");" &
+    "if(s.indexOf(\"" & SHORTCUT_FLAG_EQ & "\")===0)return s.slice(" &
+    $SHORTCUT_FLAG_EQ.len & ");" &
+    "if(s===\"--trigger-shortcut\"&&i+1<a.length)return String(a[i+1]||\"\")}return \"\"})(" &
+    argvExpr & ")"
+
+proc shortcutCallJs(slugExpr, src: string): string =
+  "(function(s){var m=globalThis.__cdbCustomShortcuts;" &
+    "if(!m||typeof m.trigger!==\"function\")return Promise.resolve({ok:false,error:\"custom shortcuts module missing\"});" &
+    "return Promise.resolve(m.trigger(s,\"" & src & "\"))})(" & slugExpr & ")"
+
 proc apply*(input: string): string =
   result = input
   var applied = 0
 
   # Sub-patch A + C + D: capture handler into globalThis.__ceQuickEntryShow.
   # Idempotency positively asserts the CURRENT injected shape (Rule 6): the
-  # handler global AND the socket server's reload-theme command dispatch. A
-  # bundle carrying the handler but the pre-#242 connect-only server is not
-  # "already patched" - fail loud instead of skipping.
+  # handler global AND the socket server's reload-theme + shortcut:* dispatches. A
+  # bundle carrying the handler but missing either dispatch is not "already
+  # patched" - fail loud instead of skipping.
   # End-state shape of A+C: the complete registration call followed by our
   # first injected expression (also the post-condition after applying).
   let patAEnd =
     re2"[\w$]+(?:\.[\w$]+)*\([\w$]+(?:\.[\w$]+)*\.QUICK_ENTRY,\(globalThis\.__ceQuickEntryShow=\(\)=>\{var __t=Date\.now\(\);[^\n]*?\}\)(?:,[\w$]+(?:\.[\w$]+)*)*\),setTimeout\(\(\)=>\{try\{if\(Array\.isArray\(process\.argv\)"
   if HANDLER_GLOBAL in result:
-    if SOCKET_RELOAD_MARKER notin result:
+    if SOCKET_RELOAD_MARKER notin result or SOCKET_SHORTCUT_MARKER notin result or
+        SOCKET_HALFOPEN_MARKER notin result:
       raise newException(
         ValueError,
         "fix_quick_entry_cli_toggle: " & HANDLER_GLOBAL &
-          " present but the socket server lacks the reload-theme dispatch (" &
-          SOCKET_RELOAD_MARKER & ") - stale patch shape, re-audit",
+          " present but the socket server lacks allowHalfOpen or the reload-theme / shortcut:* dispatch - stale patch shape, re-audit",
       )
     if not result.contains(patAEnd):
       raise newException(
@@ -85,7 +102,7 @@ proc apply*(input: string): string =
         "fix_quick_entry_cli_toggle: " & HANDLER_GLOBAL &
           " present but the QUICK_ENTRY registration call is not in the patched shape - re-audit",
       )
-    echo &"  [INFO] {HANDLER_GLOBAL} + socket reload-theme dispatch already present -- sub-patch A/C/D skipped"
+    echo &"  [INFO] {HANDLER_GLOBAL} + socket reload-theme/shortcut dispatches already present -- sub-patch A/C/D skipped"
     applied += 2
   else:
     # The two ternary-branch calls take optional args: in v1.15962 the
@@ -158,8 +175,9 @@ proc apply*(input: string): string =
         # 256 bytes) and decides exactly once - on the first newline, on `end`
         # (client half-closed / closed without sending: the hotkey case), or
         # after a 300 ms fallback timer. "" / "toggle" -> Quick Entry;
-        # "reload-theme" -> theme engine reload with a one-line JSON reply so
-        # the CLI can print it; anything else -> logged, connection ended.
+        # "reload-theme" -> theme engine reload with a one-line JSON reply;
+        # "shortcut:<slug>" -> custom shortcut trigger with a one-line JSON
+        # reply; anything else -> logged, connection ended.
         #
         # Uses XDG_RUNTIME_DIR with /run/user/<uid> fallback (cowork socket uses
         # /tmp fallback instead; /run/user/<uid> is safer as it's always user-private).
@@ -167,14 +185,17 @@ proc apply*(input: string): string =
           ",(()=>{" & "if(process.platform!==\"linux\")return;" & "try{" &
           "const _qeS=(process.env.XDG_RUNTIME_DIR||(\"/run/user/\"+process.getuid()))+\"/claude-desktop-qe\"+(process.env.CLAUDE_PROFILE?\"-\"+process.env.CLAUDE_PROFILE:\"\")+\".sock\";" &
           "try{require(\"fs\").unlinkSync(_qeS)}catch(e){}" &
-          "require(\"net\").createServer(c=>{" &
+          "require(\"net\").createServer({allowHalfOpen:true},c=>{" &
           "c.on(\"error\",e=>{(globalThis.__cdbDiag||console.warn)(\"[quick-entry] socket connection error:\",e.message)});" &
           "var _b=\"\",_d=false,_t=null;" &
           "var _run=function(){if(_d)return;_d=true;clearTimeout(_t);var _c=_b.trim();" &
           "if(_c===\"\"||_c===\"toggle\"){c.end();" & "try{if(globalThis." &
           HANDLER_GLOBAL & ")globalThis." & HANDLER_GLOBAL & "()}catch(e){}}" &
           "else if(" & SOCKET_RELOAD_MARKER & "){var r=" & reloadJs("socket") & ";" &
-          "try{c.end(JSON.stringify(r)+\"\\n\")}catch(e){}}" &
+          "try{c.end(JSON.stringify(r)+\"\\n\")}catch(e){}}" & "else if(" &
+          SOCKET_SHORTCUT_MARKER & "){var _s=_c.slice(" & $SHORTCUT_CMD_PREFIX.len &
+          ").trim();" & shortcutCallJs("_s", "socket") &
+          ".then(r=>{try{c.end(JSON.stringify(r||{ok:false})+\"\\n\")}catch(e){}},e=>{try{c.end(JSON.stringify({ok:false,error:String(e&&e.message||e)})+\"\\n\")}catch(e2){}})}" &
           "else{(globalThis.__cdbDiag||console.warn)(\"[quick-entry] unknown socket command: \"+JSON.stringify(_c.slice(0,64)));c.end()}};" &
           "c.setEncoding(\"utf8\");" &
           "c.on(\"data\",d=>{if(_d)return;_b+=d;if(_b.length>256)_b=_b.slice(0,256);var _n=_b.indexOf(\"\\n\");if(_n>=0){_b=_b.slice(0,_n);_run()}});" &
@@ -221,7 +242,7 @@ proc apply*(input: string): string =
       # <registrar>(<enum>.QUICK_ENTRY,(globalThis.__ceQuickEntryShow=()=>{...})<,args>)
       # directly followed by our first injected expression. A regex that ends
       # the call at the wrong paren leaves upstream's trailing args dangling.
-      if not resultStr.contains(patAEnd):
+      if not resultStr.contains(patAEnd) or SOCKET_SHORTCUT_MARKER notin resultStr:
         raise newException(
           ValueError,
           "fix_quick_entry_cli_toggle: sub-patch A output is not a well-formed registration call - re-audit",
@@ -251,7 +272,7 @@ proc apply*(input: string): string =
   # extra open paren; the head capture re-emits whatever was consumed verbatim,
   # keeping the parens balanced for both shapes.
   let patBApplied =
-    re2"\.on\([""`]second-instance[""`],\(?\([\w$]+,[\w$]+,[\w$]+\)=>\{if\(Array\.isArray\([\w$]+\)&&\([\w$]+\.includes\(""--toggle-quick-entry""\)\|\|[\w$]+\.includes\(""--toggle""\)\)\)\{[^}]*\}catch\(e\)\{\}return\}if\(Array\.isArray\([\w$]+\)&&[\w$]+\.includes\(""--reload-theme""\)\)"
+    re2"\.on\([""`]second-instance[""`],\(?\([\w$]+,[\w$]+,[\w$]+\)=>\{if\(Array\.isArray\([\w$]+\)&&\([\w$]+\.includes\(""--toggle-quick-entry""\)\|\|[\w$]+\.includes\(""--toggle""\)\)\)\{[^}]*\}catch\(e\)\{\}return\}if\(Array\.isArray\([\w$]+\)&&[\w$]+\.includes\(""--reload-theme""\)\)\{[^\n]*?return\}if\(\(function\(_a\)\{var _sc=\(function\(a\)\{if\(!Array\.isArray\(a\)\)return """";[^\n]*?""--trigger-shortcut=""[^\n]*?\)\([\w$]+\)\)return;"
   if result.contains(patBApplied):
     echo "  [INFO] sub-patch B already applied -- skipped"
     applied += 1
@@ -279,7 +300,10 @@ proc apply*(input: string): string =
           "{try{globalThis." & HANDLER_GLOBAL & "&&globalThis." & HANDLER_GLOBAL &
           "()}catch(e){}return}" & "if(Array.isArray(" & argv & ")&&" & argv &
           ".includes(\"" & RELOAD_FLAG & "\"))" & "{try{" & reloadJs("second-instance") &
-          "}catch(e){}return}"
+          "}catch(e){}return}" & "if((function(_a){var _sc=" & shortcutArgvJs("_a") &
+          ";if(_sc){try{" & shortcutCallJs("_sc", "second-instance") &
+          ".catch(function(){})}catch(e){}return true}return false})(" & argv &
+          "))return;"
 
         resultStr2 &= head & evt & "," & argv & "," & cwd & tail & check
         lastEnd2 = bounds.b + 1
@@ -289,7 +313,7 @@ proc apply*(input: string): string =
     if countB == 1:
       resultStr2 &= result[lastEnd2 .. ^1]
       result = resultStr2
-      echo "  [OK] sub-patch B (second-instance argv check: toggle + reload-theme) applied"
+      echo "  [OK] sub-patch B (second-instance argv check: toggle + reload-theme + trigger-shortcut) applied"
       applied += 1
     elif countB > 1:
       raise newException(

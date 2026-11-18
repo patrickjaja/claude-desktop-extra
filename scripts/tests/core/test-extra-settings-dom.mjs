@@ -213,7 +213,7 @@ const FIXTURE_BARE = dialog(`
 const DRIVER = String.raw`
 var SVGNS = "http://www.w3.org/2000/svg";
 var ICON_SEL = '[data-cds="Icon"]';
-var LABELS = ["Themes", "Community", "Cowork (Linux)", "Models", "Anthropic", "Deployment"];
+var LABELS = ["Themes", "Community", "Cowork (Linux)", "Models", "Custom Shortcuts", "Anthropic", "Deployment"];
 // Upstream's nav column is narrow and truncates, so the long names are
 // shortened there and carried in a tooltip instead. The panels keep the full
 // name in their h1 - asserted in featuresPanel()/modelsPanel()/flagsPanel() below.
@@ -447,7 +447,11 @@ async function featuresPanel(featuresItem) {
     ok(noteLinks.length === 1 && (noteLinks[0].tagName === "BUTTON" || noteLinks[0].tagName === "A") &&
        noteLinks[0].tabIndex >= 0, "the link is focusable");
     ok(links(cmRow.querySelector(".cdbx-state")).length === 0, "configured: the state line carries no link");
-    const otherLinks = links(panel).filter(function (l) { return !cmRow.contains(l); });
+    const csSwitch = panel.querySelector('.cdbx-switch[aria-label="enable custom keyboard shortcuts for voice and speech"]');
+    const csRow = csSwitch && csSwitch.closest(".cdbx-row");
+    const otherLinks = links(panel).filter(function (l) {
+      return !cmRow.contains(l) && !(csRow && csRow.contains(l));
+    });
     ok(otherLinks.length === 0, "no other row grew a link (" + otherLinks.length + ")");
     const sbox = panel.querySelector(".cdbx-search");
     sbox.value = "endpoint"; sbox.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1104,7 +1108,7 @@ async function featuresPanel(featuresItem) {
     ok(titlesIn(subGroup[0]).join("|") === "Trusted Auto-fix PR authors|Auto-fix notices: ready to merge, comments after merge|Auto-archive delay after a PR merges or closes",
        "Pull requests rows: " + titlesIn(subGroup[0]).join("|"));
     // The harness bridge has no tray or developer-tools halves, so those two rows are skipped here.
-    const appOrder = ["Hide window controls", "Native titlebar", "Transparent window", "Always use the white tray icon", "Theme picker", "Frosted message input", "Frost only the input field", "GitHub alert callouts", "Alert icons", "Developer tools"];
+    const appOrder = ["Hide window controls", "Native titlebar", "Transparent window", "Always use the white tray icon", "Theme picker", "Custom shortcuts", "Frosted message input", "Frost only the input field", "GitHub alert callouts", "Alert icons", "Developer tools"];
     ok(titlesIn(topGroups[1]).join("|") === appOrder.filter(function (t) { return titlesIn(topGroups[1]).indexOf(t) >= 0; }).join("|") &&
        titlesIn(topGroups[1]).length >= 4,
        "App and window rows in order: " + titlesIn(topGroups[1]).join("|"));
@@ -3076,6 +3080,99 @@ async function modelsPanel(modelsItem) {
   }
 }
 
+async function shortcutsPanel(featuresItem, shortcutsItem) {
+  // Verify the Community Features inline link navigates to Settings -> Extra -> Custom Shortcuts.
+  featuresItem.click();
+  await sleep(120);
+  {
+    const fpanel = document.querySelector(".cdbx-panel");
+    const link = fpanel && Array.from(fpanel.querySelectorAll(".cdbx-link"))
+      .find(function (b) { return b.textContent === "Settings > Extra > Custom Shortcuts"; });
+    ok(!!link, "Community Features renders the Custom Shortcuts deep link");
+    if (link) {
+      link.click();
+      await sleep(120);
+      const hp = document.querySelector(".cdbx-panel .cdbx-h1");
+      ok(!!hp && hp.textContent === "Custom Shortcuts",
+         "clicking the Community link opens the Custom Shortcuts panel");
+    }
+  }
+
+  shortcutsItem.click();
+  await sleep(140);
+  const panel = document.querySelector(".cdbx-panel");
+  ok(!!panel, "the Custom Shortcuts panel is mounted");
+  if (!panel) return;
+  ok(panel.querySelector(".cdbx-h1").textContent === "Custom Shortcuts",
+     "panel h1 is Custom Shortcuts");
+  headlineContract(panel, "Custom Shortcuts page");
+
+  const sw = panel.querySelector(".cdbx-sc-status .cdbx-switch");
+  ok(!!sw && sw.getAttribute("aria-checked") === "false", "master switch starts off");
+  const pills = Array.from(panel.querySelectorAll("[data-keyboard-shortcut-input]"));
+  ok(pills.length === 3, "renders 3 shortcut recorder pills (" + pills.length + ")");
+  ok(!!panel.querySelector(".cdbx-sc-sess") &&
+     panel.querySelectorAll(".cdbx-sc-cli-row code").length === 3,
+     "renders Linux session note and 3 CLI trigger commands");
+
+  // Click Voice mode pill to enter recording mode and test reserved rejection + valid bind.
+  const voiceRow = panel.querySelector('[data-sc-action="voiceMode"]');
+  const voicePill = voiceRow && voiceRow.querySelector("[data-keyboard-shortcut-input]");
+  ok(!!voicePill, "Voice mode recorder pill exists");
+  if (voicePill) {
+    voicePill.click();
+    await sleep(30);
+    ok(voicePill.classList.contains("cdbx-sc-recording") &&
+       window.__scRecCalls.slice(-1)[0] === true,
+       "clicking the pill enters recording mode and notifies main");
+
+    voicePill.dispatchEvent(new KeyboardEvent("keydown", { key: "c", code: "KeyC", ctrlKey: true, bubbles: true, cancelable: true }));
+    await sleep(50);
+    const errNode = voiceRow.querySelector(".cdbx-sc-err");
+    ok(!!errNode && /reserved/i.test(errNode.textContent) && voicePill.classList.contains("cdbx-sc-bad"),
+       "reserved chord shows inline error without losing recording state");
+
+    voicePill.dispatchEvent(new KeyboardEvent("keydown", { key: "V", code: "KeyV", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    await sleep(80);
+  }
+
+  const voiceRowAfter = panel.querySelector('[data-sc-action="voiceMode"]');
+  const voicePillAfter = voiceRowAfter && voiceRowAfter.querySelector("[data-keyboard-shortcut-input]");
+  const swAfter = panel.querySelector(".cdbx-sc-status .cdbx-switch");
+  ok(!!voicePillAfter && voicePillAfter.querySelector(".cdbx-sc-pill-text").textContent === "Ctrl+Shift+V" &&
+     !voicePillAfter.classList.contains("cdbx-sc-recording") &&
+     swAfter && swAfter.getAttribute("aria-checked") === "true",
+     "valid chord updates pill text to Ctrl+Shift+V and turns custom shortcuts on");
+
+  const scopeSel = voiceRowAfter && voiceRowAfter.querySelector(".cdbx-sc-scope");
+  if (scopeSel) {
+    scopeSel.value = "global";
+    scopeSel.dispatchEvent(new Event("change", { bubbles: true }));
+    await sleep(80);
+    const voiceRowScope = panel.querySelector('[data-sc-action="voiceMode"]');
+    ok(voiceRowScope && voiceRowScope.querySelector(".cdbx-sc-scope").value === "global",
+       "scope selector persists global mode");
+  }
+
+  const clearBtn = panel.querySelector('[data-sc-action="voiceMode"] .cdbx-sc-clear');
+  ok(!!clearBtn, "inline clear button appears once a shortcut is bound");
+  if (clearBtn) {
+    clearBtn.click();
+    await sleep(80);
+    const rowCleared = panel.querySelector('[data-sc-action="voiceMode"]');
+    ok(rowCleared && rowCleared.querySelector(".cdbx-sc-pill-text").textContent === "Click to record" &&
+       !rowCleared.querySelector(".cdbx-sc-clear"),
+       "clicking clear removes the binding and hides the clear button");
+  }
+
+  // Flip switch back off so default state stays clean for subsequent checks.
+  const swReset = panel.querySelector(".cdbx-sc-status .cdbx-switch");
+  if (swReset && swReset.getAttribute("aria-checked") === "true") {
+    swReset.click();
+    await sleep(60);
+  }
+}
+
 async function flagsPanel(flagsItem) {
   flagsItem.click();
   await sleep(140);
@@ -3849,10 +3946,11 @@ async function run() {
       await cusPanel(items[2]);
       await escTwoPages(items[1], items[2]);
       await modelsPanel(items[3]);
-      await flagsPanel(items[4]);
-      await drawnCursorRow(items[2], items[4]);
+      await shortcutsPanel(items[1], items[4]);
+      await flagsPanel(items[5]);
+      await drawnCursorRow(items[2], items[5]);
       await cuGlowRow(items[2]);
-      await deployPanel(items[5]);
+      await deployPanel(items[6]);
       // Last: it re-mounts the nav, so the items above are stale afterwards.
       await deepLink();
     }
@@ -4383,6 +4481,61 @@ window.cdbExtra = {
   pickerSet: function (enabled) {
     window.__pickerCalls.push(enabled);
     return Promise.resolve({ ok: true, enabled: enabled, path: "/tmp/picker.json" });
+  },
+  customShortcutsRead: function () {
+    if (!window.__scState) {
+      window.__scState = {
+        ok: true,
+        enabled: false,
+        enabledLocked: false,
+        lockedByJsonc: false,
+        source: "default",
+        activeCount: 0,
+        boundCount: 0,
+        cliFlag: "--trigger-shortcut",
+        session: { sessionType: "x11", isWayland: false, desktop: "XFCE", family: "xfce", portalProbed: true, portalAvailable: true, portalVersion: 0, globalSupported: true, note: "X11 (XFCE) - both in-app and global shortcuts work natively." },
+        actions: [
+          { id: "voiceMode", slug: "voice-mode", title: "Voice mode in current chat", description: "Open or exit Voice mode in the chat you have open.", accelerator: "", scope: "app", locked: false, globalStatus: null },
+          { id: "newVoiceChat", slug: "new-voice-chat", title: "New voice chat", description: "Open a new chat thread and start Voice mode immediately.", accelerator: "", scope: "app", locked: false, globalStatus: null },
+          { id: "readAloud", slug: "read-aloud", title: "Read aloud latest reply", description: "Start, pause, or resume Read Aloud on Claude's newest reply.", accelerator: "", scope: "app", locked: false, globalStatus: null }
+        ]
+      };
+    }
+    var st = window.__scState;
+    st.boundCount = st.actions.filter(function (a) { return !!a.accelerator; }).length;
+    st.activeCount = st.enabled ? st.boundCount : 0;
+    return Promise.resolve(JSON.parse(JSON.stringify(st)));
+  },
+  customShortcutsSet: function (enabled) {
+    window.cdbExtra.customShortcutsRead();
+    window.__scState.enabled = enabled === true;
+    return window.cdbExtra.customShortcutsRead();
+  },
+  customShortcutsBind: function (actionId, accel) {
+    window.cdbExtra.customShortcutsRead();
+    var a = String(accel || "").trim();
+    if (a === "Ctrl+C") return Promise.resolve({ ok: false, error: '"Ctrl+C" is reserved for standard app or editing shortcuts' });
+    var act = window.__scState.actions.find(function (x) { return x.id === actionId; });
+    if (!act) return Promise.resolve({ ok: false, error: "Unknown shortcut action" });
+    act.accelerator = a;
+    if (a && !window.__scState.enabledLocked) window.__scState.enabled = true;
+    return window.cdbExtra.customShortcutsRead();
+  },
+  customShortcutsScope: function (actionId, scope) {
+    window.cdbExtra.customShortcutsRead();
+    var act = window.__scState.actions.find(function (x) { return x.id === actionId; });
+    if (!act) return Promise.resolve({ ok: false, error: "Unknown shortcut action" });
+    act.scope = scope === "global" ? "global" : "app";
+    return window.cdbExtra.customShortcutsRead();
+  },
+  customShortcutsReset: function () {
+    window.cdbExtra.customShortcutsRead();
+    window.__scState.actions.forEach(function (a) { a.accelerator = ""; a.scope = "app"; });
+    return window.cdbExtra.customShortcutsRead();
+  },
+  customShortcutsRecording: function (active) {
+    window.__scRecCalls = (window.__scRecCalls || []).concat([active === true]);
+    return Promise.resolve({ ok: true, recording: active === true });
   },
   paths: stub({ ok: true, paths: {
     json: "/home/u/.config/Claude/claude-desktop-extra.json",

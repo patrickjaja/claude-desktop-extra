@@ -191,6 +191,10 @@ community/add_feature_github_alerts: \
   ../js/github_alerts_page.js \
   ../js/github_alerts.css
 
+community/add_feature_custom_shortcuts: \
+  ../js/custom_shortcuts_main.js \
+  ../js/custom_shortcuts_page.js
+
 community/add_feature_jira_tracker: \
   ../js/jira_tracker_adf.js \
   ../js/jira_tracker_client.js \

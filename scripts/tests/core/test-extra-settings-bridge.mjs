@@ -146,6 +146,22 @@ calls.length = 0;
 api.githubAlertIconsRead(); api.githubAlertIconsSet("yes"); api.githubAlertIconsSet(true);
 ok(JSON.stringify(calls) === '[["cdb-alert-icons:read"],["cdb-alert-icons:set",false],["cdb-alert-icons:set",true]]',
    "Alert icons use fixed channels and boolean arguments");
+calls.length = 0;
+api.customShortcutsRead(); api.customShortcutsSet("yes"); api.customShortcutsSet(true);
+api.customShortcutsBind("voiceMode", "Ctrl+Shift+V"); api.customShortcutsBind(null, undefined);
+api.customShortcutsScope("voiceMode", "global"); api.customShortcutsReset();
+api.customShortcutsRecording("yes"); api.customShortcutsRecording(true);
+ok(JSON.stringify(calls) === JSON.stringify([
+  ["cdb-shortcuts:pref-read"],
+  ["cdb-shortcuts:pref-set", false],
+  ["cdb-shortcuts:pref-set", true],
+  ["cdb-shortcuts:bind", "voiceMode", "Ctrl+Shift+V"],
+  ["cdb-shortcuts:bind", "", ""],
+  ["cdb-shortcuts:scope", "voiceMode", "global"],
+  ["cdb-shortcuts:reset"],
+  ["cdb-shortcuts:recording", false],
+  ["cdb-shortcuts:recording", true]
+]), "customShortcuts methods hit their fixed channels with sanitized boolean/string arguments: " + JSON.stringify(calls));
 ok(typeof api.invoke !== "function" && typeof api.send !== "function", "no generic passthrough to arbitrary channels");
 
 console.log(`\n${pass} passed, ${fail} failed`);

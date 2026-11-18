@@ -559,6 +559,17 @@
     ["path", { d: "M9.4 6.4l6.4 2.5-2.7 1.1-1.1 2.7z" }, SOLID]
   ];
 
+  // A keyboard with keys highlighted: custom keyboard shortcuts.
+  var ICON_SHORTCUTS = [
+    ["rect", { x: "2.4", y: "5.2", width: "19.2", height: "13.6", rx: "2.4" }, STROKE],
+    ["line", { x1: "6", y1: "9.4", x2: "8", y2: "9.4" }, STROKE],
+    ["line", { x1: "11", y1: "9.4", x2: "13", y2: "9.4" }, STROKE],
+    ["line", { x1: "16", y1: "9.4", x2: "18", y2: "9.4" }, STROKE],
+    ["line", { x1: "6", y1: "12.8", x2: "8.5", y2: "12.8" }, STROKE],
+    ["line", { x1: "11.5", y1: "12.8", x2: "18", y2: "12.8" }, STROKE],
+    ["line", { x1: "7.5", y1: "15.8", x2: "16.5", y2: "15.8" }, STROKE]
+  ];
+
   // The rows of our nav group, in render order. Everything that builds, binds or
   // dispatches them iterates THIS list, so a new panel is one entry plus one
   // render function.
@@ -573,6 +584,7 @@
     // upstream's own "Cowork" (NAV_LABELS), and it is not.
     { kind: "cu", label: "Cowork (Linux)", icon: ICON_CU, tooltip: "Cowork and Computer Use on Linux" },
     { kind: "models", label: "Models", icon: ICON_MODELS, tooltip: "Custom models" },
+    { kind: "shortcuts", label: "Custom Shortcuts", icon: ICON_SHORTCUTS },
     { kind: "flags", label: "Anthropic", icon: ICON_FLAGS, tooltip: "Anthropic Features" },
     { kind: "deploy", label: "Deployment", icon: ICON_DEPLOY }
   ];
@@ -2095,6 +2107,25 @@
     jsoncFootnote(panel);
   }
 
+  function copyTextWithFallback(text, selectNode) {
+    function fallback() {
+      try {
+        if (selectNode) {
+          var r = document.createRange();
+          r.selectNodeContents(selectNode);
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(r);
+        }
+      } catch (e) {}
+      toast("Selected - press Ctrl+C to copy");
+    }
+    try {
+      if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") { fallback(); return; }
+      navigator.clipboard.writeText(text).then(function () { toast("Copied"); }, fallback);
+    } catch (e) { fallback(); }
+  }
+
   // A copyable command block. There is no other copy button on these pages;
   // the clipboard API can be refused (no focus, permissions), so a failure
   // selects the text instead and says so.
@@ -2104,20 +2135,7 @@
     var copy = el("button", "cdbx-btn cdbx-cubg-copy", "Copy");
     copy.type = "button";
     copy.addEventListener("click", function () {
-      function fallback() {
-        try {
-          var r = document.createRange();
-          r.selectNodeContents(pre);
-          var sel = window.getSelection();
-          sel.removeAllRanges();
-          sel.addRange(r);
-        } catch (e) {}
-        toast("Selected - press Ctrl+C to copy");
-      }
-      try {
-        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") { fallback(); return; }
-        navigator.clipboard.writeText(text).then(function () { toast("Copied"); }, fallback);
-      } catch (e) { fallback(); }
+      copyTextWithFallback(text, pre);
     });
     wrap.appendChild(pre);
     wrap.appendChild(copy);
@@ -3580,6 +3598,37 @@
     });
   }
 
+  function renderCustomShortcutsRow(panel) {
+    return renderToggleRow(panel, {
+      title: "Custom shortcuts",
+      note: "Assign custom keyboard shortcuts for Voice mode in the current chat, opening a new voice chat, and Read Aloud on the newest Claude reply. Configure bindings in Settings > Extra > Custom Shortcuts. Off and unbound by default; applies live.",
+      links: [{ text: "Settings > Extra > Custom Shortcuts", kind: "shortcuts" }],
+      keywords: "hotkey keybind voice mode speech tts read aloud dictate shortcut",
+      ariaLabel: "enable custom keyboard shortcuts for voice and speech",
+      read: "customShortcutsRead",
+      write: "customShortcutsSet",
+      lockFile: "claude-desktop-extra.jsonc",
+      isOn: function (res) { return res.enabled === true; },
+      describe: function (on, res) {
+        var bound = res && typeof res.boundCount === "number" ? res.boundCount : 0;
+        if (!bound) {
+          return on
+            ? "on - no shortcut keys assigned yet (Settings > Extra > Custom Shortcuts)"
+            : "off - no shortcut keys assigned yet (Settings > Extra > Custom Shortcuts)";
+        }
+        var what = bound + " shortcut" + (bound === 1 ? "" : "s") + " assigned";
+        return on ? "on - " + what : "off - " + what;
+      },
+      writeArg: function (next) { return next; },
+      toast: function (next) {
+        return next
+          ? "Custom shortcuts on - configured keys are active now"
+          : "Custom shortcuts off - configured keys stay saved but inactive";
+      },
+      errorPrefix: "Could not change custom shortcuts: "
+    });
+  }
+
   // --- the theme overlay row ------------------------------------------------
   // `themeOverlay` merges one theme's tokens over whatever theme is active; the
   // matugen/pywal recipes drive it. Without this row the grid shows the picked
@@ -4106,6 +4155,7 @@
       renderWindowTransparencyRow,
       renderTrayIconRow,
       renderThemePickerRow,
+      renderCustomShortcutsRow,
       renderTransparentChatComposerRow,
       renderFrostedReplyFieldRow,
       renderGithubAlertsRow,
@@ -6198,11 +6248,508 @@
     }
   }
 
+  // --- Custom Shortcuts page -------------------------------------------------
+  var SC_NUMPAD_CODE_MAP = {
+    NumpadDecimal: "numdec",
+    NumpadAdd: "numadd",
+    NumpadSubtract: "numsub",
+    NumpadMultiply: "nummult",
+    NumpadDivide: "numdiv",
+    NumpadEnter: "Return"
+  };
+  var SC_PUNCT_CODE_MAP = {
+    Minus: "-",
+    Equal: "=",
+    Comma: ",",
+    Period: ".",
+    Slash: "/",
+    Backslash: "\\",
+    Semicolon: ";",
+    Quote: "'",
+    Backquote: "`",
+    BracketLeft: "[",
+    BracketRight: "]"
+  };
+  var SC_NAMED_KEY_MAP = {
+    Tab: "Tab",
+    Backspace: "Backspace",
+    Delete: "Delete",
+    Insert: "Insert",
+    Enter: "Return",
+    ArrowUp: "Up",
+    ArrowDown: "Down",
+    ArrowLeft: "Left",
+    ArrowRight: "Right",
+    Home: "Home",
+    End: "End",
+    PageUp: "PageUp",
+    PageDown: "PageDown",
+    Escape: "Escape"
+  };
+
+  function shortcutModsFromEvent(ev) {
+    var mods = [];
+    if (ev.ctrlKey) mods.push("Ctrl");
+    if (ev.altKey) mods.push("Alt");
+    if (ev.shiftKey) mods.push("Shift");
+    if (ev.metaKey) mods.push("Super");
+    return mods;
+  }
+
+  function shortcutKeyTokenFromEvent(ev) {
+    var key = typeof ev.key === "string" ? ev.key : "";
+    var code = typeof ev.code === "string" ? ev.code : "";
+    if (/^[a-zA-Z]$/.test(key)) return key.toUpperCase();
+    if (/^Key([A-Z])$/.test(code)) return code.slice(3);
+    if (/^Digit([0-9])$/.test(code)) return code.slice(5);
+    if (/^[0-9]$/.test(key)) return key;
+    if (/^F([1-9]|1[0-9]|2[0-4])$/i.test(key)) return "F" + key.slice(1);
+    if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+    if (/^Numpad([0-9])$/.test(code)) return "num" + code.slice(6);
+    if (Object.prototype.hasOwnProperty.call(SC_NUMPAD_CODE_MAP, code)) return SC_NUMPAD_CODE_MAP[code];
+    if (key === " " || code === "Space") return "Space";
+    if (Object.prototype.hasOwnProperty.call(SC_NAMED_KEY_MAP, key)) return SC_NAMED_KEY_MAP[key];
+    if (key === "+") return "Plus";
+    if (/^[-=,./\\;'`[\]]$/.test(key)) return key;
+    if (Object.prototype.hasOwnProperty.call(SC_PUNCT_CODE_MAP, code)) return SC_PUNCT_CODE_MAP[code];
+    return key;
+  }
+
+  function shortcutFromKeyEvent(ev) {
+    var key = typeof ev.key === "string" ? ev.key : "";
+    var code = typeof ev.code === "string" ? ev.code : "";
+    var mods = shortcutModsFromEvent(ev);
+    var hasAnyMod = mods.length > 0;
+    if (key === "AltGraph" || (typeof ev.getModifierState === "function" && ev.getModifierState("AltGraph"))) {
+      return { altGr: true };
+    }
+    if (key === "Control" || key === "Shift" || key === "Alt" || key === "Meta" || key === "OS" || key === "Super") {
+      return { modifierOnly: true, preview: mods.length ? mods.join("+") + "+" : "Press shortcut…" };
+    }
+    if (!hasAnyMod && (key === "Escape" || code === "Escape")) return { cancel: true };
+    if (!hasAnyMod && (key === "Backspace" || key === "Delete" || code === "Backspace" || code === "Delete")) {
+      return { clear: true };
+    }
+    var tok = shortcutKeyTokenFromEvent(ev);
+    return { accelerator: mods.concat([tok]).join("+") };
+  }
+
+  function describeGlobalStatus(act) {
+    if (!act || act.scope !== "global" || !act.accelerator) return "";
+    var gs = act.globalStatus;
+    if (!gs) return "";
+    if (gs.registered === true) return "Global hotkey registered with the desktop session.";
+    if (gs.reason === "no-portal") {
+      return "Global registration unavailable in this Wayland compositor; works in-app or via the compositor command below.";
+    }
+    if (gs.reason === "in-use" || gs.reason === "registration-failed") {
+      return "Global registration was refused (shortcut may already be held by another app); in-app trigger still works.";
+    }
+    return "Global registration inactive (" + String(gs.reason || "unavailable") + "); in-app trigger still works.";
+  }
+
+  function renderShortcuts(panel) {
+    clear(panel);
+    panel.appendChild(el("div", "cdbx-h1", "Custom Shortcuts"));
+    panel.appendChild(el("div", "cdbx-sub",
+      "Assign custom keyboard shortcuts for Voice mode and Read Aloud. Separate from Claude Desktop's " +
+      "built-in Desktop app shortcuts so upstream defaults and custom Linux extras stay independent."));
+
+    if (!api || typeof api.customShortcutsRead !== "function") {
+      panel.appendChild(el("div", "cdbx-error",
+        "This build's preload does not expose the custom shortcuts bridge - reinstall to pick it up."));
+      return;
+    }
+
+    var status = el("div", "cdbx-empty", "Loading custom shortcuts...");
+    panel.appendChild(status);
+    var host = el("div", "cdbx-shortcuts-host");
+    panel.appendChild(host);
+
+    function notifyRecording(active) {
+      if (typeof api.customShortcutsRecording === "function") {
+        api.customShortcutsRecording(active === true).catch(function () {});
+      }
+    }
+
+    function draw(state) {
+      clear(host);
+      var actions = Array.isArray(state.actions) ? state.actions : [];
+      var sess = state.session || {};
+      var cliFlag = state.cliFlag || "--trigger-shortcut";
+
+      // 1. Master switch card
+      var stHead = el("div", "cdbx-sec-h");
+      stHead.appendChild(el("span", "cdbx-sec-t", "Status"));
+      host.appendChild(stHead);
+
+      var stList = el("div", "cdbx-list");
+      var stRow = el("div", "cdbx-row cdbx-sc-status");
+      var stMain = el("div", "cdbx-row-main");
+      stMain.appendChild(el("div", "cdbx-id", "Enable custom shortcuts"));
+      var stLine = el("div", "cdbx-state");
+      var bound = typeof state.boundCount === "number" ? state.boundCount : 0;
+      if (state.enabled) {
+        stLine.textContent = bound
+          ? "On - " + bound + " shortcut" + (bound === 1 ? "" : "s") + " active"
+          : "On - click a shortcut pill below and press a key combination";
+      } else {
+        stLine.textContent = bound
+          ? "Off - " + bound + " shortcut" + (bound === 1 ? "" : "s") + " saved (toggle on or assign a key to activate)"
+          : "Off - unbound by default; upstream shortcuts stay untouched";
+      }
+      if (state.enabledLocked) stLine.textContent += " (set in claude-desktop-extra.jsonc)";
+      stMain.appendChild(stLine);
+      stRow.appendChild(stMain);
+
+      var stAside = el("div", "cdbx-row-aside");
+      var flip = el("button", "cdbx-switch cdbx-sc-switch");
+      flip.type = "button";
+      flip.setAttribute("role", "switch");
+      flip.setAttribute("aria-checked", state.enabled ? "true" : "false");
+      flip.setAttribute("aria-label", "enable custom keyboard shortcuts");
+      flip.disabled = !!state.enabledLocked;
+      if (state.enabledLocked) flip.title = "Edit claude-desktop-extra.jsonc to change this";
+      flip.addEventListener("click", function () {
+        if (flip.disabled || typeof api.customShortcutsSet !== "function") return;
+        flip.disabled = true;
+        api.customShortcutsSet(!state.enabled).then(function (res) {
+          if (failed(res)) {
+            flip.disabled = false;
+            toast("Could not change custom shortcuts: " + reason(res), true);
+            return;
+          }
+          toast(res.enabled ? "Custom shortcuts on" : "Custom shortcuts off");
+          draw(res);
+        }, function (err) {
+          flip.disabled = false;
+          toast("Could not change custom shortcuts: " + (err && err.message ? err.message : String(err)), true);
+        });
+      });
+      stAside.appendChild(flip);
+      stRow.appendChild(stAside);
+      stList.appendChild(stRow);
+      host.appendChild(stList);
+
+      // 2. Voice and speech actions
+      var actHead = el("div", "cdbx-sec-h");
+      actHead.appendChild(el("span", "cdbx-sec-t", "Voice and speech"));
+      actHead.appendChild(el("span", "cdbx-sec-n", actions.length + " action" + (actions.length === 1 ? "" : "s")));
+      host.appendChild(actHead);
+
+      var actList = el("div", "cdbx-list");
+      actions.forEach(function (act) {
+        var row = el("div", "cdbx-row cdbx-sc-row");
+        row.setAttribute("data-sc-action", act.id);
+        var main = el("div", "cdbx-row-main");
+        var titleText = act.title + (act.locked ? " (locked in .jsonc)" : "");
+        main.appendChild(el("div", "cdbx-id", titleText));
+        if (act.description) main.appendChild(el("div", "cdbx-note", act.description));
+
+        var gMsg = state.enabled ? describeGlobalStatus(act) : "";
+        if (gMsg) main.appendChild(el("div", "cdbx-state", gMsg));
+
+        var feedback = el("div", "cdbx-sc-err");
+        feedback.style.display = "none";
+        main.appendChild(feedback);
+        row.appendChild(main);
+
+        var aside = el("div", "cdbx-row-aside cdbx-sc-controls");
+
+        var scopeSel = el("select", "cdbx-select cdbx-sc-scope");
+        scopeSel.setAttribute("aria-label", "Scope for " + act.title);
+        var optApp = el("option", null, "In-app");
+        optApp.value = "app";
+        var optGlobal = el("option", null, "Global");
+        optGlobal.value = "global";
+        scopeSel.appendChild(optApp);
+        scopeSel.appendChild(optGlobal);
+        scopeSel.value = act.scope === "global" ? "global" : "app";
+        scopeSel.disabled = !!act.locked;
+        if (act.locked) scopeSel.title = "Edit claude-desktop-extra.jsonc to change this";
+        scopeSel.addEventListener("change", function () {
+          if (act.locked || typeof api.customShortcutsScope !== "function") return;
+          var nextScope = scopeSel.value === "global" ? "global" : "app";
+          scopeSel.disabled = true;
+          api.customShortcutsScope(act.id, nextScope).then(function (res) {
+            if (failed(res)) {
+              scopeSel.disabled = false;
+              scopeSel.value = act.scope === "global" ? "global" : "app";
+              feedback.className = "cdbx-sc-err";
+              feedback.textContent = reason(res);
+              feedback.style.display = "";
+              return;
+            }
+            draw(res);
+          }, function (err) {
+            scopeSel.disabled = false;
+            scopeSel.value = act.scope === "global" ? "global" : "app";
+            feedback.className = "cdbx-sc-err";
+            feedback.textContent = (err && err.message) ? err.message : String(err);
+            feedback.style.display = "";
+          });
+        });
+        aside.appendChild(scopeSel);
+
+        var pill = el("div", "cdbx-sc-pill" + (act.accelerator ? "" : " cdbx-sc-unset") + (act.locked ? " cdbx-sc-locked" : ""));
+        pill.setAttribute("role", "button");
+        pill.setAttribute("tabindex", act.locked ? "-1" : "0");
+        pill.setAttribute("data-keyboard-shortcut-input", "");
+        pill.setAttribute("data-action-id", act.id);
+        pill.setAttribute("aria-label", "Shortcut for " + act.title + ": " + (act.accelerator || "not set"));
+        if (act.locked) {
+          pill.setAttribute("aria-disabled", "true");
+          pill.title = "Edit claude-desktop-extra.jsonc to change this";
+        } else {
+          pill.title = "Click and press your shortcut (Escape to cancel, Backspace to clear)";
+        }
+
+        var pillText = el("span", "cdbx-sc-pill-text", act.accelerator || "Click to record");
+        pill.appendChild(pillText);
+
+        var recording = false;
+        var busy = false;
+        var captureAttached = false;
+
+        function setPillError(msg, warnOnly) {
+          pill.classList.toggle("cdbx-sc-bad", !warnOnly);
+          feedback.className = warnOnly ? "cdbx-sc-warn" : "cdbx-sc-err";
+          feedback.textContent = msg;
+          feedback.style.display = msg ? "" : "none";
+        }
+
+        function handleCaptureKey(ev) {
+          if (!recording || !pill.isConnected) {
+            detachCapture();
+            recording = false;
+            return;
+          }
+          if (act.locked) return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (typeof ev.stopImmediatePropagation === "function") ev.stopImmediatePropagation();
+          if (ev.repeat) return;
+          var parsed = shortcutFromKeyEvent(ev);
+          if (parsed.altGr) {
+            setPillError("AltGr cannot be used in a custom shortcut", false);
+            return;
+          }
+          if (parsed.cancel) {
+            pill.classList.remove("cdbx-sc-bad");
+            feedback.style.display = "none";
+            stopRecording();
+            try { pill.blur(); } catch (e) {}
+            return;
+          }
+          if (parsed.clear) {
+            submitBind("");
+            return;
+          }
+          if (parsed.modifierOnly) {
+            pillText.textContent = parsed.preview;
+            return;
+          }
+          submitBind(parsed.accelerator);
+        }
+
+        function attachCapture() {
+          if (captureAttached) return;
+          captureAttached = true;
+          document.addEventListener("keydown", handleCaptureKey, true);
+        }
+
+        function detachCapture() {
+          if (!captureAttached) return;
+          captureAttached = false;
+          document.removeEventListener("keydown", handleCaptureKey, true);
+        }
+
+        function stopRecording() {
+          detachCapture();
+          if (!recording) return;
+          recording = false;
+          pill.classList.remove("cdbx-sc-recording");
+          pillText.textContent = act.accelerator || "Click to record";
+          notifyRecording(false);
+        }
+
+        function startRecording() {
+          if (act.locked || busy) return;
+          recording = true;
+          attachCapture();
+          pill.classList.add("cdbx-sc-recording");
+          pill.classList.remove("cdbx-sc-bad");
+          feedback.style.display = "none";
+          pillText.textContent = "Press shortcut…";
+          notifyRecording(true);
+          try { pill.focus({ preventScroll: true }); } catch (e) { try { pill.focus(); } catch (e2) {} }
+        }
+
+        function submitBind(accel) {
+          if (busy || typeof api.customShortcutsBind !== "function") return;
+          busy = true;
+          api.customShortcutsBind(act.id, accel).then(function (res) {
+            busy = false;
+            if (failed(res)) {
+              setPillError(reason(res), false);
+              if (recording) pillText.textContent = "Press shortcut…";
+              return;
+            }
+            recording = false;
+            detachCapture();
+            notifyRecording(false);
+            var warn = res.warning || "";
+            draw(res);
+            if (warn) {
+              var newRow = host.querySelector('[data-sc-action="' + act.id + '"] .cdbx-sc-err, [data-sc-action="' + act.id + '"] .cdbx-sc-warn');
+              if (newRow) {
+                newRow.className = "cdbx-sc-warn";
+                newRow.textContent = warn;
+                newRow.style.display = "";
+              }
+            }
+          }, function (err) {
+            busy = false;
+            setPillError((err && err.message) ? err.message : String(err), false);
+            if (recording) pillText.textContent = "Press shortcut…";
+          });
+        }
+
+        pill.addEventListener("click", function () {
+          if (act.locked || busy) return;
+          if (!recording) startRecording();
+        });
+        pill.addEventListener("blur", function () {
+          stopRecording();
+          if (!busy) {
+            pill.classList.remove("cdbx-sc-bad");
+            feedback.style.display = "none";
+          }
+        });
+        pill.addEventListener("keydown", function (ev) {
+          if (act.locked || recording) return;
+          if ((ev.key === "Enter" || ev.key === " ") && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            startRecording();
+          }
+        });
+
+        if (act.accelerator && !act.locked) {
+          var clr = el("button", "cdbx-sc-clear", "×");
+          clr.type = "button";
+          clr.setAttribute("aria-label", "Clear shortcut for " + act.title);
+          clr.title = "Clear shortcut";
+          clr.addEventListener("mousedown", function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+          });
+          clr.addEventListener("click", function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (busy) return;
+            recording = false;
+            detachCapture();
+            notifyRecording(false);
+            submitBind("");
+          });
+          pill.appendChild(clr);
+        }
+
+        aside.appendChild(pill);
+        row.appendChild(aside);
+        actList.appendChild(row);
+      });
+      host.appendChild(actList);
+
+      // 3. Linux session & compositor hotkeys
+      var sessHead = el("div", "cdbx-sec-h");
+      sessHead.appendChild(el("span", "cdbx-sec-t", "Linux session & compositor hotkeys"));
+      host.appendChild(sessHead);
+
+      var sessBox = el("div", "cdbx-sc-sess");
+      sessBox.appendChild(el("div", null,
+        sess.note || "In-app shortcuts work inside focused Claude windows on X11, XWayland, and Wayland."));
+      var cliWrap = el("div", "cdbx-sc-cli");
+      actions.forEach(function (act) {
+        var cmd = "claude-desktop " + cliFlag + " " + act.slug;
+        var cliRow = el("div", "cdbx-sc-cli-row");
+        var codeEl = el("code", null, cmd);
+        var copyBtn = el("button", "cdbx-btn", "Copy");
+        copyBtn.type = "button";
+        copyBtn.setAttribute("aria-label", "Copy CLI command for " + act.title);
+        copyBtn.addEventListener("click", function () {
+          copyTextWithFallback(cmd, codeEl);
+        });
+        cliRow.appendChild(codeEl);
+        cliRow.appendChild(copyBtn);
+        cliWrap.appendChild(cliRow);
+      });
+      sessBox.appendChild(cliWrap);
+      host.appendChild(sessBox);
+
+      // Footer: two-click Reset all + jsoncFootnote
+      var hasEditableBinding = actions.some(function (a) {
+        return !a.locked && (!!a.accelerator || a.scope === "global");
+      });
+      var foot = el("div", "cdbx-sc-foot");
+      var resetBtn = el("button", "cdbx-btn cdbx-sc-reset", "Reset all shortcuts");
+      resetBtn.type = "button";
+      resetBtn.disabled = !hasEditableBinding || typeof api.customShortcutsReset !== "function";
+      var resetArmed = null;
+      function disarmReset() {
+        if (resetArmed) { clearTimeout(resetArmed); resetArmed = null; }
+        resetBtn.textContent = "Reset all shortcuts";
+        resetBtn.classList.remove("cdbx-armed");
+      }
+      resetBtn.addEventListener("click", function () {
+        if (resetBtn.disabled) return;
+        if (!resetArmed) {
+          resetBtn.textContent = "Click again to reset all shortcuts";
+          resetBtn.classList.add("cdbx-armed");
+          resetArmed = setTimeout(disarmReset, 5000);
+          return;
+        }
+        disarmReset();
+        resetBtn.disabled = true;
+        api.customShortcutsReset().then(function (res) {
+          if (failed(res)) {
+            resetBtn.disabled = false;
+            toast("Could not reset shortcuts: " + reason(res), true);
+            return;
+          }
+          toast("Cleared editable custom shortcuts");
+          draw(res);
+        }, function (err) {
+          resetBtn.disabled = false;
+          toast("Could not reset shortcuts: " + (err && err.message ? err.message : String(err)), true);
+        });
+      });
+      foot.appendChild(resetBtn);
+      host.appendChild(foot);
+      jsoncFootnote(host);
+    }
+
+    api.customShortcutsRead().then(function (res) {
+      if (failed(res)) {
+        status.className = "cdbx-error";
+        status.textContent = "Custom shortcuts unavailable: " + reason(res);
+        return;
+      }
+      status.remove();
+      draw(res);
+    }, function (err) {
+      status.className = "cdbx-error";
+      status.textContent = "Custom shortcuts unavailable: " + (err && err.message ? err.message : String(err));
+    });
+  }
+
   var PANELS = {
     themes: renderThemes,
     features: renderFeatures,
     cu: renderCu,
     models: renderModels,
+    shortcuts: renderShortcuts,
     flags: renderFlags,
     deploy: renderDeploy
   };
