@@ -520,6 +520,20 @@
       "html .dframe-root :where([data-chat-input-container],[data-cds-dock-card],[data-cds-dock-item])::before,html .dframe-root :where([data-chat-input-container])::after,html .dframe-root :where([data-cds=ChatComposerChin]){background:transparent!important;box-shadow:none!important}" +
       "html .dframe-root :where([data-transcript-fade-strip],[data-scroll-fade],[data-docked-column-edge]){background-image:none!important;background-color:transparent!important}" +
       "html .dframe-root :where([data-code-composer-column],[data-docked-column-backing],[data-docked-column-edge]){--epitaxy-transcript-surface:transparent!important;background-color:transparent!important}" +
+      // Two dock fills the rules above miss because neither is a plain utility
+      // class: the Code dock's backing behind question and permission cards is a
+      // bare bg-[var(--epitaxy-transcript-surface,var(--cds-surface-1))] outside
+      // [data-code-composer-column] (solid --bg-100, a box wider than the card),
+      // and the dock variant dock:bg-surface-1. The sticky bottom strip that also
+      // carries the first token keeps its own, more specific rule further down.
+      "html .dframe-root :where([class~=\"bg-[var(--epitaxy-transcript-surface,var(--cds-surface-1))]\"],[class~=\"dock:bg-surface-1\"]){background-color:transparent!important}" +
+      // With those backings clear, Code transcript lines met the input with a
+      // hard edge and could show behind the model/mode row. The Code transcript
+      // scroller (.epitaxy-transcript-typography) ends at the input's top edge
+      // and does not contain the composer, so a short mask fades lines out as
+      // they reach it: nothing is painted, the glass stays clear. Chat cannot use
+      // this: its input is sticky INSIDE the scroller and would fade with it.
+      "html .dframe-root .epitaxy-transcript-typography{-webkit-mask-image:linear-gradient(to top,transparent 0,#000 40px)!important;mask-image:linear-gradient(to top,transparent 0,#000 40px)!important}" +
       "html .bg-surface-2{background-color:var(--cds-surface-2)!important}" +
       // Claude Code's whole content area is ONE rounded-card on surface-2, whose
       // warm gray (#1a1a19) reads as a tint next to the neutral surface-1 the
@@ -561,6 +575,17 @@
       // the slider.
       "html .dframe-root [data-cds=Toolbar]>[data-cds-part=toolbar-ground],html .dframe-root [data-cds=Page] [data-cds-part=page-header-ground]{--_toolbar-ground-fill:" + P + "!important;background-color:" + mix("--cds-page-bg") + "!important}" +
       "html .dframe-root[data-engine-backdrop-on] [data-cds=Toolbar]>[data-cds-part=toolbar-ground],html .dframe-root[data-engine-backdrop-on] [data-cds=Page] [data-cds-part=page-header-ground]{background:transparent!important}" +
+      // Pages without a [data-cds=Page] wrapper (Customize, Artifacts, Scheduled)
+      // put the page-header-ground straight into a plain "sticky top-0" header,
+      // so the two rules above miss it and upstream's own ground stays: a
+      // near-solid bar across the window. Clearing its background did not help
+      // (it still painted dark), so it is hidden; the header becomes part of the
+      // see-through page like the rest of it.
+      "html .dframe-root [data-cds-part=page-header-ground]:not([data-cds=Page] *){display:none!important}" +
+      // Docked side panes (Background tasks and the other panes in a .tiles-slot)
+      // paint a [data-cds=Panel] and its .cds-root on top of the frame: a second
+      // layer, so the pane read darker than the transcript next to it.
+      "html .dframe-root :is(.tiles-slot,.tiles-slot [data-cds=Panel],.tiles-slot [data-cds=Panel]>.cds-root){background:transparent!important;background-image:none!important}" +
       // The Code tab's content columns are tiles: each .tiles-shell paints
       // --tile-shell-ground (a page colour upstream sets inline) behind the
       // transcript, composer and panes, so the whole Code view stayed solid

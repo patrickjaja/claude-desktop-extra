@@ -2,6 +2,13 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-19
+
+### Transparent window: no dark boxes behind question cards, page headers and side panes; Code transcript fades at the input
+
+- With **Transparent window** on, four surfaces still painted a second layer over the frame: the Code dock's backing behind question and permission cards (a bare `bg-[var(--epitaxy-transcript-surface,...)]` and `dock:bg-surface-1`), the header ground of pages without a `[data-cds=Page]` wrapper (Customize, Artifacts, Scheduled), and docked side panes such as Background tasks (`.tiles-slot` > `[data-cds=Panel]`). They now go clear inside the frame (the header ground is hidden); menus and cards inside them stay solid.
+- The Code transcript (`.epitaxy-transcript-typography`) fades out over its last 40px instead of meeting the input with a hard edge, so no transcript line shows behind the model and mode row (`js/window_transparency.js`).
+
 ## 2026-11-18
 
 ### Custom Shortcuts for Voice mode, New voice chat, and Read Aloud (#350, #352)
