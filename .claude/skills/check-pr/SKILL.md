@@ -1,6 +1,6 @@
 ---
 name: check-pr
-description: Review one or more contributor pull requests to claude-desktop-extra the way the maintainer wants it - read, classify (category, switch, cost, Linux exposure), build the branch locally, audit the upstream code paths around every patched site in the pristine bundle, run the harnesses, decide with the maintainer, fix gaps with our own commits on top instead of review ping-pong, merge to master, release, and thank the author. Self-improving - every run ends by folding what it learned back into this file. Invoke as "/check-pr <PR numbers or URLs>".
+description: Review one or more contributor pull requests to claude-desktop-extra the way the maintainer wants it - read, classify (category, switch, cost, Linux exposure), build the branch locally, audit the upstream code paths around every patched site in the pristine bundle, run the harnesses, fix bounded gaps with our own commits on top instead of review ping-pong, merge to master, release, and thank the author autonomously. Self-improving - every run ends by folding what it learned back into this file. Invoke as "/check-pr <PR numbers or URLs>".
 disable-model-invocation: true
 argument-hint: "<PR numbers or URLs>"
 ---
@@ -21,14 +21,11 @@ The main thread orchestrates and reads; audits, implementation and reviews run i
 - **No review ping-pong.** When a PR has a gap, fix it with our own commit on top of the author's commits and merge, instead of a "request changes" round-trip. The author's commits stay intact and are credited.
 - The author is credited in `CHANGELOG.md`, in the section heading: `### <What now works> (thanks @login, #N)`. Nothing in README or docs prose.
 - A live end-to-end test is wanted when the host can do it. When it needs something the maintainer does not have (a second GitHub account, a GitHub App, another plan), say so in the PR comment, ship it anyway behind its switch, and ask the author to test after the release. A feature behind a Community switch that turns out broken gets a follow-up PR or is removed; that is acceptable.
-- The maintainer installs packages themselves: build, hand over the `sudo pacman -U ...` line, wait.
+- Never run `sudo pacman -U` yourself; verify builds in isolated headless sway / Chromium and give the maintainer the `sudo pacman -U ...` line when keeping a local package.
 
-**Gates.** Ask before each of these, and treat each approval as covering only its own step:
-- building (ask once, up front, together with the review questions)
-- the decision per PR (merge as is / fix on top / request changes)
-- commit, push, merge
-- the release
-- every public PR comment
+**Autonomy (default end-to-end).** Run the full pipeline without stopping between phases - worktree build, pristine-bundle audit, bounded on-top fix with independent review, harnesses, isolated headless smoke check, `--no-ff` merge with `CHANGELOG.md` credit, `build-and-release.yml` (`force_rebuild=true`), watching the release to green, and the single thank-you comment. Pause to ask ONLY when:
+- a PR needs a product or scope judgement (ambiguous category, or a default-on vs default-off trade-off with real cost or UX surprise)
+- the design itself is wrong and would require `request changes` or a full rewrite rather than a bounded commit on top
 
 ## Phase 1 - read everything
 
@@ -56,7 +53,7 @@ Answer these in the first reply, because the maintainer asks them every time:
 
 ## Phase 3 - build and audit in parallel
 
-**Worktree and build** (ask first, then run in the background):
+**Worktree and build** (run in the background alongside the audit):
 ```bash
 git worktree add .claude/worktrees/pr-<n> pr-<n>
 cd .claude/worktrees/pr-<n> && ./scripts/build-local.sh      # downloads the current official .deb into build/work/
@@ -67,17 +64,15 @@ Never `git add -A` in a PR worktree that holds a `tmp` symlink to another checko
 - For each regex site, dump the enclosing method and its **callers and gates upstream of it**. A patch that relaxes a check deep in a method is a no-op when an earlier gate (ownership, platform, feature flag, state machine) already refused. #308 patched two `not_author` checks that sat behind an `own`/`notOwnRead` ownership gate decided at bind time; the feature could never fire for its own use case.
 - List every **runtime anchor** the injected JS assumes (property names, method arities, return shapes, option objects, message formats, Map key formats) and have an opus worker verify each one against the pristine bundle with a HOLDS / BROKEN / PARTIAL verdict and a quote. The build only checks the regex anchors.
 - Check for **absorption**: does upstream already ship part of the behavior (same strings, same event)? Then that part is dropped, not duplicated.
-- **Page-injected DOM/CSS patches (`executeJavaScript` + `insertCSS`):** check `ion-dist` for partial native equivalents (e.g. doc prose vs chat) and 3P `app://localhost` parity; verify editable/native exclusions (`.ProseMirror`, `[contenteditable]`, inline `<code>`, upstream data attributes), bounded `MutationObserver` updates without full-document scans, live text-restoring teardown on switch-off, and generation guards on async `insertCSS` resolves across rapid toggles. When clearing a CSS custom property to `transparent`, grep for `rgb(from var(...)` consumers (which resolve `transparent` to black unless `background-image: none` is set too), and place `:where()` clear rules before same-specificity solid surface/menu/popover rules so dual-attribute elements stay opaque.
+- **Page-injected DOM/CSS patches (`executeJavaScript` + `insertCSS`):** check `ion-dist` for partial native equivalents (e.g. doc prose vs chat) and 3P `app://localhost` parity; verify editable/native exclusions (`.ProseMirror`, `[contenteditable]`, inline `<code>`, upstream data attributes), bounded `MutationObserver` updates without full-document scans, live text-restoring teardown on switch-off, and generation guards on async `insertCSS` resolves across rapid toggles. When clearing a CSS custom property to `transparent`, grep for `rgb(from var(...)` consumers (which resolve `transparent` to black unless `background-image: none` is set too), and place `:where()` clear rules before same-specificity solid surface/menu/popover rules so dual-attribute elements stay opaque. Keep multi-selector background clears inside `:where(...)` at `(0,1,1)` rather than multi-branch `:is(...)` (whose highest-specificity branch beats later `(0,1,1)` solid `.bg-surface-3`/menu/popover and `(0,2,1)` dialog rules), and scope `.tiles-slot` panel clears away from narrow-window overlay shells and message-body cards. Put scroll-edge `mask-image` fades on the actual scrollport (`[data-autoscroll-container]`) with explicit `mask-repeat: no-repeat`, `mask-origin`/`mask-clip: border-box`, and `mask-composite: add` (`-webkit-mask-composite: source-over`) rather than shared typography classes that also wrap sticky prompt pills or in-flow cards, and drop the fade ramp while in-flow question/permission cards are open. In headless Chromium `getComputedStyle` checks, match both authored and normalized forms (`rgba(0, 0, 0, 0)` for `transparent`, `100%` for `calc(100% - 0px)`, `0px` for `0%`).
 - Harnesses: `bash scripts/run-feature-tests.sh <category>` for the touched category plus `core`, the PR's own harness with `tmp/` present (its "real release" branch must run, not SKIP), the absorption probe, `node --check` on a patched copy, `nph --check` + `nim check` on new Nim.
 
-## Phase 4 - decide with the maintainer
+## Phase 4 - decide
 
-One AskUserQuestion with one question per PR, recommended option first:
-- **Fix on top (recommended when a gap is real and bounded):** our commit after the author's, then merge.
-- **Merge as is:** nothing to fix; credit and ship.
-- **Request changes:** only when the design itself is wrong and the fix would be a rewrite.
-
-Also ask up front which identity or environment a live test needs, so "skip live, ask the author to test" is a conscious choice.
+Pick the path directly unless one of the Autonomy stop conditions above applies:
+- **Fix on top (default when a gap is real and bounded):** our commit after the author's, independently reviewed, then merge.
+- **Merge as is:** nothing to fix; credit in `CHANGELOG.md` (integration/merge commit or small docs commit on top) and ship.
+- **Request changes (ask the maintainer first):** only when the design itself is wrong and the fix would be a rewrite.
 
 ## Phase 5 - fix on top
 
@@ -87,7 +82,7 @@ A feature moved from `core/` to `community/` gets: `git mv` of the patch, a `glo
 
 ## Phase 6 - ship
 
-1. Build in the PR worktree, hand over `sudo pacman -U <worktree>/build/<pkg>`, wait for the maintainer to install and restart the app.
+1. Build in the PR worktree (`./scripts/build-local.sh`); when running autonomously, verify the built package in isolated headless sway (step 2) instead of blocking on a host `sudo pacman -U` install.
 2. Live check what the host can check: the new Settings row (read, save, reload, JSONC lock), the `[...]` lines in `~/.config/Claude/logs/claude-patches.log`, and the feature path when an identity for it exists. A test PR in this repo via `gh` is fine for GitHub-side features; delete it afterwards. Run the feature path BEFORE pushing: a harness built from the shape the author believes upstream sends can be green while the real app never takes that path. When the live path silently falls back to upstream, the on-top fix adds one `claude-patches.log` line naming the check that refused, then retest. A desktop-driving worker re-activates the app window before every typed chunk and click; the maintainer typing elsewhere steals focus. On an X11 host the main thread can drive the app itself without the maintainer: `xdotool mousemove --window <id> x y click 1` + `xdotool type`, screenshots with `import -window <id>` (the Electron window, found via `wmctrl -lx | grep anthropic.Claude`) and `import -window root -crop WxH+X+Y` for GTK portal dialogs, whose `--window` coordinates are off by the frame height - use absolute root coordinates there, navigate the folder picker through its sidebar bookmark and click the row, then Select. A Code session on a test branch: Code tab -> folder dropdown -> Open folder..., untick Worktree, send a one-word prompt; the PR binding lands in `~/.config/Claude/claude-code-sessions/<org>/<account>/local_<id>.json` (`prs`, `autoArchiveOnPrClose`). Delete the test PR's file from master afterwards: merging it puts the file on master. In headless sway (/test-native) while the maintainer is AFK, pass `XDG_RUNTIME_DIR`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `CLAUDE_E2E_1P_USERDATA=<dir>`, `--user-data-dir=<dir>`, and a scratch `CLAUDE_PROFILE` so live `~/.config/Claude` and host sockets stay untouched; send a second-instance ping with the same `--user-data-dir` when `[startup-gate]` suppresses the initial window, catch 2.6 s Extra success toasts with a 0.5 s screenshot burst, use the Code model picker's 1..7 digit shortcuts, and run non-repo turns in the default scratch workspace instead of clicking Open folder... (which opens `xdg-desktop-portal` on the host D-Bus session).
 3. **Re-fetch every PR head right before merging, and before dispatching an implementer** (`git fetch origin pull/<n>/head:refs/remotes/pr/<n>` and compare with the SHA you reviewed; never compare via FETCH_HEAD, the next fetch overwrites it): an on-top fix written against a stale head has to be ported when the author has rewritten the same files. contributors push while you review, and a head that is not reachable from master leaves the PR open even after its earlier commits landed. A late commit is cherry-picked under the author's name (`--author`), then `git merge -s ours pr-<n>` makes the head reachable so GitHub marks the PR merged. Merge on `master`, directly, no feature branch: `git merge --no-ff pr-<n>` (or merge both PRs in sequence; when the main checkout has another session's uncommitted work, merge in a detached worktree at `origin/master` and `git push origin HEAD:master` so the dirty tree stays untouched), then the integration commit (count re-bumps, CHANGELOG with credit, docs), then `git push origin master`. The PR shows as merged once its head commit is reachable from master.
 4. Release: `gh workflow run build-and-release.yml --ref master -f force_rebuild=true` (or `/deploy force`), watch with `gh run watch <id> --exit-status`, confirm `gh release view`.
