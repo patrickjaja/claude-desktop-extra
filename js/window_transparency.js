@@ -517,9 +517,29 @@
       // (transparentChatComposer); !important still beats upstream's own fills.
       "html .dframe-root :where([data-chat-input-container],[data-cds=ChatComposer],.rounded-composer:has([data-cds=ChatComposer]),[data-testid=transcript-bottom-fade],[data-testid=transcript-bottom-backing-start],[data-testid=transcript-bottom-backing-end],[data-testid=transcript-bottom-gap],[data-testid=chat-column] [data-disclaimer],[data-cds-dock-card],[data-cds-dock-item],[data-composer-block-stack]){background:transparent!important}" +
       "html .dframe-root [data-cds-dock-masked] .in-data-cds-dock-masked\\:bg-page,html .dframe-root [data-chat-input-container] [data-composer-card-holder]{background:transparent!important}" +
-      "html .dframe-root :where([data-chat-input-container],[data-cds-dock-card],[data-cds-dock-item])::before,html .dframe-root :where([data-chat-input-container])::after,html .dframe-root :where([data-cds=ChatComposerChin]){background:transparent!important;box-shadow:none!important}" +
+      "html .dframe-root :where([data-chat-input-container],[data-cds-dock-card],[data-cds-dock-item],[data-transcript-cards])::before,html .dframe-root :where([data-chat-input-container])::after,html .dframe-root :where([data-cds=ChatComposerChin]){background:transparent!important;box-shadow:none!important}" +
       "html .dframe-root :where([data-transcript-fade-strip],[data-scroll-fade],[data-docked-column-edge]){background-image:none!important;background-color:transparent!important}" +
       "html .dframe-root :where([data-code-composer-column],[data-docked-column-backing],[data-docked-column-edge]){--epitaxy-transcript-surface:transparent!important;background-color:transparent!important}" +
+      // Two dock fills the rules above miss because neither is a plain utility
+      // class: the Code transcript's sticky [data-transcript-cards] slot behind
+      // question and permission cards (a bare bg-[var(--epitaxy-transcript-surface,
+      // var(--cds-surface-1))] outside [data-code-composer-column], wider than
+      // the card) and the dock variant dock:bg-surface-1. Kept in :where() at
+      // (0,1,1) so solid surface-2/3, dialog, menu, listbox and elevated-card
+      // rules below still win.
+      "html .dframe-root :where([data-transcript-cards],[class~=\"bg-[var(--epitaxy-transcript-surface,var(--cds-surface-1))]\"],[class~=\"dock:bg-surface-1\"]){background-color:transparent!important}" +
+      // With those backings clear, Code transcript lines met the input with a
+      // hard edge and could show behind the model/mode row when the scroller
+      // extends under [data-code-composer-column] (--epitaxy-docked-column-height).
+      // Mask the Code scrollport ([data-epitaxy-transcript-region]
+      // [data-autoscroll-container]) - NOT .epitaxy-transcript-typography, which
+      // also wraps the sticky prompt pill, overview feed and in-flow cards -
+      // keeping the 16px scrollbar strip opaque, sizing to the composer's top
+      // edge, and dropping the fade ramp (while keeping the clip) when an in-flow
+      // permission or question card sits at the bottom.
+      "html .dframe-root:not([data-engine-glass]) [data-epitaxy-transcript-region] [data-autoscroll-container]{-webkit-mask-image:linear-gradient(#000,#000),linear-gradient(to bottom,#000 calc(100% - 32px),transparent 100%)!important;mask-image:linear-gradient(#000,#000),linear-gradient(to bottom,#000 calc(100% - 32px),transparent 100%)!important;-webkit-mask-size:16px calc(100% - var(--epitaxy-docked-column-height,0px)),100% calc(100% - var(--epitaxy-docked-column-height,0px))!important;mask-size:16px calc(100% - var(--epitaxy-docked-column-height,0px)),100% calc(100% - var(--epitaxy-docked-column-height,0px))!important;-webkit-mask-position:100% 0,0 0!important;mask-position:100% 0,0 0!important;-webkit-mask-repeat:no-repeat!important;mask-repeat:no-repeat!important;-webkit-mask-origin:border-box!important;mask-origin:border-box!important;-webkit-mask-clip:border-box!important;mask-clip:border-box!important;-webkit-mask-composite:source-over!important;mask-composite:add!important}" +
+      "html .dframe-root:not([data-engine-glass]) [data-epitaxy-transcript-region] [data-autoscroll-container]:dir(rtl){-webkit-mask-position:0 0,0 0!important;mask-position:0 0,0 0!important}" +
+      "html .dframe-root:not([data-engine-glass]) [data-epitaxy-transcript-region] [data-autoscroll-container]:has([data-transcript-cards] :is(.epitaxy-tool-card-in-flow,.epitaxy-question-card)){-webkit-mask-image:linear-gradient(#000,#000),linear-gradient(#000,#000)!important;mask-image:linear-gradient(#000,#000),linear-gradient(#000,#000)!important}" +
       "html .bg-surface-2{background-color:var(--cds-surface-2)!important}" +
       // Claude Code's whole content area is ONE rounded-card on surface-2, whose
       // warm gray (#1a1a19) reads as a tint next to the neutral surface-1 the
@@ -561,6 +581,20 @@
       // the slider.
       "html .dframe-root [data-cds=Toolbar]>[data-cds-part=toolbar-ground],html .dframe-root [data-cds=Page] [data-cds-part=page-header-ground]{--_toolbar-ground-fill:" + P + "!important;background-color:" + mix("--cds-page-bg") + "!important}" +
       "html .dframe-root[data-engine-backdrop-on] [data-cds=Toolbar]>[data-cds-part=toolbar-ground],html .dframe-root[data-engine-backdrop-on] [data-cds=Page] [data-cds-part=page-header-ground]{background:transparent!important}" +
+      // Pages without a [data-cds=Page] wrapper (Customize, Artifacts, Scheduled)
+      // put the page-header-ground straight into a plain "sticky top-0" header,
+      // so the two rules above miss it and upstream's own ground stays: a
+      // near-solid bar across the window. Clearing its background did not help
+      // (it still painted dark), so it is hidden; the header becomes part of the
+      // see-through page like the rest of it.
+      "html .dframe-root [data-cds-part=page-header-ground]:not([data-cds=Page] *,[data-cds=Dialog] *){display:none!important}" +
+      // Docked side panes (Background tasks and the other panes in a .tiles-slot)
+      // paint a [data-cds=Panel] and its .cds-root on top of the frame: a second
+      // layer, so the pane read darker than the transcript next to it. :where()
+      // keeps this at (0,1,1) below solid surface-3/popover/menu/dialog rules,
+      // and overlay panes (.tiles-overlay-shell) plus free-standing panels inside
+      // assistant messages keep their solid surface.
+      "html .dframe-root :where(.tiles-slot:not(.tiles-overlay-shell),.tiles-slot:not(.tiles-overlay-shell) [data-cds=Panel]:not(.tiles-overlay-shell,.tiles-overlay-shell *,[data-cds=AssistantMessage] *),.tiles-slot:not(.tiles-overlay-shell) [data-cds=Panel]:not(.tiles-overlay-shell,.tiles-overlay-shell *,[data-cds=AssistantMessage] *)>.cds-root){background:transparent!important;background-image:none!important}" +
       // The Code tab's content columns are tiles: each .tiles-shell paints
       // --tile-shell-ground (a page colour upstream sets inline) behind the
       // transcript, composer and panes, so the whole Code view stayed solid
