@@ -365,11 +365,13 @@ try {
     const clampN = (/Math\.round\(([\w$]+)\([\w$]+\.baseMs\+/.exec(slice) || [])[1];
     const elbowN = (/\{elbow:[\w$]+\}=([\w$]+)/.exec(slice) || [])[1];
     const elbowSrc = elbowN && new RegExp("(?<![\\w$.])" + esc(elbowN) + "=\\{[^}]*elbow:\\{x:([\\d.]+),y:([\\d.]+)\\}").exec(pc);
+    // v6.28899.2 dropped the planner's clamp (no maxMs; it shortens the glide
+    // until it arrives within arriveByMs instead), so the clamp is optional.
     const clampSrc = clampN && (fnSource(pc, clampN) || fnSource(patched, clampN));
-    check("planner slice located (config .. planner, our assignment inside)", !!slice && PLAN_RE.test(slice) && !!elbowSrc && !!clampSrc, true);
+    check("planner slice located (config .. planner, our assignment inside)", !!slice && PLAN_RE.test(slice) && !!elbowSrc && (!clampN || !!clampSrc), true);
     delete globalThis.__cdbCuGlidePlan;
-    const clamp = new Function(clampSrc + "\nreturn " + clampN + ";")();
-    new Function("process", clampN, elbowN, slice)({ platform: "linux" }, clamp, { elbow: { x: +elbowSrc[1], y: +elbowSrc[2] } });
+    const clamp = clampN ? new Function(clampSrc + "\nreturn " + clampN + ";")() : null;
+    new Function("process", clampN || "__cdbNoClamp", elbowN, slice)({ platform: "linux" }, clamp, { elbow: { x: +elbowSrc[1], y: +elbowSrc[2] } });
     check("10h: __cdbCuGlidePlan set at module load, frameMs 16", typeof globalThis.__cdbCuGlidePlan?.plan === "function" && globalThis.__cdbCuGlidePlan.frameMs() === 16, true);
   }
   const PLAN = globalThis.__cdbCuGlidePlan;
@@ -636,7 +638,9 @@ try {
     check("handler click: the arrow glides to the target first", !!lastGlide && !!lastClick() && J(lastGlide.frames.at(-1).slice(0, 2)) === J(lastClick().slice(0, 2)), true);
     // DP-1 is 1920x1080 at scale 1: its frame is 1430x804, so 400,300 is 537,403.
     check("handler click: the point mapped through DP-1's 1430x804 frame", J(lastClick()), J([537, 403]));
-    check(`handler click: the click waited for the glide (${Math.round(clickMs)} ms)`, clickMs >= 300, true);
+    // v6.28899.2: upstream's planner arrives within arriveByMs (200 ms) instead
+    // of taking at least minMs (420 ms); the click waits for the arrival.
+    check(`handler click: the click waited for the glide (${Math.round(clickMs)} ms)`, clickMs >= 150, true);
     agree("handler click after the glide");
     // The accessibility tools make a window's display current through the
     // handler's pin (app_ax_find on another monitor): reported like switch_display.

@@ -601,7 +601,8 @@ async function perAppTruth(patched, pristineBlob) {
   const pm = PA_RE.exec(P.bodies[pIdx]);
   const paExpr = pm[1], paWl = pm[2], paSupported = pm[4];
 
-  const YE_RE = /function ([\w$]+)\(([\w$]+),[\w$]+\)\{if\(process\.platform==="linux"&&globalThis\.__cdbCuNoScreenGrant\?\.\(\)===!0\|\|([\w$]+)\.([\w$]+)!==\3\.([\w$]+)\|\|/;
+  // v6.28899.2: a third param (holdRemoteDesktops).
+  const YE_RE = /function ([\w$]+)\(([\w$]+),[\w$]+(?:,[\w$]+)?\)\{if\(process\.platform==="linux"&&globalThis\.__cdbCuNoScreenGrant\?\.\(\)===!0\|\|([\w$]+)\.([\w$]+)!==\3\.([\w$]+)\|\|/;
   const yIdx = P.bodies.findIndex((b) => YE_RE.test(b));
   ok(yIdx >= 0, "16d: the patched pseudo-grant function is in the bundle");
   if (yIdx < 0) return;

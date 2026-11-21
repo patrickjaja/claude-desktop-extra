@@ -110,36 +110,41 @@ function section(title) {
 // ---------------------------------------------------------------- fixture
 // A minimal script carrying the two sites fix_native_frame targets, copied from
 // the live bundle so the minified shapes are upstream's own rather than
-// invented. Identifiers are upstream's (v3.1623.0, index.chunk-6Ku8p4x3.js);
-// the patch captures them by wildcard, so the exact spellings do not matter -
-// what matters is the SHAPE around them.
+// invented. Shapes are upstream's (v6.28899.2, index.chunk-CMMDcOF6.js), some
+// identifiers renamed to the sandbox's stubs; the patch captures them by
+// wildcard, so the exact spellings do not matter - what matters is the SHAPE
+// around them.
 //
-//   1. the titleBarOverlay style helper (patch 2's target), verbatim: the color
-//      is hoisted into `o=e==="main"&&pQn()||RI(),s=n?...:r?e0n(o):o;`
-//   2. the main-window options object (patch 1's target), reached here through
-//      a function that RETURNS the options instead of constructing a window, so
-//      the emitted expressions can be evaluated in place with real scoping.
-//      The keys up to `icon:` are verbatim; webPreferences is trimmed. The
-//      background is `fQn({signedIn:c})`, an ARGUMENT-taking call: the stub
-//      below destructures it like upstream does, so an emitted bare `fQn()`
-//      throws here exactly as it would at window creation.
+//   1. the titleBarOverlay style helper (patch 2's target): the window's own
+//      theme `o`, the plain color `s`, and `c=n?...:r?e0n(s):s;return o?{color:c,`
+//   2. the main-window options (patch 1's target), built in two places since
+//      v6.28899.2: the call-site literal (titleBarOverlay, backgroundColor) and
+//      the options builder `kOr` that spreads it and adds title,
+//      titleBarStyle, icon and webPreferences. The fixture RETURNS the options
+//      instead of constructing a window, so the emitted expressions can be
+//      evaluated in place with real scoping. The background is
+//      `fQn({signedIn:c})`, an ARGUMENT-taking call: the stub below
+//      destructures it like upstream does, so an emitted bare `fQn()` throws
+//      here exactly as it would at window creation.
 //
-// Upstream's own `icon:` key sits AFTER titleBarOverlay in the real object and
-// is kept here for faithfulness - see the closing NOTE.
-// The pop-out status site (sub-patch 3), verbatim upstream shape (v5.1231.2):
-// the status function, the schema-map entry WITHOUT parens (must not match), and
-// the one call site inside the features object.
+// Upstream's own `icon:` key sits in the builder, AFTER its spread of the
+// call-site literal, and is kept here for faithfulness - see the closing NOTE.
+// The pop-out status site (sub-patch 3), verbatim upstream shape (v6.28899.2):
+// the status function, the schema-map entry (a call of a schema builder, which
+// must not match), and the one call site inside the features object.
 const POPOUT_FN =
   'function pvi(){return gV()?{status:"unsupported",reason:"Pop-out title bar overlay is not available under Wayland",unsupportedCode:"unsupported_session"}:{status:"supported"}}';
 const POPOUT_SITE = `${POPOUT_FN}
-var __cdbSchemaMap={popoutZoom:A_,popoutTitleBarOverlay:A_,filePreviewNativeViewRouting:A_};
+function __cdbSchemaMap(){return {popoutZoom:ws(),popoutTitleBarOverlay:ws(),filePreviewNativeViewRouting:ws()}}
 function __cdbFixtureFeatures(){return {popoutZoom:IG,popoutTitleBarOverlay:pvi(),filePreviewNativeViewRouting:IG}}
 `;
 function fixture(overlaySlot) {
   return `"use strict";
-function a0n(e,t){let n=e==="main"&&H1n,r=e==="main"&&W1n,i=Math.max(n0n,Math.round((n?t0n:e==="main"?KZn:qZn)*t)),o=e==="main"&&pQn()||RI(),s=n?a.nativeTheme.shouldUseDarkColors?"#f9f8f4":"#141412":r?e0n(o):o;return a.nativeTheme.shouldUseDarkColors?{color:s,symbolColor:n?"#000":"#c2c0b6",height:i}:{color:s,symbolColor:n?"#fff":"#3d3d3a",height:i}}
+function a0n(e,t){let n=e==="main"&&H1n,r=e==="main"&&W1n,i=Math.max(n0n,Math.round((n?t0n:e==="main"?KZn:qZn)*t)),a=EL.nativeTheme.shouldUseDarkColors,o=e==="main"&&yo!==void 0?a:zZi(),s=o===a?pQn()||RI():jWi[o?"dark":"light"],c=n?o?"#f9f8f4":"#141412":r?e0n(s):s;return o?{color:c,symbolColor:n?"#000":"#c2c0b6",height:i}:{color:c,symbolColor:n?"#fff":"#3d3d3a",height:i}}
+var n={default:{join:(...s)=>s.join("/")}};
+function kOr(e,t){return{...e,title:x$a(),titleBarStyle:"hidden",icon:n.default.join(VW(),"icon.png"),webPreferences:{preload:n.default.join(APP,".vite/build/mainWindow.js"),...t&&{additionalArguments:t}}}}
 function YSe(e){return e}
-function __cdbFixtureOptions(){let e={x:0,y:0,width:1200,height:800},i=!0,c=!1,n={default:{join:(...s)=>s.join("/")}};return YSe({x:e.x,y:e.y,width:e.width,height:e.height,minWidth:600,minHeight:400,title:x$a(),titleBarStyle:"hidden",titleBarOverlay:${overlaySlot},trafficLightPosition:LVi(),show:i&&!0,backgroundColor:fQn({signedIn:c}),opacity:1,icon:n.default.join(VW(),"icon.png"),webPreferences:{preload:"mainWindow.js"}})}
+function __cdbFixtureOptions(){let e={x:0,y:0,width:1200,height:800},i=!0,c=!1,d=!1;return(e=>YSe(e))(kOr({...e,minWidth:600,minHeight:400,titleBarOverlay:${overlaySlot},trafficLightPosition:LVi(),show:i&&!0,backgroundColor:fQn({signedIn:c}),opacity:+!d},void 0))}
 ${POPOUT_SITE}`;
 }
 
@@ -162,7 +167,7 @@ function evalFixture(src, { platform, env, dark = true, nativeTb, noWinCtl, wayl
     console,
     process: { platform, env },
     // patch 2's helper environment (upstream identifiers)
-    H1n: false,        // not the special "main" look -> the ternary reaches `r?e0n(o):o`
+    H1n: false,        // not the special "main" look -> the ternary reaches `r?e0n(s):s`
     W1n: true,         // the alpha-blend path IS active, i.e. the grey-strip value
     n0n: 24,
     t0n: 44,
@@ -172,6 +177,12 @@ function evalFixture(src, { platform, env, dark = true, nativeTb, noWinCtl, wayl
     pQn: () => WINDOW_BG, // the main window's stored background
     RI: () => "#THEME-FALLBACK",
     a: { nativeTheme: { shouldUseDarkColors: dark } },
+    EL: { nativeTheme: { shouldUseDarkColors: dark } },
+    yo: undefined,     // no window-specific theme request -> o follows zZi()
+    zZi: () => dark,
+    jWi: { dark: "#J-DARK", light: "#J-LIGHT" },
+    APP: "/app",
+    ws: () => "SCHEMA",
     // the injected overlay reads nativeTheme via require("electron"), never
     // through a captured alias (a cross-chunk capture crashed v2.9939.4)
     require: (m) => (m === "electron" ? { nativeTheme: { shouldUseDarkColors: dark } } : undefined),
@@ -414,13 +425,14 @@ const NATIVE_GATE =
 const FRAMELESS_GATE =
   'process.platform==="linux"&&process.env.CLAUDE_NATIVE_TITLEBAR!=="1"';
 function oldTwoModeInjection() {
-  return fixture("!0").replace(
-    'titleBarStyle:"hidden",titleBarOverlay:!0',
-    `titleBarStyle:${NATIVE_GATE}?"default":"hidden",titleBarOverlay:(${FRAMELESS_GATE})?` +
-      '{color:yP(),symbolColor:o.nativeTheme.shouldUseDarkColors?"#fff":"#000",height:36}' +
-      `:!0,frame:!(${FRAMELESS_GATE}),autoHideMenuBar:process.platform==="linux",` +
-      'icon:process.platform==="linux"?"/usr/share/icons/hicolor/256x256/apps/claude-desktop.png":void 0'
-  );
+  return fixture("!0")
+    .replace('titleBarStyle:"hidden",', `titleBarStyle:${NATIVE_GATE}?"default":"hidden",`)
+    .replace(
+      "titleBarOverlay:!0,",
+      `titleBarOverlay:(${FRAMELESS_GATE})?` +
+        '{color:yP(),symbolColor:o.nativeTheme.shouldUseDarkColors?"#fff":"#000",height:36}' +
+        `:!0,frame:!(${FRAMELESS_GATE}),autoHideMenuBar:process.platform==="linux",`
+    );
 }
 
 try {
@@ -460,7 +472,7 @@ try {
   check("no bare fQn() is emitted", countOf(boolSlot.patched, "fQn()"), 0);
   check(
     "the overlay helper gates the blend, not the plain color",
-    /:!\(process\.platform==="linux"&&[^;]*\)&&r\?e0n\(o\):o;/.test(boolSlot.patched),
+    /:!\(process\.platform==="linux"&&[^;]*\)&&r\?e0n\(s\):s;/.test(boolSlot.patched),
     true
   );
   check(
@@ -804,7 +816,7 @@ try {
     // also carried would report a false "[INFO] already patched" over a bundle
     // that has integrated and native but no bare mode - the build would go
     // green and bare mode would silently not exist. The old injection has no
-    // marker and no plain `titleBarStyle:"hidden",titleBarOverlay:...` left to
+    // marker and no plain `titleBarStyle:"hidden",` left in the builder to
     // match, so the run must abort on the strict count instead.
     const old = oldTwoModeInjection();
     check(
@@ -817,8 +829,8 @@ try {
     const r = runPatchExpectingFailure(scratch, "index-old.js", old);
     check("the patch exits non-zero", r.status !== 0, true);
     check(
-      "and names the strict count it could not meet (main window pattern: 0/1)",
-      /main window pattern: 0\/1/.test(r.out),
+      "and names the strict count it could not meet (main window options builder: 0/1)",
+      /main window options builder: 0\/1/.test(r.out),
       true
     );
     check(
@@ -1068,9 +1080,12 @@ try {
     // day it was written, silently, for years of releases. If a future release
     // starts passing `frame` or `hasShadow` after us the same way, the window
     // opens in the wrong mode with a green build and no runtime error - the
-    // worst failure shape available. The guard delimits the object (our marker
-    // to the first webPreferences: within 3000 chars) and requires each of our
-    // five keys to appear exactly once.
+    // worst failure shape available. Since v6.28899.2 the options are built in
+    // two literals: the call-site literal (where our keys go) and the options
+    // builder that spreads it FIRST and then sets its own keys. The guard
+    // delimits both by brace matching and requires each of our keys exactly
+    // once at the call site and never in the builder (titleBarStyle: once in
+    // the builder, never at the call site).
     check(
       "a clean apply reports the guard held",
       /\[OK\] no upstream duplicate shadows our injected options/.test(boolSlot.out),
@@ -1079,47 +1094,40 @@ try {
 
     // The class, not one instance: a later duplicate of ANY guarded key must
     // fail loud and name the key.
-    for (const key of ["hasShadow", "frame", "titleBarStyle"]) {
+    for (const key of ["hasShadow", "frame", "titleBarOverlay", "autoHideMenuBar", "titleBarStyle"]) {
       const dup = key === "titleBarStyle" ? 'titleBarStyle:"default",' : key + ":!0,";
-      // Inserted before webPreferences:, i.e. AFTER our splice point and still
-      // inside the object - exactly where an upstream addition would land.
-      const src = fixture("!0").replace("webPreferences:", dup + "webPreferences:");
-      check(
-        `precondition: the ${key} duplicate sits after our splice point`,
-        src.indexOf(dup) > src.indexOf("titleBarOverlay:"),
-        true
-      );
-      const r = runPatchExpectingFailure(scratch, `index-dup-${key}.js`, src);
-      check(`a later duplicate ${key}: makes the patch exit non-zero`, r.status !== 0, true);
-      check(
-        `and names the offending key with its count`,
-        new RegExp("option " + key + ": appears 2x").test(r.out),
-        true
-      );
-      check(
-        `${key} duplicate: it does not report success`,
-        /\[OK\] no upstream duplicate/.test(r.out),
-        false
-      );
+      for (const [where, src] of [
+        // In the builder after its spread: the builder's key wins over ours.
+        ["builder", fixture("!0").replace("webPreferences:{preload:n.default", dup + "webPreferences:{preload:n.default")],
+        // At the call site after our splice point.
+        ["call site", fixture("!0").replace("trafficLightPosition:", dup + "trafficLightPosition:")],
+      ]) {
+        if (key === "titleBarOverlay" && where === "call site") continue; // the patch's own count catches that one
+        const r = runPatchExpectingFailure(scratch, `index-dup-${key}-${where.replace(" ", "")}.js`, src);
+        check(`a duplicate ${key} in the ${where}: makes the patch exit non-zero`, r.status !== 0, true);
+        check(
+          `${key} in the ${where}: names the offending key`,
+          new RegExp("option " + key + ": appears").test(r.out),
+          true
+        );
+        check(
+          `${key} duplicate in the ${where}: it does not report success`,
+          /\[OK\] no upstream duplicate/.test(r.out),
+          false
+        );
+      }
     }
 
-    // The guard's own blind spot: if it cannot delimit the object it must say
-    // so, not silently scan nothing and pass. Without this, an upstream
-    // refactor that moves webPreferences out of range would disable the guard
-    // while leaving the build green - the same silent-failure shape the guard
-    // exists to remove.
+    // The builder is recognised by its mainWindow.js preload: an options
+    // builder for another window must not be taken for the main window's, and
+    // the run must say so rather than pass vacuously.
     {
-      const src = fixture("!0").replace(',webPreferences:{preload:"mainWindow.js"}', "");
-      check(
-        "precondition: the fixture now has no webPreferences: to delimit on",
-        src.includes("webPreferences:"),
-        false
-      );
+      const src = fixture("!0").replace(".vite/build/mainWindow.js", ".vite/build/quickWindow.js");
       const r = runPatchExpectingFailure(scratch, "index-nowp.js", src);
-      check("an undelimitable options object exits non-zero", r.status !== 0, true);
+      check("an options builder without the mainWindow.js preload exits non-zero", r.status !== 0, true);
       check(
-        "and says the guard cannot delimit the object",
-        /shadowing guard cannot delimit the object/.test(r.out),
+        "and names the builder it could not find",
+        /main window options builder: 0\/1/.test(r.out),
         true
       );
       check(
@@ -1507,7 +1515,7 @@ try {
     const p = runPatch(scratch, "index-popout.js", fixture("!0"));
     check("sub-patch 3 reports its match", /\[OK\] pop-out windows follow[^\n]*: 1/.test(p.out), true);
     check("the schema-map entry is not touched",
-      p.patched.includes("popoutTitleBarOverlay:A_,"), true);
+      p.patched.includes("popoutTitleBarOverlay:ws(),"), true);
     check("exactly one patched call site", countOf(p.patched, "__CDB_POPOUT_FRAME__"), 1);
     check("upstream's status function is still called unchanged",
       countOf(p.patched, ":pvi(),"), 1);
@@ -1600,13 +1608,13 @@ try {
     // refusals
     const none = runPatchExpectingFailure(scratch, "index-nopopout.js",
       fixture("!0").replace(/function pvi[^\n]*\n/, "").replace("popoutTitleBarOverlay:pvi()", "popoutTitleBarOverlay:A_"));
-    check("a bundle without the call site fails the patch", none.status !== 0 && /popoutTitleBarOverlay call site: 0\/1/.test(none.out), true);
+    check("a bundle without the call site fails the patch", none.status !== 0 && /popoutTitleBarOverlay call site of an upstream status function in the expected shape: 0\/1/.test(none.out), true);
     const two = runPatchExpectingFailure(scratch, "index-twopopout.js",
       fixture("!0") + "function __x(){return {popoutTitleBarOverlay:pvi(),y:1}}\n");
-    check("two call sites fail the patch", two.status !== 0 && /popoutTitleBarOverlay call site: 2\/1/.test(two.out), true);
+    check("two call sites fail the patch", two.status !== 0 && /popoutTitleBarOverlay call site of an upstream status function in the expected shape: 2\/1/.test(two.out), true);
     const noFn = runPatchExpectingFailure(scratch, "index-nofn.js",
       fixture("!0").replace("unsupportedCode:\"unsupported_session\"}:{status:\"supported\"}", "unsupportedCode:\"unsupported_session\"}:{status:\"ok\"}"));
-    check("an upstream status function in another shape fails the patch", noFn.status !== 0 && /status function pvi not found/.test(noFn.out), true);
+    check("an upstream status function in another shape fails the patch", noFn.status !== 0 && /in the expected shape: 0\/1/.test(noFn.out), true);
     // idempotency must assert OUR end state: first marker without the popout one is a failure
     const half = runPatchExpectingFailure(scratch, "index-half.js",
       p.patched.replace("/*__CDB_POPOUT_FRAME__*/", ""));

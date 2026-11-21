@@ -391,11 +391,15 @@ globalThis.__cdbCuNoScreenGrant=function(){
 // apps dropped by Grants) and no pseudo-grant yet; then the pseudo-grant at
 // the most permissive explicit tier. 16f also drops it again before upstream
 // stores the session's grants, as upstream's local sessions do.
-globalThis.__cdbCuWithScreenGrant=function(apps,denied,Grants,rank,id){
+// v6.28899.2: `hold` is upstream's holdRemoteDesktops answer, handed to the
+// grant class exactly as upstream's local rule does
+// (`new n.u(e,r,{holdRemoteDesktops:i})`), so a remote-desktop app's tier cap
+// also caps the pseudo-grant.
+globalThis.__cdbCuWithScreenGrant=function(apps,denied,Grants,rank,id,hold){
   try{
     if(!Array.isArray(apps)||!globalThis.__cdbCuScreenOnly()||typeof Grants!=="function"||!rank||typeof id!=="string")return apps;
     if(apps.some(function(a){return a&&a.bundleId===id}))return apps;
-    var g=new Grants(apps,denied).explicitGrants;
+    var g=new Grants(apps,denied,{holdRemoteDesktops:hold}).explicitGrants;
     if(!Array.isArray(g)||g.length===0)return apps;
     var tier=g.map(function(a){return a.tier!=null?a.tier:"full"}).reduce(function(a,b){return rank[a]>=rank[b]?a:b});
     return apps.concat([{bundleId:id,displayName:"Entire screen",grantedAt:g[0].grantedAt,tier:tier}]);

@@ -121,13 +121,14 @@ function functionSource(src, name) {
   }
   return null;
 }
-const DISPATCH_RE = /async function ([\w$]+)\(([\w$]+),[\w$]+,[\w$]+,[\w$]+\)\{let\{logger:[\w$]+,serverName:[\w$]+\}=\2,[\w$]+=[\w$]+\([\w$]+\);if\(\2\.isDisabled\(\)\)/;
+// v6.28899.2 builds the context with the adapter too: `o=wl(e,r)`.
+const DISPATCH_RE = /async function ([\w$]+)\(([\w$]+),[\w$]+,[\w$]+,[\w$]+\)\{let\{logger:[\w$]+,serverName:[\w$]+\}=\2,[\w$]+=[\w$]+\((?:\2,)?[\w$]+\);if\(\2\.isDisabled\(\)\)/;
 const SCREEN_REF_RE = /\{bundleId:([\w$]+)\.([\w$]+),displayName:"Screen"\}/;
 const DENIED_RE = /this\.isUserDenied=([\w$]+)\.([\w$]+)\(/;
 // Upstream's own Wayland executor: what ours mirrors.
 const UP_WL_FRONT_RE = /async getFrontmostApp\(\)\{return ([\w$]+)\.([\w$]+)\(\)\?\{bundleId:([\w$]+)\+\1\.([\w$]+),displayName:`\$\{[\w$]+\.app\.getName\(\)\} dialog`\}:[\w$]+\.BrowserWindow\.getFocusedWindow\(\)\?\{bundleId:\3,displayName:[\w$]+\.app\.getName\(\)\}:\{bundleId:\1\.([\w$]+),displayName:"Screen"\}\},async getKeyFocusApp\(\)\{return this\.getFrontmostApp\(\)\}/;
 const CTX_RE = /\{sessionId:[\w$]+,skipFirstRequestWarnings:!0,getAllowedApps:\(\)=>([\w$]+)\(([\w$]+)\.grants\),getGrantFlags:/;
-const PATCHED_CTX_RE = /getAllowedApps:\(\)=>process\.platform==="linux"&&typeof globalThis\.__cdbCuWithScreenGrant=="function"\?globalThis\.__cdbCuWithScreenGrant\(([\w$]+)\(([\w$]+)\.grants\),([\w$]+)\.([\w$]+)\(\),([\w$]+)\.([\w$]+),\5\.([\w$]+),([\w$]+)\.([\w$]+)\):\1\(\2\.grants\),/;
+const PATCHED_CTX_RE = /getAllowedApps:\(\)=>process\.platform==="linux"&&typeof globalThis\.__cdbCuWithScreenGrant=="function"\?globalThis\.__cdbCuWithScreenGrant\(([\w$]+)\(([\w$]+)\.grants\),([\w$]+)\.([\w$]+)\(\),([\w$]+)\.([\w$]+),\5\.([\w$]+),([\w$]+)\.([\w$]+),([\w$]+)\.([\w$]+)\(\)\.getHoldRemoteDesktops\?\.\(\)\):\1\(\2\.grants\),/;
 const PATCHED_STORE_RE = /([\w$]+)\.apps=process\.platform==="linux"\?\[\.\.\.([\w$]+)\]\.filter\(__cuScr=>__cuScr\.bundleId!==([\w$]+)\.([\w$]+)\):\[\.\.\.\2\],\1\.flags=/;
 const DIALOG_FN_RE = /function [\w$]+\(\)\{if\(([\w$]+)>0\)throw Error\("A Claude dialog is open on the screen; wait for the user to answer it before clicking, scrolling or typing\."\)\}function ([\w$]+)\(\)\{return \1>0\}/;
 const PATCHED_DIALOG_RE = /\{return [\w$]+>0\}process\.platform==="linux"&&\(globalThis\.__cdbCuDialogOpen=([\w$]+)\);/;
@@ -240,6 +241,13 @@ if (bundle) {
       ok(!!scr && new RegExp("(?<![\\w$.])" + esc(scr) + "=\"com\\.anthropic\\.cu\\.screen\"").test(kBody), "16f hands upstream's Screen id", scr);
       const sm = PATCHED_STORE_RE.exec(cb);
       ok(!!sm && sm[3] === pm[3] && sm[4] === pm[9], "the store filter drops that same id");
+      // v6.28899.2: the hold-remote-desktops answer is read from the same chunk
+      // export upstream's local rule reads it from (`i.t().getHoldRemoteDesktops?.()`).
+      const LOCAL_HOLD_RE = /getAllowedApps:\(\)=>[\w$]+\([\w$]+\.getCuAllowedApps\?\.\(\)\?\?\[\],[\w$]+\.[\w$]+\(\),([\w$]+)\.([\w$]+)\(\)\.getHoldRemoteDesktops\?\.\(\)\)/;
+      const li = after.bodies.findIndex((b) => LOCAL_HOLD_RE.test(b));
+      const lm = li >= 0 && LOCAL_HOLD_RE.exec(after.bodies[li]);
+      ok(!!lm && requiredChunk(after.bodies[li], lm[1]) === requiredChunk(cb, pm[10]) && lm[2] === pm[11],
+        "16f hands the hold-remote-desktops answer from the same chunk export as upstream's local rule", lm && (lm[1] + "." + lm[2] + "() / " + pm[10] + "." + pm[11] + "()"));
       for (const name of new Set([after.names[ci], after.names[after.bodies.findIndex((b) => PATCHED_DIALOG_RE.test(b))]])) {
         const f = path.join(scratch, name);
         writeFileSync(f, after.bodies[after.names.indexOf(name)]);
@@ -282,7 +290,16 @@ function loadDispatcher(electronStub) {
     const known = {};
     if (file === disp.nsFile) known[disp.screenAlias] = SCREEN;
     if (requiredChunk(disp.body, disp.deniedNs) === file) known[disp.deniedAlias] = denied;
-    const p = new Proxy(known, { get(t, k) { if (k in t) return t[k]; if (typeof k === "symbol") return undefined; return () => null; } });
+    // Unknown members are callables that also answer the array methods a chunk
+    // may run at load (v6.28899.2: `new Set(t.s.flatMap(...))`).
+    const stubFn = () => { const f = () => null; for (const [m, v] of [["flatMap", []], ["map", []], ["filter", []], ["some", false], ["includes", false], ["forEach", undefined]]) f[m] = () => v; return f; };
+    // v6.28899.2: the key tool asks the core chunk to split a chord into keys
+    // and modifiers (`function Bt(t){let n=e.K9(t);return e.R9(t)||n.length===1&&
+    // n[0]==="tab"&&e.G9(t).every(...)}`); both answer lists.
+    const chordRe = /let ([\w$]+)=([\w$]+)\.([\w$]+)\([\w$]+\);return \2\.[\w$]+\([\w$]+\)\|\|\1\.length===1&&\1\[0\]==="tab"&&\2\.([\w$]+)\([\w$]+\)\.every/;
+    const cm = chordRe.exec(disp.body);
+    if (cm && requiredChunk(disp.body, cm[2]) === file) { known[cm[3]] = () => []; known[cm[4]] = () => []; }
+    const p = new Proxy(known, { get(t, k) { if (k in t) return t[k]; if (typeof k === "symbol") return undefined; return stubFn(); } });
     nsCache.set(file, p);
     return p;
   };
@@ -487,7 +504,8 @@ if (bundle && disp && disp.fn) {
   D0 = loadDispatcher({ app: { getName: () => "Claude" }, BrowserWindow: { getFocusedWindow: () => null }, screen: {} });
   console.log("\n[E] __cdbCuWithScreenGrant against upstream's own local rule");
   ok(typeof D0.dispatch === "function" && typeof D0.Grants === "function" && !!D0.rank, "dispatcher, explicit grant class and tier order loaded from the bundle");
-  const yeHead = /function ([\w$]+)\(([\w$]+),([\w$]+)\)\{if\(([\w$]+)\.([\w$]+)!==\4\.([\w$]+)\|\|\2\.some\(\(?([\w$]+)=>\7\.bundleId==="com\.anthropic\.cu\.screen"\)\)?\)return \2;let [\w$]+=new ([\w$]+)\.([\w$]+)\(\2,\3\)\.explicitGrants;/;
+  // v6.28899.2: a third param (holdRemoteDesktops) passed on to the grant class.
+  const yeHead = /function ([\w$]+)\(([\w$]+),([\w$]+)(?:,[\w$]+)?\)\{if\(([\w$]+)\.([\w$]+)!==\4\.([\w$]+)\|\|\2\.some\(\(?([\w$]+)=>\7\.bundleId==="com\.anthropic\.cu\.screen"\)\)?\)return \2;let [\w$]+=new ([\w$]+)\.([\w$]+)\(\2,\3(?:,\{[\w$]+:[\w$]+\})?\)\.explicitGrants;/;
   const yp = partOf((b) => yeHead.test(b));
   ok(!!yp, "upstream's local rule found", yp && yp.name);
   rig0: {
@@ -524,6 +542,21 @@ if (bundle && disp && disp.fn) {
       const a = ours(apps.map((x) => ({ ...x })), den, D0.Grants, D0.rank, SCREEN);
       const b = upstream(apps.map((x) => ({ ...x })), den);
       ok(J(a) === J(b), `whole-screen backend, ${label}: same list as upstream's rule (Screen tier ${tierScreen(b) ?? "none"})`, J(a) + " vs " + J(b));
+    }
+    // The holdRemoteDesktops option reaches the grant class as upstream hands
+    // it (`new n.u(e,r,{holdRemoteDesktops:i})`): same constructor options on
+    // both sides, recorded through a subclass of upstream's own class.
+    {
+      const seenUp = [], seenOurs = [];
+      const recording = (seen) => class extends D0.Grants { constructor(a, b, o) { seen.push(o === undefined ? "none" : J(o)); super(a, b, o); } };
+      const upHold = new Function(...nsNames, "return " + src)(...nsNames.map((n) => (n === m[8] ? { [m[9]]: recording(seenUp), [rankAlias]: D0.rank } : kNs)));
+      const rd = [{ bundleId: "org.remmina.Remmina", displayName: "Remmina", grantedAt: t0, tier: "full" }];
+      for (const hold of [true, false, undefined]) {
+        seenUp.length = 0; seenOurs.length = 0;
+        const a = ours(rd.map((x) => ({ ...x })), [], recording(seenOurs), D0.rank, SCREEN, hold);
+        const b = upHold(rd.map((x) => ({ ...x })), [], hold);
+        ok(J(seenOurs) === J(seenUp) && seenUp.length === 1 && J(a) === J(b), `hold ${hold}: the grant class gets upstream's options and the list matches`, J(seenOurs) + " vs " + J(seenUp));
+      }
     }
     globalThis.__linuxExecutor = { capabilities: {} };
     const one = [{ bundleId: CALC, displayName: "Calculator", grantedAt: t0, tier: "full" }];

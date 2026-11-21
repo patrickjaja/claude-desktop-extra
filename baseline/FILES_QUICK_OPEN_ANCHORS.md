@@ -52,6 +52,29 @@ pty host `fork(t.MK("pty-host","ptyHostWorker.js")` in `index.chunk-D3Ciy7W9.js`
 (3P Code tab) carries `"Filter files"` 2, `"Show file tree"` 5, `"Hide file tree"` 3, `data-perf-screen` 3,
 `"More options for ` 48, `onPreview:` 30. The DOM/fiber rows were not re-measured live.
 
+**Local rows re-verified statically on v6.28899.2 (2026-11-21, pristine extract):** upstream rewrote the
+worker's index. `FileIndexHost` now builds it lazily through a method and reads it into a local:
+`search(e,t){let n=[],r=this.builtIndex();if(r)for(let{path:i,positions:a}of r.search(e,t))` (was
+`if(this.index)for(...of this.index.search(e,t))`), so `of this.index.search(` now hits **0** times and the
+patch anchors on `of <idx>.search(` with `<idx>` cross-checked against the local and the `if`. The scorer
+moved into a table class whose ready count is a private field (`#c`, set by `publish(n)`); `readyCount`
+is gone from the worker. The scoring itself is unchanged (char-by-char `indexOf` subsequence, smart case,
+a space is still a literal character), so nothing upstream replaces the multi-piece search. The helper
+now passes an unbounded limit for its full-set scans, and the patch pins the two shapes that keep that
+lossless, exactly once each: the index wrapper
+`search(e,t){return t<=0?[]:e.length===0?<top-level cache>:this.table.search(e,t)}` and the table's
+top-N fill `,s.length<t)s.push({pathIndex:` (it prunes only once it holds `limit` entries). The generic
+worker-host fork is unchanged in shape and still exactly one site
+(`utilityProcess.fork(r,[],{serviceName:t,stdio:"pipe",...this.opts.env&&{env:this.opts.env()},...this.opts.disclaim&&!1})`,
+same chunk as `worker:{buildName:"file-index-worker",fileName:"fileIndexWorker.js"}`); new fork sites with
+their own shapes: `cli-spawn-host` (`fork(e.Olt("cli-spawn-host","cliSpawnHostWorker.js"),[],{serviceName:<id>,stdio:"pipe"})`,
+a call as the path, so sub-patch B's identifier-path anchor does not match it) and `emulator-grpc-worker` (literal `serviceName`, own `env`). Main
+implements `fetchMentionOptions:(e,t)=>Taa(e,t??void 0)`; `mainView.js` invokes
+`Resources_$_fetchMentionOptions` once. The local `ion-dist` SPA carries `"Filter files` 2,
+`"Show file tree"` 4, `"Hide file tree"` 2, `data-perf-screen` 6, `"More options for ` 48, `onPreview:` 30.
+The DOM/fiber rows were not re-measured live (upstream's v6.28899.2 note "Fixed Terminal, Changes, Files
+and Rewind keyboard shortcuts doing nothing in a session opened in its own window" touches the same panes).
+
 ## Anchors
 
 | Anchor | Used for | Measured value | If it moves |

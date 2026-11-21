@@ -271,14 +271,16 @@ proc apply*(input: string): string =
   # (.on(`second-instance`,((t,n,r)=>{...))), so the head allows an optional
   # extra open paren; the head capture re-emits whatever was consumed verbatim,
   # keeping the parens balanced for both shapes.
+  # v6.28899.2 adds a 4th param (additionalData, `(t,n,r,i)=>{`); it is
+  # optional and re-emitted verbatim as part of the tail capture.
   let patBApplied =
-    re2"\.on\([""`]second-instance[""`],\(?\([\w$]+,[\w$]+,[\w$]+\)=>\{if\(Array\.isArray\([\w$]+\)&&\([\w$]+\.includes\(""--toggle-quick-entry""\)\|\|[\w$]+\.includes\(""--toggle""\)\)\)\{[^}]*\}catch\(e\)\{\}return\}if\(Array\.isArray\([\w$]+\)&&[\w$]+\.includes\(""--reload-theme""\)\)\{[^\n]*?return\}if\(\(function\(_a\)\{var _sc=\(function\(a\)\{if\(!Array\.isArray\(a\)\)return """";[^\n]*?""--trigger-shortcut=""[^\n]*?\)\([\w$]+\)\)return;"
+    re2"\.on\([""`]second-instance[""`],\(?\([\w$]+,[\w$]+,[\w$]+(?:,[\w$]+)?\)=>\{if\(Array\.isArray\([\w$]+\)&&\([\w$]+\.includes\(""--toggle-quick-entry""\)\|\|[\w$]+\.includes\(""--toggle""\)\)\)\{[^}]*\}catch\(e\)\{\}return\}if\(Array\.isArray\([\w$]+\)&&[\w$]+\.includes\(""--reload-theme""\)\)\{[^\n]*?return\}if\(\(function\(_a\)\{var _sc=\(function\(a\)\{if\(!Array\.isArray\(a\)\)return """";[^\n]*?""--trigger-shortcut=""[^\n]*?\)\([\w$]+\)\)return;"
   if result.contains(patBApplied):
     echo "  [INFO] sub-patch B already applied -- skipped"
     applied += 1
   else:
     let patB =
-      re2"(\.on\([""`]second-instance[""`],\(?\()([\w$]+),([\w$]+),([\w$]+)(\)=>\{)"
+      re2"(\.on\([""`]second-instance[""`],\(?\()([\w$]+),([\w$]+),([\w$]+)((?:,[\w$]+)?\)=>\{)"
 
     var countB = 0
     var resultStr2 = ""

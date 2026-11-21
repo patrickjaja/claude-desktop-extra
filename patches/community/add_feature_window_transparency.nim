@@ -16,12 +16,16 @@
 #      the options hooks, the theme-flip guards, the CSS injection with its live
 #      transparency swap, and the Settings IPC handlers.
 #   B. The main window's options literal gets `...globalThis.__cdbWinTransExtra()`
-#      spliced in right after upstream's `backgroundColor:<fn>(<arg>),opacity:<v>,`
-#      pair, where <arg> is empty or one `{key:var}` object (v3.1623.0:
-#      `backgroundColor:fQn({signedIn:c}),opacity:1,icon:`; earlier builds
-#      called it with no argument). It spreads AFTER backgroundColor, so its
-#      `transparent` and `backgroundColor` keys win (last key wins in a JS
-#      object literal), and the pair itself is left untouched:
+#      spliced in right after upstream's `backgroundColor:<fn>(<arg>),opacity:<v>`
+#      pair, where <arg> is empty or one `{key:var}` object. Since v6.28899.2
+#      that pair closes the literal handed to the main-window options builder:
+#        f=(e=>BEe(new u.BrowserWindow(e)))(kOr({...,backgroundColor:WWi({signedIn:s}),opacity:+!c},d?void 0:l))
+#        function kOr(e,t){return{...e,title:..,titleBarStyle:"hidden",icon:..,webPreferences:{..}}}
+#      (up to v5.11492.5 it was followed by `,icon:` in one literal). It
+#      spreads AFTER backgroundColor, so its `transparent` and `backgroundColor`
+#      keys win (last key wins in a JS object literal); the builder spreads the
+#      literal first and only adds title, titleBarStyle, icon and webPreferences,
+#      which this patch asserts. The pair itself is left untouched:
 #      patches/linux/fix_native_frame.nim matches
 #      `backgroundColor:<fn>(<arg>),opacity:` too. The window FACTORY is
 #      deliberately not rewritten - fix_profile_window_title and
@@ -47,8 +51,8 @@
 # native titlebar is on; pop-outs then stay opaque as well.
 #
 # Break risk: LOW for A (stable "use strict"; head anchor). B anchors on the key
-# order `backgroundColor:<fn>(<arg>),opacity:<v>,icon:` in the main window's
-# options literal - the same backgroundColor/opacity pair fix_native_frame
+# order `backgroundColor:<fn>(<arg>),opacity:<v>}` closing the literal handed
+# to the main-window options builder - the same backgroundColor/opacity pair fix_native_frame
 # anchors on - with every identifier a wildcard; a reorder fails loud (match
 # count != 1). C anchors on the window manager's open handler, a small stable
 # class method; a change to its shape fails loud (match count != 1 or an
@@ -60,7 +64,7 @@ import regex
 const PAGE_JS = staticRead("../../js/window_transparency.js")
 
 const MARKER = "__CDB_WINTRANS__"
-const HOOK = "...globalThis.__cdbWinTransExtra(),"
+const HOOK = ",...globalThis.__cdbWinTransExtra()}"
 const POPOUT_FN = "(globalThis.__cdbWinTransPopout||function(w,f,o){return o})"
 const POPOUT_HOOK = "overrideBrowserWindowOptions:" & POPOUT_FN & "("
 const EXPECTED_PATCHES = 3 # head injection + options-literal spread + pop-out wrap
@@ -133,12 +137,36 @@ proc apply*(input: string): string =
     quit(1)
 
   # Sub-patches B and C first, so the module text injected by A is never searched.
+  # The literal must be the first argument of the main-window options builder
+  # `function B(e,t){return{...e,title:..,titleBarStyle:"hidden",..mainWindow.js..}}`,
+  # and the builder must not set `transparent` or `backgroundColor` after its
+  # spread (that would silently override ours).
+  var builders: seq[string]
+  for m in result.findAll(
+    re2"""function ([\w$]+)\(([\w$]+),[\w$]+\)\{return\{\.\.\.([\w$]+),title:[\w$]+\(\),titleBarStyle:"""
+  ):
+    if result[m.group(1)] != result[m.group(2)]:
+      continue
+    let body = result[m.boundaries.b + 1 ..< min(result.len, m.boundaries.b + 600)]
+    let close = body.find("}}}")
+    if close < 0 or not body[0 ..< close].contains(".vite/build/mainWindow.js"):
+      continue
+    if body[0 ..< close].contains("transparent:") or
+        body[0 ..< close].contains("backgroundColor:"):
+      echo "  [FAIL] window transparency: the main-window options builder sets transparent/backgroundColor itself - re-audit"
+      quit(1)
+    builders.add result[m.group(0)]
+  if builders.len != 1:
+    echo &"  [FAIL] window transparency: main-window options builder matched {builders.len}/1"
+    quit(1)
   var n = 0
   result = result.replace(
-    re2"""(backgroundColor:[\w$]+(?:\.[\w$]+)*\((?:\{[\w$]+:[\w$]+\})?\),opacity:[^,{}]+,)(icon:)""",
+    re2"""((?:^|[^\w$.])([\w$]+)\(\{\.\.\.[^{}]*(?:\{[^{}]*\}[^{}]*)*?backgroundColor:[\w$]+(?:\.[\w$]+)*\((?:\{[\w$]+:[\w$]+\})?\),opacity:[^,{}]+)\}""",
     proc(m: RegexMatch2, s: string): string =
+      if s[m.group(1)] != builders[0]:
+        return s[m.boundaries]
       inc n
-      s[m.group(0)] & HOOK & s[m.group(1)],
+      s[m.group(0)] & HOOK,
   )
   if n != 1:
     echo &"  [FAIL] window transparency: main-window options pattern matched {n}/1"

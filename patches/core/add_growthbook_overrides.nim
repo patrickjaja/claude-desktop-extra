@@ -65,11 +65,17 @@ const EXPECTED_PATCHES = 2
 # parameter: overrides must apply to the map that is actually STORED, after
 # the hardcoded-mode filter - same layering as before, when the hardcoded set
 # itself arrived through the setter's parameter (user override > any rollout).
-# Groups: 0 = head "function F(e,t){OS=t;let n=DS;DS=", 1 = e (first param),
+# Groups: 0 = head "function F(e,t){OS=t;let n=DS;DS=" (v6: "function F(e,t,n=null){X=t,Y=n;let r=D;D="), 1 = e (first param),
 # 2 = transform call "jit(e)", 3 = e again (must equal group 1), 4 = tail
 # ";let r=Object.keys(DS).length...loaded %d features...".
+# v6.28899.2 shape: a THIRD parameter (the account/org identity the payload
+# belongs to, defaulting to null) is stored next to the source tag, joined by a
+# comma:
+#   function RZt(e,t,n=null){X_=t,cZt=n;let r=Y_;Y_=NZt(e);let i=Object.keys(Y_).length,...
+# Both the optional third `x=null` parameter and the optional extra `,a=b`
+# store are accepted; the transform call and log-line anchor are unchanged.
 const SETTER_PAT =
-  re2"""(function [\w$]+\(([\w$]+),[\w$]+\)\{[\w$]+=[\w$]+;(?:const|let|var) [\w$]+=[\w$]+;[\w$]+=)([\w$]+\(([\w$]+)\))(;(?:const|let|var) [\w$]+=Object\.keys\([\w$]+\)\.length[^"`]{0,100}[^"`]{0,100}["`]\[growthbook\] loaded %d features \(%d changed\)["`])"""
+  re2"""(function [\w$]+\(([\w$]+),[\w$]+(?:,[\w$]+=null)?\)\{[\w$]+=[\w$]+(?:,[\w$]+=[\w$]+)?;(?:const|let|var) [\w$]+=[\w$]+;[\w$]+=)([\w$]+\(([\w$]+)\))(;(?:const|let|var) [\w$]+=Object\.keys\([\w$]+\)\.length[^"`]{0,100}[^"`]{0,100}["`]\[growthbook\] loaded %d features \(%d changed\)["`])"""
 
 proc apply*(input: string): string =
   result = input

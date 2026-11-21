@@ -11,14 +11,17 @@
 // raising it, and the app then raised itself on every hover
 // (anthropics/claude-code#75905).
 //
-// patches/linux/fix_focus_follows_mouse_raise.nim routes the two focus-handler
-// calls through __cdbFocusNoRaise(win, contents), which skips the call when the
-// window is already active and the view already holds focus, and focuses the
-// view once after its first load while the window is still inactive, so the
-// first hover after launch has a focused view to restore. This harness runs
-// the compiled patch on the upstream shapes (copied from the 3.1623.3 bundle),
-// then fires `focus` on mock windows and records which webContents.focus()
-// calls reach Electron.
+// Since v6.28899.2 upstream routes every focus handler through one helper,
+// `kv(win, contents)`, that already skips the call when the window is not
+// active or the contents already hold focus. patches/linux/
+// fix_focus_follows_mouse_raise.nim routes that helper's remaining call
+// (window active, contents not focused yet) and the main window's direct focus
+// call through __cdbFocusNoRaise(win, contents), which re-checks after the
+// activation settles, and focuses the view once after its first load while the
+// window is still inactive, so the first hover after launch has a focused view
+// to restore. This harness runs the compiled patch on the upstream shapes
+// (copied from the 6.28899.2 bundle), then fires `focus` on mock windows and
+// records which webContents.focus() calls reach Electron.
 //
 // Exit codes follow the repo convention: 0 = PASS, 3 = SKIP, other = FAIL.
 
@@ -55,13 +58,16 @@ function check(label, actual, expected) {
 }
 const section = (t) => console.log("\n" + t);
 
-// Upstream shapes from 3.1623.3, trimmed; the two anchors are verbatim:
-//   1. the main window's focus helper `y` (called from l.on("focus"))
-//   2. the popout window's `focus` handler
+// Upstream shapes from 6.28899.2, trimmed; the two anchors are verbatim:
+//   1. the shared focus-handler helper `kv`
+//   2. the main window's focus function `re` (re(!0) from f.on("focus"), re()
+//      at startup): `e?kv(f,i):i.focus(),`
+// The pop-out's handler calls kv like upstream's artifact pop-up does.
 const FIXTURE = `"use strict";
 var To=!1;
-function mkMain(l,p){let y=()=>{let e=p.webContents;!e||e.isDestroyed()||((To?l.webContents:e).focus(),__ev.push("rest"))};l.on("focus",(()=>{y()}));return y}
-function mkPopout(c,n){c.on("focus",(()=>{n.isDestroyed()||n.focus()}))}
+function kv(e,t){!e.isFocused()||t.isFocused()||t.focus()}
+function mkMain(f,x){let re=(e=!1)=>{let t=x.webContents;if(!t||t.isDestroyed())return;let n=To?f.webContents:void 0,i=n??t;e?kv(f,i):i.focus(),__ev.push("rest")};f.on("focus",(()=>{re(!0)}));return re}
+function mkPopout(s,n){s.on("focus",(()=>{n.isDestroyed()||kv(s,n)}))}
 `;
 
 function runPatch(file) {
@@ -149,10 +155,10 @@ try {
   check("first run exits 0", r1.status, 0);
   check("no [FAIL] line", /\[FAIL\]/.test(r1.out), false);
   const patched = readFileSync(file, "utf8");
-  check("main helper rewritten",
-    patched.includes("(__cdbFocusNoRaise(l,To?l.webContents:e),"), true);
-  check("popout handler rewritten",
-    patched.includes('c.on("focus",(()=>{n.isDestroyed()||__cdbFocusNoRaise(c,n)}'), true);
+  check("main focus function rewritten",
+    patched.includes("e?kv(f,i):__cdbFocusNoRaise(f,i),"), true);
+  check("shared focus-handler helper rewritten",
+    patched.includes("function kv(e,t){!e.isFocused()||t.isFocused()||__cdbFocusNoRaise(e,t)}"), true);
   execFileSync("node", ["--check", file]);
   check("patched fixture passes node --check", true, true);
 
@@ -164,24 +170,30 @@ try {
   section("[A2] a moved anchor fails loud");
   {
     const moved = join(scratch, "moved.js");
-    writeFileSync(moved, FIXTURE.replace("n.isDestroyed()||n.focus()", "n.focus()"));
+    writeFileSync(moved, FIXTURE.replace("t.isFocused()||t.focus()", "t.focus()"));
     const r = runPatch(moved);
-    check("missing popout handler exits non-zero", r.status !== 0, true);
-    check("missing popout handler prints [FAIL]", /\[FAIL\]/.test(r.out), true);
+    check("missing focus-handler helper exits non-zero", r.status !== 0, true);
+    check("missing focus-handler helper prints [FAIL]", /\[FAIL\]/.test(r.out), true);
   }
   {
     const mismatch = join(scratch, "mismatch.js");
-    writeFileSync(mismatch, FIXTURE.replace("l.webContents:e)", "l.webContents:x)"));
+    writeFileSync(mismatch, FIXTURE.replace("e?kv(f,i):i.focus()", "e?kv(f,i):x.focus()"));
     const r = runPatch(mismatch);
-    check("main helper with a different view name exits non-zero", r.status !== 0, true);
+    check("main focus function with a different view name exits non-zero", r.status !== 0, true);
   }
 
   section("[B0] unpatched upstream, Linux: focus without raise re-activates the window");
   {
+    const { ev, win, flush } = boot(FIXTURE, "linux", { win: true, view: false });
+    win.emit("focus");
+    flush();
+    check("webContents.focus() reaches Electron at once", ev.join(","), "focus:view,rest");
+  }
+  {
     const { ev, win, flush } = boot(FIXTURE, "linux", { win: true, view: true });
     win.emit("focus");
     flush();
-    check("webContents.focus() reaches Electron", ev.join(","), "focus:view,rest");
+    check("upstream already skips an already focused view", ev.join(","), "rest");
   }
 
   section("[B1] patched, Linux: window already active, view already focused -> no call");
@@ -191,22 +203,22 @@ try {
     pop.emit("focus");
     flush();
     check("no webContents.focus() call", ev.join(","), "rest");
-    check("skip is logged", logs.some((l) => /\[focus-no-raise\] skip:/.test(l)), true);
+    check("upstream's helper skipped it (our helper not reached)", logs.length, 0);
   }
 
-  section("[B2] patched, Linux: window not active -> stock focus (initial show, tray, ...)");
+  section("[B2] patched, Linux: window not active -> upstream's helper skips the focus event");
   {
     const { ev, win, pop, flush } = boot(patched, "linux", { win: false, view: false });
     win.emit("focus");
     pop.emit("focus");
     flush();
-    check("both views focused the stock way", ev.join(","), "focus:view,rest,focus:popview");
+    check("no call from either focus handler", ev.join(","), "rest");
   }
   {
-    const { ev, win, flush } = boot(patched, "linux", { win: false, view: false, to: true });
+    const { ev, win, flush } = boot(patched, "linux", { win: true, view: false, to: true });
     win.emit("focus");
     flush();
-    check("flag set: the window's own webContents is focused", ev.join(","), "focus:main-own,rest");
+    check("flag set: the window's own webContents is re-checked, then focused", ev.join(","), "rest,focus:main-own");
   }
 
   section("[B3] patched, Linux: window active, view not focused -> re-check after activation");
@@ -235,7 +247,7 @@ try {
 
   section("[B5] patched, Linux: startup pre-focus while the window is still inactive");
   {
-    // Upstream calls the focus helper at window creation, before the view has
+    // Upstream calls the focus function at window creation, before the view has
     // loaded; the window maps without focus (KWin denies the launch activation).
     const { ev, win, view, logs, flush, y } = boot(patched, "linux", { win: false, view: false });
     y();
@@ -282,11 +294,11 @@ try {
 
   section("[B4] patched, other platforms: stock behaviour");
   {
-    const { ev, win, pop, flush } = boot(patched, "darwin", { win: true, view: true });
+    const { ev, win, pop, flush } = boot(patched, "darwin", { win: true, view: false });
     win.emit("focus");
     pop.emit("focus");
     flush();
-    check("darwin keeps both calls", ev.join(","), "focus:view,rest,focus:popview");
+    check("darwin keeps both calls, synchronously", ev.join(","), "focus:view,rest,focus:popview");
   }
 } finally {
   rmSync(scratch, { recursive: true, force: true });

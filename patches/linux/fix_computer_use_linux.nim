@@ -314,6 +314,42 @@ proc requiredChunk(part, ns: string): string =
     return ""
   return files[0]
 
+const READY_INJECTION_HEAD = "if(process.platform===\"linux\"){await (async function(){"
+
+proc readyLaunchSite(content: string): (string, int, int) =
+  ## The app's ready launch function (v6.28899.2: the one
+  ## `app.on("ready",(()=>{AHs(pec,fec)}))` registration hands to its try/catch
+  ## wrapper) and the [start, end) span of that registration's staged chunk
+  ## part. Raises unless the registration occurs exactly once.
+  let regPat =
+    re"""\.app\.on\(["`]ready["`],\(?\(\)=>\{[\w$]+\(([\w$]+),[\w$]+\)\}\)?\)"""
+  var hits: seq[RegexMatch] = @[]
+  for m in content.findIter(regPat):
+    hits.add m
+  if hits.len != 1:
+    raise newException(
+      ValueError,
+      &"  [FAIL] app.on(\"ready\") launch-wrapper registration: {hits.len} matches, expected 1",
+    )
+  let (ps, pe) = partSpan(content, hits[0].matchBounds.a)
+  result = (hits[0].captures[0], ps, pe)
+
+proc readyLaunchDefPat(name: string, injected: bool): Regex =
+  ## `async function <name>(){` (pristine) or that head followed by our Patch 1
+  ## injection.
+  re(
+    "(?<![\\w$.])async function " & escapeRe(name) & "\\(\\)\\{" &
+      (if injected: escapeRe(READY_INJECTION_HEAD) else: "")
+  )
+
+proc readyInjectionInLaunchFn(content: string): bool =
+  ## Positive end state of Patch 1: the injection opens the registered launch
+  ## function's one definition in the registration's own chunk part.
+  let (name, ps, pe) = readyLaunchSite(content)
+  let part = content[ps ..< pe]
+  countMatches(part, readyLaunchDefPat(name, false)) == 1 and
+    countMatches(part, readyLaunchDefPat(name, true)) == 1
+
 proc bridgeGuardAlias(content: string): string =
   ## The local upstream's device-bridge refusal guard
   ## `if(!<ns>.<alias>())return R("Computer use over the device bridge is not
@@ -383,8 +419,10 @@ proc endStateMarkers(): seq[EndStateMarker] =
 
   @[
     rx(
+      # v6.28899.2: the ready body is a named launch function, `async function
+      # pec(){...}`, registered as app.on("ready",()=>{AHs(pec,fec)}).
       "1 executors at app ready",
-      """app\.on\(["`]ready["`],\(?async\(\)=>\{if\(process\.platform==="linux"\)\{""",
+      """async function [\w$]+\(\)\{if\(process\.platform==="linux"\)\{await \(async function\(\)\{""",
     ),
     rx(
       # js/cu_session_check.js embedded by Patch 1 (#293): its one definition.
@@ -486,7 +524,13 @@ proc endStateMarkers(): seq[EndStateMarker] =
     lit("5b screenshot intro note (use)", "lastScreenshot:linuxVisibleLastScreenshot,"),
     rx(
       "6 handleToolCall dispatch",
-      """handleToolCall:async\([\w$]+,[\w$]+,[\w$]+,[\w$]+\)=>\{if\(process\.platform==="linux"&&!globalThis\.__cuKwinMode\)\{""",
+      """handleToolCall:async\([\w$]+,[\w$]+,[\w$]+,[\w$]+(?:,[\w$]+)?\)=>\{if\(process\.platform==="linux"&&!globalThis\.__cuKwinMode\)\{""",
+    ),
+    rx(
+      # Patch 6's mirror of upstream's per-call SSH-host deny, right after our
+      # HIPAA check.
+      "6 SSH-host deny",
+      """\}\}\n/\*__cdbSshDeny\*/if\([\w$]+(?:\.[\w$]+)?\([\w$]+\)\)\{\(globalThis\.__cdbDiag\|\|console\.log\)\("\[claude-cu\] tool call denied: this session's Claude Code runs on another computer over SSH"\);return\{isError:!0,content:\[\{type:"text",text:[\w$]+\}\]\}\}""",
     ),
     rx(
       "7b teach controller init",
@@ -546,11 +590,11 @@ proc endStateMarkers(): seq[EndStateMarker] =
     lit("10c glow-off helper (executor)", "globalThis.__cdbCuGlowOff=function(){"),
     rx(
       "11 isEnabled gate",
-      """function [\w$]+\((?:[\w$]+=\{\})?\)\{if\(process\.platform==="linux"\)return(?: ?!0| globalThis\.__cdbCuHipaa=[\w$]+,![\w$]+\(\)(?:&&[\w$]+\(\))?);return ?!?(?:[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)|[\w$]+\(\))(?:\|\|![\w$]+\(\))?(?:\|\|[\w$]+\(\))?\?(?:!1:)?[\w$]+\([\w$]*\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)(?::!1)?\}""",
+      """function [\w$]+\((?:[\w$]+=\{\})?\)\{if\(process\.platform==="linux"\)return(?: ?!0| globalThis\.__cdbCuHipaa=[\w$]+,![\w$]+\(\)(?:&&[\w$]+\(\))?(?:&&[\w$]+\(\)&&![\w$]+\(\))?);return ?!?(?:[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)|[\w$]+\(\))(?:\|\|![\w$]+\(\))?(?:\|\|[\w$]+\(\))?(?:\|\|[\w$]+\(\))?\?(?:!1:)?[\w$]+\([\w$]*\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)(?::!1)?\}""",
     ),
     rx(
       "12 isRegisterable gate",
-      """function [\w$]+\((?:[\w$]+=\{\})?\)\{if\(process\.platform==="linux"\)return (?:[\w$]+\([\w$]*\)|!0);return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?(?:![\w$]+\(\)&&)?(?:[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)|[\w$]+\(\)&&[\w$]+\([\w$]+\)|[\w$]+\(\)\|\|![\w$]+\(\)\?!1:[\w$]+\(\)&&[\w$]+\([\w$]+\))""",
+      """function [\w$]+\((?:[\w$]+=\{\})?\)\{if\(process\.platform==="linux"\)return (?:[\w$]+\([\w$]*\)|!0);return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?(?:![\w$]+\(\)&&)?(?:[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)|[\w$]+\(\)&&[\w$]+\([\w$]+\)|[\w$]+\(\)\|\|![\w$]+\(\)(?:\|\|[\w$]+\(\))?\?!1:[\w$]+\(\)&&[\w$]+\([\w$]+\))""",
     ),
     rx(
       # Our assignment, right before the factory it calls.
@@ -797,6 +841,11 @@ proc apply*(input: string): string =
         &"  [FAIL] end-state marker '{mk.name}': {n} matches, expected 0 or {mk.expected} - re-audit",
       )
   if absent.len == 0:
+    if not readyInjectionInLaunchFn(content):
+      raise newException(
+        ValueError,
+        "  [FAIL] Patch 1 marker present but not at the start of the registered ready launch function in its own chunk - re-audit",
+      )
     echo &"  [OK] all {markers.len} end-state markers already present (idempotent, no change)"
     return content
   if present.len > 0:
@@ -837,16 +886,30 @@ proc apply*(input: string): string =
     # call arguments - `app.on(`ready`,(async()=>{...}))`. Allow the optional
     # `(` before the arrow; we only insert after `{`, so the extra closing paren
     # stays upstream's own.
-    let pat = re"""(app\.on\(["`]ready["`],\(?async\(\)=>\{)"""
-    let n = replaceFirst(
-      content,
-      pat,
-      proc(m: RegexMatch): string =
-        m.captures[0] & "if(process.platform===\"linux\"){" & MODE_PREAMBLE_JS &
-          sessionJs & "\n" & shareStopJs & "\n" & displayTargetJs & "\n" &
-          "if(globalThis.__cuKwinMode){" & kwinJs & "}else{" & regularJs & "}" & axJs &
-          "\n" & wlGlowJs & "\n" & consentJs & "}",
-    )
+    # v6.28899.2 moved the ready body into a named async launch function,
+    # registered through a try/catch wrapper:
+    #   app.on("ready",(()=>{AHs(pec,fec)}))  ...  async function pec(){Qzs(),...
+    # (AHs awaits pec and starts updates via fec if it throws). Find the one
+    # registration, take the launch function's name and inject at the start of
+    # its body - the same position as the old inline `async()=>{` handler.
+    # Minified names are unique per chunk only, so the definition is looked up
+    # (exactly once) inside the registration's own staged chunk part.
+    let (launchFn, rps, rpe) = readyLaunchSite(content)
+    var defs: seq[RegexMatch] = @[]
+    for m in content[rps ..< rpe].findIter(readyLaunchDefPat(launchFn, false)):
+      defs.add m
+    if defs.len != 1:
+      raise newException(
+        ValueError,
+        &"  [FAIL] ready launch function `async function {launchFn}(){{` in the registration's chunk: {defs.len} definitions, expected 1",
+      )
+    let at = rps + defs[0].matchBounds.b + 1
+    content =
+      content[0 ..< at] & "if(process.platform===\"linux\"){" & MODE_PREAMBLE_JS &
+      sessionJs & "\n" & shareStopJs & "\n" & displayTargetJs & "\n" &
+      "if(globalThis.__cuKwinMode){" & kwinJs & "}else{" & regularJs & "}" & axJs & "\n" &
+      wlGlowJs & "\n" & consentJs & "}" & content[at ..^ 1]
+    let n = (if readyInjectionInLaunchFn(content): 1 else: 0)
     if n >= 1:
       echo &"  [OK] Linux executor: injected session check + regular + kwin-wayland variants ({n} match)"
       inc changes, n
@@ -1335,13 +1398,16 @@ proc apply*(input: string): string =
   # (Every turn end also lifts them on the CU lock release, regardless of
   # chicagoAutoUnhide: js/executor_linux.js __setLockHeld(false).)
   #
+  # v6.28899.2 reshaped the win32 arm to `{await qQt(Promise.resolve()...
+  # .then((({unhideComputerUseAppsWin32:t})=>t(e))));return}`: the win32 arm is
+  # matched loosely (one nested brace level, must name unhideComputerUseAppsWin32).
   # Anchor: the function whose body is `if(P.length!==0){if(process.platform==="win32")
   # {let{unhideComputerUseAppsWin32:..}=...}if(process.platform==="linux"){
   # let{unhideComputerUseAppsLinux:X}=...;await X(P);return}`, exactly once (the
   # export names are the stable part).
   block:
     let pat =
-      re"""(async function ([\w$]+)\(([\w$]+)\)\{if\(\3\.length!==0\)\{if\(process\.platform===(["`])win32\4\)\{let\{unhideComputerUseAppsWin32:[\w$]+\}=[^{}]{0,300}\}if\(process\.platform===\4linux\4\)\{)(let\{unhideComputerUseAppsLinux:([\w$]+)\}=[^{}]{0,300}await \6\(\3\);return\})"""
+      re"""(async function ([\w$]+)\(([\w$]+)\)\{if\(\3\.length!==0\)\{if\(process\.platform===(["`])win32\4\)\{(?=[^;]{0,300}unhideComputerUseAppsWin32)(?:[^{}]|\{[^{}]{0,120}\}){1,600}?\}if\(process\.platform===\4linux\4\)\{)(let\{unhideComputerUseAppsLinux:([\w$]+)\}=[^{}]{0,300}await \6\(\3\);return\})"""
     let hits = countMatches(content, pat)
     if hits != 1:
       echo &"  [FAIL] 4h unhide routing: {hits} matches of upstream's unhide function, expected 1"
@@ -1408,8 +1474,14 @@ proc apply*(input: string): string =
     # chars (7789 in v2.42304.2), past the old 8000 cap, so the skip window is
     # 12000. The `return async(` header is still the only one within 30k
     # chars before the decl, so the wider window cannot pick another handler.
+    # v6.28899.2 split the returned handler: bindSessionContext now builds a
+    # named runner `v=async(d,p,v)=>{let y=r.isAborted?.()===!0,...` (tool name,
+    # input, abort signal) that a per-session serializer calls; the old
+    # `return async(` header is gone. The header is pinned to that 3-param runner
+    # and its `isAborted?.()===!0` first decl - the permission callbacks
+    # (`?async(e,t,n)=>{`) and the serializer (`h=async(e,t)=>{`) do not match it.
     let seedPat =
-      re"""return async\(([\w$]+),[\w$]+\)=>\{[\s\S]{0,12000}?(?:const|let|var) ([\w$]+)=([\w$]+)\?void 0:[\w$]+(?:\.[\w$]+)*\.getLastScreenshotDims\?\.\(\),([\w$]+)=new AbortController(?:,[\w$]+=setTimeout\(\(?\(\)=>\4\.abort\(\)\)?,[\w$]+\))?(?:,[\w$]+=(?:[^{},]{1,200}|\(\)=>\{(?:[^{}]|\{[^{}]{0,400}\}){1,600}\}))*,([\w$]+)=\{"""
+      re"""[\w$]+=async\(([\w$]+),[\w$]+,[\w$]+\)=>\{let [\w$]+=[\w$]+\.isAborted\?\.\(\)===!0,[\s\S]{0,12000}?(?:const|let|var) ([\w$]+)=([\w$]+)\?void 0:[\w$]+(?:\.[\w$]+)*\.getLastScreenshotDims\?\.\(\),([\w$]+)=new AbortController(?:,[\w$]+=setTimeout\(\(?\(\)=>\4\.abort\(\)\)?,[\w$]+\))?(?:,[\w$]+=(?:[^{},]{1,200}|\(\)=>\{(?:[^{}]|\{[^{}]{0,400}\}){1,600}\}))*,([\w$]+)=\{"""
     let maybeSeed = content.find(seedPat)
     if maybeSeed.isNone:
       echo "  [FAIL] screenshot intro note: wrapper seed anchor not found"
@@ -1468,26 +1540,41 @@ proc apply*(input: string): string =
     # and is memoized there: `let o=e.dispatch??=xn(i,e.altToolModeCalls)`.
     # v2.9939.0 added `&&!e.cliInSandboxVm` to the ccd branch of isEnabled.
     # v2.19675.1 passes `{requireFreshGrowthBook:!1}` to both arms.
+    # v6.28899.2 wraps isEnabled in an SSH-host guard (`e=>!t.SV(e)&&(...)`),
+    # adds `&&!(e.cliOnSshHost===!0&&t.bjt("chicagoOnByDefault"))` to the ccd arm
+    # and gives handleToolCall a 5th param (an abort signal handed to the
+    # dispatcher when a flag is on). The signal is optional and not captured:
+    # our injection calls the dispatcher without it (upstream's no-signal path).
+    # v6.28899.2: the SSH-host guard is required and balanced, and captured
+    # (group 3, called on isEnabled's own param, group 2): it is the predicate
+    # upstream's handleToolCall preamble also denies with per call, and the
+    # Linux block mirrors that deny. Only this (v6.28899.2) shape is accepted.
     let htcStart =
-      re"""(([\w$]+)=\{[^{}]{0,80}isEnabled:[\w$]+=>(?:[\w$]+\.sessionType===["`]ccd["`]\?[\w$]+(?:\.[\w$]+)?\((?:\{[\w$]+:![01]\})?\)(?:&&![\w$]+\.[\w$]+)?:[\w$]+(?:\.[\w$]+)?\((?:\{[\w$]+:![01]\})?\)|[\w$]+\(\)),handleToolCall:async\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\)=>\{)"""
-    let maybeHtc = content.find(htcStart)
-    if maybeHtc.isNone:
-      echo "  [FAIL] handleToolCall pattern: 0 matches"
-      raise newException(ValueError, "  [FAIL] handleToolCall pattern: 0 matches")
-    let htc = maybeHtc.get()
+      re"""(([\w$]+)=\{[^{}]{0,80}isEnabled:([\w$]+)=>!([\w$]+(?:\.[\w$]+)?)\(\3\)&&\([\w$]+\.sessionType===["`]ccd["`]\?[\w$]+(?:\.[\w$]+)?\((?:\{[\w$]+:![01]\})?\)(?:&&![\w$]+\.[\w$]+)?(?:&&!\([^()]{0,80}\([^()]{0,40}\)\))?:[\w$]+(?:\.[\w$]+)?\((?:\{[\w$]+:![01]\})?\)\),handleToolCall:async\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)(?:,[\w$]+)?\)=>\{)"""
+    var htcHits: seq[RegexMatch] = @[]
+    for m in content.findIter(htcStart):
+      htcHits.add m
+    if htcHits.len != 1:
+      echo &"  [FAIL] handleToolCall pattern (v6.28899.2 shape, `isEnabled:e=>!SSH(e)&&(...)`): {htcHits.len} matches, expected 1"
+      raise
+        newException(ValueError, "  [FAIL] handleToolCall pattern: not exactly 1 match")
+    let htc = htcHits[0]
     let objName = htc.captures[1]
-    let stateParam = htc.captures[2]
-    let toolNameParam = htc.captures[3]
-    let inputParam = htc.captures[4]
-    let sessionParam = htc.captures[5]
+    let sshFn = htc.captures[3]
+    let stateParam = htc.captures[4]
+    let toolNameParam = htc.captures[5]
+    let inputParam = htc.captures[6]
+    let sessionParam = htc.captures[7]
     let injectPos = htc.matchBounds.b + 1
 
     # Capture the WHOLE dispatcher-init expression (not just its factory name) so
     # the teach-mode forward reuses upstream's own memoization verbatim, whatever
     # extra arguments the factory grows.
+    # v6.28899.2 puts up to two signal decls between the dispatcher and the
+    # save_to_disk destructure (`l=a&&t.e8()?a:void 0,u=l?(e,t)=>c(e,t,l):c`).
     let afterBrace = content[injectPos ..< min(injectPos + 2000, content.len)]
     let dispatcherPat =
-      re"""(?:const|let|var) [\w$]+=((?:[\w$]+\.[\w$]+\?\?=)?[\w$]+\([^()]{0,120}\)),\{save_to_disk:"""
+      re"""(?:const|let|var) [\w$]+=((?:[\w$]+\.[\w$]+\?\?=)?[\w$]+\([^()]{0,120}\))(?:,[\w$]+=[^{};]{0,200}?)?,\{save_to_disk:"""
     let maybeDispatcher = afterBrace.find(dispatcherPat)
     if maybeDispatcher.isNone:
       echo "  [FAIL] handleToolCall dispatcher not found"
@@ -1504,7 +1591,71 @@ proc apply*(input: string): string =
       raise newException(
         ValueError, "  [FAIL] handleToolCall dispatcher does not take the session param"
       )
+    # The per-call SSH-host deny upstream's preamble runs first thing:
+    #   if(t.ojt())return s(t.Y6);if(t.SV(i))return t.QHt.info(`[cu] ${o} \u2192
+    #   deny (CLI on an SSH host)`),s(st);
+    # Same predicate on the same session param, exactly once in the handler,
+    # its refusal text a string constant of the same chunk part, and the
+    # predicate `function P(e){return e.cliOnSshHost===!0&&F()}`.
+    let sshEsc = escapeRe(sshFn)
+    let handlerHead = content[injectPos ..< min(injectPos + 1500, content.len)]
+    let sshDenyPat = re(
+      "if\\(" & sshEsc & "\\(" & escapeRe(sessionParam) &
+        """\)\)return [\w$]+(?:\.[\w$]+)*\.info\(`\[cu\] \$\{[\w$]+\} \\u2192 deny \(CLI on an SSH host\)`\),[\w$]+\(([\w$]+)\);"""
+    )
+    var sshDenies: seq[RegexMatch] = @[]
+    for m in handlerHead.findIter(sshDenyPat):
+      sshDenies.add m
+    if sshDenies.len != 1:
+      raise newException(
+        ValueError,
+        &"  [FAIL] handleToolCall per-call SSH-host deny (`if({sshFn}({sessionParam}))return ...deny (CLI on an SSH host)...,s(T);`): {sshDenies.len} matches in the handler, expected 1 - re-audit",
+      )
+    let sshText = sshDenies[0].captures[0]
+    let (hps, hpe) = partSpan(content, injectPos)
+    let hPart = content[hps ..< hpe]
+    let textDefs = countMatches(
+      hPart,
+      re(
+        "(?<![\\w$.])" & escapeRe(sshText) &
+          "=[\"`]Computer use is not available in this session because this session's Claude Code runs on another computer over SSH\\."
+      ),
+    )
+    var sshDefOk = false
+    let dot = sshFn.find('.')
+    if dot > 0:
+      let sshFile = requiredChunk(hPart, sshFn[0 ..< dot])
+      let sshTarget =
+        if sshFile == "":
+          ""
+        else:
+          namedPart(content, sshFile)
+      let sshLocal = exportTarget(sshTarget, sshFn[dot + 1 ..^ 1])
+      sshDefOk =
+        sshLocal != "" and
+        countMatches(
+          sshTarget,
+          re(
+            "function " & escapeRe(sshLocal) &
+              """\(([\w$]+)\)\{return \1\.cliOnSshHost===!0&&[\w$]+\(\)\}"""
+          ),
+        ) == 1
+    if textDefs != 1 or not sshDefOk:
+      raise newException(
+        ValueError,
+        &"  [FAIL] handleToolCall SSH-host deny: refusal text {sshText} ({textDefs} definitions) or predicate {sshFn} (`return e.cliOnSshHost===!0&&F()`: {sshDefOk}) not as expected - re-audit",
+      )
+    let sshDenyJs =
+      "/*__cdbSshDeny*/if(" & sshFn & "(" & sessionParam &
+      ")){(globalThis.__cdbDiag||console.log)(\"[claude-cu] tool call denied: this session's Claude Code runs on another computer over SSH\");return{isError:!0,content:[{type:\"text\",text:" &
+      sshText & "}]}}"
     var handlerJs = LINUX_HANDLER_INJECTION_JS.strip()
+    if handlerJs.count("/*__CDB_SSH_DENY__*/") != 1:
+      raise newException(
+        ValueError,
+        "  [FAIL] js/cu_handler_injection.js: SSH deny marker not exactly once",
+      )
+    handlerJs = handlerJs.replace("/*__CDB_SSH_DENY__*/", sshDenyJs)
     handlerJs = handlerJs.replace("__SELF__", objName)
     handlerJs = handlerJs.replace("__MAKE_DISPATCH__", dispatcher)
     handlerJs = handlerJs.replace("__STATE__", stateParam)
@@ -1516,7 +1667,7 @@ proc apply*(input: string): string =
       "if(process.platform===\"linux\"&&!globalThis.__cuKwinMode){",
     )
     content = content[0 ..< injectPos] & handlerJs & content[injectPos ..^ 1]
-    echo "  [OK] handleToolCall: regular-mode hybrid dispatch (gated; kwin-wayland falls through to upstream)"
+    echo &"  [OK] handleToolCall: regular-mode hybrid dispatch (gated; kwin-wayland falls through to upstream), per-call SSH-host deny {sshFn}({sessionParam}) mirrored"
     inc changes
     inc patchesApplied
 
@@ -1705,27 +1856,49 @@ proc apply*(input: string): string =
           echo "  [FAIL] 7d teach gate: replacement did not apply"
 
   # ── Patch 8: teach overlay mouse — tooltip-bounds polling on Linux ─────
+  # v6.28899.2 moved the creation-time click-through call into a one-line
+  # helper (`function SKs(e){e.setIgnoreMouseEvents(!0,{forward:!0})}`, also
+  # used by mouseLeave, the reassert-hover callback and the hide timeout):
+  # creation is now `o9.setAlwaysOnTop(!0,"screen-saver"),o9.setFullScreenable(!1),SKs(o9)`.
+  # Accept the inline call or a call of that helper (asserted to be exactly
+  # that one-statement function). Stubbing the window's own
+  # setIgnoreMouseEvents on Linux also covers every later helper call.
   var overlayVar: string
   block:
     let overlayVarPat =
-      re"""([\w$]+)\.setAlwaysOnTop\(!0,["`]screen-saver["`]\),\1\.setFullScreenable\(!1\),\1\.setIgnoreMouseEvents\(!0,\{forward:!0\}\)"""
-    let maybeOV = content.find(overlayVarPat)
-    if maybeOV.isNone:
-      echo "  [FAIL] teach overlay mouse: overlay variable pattern not found"
-    else:
-      overlayVar = maybeOV.get().captures[0]
+      re"""([\w$]+)\.setAlwaysOnTop\(!0,["`]screen-saver["`]\),\1\.setFullScreenable\(!1\),(\1\.setIgnoreMouseEvents\(!0,\{forward:!0\}\)|([\w$]+)\(\1\))"""
+    var ovHits: seq[RegexMatch] = @[]
+    for m in content.findIter(overlayVarPat):
+      ovHits.add m
+    var helperOk = true
+    if ovHits.len == 1 and ovHits[0].captures.contains(2):
+      let helper = ovHits[0].captures[2]
+      let helperDefs = countMatches(
+        content,
+        re(
+          "function " & escapeRe(helper) &
+            """\(([\w$]+)\)\{\1\.setIgnoreMouseEvents\(!0,\{forward:!0\}\)\}"""
+        ),
+      )
+      if helperDefs != 1:
+        helperOk = false
+        echo &"  [FAIL] teach overlay mouse: {helper} is not `function {helper}(e){{e.setIgnoreMouseEvents(!0,{{forward:!0}})}}` ({helperDefs} definitions) - re-audit"
+    if ovHits.len != 1:
+      echo &"  [FAIL] teach overlay mouse: overlay variable pattern not found ({ovHits.len} matches, expected 1)"
+    elif helperOk:
+      let m0 = ovHits[0]
+      overlayVar = m0.captures[0]
       overlayVarOpt = some(overlayVar)
-      let oldInit = overlayVar & ".setIgnoreMouseEvents(!0,{forward:!0})"
+      let callBounds = m0.captureBounds[1]
+      let oldInit = content[callBounds.a .. callBounds.b]
       let newInit =
         "(process.platform===\"linux\"?(" & overlayVar &
         ".setIgnoreMouseEvents=function(){},globalThis.__isVM&&" & overlayVar &
-        ".setOpacity(.15)):" & overlayVar & ".setIgnoreMouseEvents(!0,{forward:!0}))"
-      if replaceLiteralFirst(content, oldInit, newInit) == 1:
-        echo &"  [OK] teach overlay mouse: tooltip-bounds polling for Linux ({overlayVar})"
-        inc changes
-        inc patchesApplied
-      else:
-        echo "  [FAIL] teach overlay mouse: replacement failed"
+        ".setOpacity(.15)):" & oldInit & ")"
+      content = content[0 ..< callBounds.a] & newInit & content[callBounds.b + 1 ..^ 1]
+      echo &"  [OK] teach overlay mouse: tooltip-bounds polling for Linux ({overlayVar}, `{oldInit}`)"
+      inc changes
+      inc patchesApplied
 
   # ── Patch 9a: neutralize setIgnoreMouseEvents in yJt ───────────────────
   if overlayVarOpt.isSome:
@@ -2093,9 +2266,12 @@ proc apply*(input: string): string =
   # handler; the display setter twice) and the one cross-chunk show caller
   # passes claudeHasThePointer:!1; the planner is the one the drawn-pointer
   # factory (10d) calls with its interpolated position.
+  # v6.28899.2 appends `,i=r&&kGs()` to the show's decls (kGs: "somebody is
+  # at this computer"; upstream glides its drawn pointer only then). Matched
+  # optionally; js/cu_wl_glow.js does not get that presence bit.
   block:
     let showPat =
-      re"""(function ([\w$]+)\(([\w$]+)\)\{)(if\(!([\w$]+)\|\|process\.platform==="linux"&&globalThis\.__cdbCuGlowOff\?\.\(\)===!0\)return Promise\.resolve\(\);([\w$]+)&&=\(clearTimeout\(\6\),null\);let ([\w$]+)=\+\+([\w$]+);([\w$]+)\(!0\);let [\w$]+=\3\?\.showBadge\?\?!0,[\w$]+=\(\3\?\.claudeHasThePointer\?\?!0\)&&([\w$]+)\(\);)"""
+      re"""(function ([\w$]+)\(([\w$]+)\)\{)(if\(!([\w$]+)\|\|process\.platform==="linux"&&globalThis\.__cdbCuGlowOff\?\.\(\)===!0\)return Promise\.resolve\(\);([\w$]+)&&=\(clearTimeout\(\6\),null\);let ([\w$]+)=\+\+([\w$]+);([\w$]+)\(!0\);let [\w$]+=\3\?\.showBadge\?\?!0,[\w$]+=\(\3\?\.claudeHasThePointer\?\?!0\)&&([\w$]+)\(\)(?:,[\w$]+=[\w$]+&&[\w$]+\(\))?;)"""
     var shows: seq[RegexMatch] = @[]
     for m in content.findIter(showPat):
       shows.add m
@@ -2400,8 +2576,26 @@ proc apply*(input: string): string =
     # with `if(!_W())return!1;`), so the Linux branch keeps it: an admin's
     # `computerUseEnabled:false` turns Computer Use off on Linux as it does on
     # macOS/Windows. Only the platform/rollout/chicagoEnabled parts stay forced.
+    # v6.28899.2 adds a fourth gate after the HIPAA one:
+    #   function PP(e={}){return!AN()||!CP()||Jf()||lGr()?!1:NP(e)&&jf("chicagoEnabled")}
+    #   function lGr(){return!BWr()||zWr()&&ZD()}
+    # BWr: the server's allowed-apps flag value (947159281) is readable; zWr: it
+    # has an entry; ZD: the XDG_SESSION_TYPE Wayland check. So an unreadable
+    # allowed-apps value turns CU off everywhere, and a server allowed-apps list
+    # turns it off on Wayland (upstream cannot enforce the list there). It is
+    # server policy like the managed key and the HIPAA gate. On Linux it fails
+    # CLOSED on every session: our regular-mode Linux block (Patch 6) does not
+    # enforce the org's allowed-apps list on X11 (it never asks upstream's
+    # isOutsideAllowedApps), so a list must not leave X11 with Computer Use
+    # while upstream turns Wayland off. The Linux branch therefore takes the
+    # readable / has-an-entry readers out of the asserted gate and requires
+    # `R()&&!E()` (readable and no entry) instead of upstream's `!L()`. The gate
+    # is matched optionally (group 5, older v5 shapes have none); its shape is
+    # asserted (`function L(){return!R()||E()&&W()}`, W the Wayland check,
+    # R `return S().readable`, E `return S().value!==NONE`, one reader S), so a
+    # changed upstream rule fails the build.
     let patV5 =
-      re"""(function [\w$]+\(([\w$]+)=\{\}\)\{)return![\w$]+(?:\.[\w$]+)*\(\)\|\|!([\w$]+)\(\)\|\|([\w$]+)\(\)\?!1:[\w$]+\(\2\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)\}"""
+      re"""(function [\w$]+\(([\w$]+)=\{\}\)\{)return![\w$]+(?:\.[\w$]+)*\(\)\|\|!([\w$]+)\(\)\|\|([\w$]+)\(\)(?:\|\|([\w$]+)\(\))?\?!1:[\w$]+\(\2\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)\}"""
     let patV19675 =
       re"""(function [\w$]+\(([\w$]+)=\{\}\)\{)return![\w$]+(?:\.[\w$]+)*\(\)\|\|([\w$]+)\(\)\?!1:[\w$]+\(\2\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)\}"""
     let patV46388 =
@@ -2423,7 +2617,8 @@ proc apply*(input: string): string =
       echo &"  [FAIL] 11 isEnabled gate: {v5Hits.len} v5 shapes, expected 1 - re-audit"
     elif v5Hits.len == 1:
       # The middle gate must be the managed computerUseEnabled check:
-      # `function M(){return ...||R()!==!1}` with R reading the key.
+      # `function M(){return ...||R()!==!1}` with R reading the key
+      # (v6.28899.2: the reader passes the key, `_Xt("computerUseEnabled")`).
       let managed = v5Hits[0].captures[2]
       var readers: seq[string] = @[]
       for d in content.findIter(
@@ -2439,11 +2634,49 @@ proc apply*(input: string): string =
           content,
           re(
             "function " & escapeRe(readers[0]) &
-              """\(\)\{let\{value:[\w$]+,errors:[\w$]+\}=[\w$]+\(\);return [\w$]+\([\w$]+,"computerUseEnabled"\)"""
+              """\(\)\{let\{value:[\w$]+,errors:[\w$]+\}=[\w$]+\((?:["`]computerUseEnabled["`])?\);return [\w$]+\([\w$]+,["`]computerUseEnabled["`]\)"""
           ),
         ) == 1
+      var allowGate = ""
+      var allowReadable = ""
+      var allowHasEntry = ""
+      var allowOk = true
+      if v5Hits[0].captures.contains(4):
+        allowGate = v5Hits[0].captures[4]
+        var gates: seq[RegexMatch] = @[]
+        for d in content.findIter(
+          re(
+            "function " & escapeRe(allowGate) &
+              """\(\)\{return!([\w$]+)\(\)\|\|([\w$]+)\(\)&&([\w$]+)\(\)\}"""
+          )
+        ):
+          gates.add d
+        allowOk = false
+        if gates.len == 1:
+          allowReadable = gates[0].captures[0]
+          allowHasEntry = gates[0].captures[1]
+          var readerR, readerE: seq[RegexMatch] = @[]
+          for d in content.findIter(
+            re(
+              "function " & escapeRe(allowReadable) &
+                """\(\)\{return ([\w$]+)\(\)\.readable\}"""
+            )
+          ):
+            readerR.add d
+          for d in content.findIter(
+            re(
+              "function " & escapeRe(allowHasEntry) &
+                """\(\)\{return ([\w$]+)\(\)\.value!==[\w$]+\}"""
+            )
+          ):
+            readerE.add d
+          allowOk =
+            waylandPredicateDefs(content, gates[0].captures[2]) == 1 and readerR.len == 1 and
+            readerE.len == 1 and readerR[0].captures[0] == readerE[0].captures[0]
       if not readerOk:
         echo &"  [FAIL] 11 isEnabled gate: {managed}() is not the managed computerUseEnabled check ({readers.len} definitions) - re-audit"
+      elif not allowOk:
+        echo &"  [FAIL] 11 isEnabled gate: {allowGate}() is not `return!R()||E()&&W()` with W the Wayland check, R `S().readable` and E `S().value!==NONE` - re-audit"
       else:
         n = replaceFirst(
           content,
@@ -2454,13 +2687,24 @@ proc apply*(input: string): string =
             let headerLen = m.captures[0].len
             let managedName = m.captures[2]
             let hipaaName = m.captures[3]
+            # Fail closed on every Linux session: readable and no entry.
+            let allowTerm =
+              if m.captures.contains(4):
+                "&&" & allowReadable & "()&&!" & allowHasEntry & "()"
+              else:
+                ""
             m.captures[0] &
               "if(process.platform===\"linux\")return globalThis.__cdbCuHipaa=" &
-              hipaaName & ",!" & hipaaName & "()&&" & managedName & "();" &
-              whole[headerLen ..^ 1],
+              hipaaName & ",!" & hipaaName & "()&&" & managedName & "()" & allowTerm &
+              ";" & whole[headerLen ..^ 1],
         )
         if n == 1:
-          echo &"  [OK] 11 isEnabled: Linux keeps the managed computerUseEnabled check {managed}() and the HIPAA gate"
+          let allowNote =
+            if allowGate != "":
+              &" and the allowed-apps list fail-closed ({allowReadable}() readable, no {allowHasEntry}() entry; upstream's {allowGate}())"
+            else:
+              ""
+          echo &"  [OK] 11 isEnabled: Linux keeps the managed computerUseEnabled check {managed}(), the HIPAA gate{allowNote}"
     if n == 0 and v5Hits.len == 0:
       n = replaceFirst(
         content,
@@ -2571,8 +2815,13 @@ proc apply*(input: string): string =
     #   function Vai(e={}){return X(hai)?bb()||!_W()?!1:SW()&&TW(e):EW(e)}
     # The Linux branch still delegates to the Patch-11 gate (EW), which keeps
     # both the HIPAA gate and the managed key on Linux.
+    # v6.28899.2 adds the allowed-apps gate to the flag-on arm and a
+    # chicagoOffOverDefault opt-out:
+    #   function gGr(e={}){return Y(UWr)?Jf()||!CP()||lGr()?!1:AN()&&NP(e)&&jf("chicagoOffOverDefault")!==!0:PP(e)}
+    # The Linux branch still delegates to the Patch-11 gate (PP), which keeps
+    # the HIPAA, managed and allowed-apps gates on Linux.
     let patV19675 =
-      re"""(function [\w$]+\(([\w$]+)=\{\}\)\{)return [\w$]+(?:\.[\w$]+)*\([\w$]+\)\?(?:(?:![\w$]+\(\)&&)?[\w$]+\(\)&&[\w$]+\(\2\)|[\w$]+\(\)\|\|![\w$]+\(\)\?!1:[\w$]+\(\)&&[\w$]+\(\2\)):([\w$]+)\(\2\)\}"""
+      re"""(function [\w$]+\(([\w$]+)=\{\}\)\{)return [\w$]+(?:\.[\w$]+)*\([\w$]+\)\?(?:(?:![\w$]+\(\)&&)?[\w$]+\(\)&&[\w$]+\(\2\)|[\w$]+\(\)\|\|![\w$]+\(\)(?:\|\|[\w$]+\(\))?\?!1:[\w$]+\(\)&&[\w$]+\(\2\)(?:&&[\w$]+\(["'`]chicagoOffOverDefault["'`]\)!==!0)?):([\w$]+)\(\2\)\}"""
     let patV26832 =
       re"""(function [\w$]+\(\)\{)return [\w$]+(?:\.[\w$]+)*\(([\w$]+)\)\?(?:![\w$]+\(\)&&)?[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)&&[\w$]+\(\):([\w$]+)\(\)\}"""
     let patBue =
@@ -3144,9 +3393,11 @@ proc apply*(input: string): string =
   # t.platform):[]]}` -> also spread our tools. Same builder serves the local
   # computer-use server and the remote-devices bridge; the runtime leaves the
   # latter out (it passes saveToDisk:false).
+  # v6.28899.2 passes two more appScoped options to the app_* builder
+  # (`t.appScoped.win32QuietRouteIsOn??!1,t.appScoped.editsFieldText??!1`).
   block:
     let pat =
-      re"""(\.\.\.([\w$]+)\.appScoped\?[\w$]+\(\2\.appScoped\.supportsRawInput\?\?!1,\2\.platform\):\[\])\]\}"""
+      re"""(\.\.\.([\w$]+)\.appScoped\?[\w$]+\(\2\.appScoped\.supportsRawInput\?\?!1,\2\.platform(?:,\2\.appScoped\.[\w$]+\?\?!1)*\):\[\])\]\}"""
     let n = countMatches(content, pat)
     if n != 1:
       echo &"  [FAIL] 15a tool builder tail (`...t.appScoped?X(...):[]]}}`): {n} matches, expected 1"
@@ -3214,8 +3465,11 @@ proc apply*(input: string): string =
   # `{grant}`: read / click / full per tool). Upstream's earlier gates (no
   # grants, CU disabled, another session's lock) still run first.
   block:
+    # v6.28899.2: the context grew `asTheOnlyDisplayCall:h` before cuOnlyMode
+    # and `holdRemoteDesktops:t.getHoldRemoteDesktops?.()` after it; the
+    # dispatch builds its context with the adapter too (`o=wl(e,r)`).
     let sidPat =
-      re"""(typingWaitAllowance:([\w$]+)\.getTypingWaitAllowance\?\.\(\),cuOnlyMode:\2\.cuOnlyMode)\}"""
+      re"""(typingWaitAllowance:([\w$]+)\.getTypingWaitAllowance\?\.\(\),(?:[\w$]+:[\w$]+,)?cuOnlyMode:\2\.cuOnlyMode(?:,[\w$]+:[\w$]+\.[\w$]+\?\.\(\))?)\}"""
     # v5.11492.0: the tier check takes the session adapter first (for its
     # isDeniedBeyondSettings), `An(adapter,ctx,bundleId,tier)`, and opens its
     # not-granted branch with `{let i=ctx.policyDeniedBundleIds...`; before it
@@ -3225,7 +3479,7 @@ proc apply*(input: string): string =
     let tierPat =
       re"""function ([\w$]+)\((?:([\w$]+),)?([\w$]+),([\w$]+),([\w$]+)\)\{let ([\w$]+)=\3\.allowedApps\.find\(\(?([\w$]+)=>\7\.bundleId===\4\)\)?;if\(!\6\)(?:return |\{let [\w$]+=)\3\.policyDeniedBundleIds"""
     let qaPat =
-      re"""(async function [\w$]+\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\)\{let\{logger:[\w$]+,serverName:[\w$]+\}=\2,([\w$]+)=[\w$]+\(\5\);[\s\S]{0,1500}?,([\w$]+)=[\w$]+\(\4\);[\s\S]{0,1500}?if\(([\w$]+)\(\3\)\)\{)(let [\w$]+=\2\.executor\.appScoped;return )"""
+      re"""(async function [\w$]+\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\)\{let\{logger:[\w$]+,serverName:[\w$]+\}=\2,([\w$]+)=[\w$]+\((?:\2,)?\5\);[\s\S]{0,1500}?,([\w$]+)=[\w$]+\(\4\);[\s\S]{0,1500}?if\(([\w$]+)\(\3\)\)\{)(let [\w$]+=\2\.executor\.appScoped;return )"""
     let nSid = countMatches(content, sidPat)
     let nTier = countMatches(content, tierPat)
     let nQa = countMatches(content, qaPat)
@@ -3428,6 +3682,11 @@ proc apply*(input: string): string =
           else:
             echo "  [FAIL] 16c features broadcast: replacement did not apply"
 
+  # v6.28899.2: the pseudo-grant takes a third param (holdRemoteDesktops) and
+  # builds its grant set with it: `function Fe(e,r,i){...new n.u(e,r,
+  # {holdRemoteDesktops:i}).explicitGrants`, its local caller passes
+  # `i.t().getHoldRemoteDesktops?.()`. 16d/16f require that shape (the key
+  # name pinned), and 16f hands the same hold value to __cdbCuWithScreenGrant.
   # 16d: the "Entire screen" pseudo-grant (4.23118.1: `ye` in D4NaWzj8, the
   # dispatch context's getAllowedApps):
   #   function ye(e,r){if(t.xF!==t.bF||e.some(e=>e.bundleId==="com.anthropic.cu.screen"))
@@ -3443,7 +3702,7 @@ proc apply*(input: string): string =
   # js/cu_consent.js checks instead). It is only ever removed, never added.
   block:
     let pat =
-      re"""(function ([\w$]+)\(([\w$]+),[\w$]+\)\{if\()(([\w$]+)\.([\w$]+)!==\5\.([\w$]+)\|\|\3\.some\(\(?([\w$]+)=>\8\.bundleId===(["'`])com\.anthropic\.cu\.screen\9\)\)?\)return \3;)"""
+      re"""(function ([\w$]+)\(([\w$]+),[\w$]+,[\w$]+\)\{if\()(([\w$]+)\.([\w$]+)!==\5\.([\w$]+)\|\|\3\.some\(\(?([\w$]+)=>\8\.bundleId===(["'`])com\.anthropic\.cu\.screen\9\)\)?\)return \3;)"""
     var hits: seq[RegexMatch] = @[]
     for m in content.findIter(pat):
       hits.add m
@@ -3560,7 +3819,7 @@ proc apply*(input: string): string =
   # sessions do (`be`), so it is never kept as a real grant.
   block:
     let yePat =
-      re"""function ([\w$]+)\(([\w$]+),([\w$]+)\)\{if\((?:process\.platform==="linux"&&globalThis\.__cdbCuNoScreenGrant\?\.\(\)===!0\|\|)?[\w$]+\.[\w$]+!==[\w$]+\.[\w$]+\|\|\2\.some\(\(?([\w$]+)=>\4\.bundleId===(["'`])com\.anthropic\.cu\.screen\5\)\)?\)return \2;let ([\w$]+)=new ([\w$]+)\.([\w$]+)\(\2,\3\)\.explicitGrants;if\(\6\.length===0\)return \2;let ([\w$]+)=\6\.map\(\(?([\w$]+)=>\10\.tier\?\?(["'`])full\11\)\)?\.reduce\(\(?\(([\w$]+),([\w$]+)\)=>\7\.([\w$]+)\[\12\]>=\7\.\14\[\13\]\?\12:\13\)\)?;return\[\.\.\.\2,\{bundleId:([\w$]+)\.([\w$]+),displayName:(["'`])Entire screen\17"""
+      re"""function ([\w$]+)\(([\w$]+),([\w$]+),[\w$]+\)\{if\((?:process\.platform==="linux"&&globalThis\.__cdbCuNoScreenGrant\?\.\(\)===!0\|\|)?[\w$]+\.[\w$]+!==[\w$]+\.[\w$]+\|\|\2\.some\(\(?([\w$]+)=>\4\.bundleId===(["'`])com\.anthropic\.cu\.screen\5\)\)?\)return \2;let ([\w$]+)=new ([\w$]+)\.([\w$]+)\(\2,\3,\{holdRemoteDesktops:[\w$]+\}\)\.explicitGrants;if\(\6\.length===0\)return \2;let ([\w$]+)=\6\.map\(\(?([\w$]+)=>\10\.tier\?\?(["'`])full\11\)\)?\.reduce\(\(?\(([\w$]+),([\w$]+)\)=>\7\.([\w$]+)\[\12\]>=\7\.\14\[\13\]\?\12:\13\)\)?;return\[\.\.\.\2,\{bundleId:([\w$]+)\.([\w$]+),displayName:(["'`])Entire screen\17"""
     let ctxPat =
       re"""(\{sessionId:[\w$]+,skipFirstRequestWarnings:!0,getAllowedApps:\(\)=>)(([\w$]+)\(([\w$]+)\.grants\))(,getGrantFlags:\(\)=>\4\.grants\.flags,getUserDeniedBundleIds:\(\)=>(([\w$]+)\.([\w$]+)\(\)),)"""
     var yeHits: seq[RegexMatch] = @[]
@@ -3585,17 +3844,27 @@ proc apply*(input: string): string =
       let grantsLocal = exportTarget(grantsTarget, y.captures[7])
       let rankLocal = exportTarget(grantsTarget, y.captures[13])
       let screenLocal = exportTarget(screenTarget, y.captures[15])
-      # The local sessions' user-denied list, which `ye` is called with.
+      # The local sessions' user-denied list, which `ye` is called with
+      # (v6.28899.2 adds a third arg, `i.t().getHoldRemoteDesktops?.()`).
       let yeCall = re(
         """getAllowedApps:\(\)=>""" & escapeRe(fnName) &
-          """\([\w$]+\.getCuAllowedApps\?\.\(\)\?\?\[\],([\w$]+)\.([\w$]+)\(\)\)"""
+          """\([\w$]+\.getCuAllowedApps\?\.\(\)\?\?\[\],([\w$]+)\.([\w$]+)\(\),([\w$]+)\.([\w$]+)\(\)\.getHoldRemoteDesktops\?\.\(\)\)"""
       )
       var deniedLocal = ""
       var callHits = 0
+      var holdFile = ""
+      var holdMember = ""
       for m in yePart.findIter(yeCall):
         inc callHits
         if requiredChunk(yePart, m.captures[0]) == screenFile:
           deniedLocal = exportTarget(screenTarget, m.captures[1])
+        holdFile = requiredChunk(yePart, m.captures[2])
+        holdMember = m.captures[3]
+      # The third param of the local rule is the one handed to the grant class
+      # as holdRemoteDesktops.
+      let holdParamOk = y.match.contains(
+        re"""^function [\w$]+\([\w$]+,[\w$]+,([\w$]+)\)\{[\s\S]*?\{holdRemoteDesktops:\1\}\)\.explicitGrants;"""
+      )
       let c = ctxHits[0]
       let (cps, cpe) = partSpan(content, c.matchBounds.a)
       let cloudPart = content[cps ..< cpe]
@@ -3611,6 +3880,17 @@ proc apply*(input: string): string =
         )
       ):
         grantsNs.add m.captures[0]
+      # The cloud chunk's namespace for the chunk the local rule reads its
+      # hold-remote-desktops answer from (`i.t().getHoldRemoteDesktops?.()`).
+      var holdNs: seq[string] = @[]
+      if holdFile != "":
+        for m in cloudPart.findIter(
+          re(
+            """(?<![\w$.])([\w$]+)=require\(["`]\./""" & escapeRe(holdFile) &
+              """["`]\)"""
+          )
+        ):
+          holdNs.add m.captures[0]
       # The store of the session's grants after an approval, in the same context.
       let tailEnd = min(c.matchBounds.b + 1 + 2500, cloudPart.len + cps)
       let ctxTail = content[c.matchBounds.b + 1 ..< tailEnd]
@@ -3649,6 +3929,8 @@ proc apply*(input: string): string =
       elif callHits != 1 or deniedLocal == "" or deniedFile != screenFile or
           cloudDeniedLocal != deniedLocal:
         echo &"  [FAIL] 16f cloud context: its user-denied list {c.captures[5]} ('{cloudDeniedLocal}' in '{deniedFile}') is not the one {fnName} gets ({callHits} call(s), '{deniedLocal}') - re-audit"
+      elif not holdParamOk or holdNs.len != 1:
+        echo &"  [FAIL] 16f {fnName}: its third param is not the grant class's holdRemoteDesktops ({holdParamOk}) or the cloud chunk does not require `{holdFile}` once ({holdNs.len}) - re-audit"
       elif grantsNs.len != 1:
         echo &"  [FAIL] 16f cloud chunk: `N=require(\"./{grantsFile}\")` {grantsNs.len} matches, expected 1 - re-audit"
       elif storeHits.len != 1:
@@ -3674,8 +3956,10 @@ proc apply*(input: string): string =
             c.captures[0] &
             "process.platform===\"linux\"&&typeof globalThis.__cdbCuWithScreenGrant==\"function\"?globalThis.__cdbCuWithScreenGrant(" &
             c.captures[1] & "," & c.captures[5] & "," & gNs & "." & y.captures[7] & "," &
-            gNs & "." & y.captures[13] & "," & screenExpr & "):" & c.captures[1] &
-            c.captures[4]
+            gNs & "." & y.captures[13] & "," & screenExpr & "," & holdNs[0] & "." &
+            holdMember & "().getHoldRemoteDesktops?.()):" & c.captures[1] & c.captures[
+              4
+            ]
           let n1 = replaceLiteralFirst(content, storeOld, storeNew)
           let n2 = replaceLiteralFirst(content, ctxOld, ctxNew)
           if n1 == 1 and n2 == 1:
@@ -4036,7 +4320,8 @@ proc apply*(input: string): string =
       let rpc =
         content.find(".executor.resolvePrepareCapture({allowedBundleIds:", grantAt)
       let between = content[shotAt[0] ..< shotAt[1]]
-      let sc = between.find(re"""=await ([\w$]+)\([\w$]+\.executor,""")
+      # v6.28899.2: `l=i??await Zo(e.executor,...)` (a capture handed in wins).
+      let sc = between.find(re"""=(?:[\w$]+\?\?)?await ([\w$]+)\([\w$]+\.executor,""")
       if rpc > grantAt and rpc < shotAt[0] and sc.isSome:
         let helper = sc.get().captures[0]
         handlerOk =
@@ -4083,12 +4368,17 @@ proc apply*(input: string): string =
   #   async function ha(e,t,n,r){let i=await Ca(t,n,r);return i.isError?B(e):{content:[{type:"text",text:JSON.stringify(e)},...i.content],screenshot:i.screenshot}}
   # so a masked capture refused with a reason ("no window of the approved apps
   # can be shown ...") reached the model as the step results alone. On Linux
-  # the error's text follows the step results (still no image). Pre-assert:
+  # the error's text follows the step results (still no image).
+  # v6.28899.2 runs the handler through the session's one-at-a-time display
+  # serializer: `let i=await Fs(n,"a teach step",(()=>Sc(t,n,r))),a=i.ran?
+  # i.value:Ns();return a.isError?B(e):{...a.content...}` (Ns: the "Not run:
+  # another screen, mouse or keyboard call ... is still in progress" refusal,
+  # whose text now also reaches the model on Linux). Pre-assert:
   # the called function is the screenshot handler (it refuses "No
   # applications are granted for this session.").
   block:
     let teachPat =
-      re"""(async function [\w$]+\(([\w$]+),[\w$]+,[\w$]+,[\w$]+\)\{let ([\w$]+)=await ([\w$]+)\([\w$]+,[\w$]+,[\w$]+\);return \3\.isError\?)([\w$]+\(\2\))(:\{content:\[\{type:"text",text:JSON\.stringify\(\2\)\},\.\.\.\3\.content\],screenshot:\3\.screenshot\}\})"""
+      re"""(async function [\w$]+\(([\w$]+),[\w$]+,[\w$]+,[\w$]+\)\{let ([\w$]+)=await [\w$]+\([\w$]+,["`]a teach step["`],\(\(\)=>([\w$]+)\([\w$]+,[\w$]+,[\w$]+\)\)\),([\w$]+)=\3\.ran\?\3\.value:[\w$]+\(\);return \5\.isError\?)([\w$]+\(\2\))(:\{content:\[\{type:"text",text:JSON\.stringify\(\2\)\},\.\.\.\5\.content\],screenshot:\5\.screenshot\}\})"""
     var hits: seq[RegexMatch] = @[]
     for m in content.findIter(teachPat):
       hits.add m
@@ -4112,8 +4402,8 @@ proc apply*(input: string): string =
           proc(m: RegexMatch): string =
             m.captures[0] &
               "process.platform===\"linux\"?{content:[{type:\"text\",text:JSON.stringify(" &
-              m.captures[1] & ")},..." & m.captures[2] & ".content]}:" & m.captures[4] &
-              m.captures[5],
+              m.captures[1] & ")},..." & m.captures[4] & ".content]}:" & m.captures[5] &
+              m.captures[6],
         )
         if n == 1:
           echo &"  [OK] 5d teach-step: a refused screenshot ({shotFn}) keeps its text after the step results on Linux"
@@ -4189,7 +4479,13 @@ proc apply*(input: string): string =
       &"Only {patchesApplied}/{EXPECTED_PATCHES} patches applied — check [FAIL] messages above",
     )
 
-  # Post-condition: every end state is present exactly as often as expected.
+  # Post-condition: every end state is present exactly as often as expected,
+  # and Patch 1 sits in the registered ready launch function's own chunk.
+  if not readyInjectionInLaunchFn(content):
+    raise newException(
+      ValueError,
+      "  [FAIL] post-condition: Patch 1 is not at the start of the registered ready launch function in its own chunk",
+    )
   for mk in markers:
     let n = countMatches(content, mk.pat)
     if n != mk.expected:

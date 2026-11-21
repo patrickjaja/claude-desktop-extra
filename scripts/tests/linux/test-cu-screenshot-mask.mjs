@@ -602,8 +602,12 @@ console.log("\n[I] Claude's glow / teach overlay: --ignore-window");
     // BaseWindows (no page). All but the first two are simply masked; a new or
     // removed one shows here so its effect on masked screenshots and on the
     // no-compositor case (opaque black when transparent) is re-checked.
+    // v6.28899.2 adds the artifact-app "materialize" overlay (partition
+    // `artifact-app-materialize`, `[artifactApps] materialize overlay
+    // unavailable`); its capability `artifactApps` is compiled off in the Linux
+    // bundle (`function cbi(){return!1}`), so it never opens here.
     const unfocusable = (src.match(/focusable:!1/g) || []).length;
-    ok(unfocusable === 6, "upstream creates 6 unfocusable windows (glow, teach, cu-overlay label, watch-record pill, 2 BaseWindows) - re-audit #327 if this changes", unfocusable);
+    ok(unfocusable === 7, "upstream creates 7 unfocusable windows (glow, teach, cu-overlay label, watch-record pill, 2 BaseWindows, artifact-app materialize overlay) - re-audit #327 if this changes", unfocusable);
   }
 }
 

@@ -89,6 +89,9 @@ const PLACEHOLDER = "\"__CDB_CM_PRELOAD_SRC__\""
 # parameter. The method name survives minification; the function's name does
 # not, so it is read from the forwarder and the body is matched under that
 # name. Trailing parameters may carry a default (`u=!1`).
+# Since v6.28899.2 the helper's result is no longer the first declarator:
+#   async function SO(e,n,r,...,p=!1){let m,h=r.oauthAccount?.orgId,g=await t.sf(r.sessionEnv,f?{..,onNotLoaded:()=>{m=..}}:void 0)
+# so plain declarators (`m`, or `h=<member chain>`, no calls) may precede it.
 proc envSplice(base: string): string =
   "{..." & base &
     ".sessionEnv,...((globalThis.__cdbCustomModels&&globalThis.__cdbCustomModels.cliEnv(" &
@@ -104,7 +107,7 @@ proc identRe(name: string): string =
 proc envSiteRe(fn: string): Regex2 =
   re2(
     "(async function " & identRe(fn) &
-      """\([\w$]+,[\w$]+,([\w$]+)(?:,[\w$]+(?:=[^,(){}]+)?)*\)\{let [\w$]+=await [\w$]+(?:\.[\w$]+)?\()([\w$]+)\.sessionEnv([,)])"""
+      """\([\w$]+,[\w$]+,([\w$]+)(?:,[\w$]+(?:=[^,(){}]+)?)*\)\{let (?:[\w$]+(?:=[\w$.?]+)?,)*[\w$]+=await [\w$]+(?:\.[\w$]+)?\()([\w$]+)\.sessionEnv([,)])"""
   )
 
 # Our injected end-state, asserted positively (Rule 6): the splice, made with
@@ -112,7 +115,7 @@ proc envSiteRe(fn: string): Regex2 =
 proc envEndStateRe(fn: string): Regex2 =
   re2(
     "async function " & identRe(fn) &
-      """\([\w$]+,[\w$]+,([\w$]+)(?:,[\w$]+(?:=[^,(){}]+)?)*\)\{let [\w$]+=await [\w$]+(?:\.[\w$]+)?\(\{\.\.\.([\w$]+)\.sessionEnv,\.\.\.\(\(globalThis\.__cdbCustomModels&&globalThis\.__cdbCustomModels\.cliEnv\(([\w$]+)\.sessionEnv\)\)\|\|\{\}\)\}[,)]"""
+      """\([\w$]+,[\w$]+,([\w$]+)(?:,[\w$]+(?:=[^,(){}]+)?)*\)\{let (?:[\w$]+(?:=[\w$.?]+)?,)*[\w$]+=await [\w$]+(?:\.[\w$]+)?\(\{\.\.\.([\w$]+)\.sessionEnv,\.\.\.\(\(globalThis\.__cdbCustomModels&&globalThis\.__cdbCustomModels\.cliEnv\(([\w$]+)\.sessionEnv\)\)\|\|\{\}\)\}[,)]"""
   )
 
 # The function buildSessionEnv forwards to, or "" unless exactly one forwarder.

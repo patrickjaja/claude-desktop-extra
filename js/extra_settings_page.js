@@ -5927,8 +5927,8 @@
     head.appendChild(clearAll);
     panel.appendChild(head);
     panel.appendChild(el("div", "cdbx-sub",
-      "The keys of the managed-settings schema this build accepts (Claude Desktop " +
-      "v1.24012.9). A key you leave untouched is simply absent from the file, and Claude Desktop " +
+      "The keys of the managed-settings schema this build accepts. A key you leave untouched " +
+      "is simply absent from the file, and Claude Desktop " +
       "then uses its own default. Values are saved as you change them; the app reads them at startup."));
 
     var tools = el("div", "cdbx-tools");

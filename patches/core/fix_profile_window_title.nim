@@ -6,15 +6,19 @@
 # Alt-Tab, taskbar tooltips, and screenshots without relying on icon shape.
 #
 # How it works:
-#   - The main window is constructed by the unsuffixed-named function
-#     `function NAME(arg){return WIN=new ELECTRON.BrowserWindow(arg),...}`.
+#   - The main window goes through one factory. Since v6.28899.2 the window
+#     is constructed at its single call site and handed in:
+#       f=(e=>NAME(new ELECTRON.BrowserWindow(e)))(<options builder>({...}))
+#       function NAME(arg){return WIN=arg,TAG(WIN.webContents,X.MAIN_WINDOW),...}
+#     (up to v5.11492.5: `function NAME(arg){return WIN=new
+#     ELECTRON.BrowserWindow(arg),...}`).
 #   - Since v4.16336.0 the main window's OS title is static: it is built with
 #     `title:<fn>()` (which returns "Claude"), a helper preventDefaults its
 #     page-title-updated, and the conversation title goes to the in-app title
 #     bar (dispatchUpdateTitleBar), not to win.setTitle. (v2.19675.1 to
 #     v4.4212.0 called win.setTitle(composed) on navigation instead.)
-#   - We inject a tiny comma-expression right after the BrowserWindow
-#     construction that, when CLAUDE_PROFILE is set, wraps THIS window's
+#   - We inject a tiny comma-expression right after the factory's
+#     `return WIN=arg,` that, when CLAUDE_PROFILE is set, wraps THIS window's
 #     setTitle so every title (ours or upstream's) ends with " (PROFILE)"
 #     exactly once and re-applies the current title. Electron's native
 #     page-title-updated path bypasses JS setTitle, so the patch also
@@ -72,12 +76,12 @@ const POPOUT_HOOK =
 # Precondition: a helper `function H(e){e.on("page-title-updated",(e=>{
 # e.preventDefault()}))}` (groups: 0 = H, 1 = param, 2 = receiver, 3 = event
 # param, 4 = event receiver; 1 == 2 and 3 == 4), called with the main window
-# variable shortly after `WIN=FACTORY({...})`.
+# variable shortly after its construction (see CTOR_PATTERN).
 const PREVENT_HELPER =
   re2"""function ([\w$]+)\(([\w$]+)\)\{([\w$]+)\.on\(["`]page-title-updated["`],\(?([\w$]+)\)?=>\{?([\w$]+)\.preventDefault\(\)\}?\)\)\}"""
 
 # How far after the main-window construction the helper call may sit
-# (1.7 KB in v4.16336.0).
+# (1.7 KB in v4.16336.0, 2.7 KB in v6.28899.2).
 const PREVENT_CALL_WINDOW = 12000
 
 proc isIdentChar(c: char): bool =
@@ -94,18 +98,27 @@ proc hasCall(s, callee, arg: string, a, b: int): bool =
     i = s.find(needle, i + 1)
   false
 
+# Since v6.28899.2 the main window is constructed at its one call site and
+# handed to the factory:
+#   f=(e=>BEe(new u.BrowserWindow(e)))(kOr({...}))
+# Groups: 0 = WIN (the caller's local), 1 = arrow param, 2 = FACTORY,
+# 3 = ELECTRON, 4 = arrow param again (must equal group 1).
+const CTOR_PATTERN =
+  re2"(?:^|[^\w$.])([\w$]+)=\(([\w$]+)=>([\w$]+)\(new ([\w$]+)\.BrowserWindow\(([\w$]+)\)\)\)\("
+
 proc countMainWindowTitleLocks(s, factory: string): int =
-  ## Main-window constructions `WIN=FACTORY({` followed (within
-  ## PREVENT_CALL_WINDOW) by a call of a page-title-updated preventDefault
-  ## helper on WIN.
+  ## Main-window constructions `WIN=(p=>FACTORY(new E.BrowserWindow(p)))(`
+  ## followed (within PREVENT_CALL_WINDOW) by a call of a page-title-updated
+  ## preventDefault helper on WIN.
   var helpers: seq[string]
   for m in s.findAll(PREVENT_HELPER):
     if s[m.group(1)] == s[m.group(2)] and s[m.group(3)] == s[m.group(4)]:
       helpers.add s[m.group(0)]
   if helpers.len == 0:
     return 0
-  let ctor = re2(r"(?:^|[^\w$.])([\w$]+)=" & escapeRe(factory) & r"\(\{")
-  for m in s.findAll(ctor):
+  for m in s.findAll(CTOR_PATTERN):
+    if s[m.group(2)] != factory or s[m.group(1)] != s[m.group(4)]:
+      continue
     let win = s[m.group(0)]
     let a = m.boundaries.b
     let b = min(s.len, a + PREVENT_CALL_WINDOW)
@@ -114,12 +127,59 @@ proc countMainWindowTitleLocks(s, factory: string): int =
         inc result
         break
 
-# function NAME(ARG){return WIN=new ELECTRON.BrowserWindow(ARG),
-# WIN may be a dotted property path since v1.19367.0 (`exports.mainWindow`).
-# Groups: 0 = NAME, 1 = ARG, 2 = WIN, 3 = ELECTRON, 4 = ARG again (must equal
-# group 1).
-const FACTORY_PATTERN =
-  re2"function ([\w$]+)\(([\w$]+)\)\{return ([\w$]+(?:\.[\w$]+)*)=new ([\w$]+)\.BrowserWindow\(([\w$]+)\),"
+# The factory (v6.28899.2):
+#   function BEe(e){return oo=e,Ar(oo.webContents,kr.MAIN_WINDOW),SEe(oo),oo}
+# Groups: 0 = NAME, 1 = ARG, 2 = WIN (a dotted path up to v5: exports.mainWindow),
+# 3 = ARG again (must equal group 1). The MAIN_WINDOW tagging call on WIN must
+# follow in the factory body (checked in findFactory).
+const FACTORY_HEAD =
+  re2"function ([\w$]+)\(([\w$]+)\)\{return ([\w$]+(?:\.[\w$]+)*)=([\w$]+),"
+
+# How far after the factory head the MAIN_WINDOW tagging call may sit. Right
+# after the head on a pristine bundle; this patch's own injection (about 1.3 KB)
+# sits in between on an already patched one.
+const TAG_WINDOW = 4000
+
+type Factory = tuple[name, arg, win: string, headEnd: int]
+
+proc findFactories(s: string): seq[Factory] =
+  ## Every `function NAME(ARG){return WIN=ARG,` whose body tags WIN as the
+  ## MAIN_WINDOW, and that is handed a freshly constructed BrowserWindow at a
+  ## `(p=>NAME(new E.BrowserWindow(p)))` call site.
+  for m in s.findAll(FACTORY_HEAD):
+    if s[m.group(1)] != s[m.group(3)]:
+      continue
+    let name = s[m.group(0)]
+    let win = s[m.group(2)]
+    let a = m.boundaries.b + 1
+    # The first `.MAIN_WINDOW)` after the head, still inside this function (no
+    # `function ` keyword in between), must be the tagging call on WIN.
+    let tail = s[a ..< min(s.len, a + TAG_WINDOW)]
+    let t = tail.find(".MAIN_WINDOW)")
+    if t < 0 or tail[0 ..< t].contains("function "):
+      continue
+    let tag = re2(
+      r"[\w$]+(?:\.[\w$]+)*\(" & escapeRe(win) &
+        r"\.webContents,[\w$]+(?:\.[\w$]+)*\.MAIN_WINDOW\)$"
+    )
+    if not tail[0 .. t + ".MAIN_WINDOW)".len - 1].contains(tag):
+      continue
+    var ctors = 0
+    for c in s.findAll(CTOR_PATTERN):
+      if s[c.group(2)] == name and s[c.group(1)] == s[c.group(4)]:
+        inc ctors
+    if ctors == 1:
+      result.add (name, s[m.group(1)], win, a)
+
+proc hookFor(win: string): string =
+  ## The exact text injected after the factory's `return WIN=ARG,`.
+  "process.env.CLAUDE_PROFILE&&((globalThis." & SENTINEL & "=true),((__cdb_w,__cdb_s)=>{" &
+    "const __cdb_o=__cdb_w.setTitle.bind(__cdb_w);" &
+    "__cdb_w.setTitle=(__cdb_t)=>{__cdb_t=String(__cdb_t??\"\");" &
+    "return __cdb_o(__cdb_t.endsWith(__cdb_s)?__cdb_t:__cdb_t+__cdb_s)};" &
+    "__cdb_w.setTitle(__cdb_w.getTitle())})(" & win &
+    ",\" (\"+process.env.CLAUDE_PROFILE+\")\")," & POPOUT_HOOK &
+    "(\" (\"+process.env.CLAUDE_PROFILE+\")\")),"
 
 proc apply*(input: string): string =
   result = input
@@ -130,6 +190,17 @@ proc apply*(input: string): string =
         ValueError,
         "fix_profile_window_title: main-window hook present but the pop-out hook is missing",
       )
+    # Positive end state (AGENTS.md Rule 6): our exact hook, once, right after
+    # the main-window factory's `return WIN=ARG,` - not merely the sentinel
+    # somewhere in the bundle.
+    let done = result.findFactories()
+    if done.len != 1 or result.count(SENTINEL) != 1 or
+        not result.continuesWith(hookFor(done[0].win), done[0].headEnd):
+      echo "  [FAIL] title hook sentinel present but our hook is not in the main-window factory"
+      raise newException(
+        ValueError,
+        "fix_profile_window_title: sentinel found outside the main-window factory - re-audit",
+      )
     echo "  [INFO] Window title hook already applied"
     echo "  [PASS] No changes needed (already patched)"
     return
@@ -137,15 +208,13 @@ proc apply*(input: string): string =
   # Precondition: upstream preventDefaults the main window's
   # page-title-updated. Without it Electron applies page titles natively,
   # bypassing our setTitle wrapper, and the suffix would be lost.
-  var factories: seq[string]
-  for m in result.findAll(FACTORY_PATTERN):
-    if result[m.group(1)] == result[m.group(4)]:
-      factories.add result[m.group(0)]
+  let factories = result.findFactories()
   if factories.len != 1:
     echo &"  [FAIL] main-window BrowserWindow factory: {factories.len} matches, expected 1"
     raise
       newException(ValueError, "fix_profile_window_title: factory not found - re-audit")
-  let locks = result.countMainWindowTitleLocks(factories[0])
+  let f = factories[0]
+  let locks = result.countMainWindowTitleLocks(f.name)
   if locks != 1:
     echo &"  [FAIL] main-window page-title-updated preventDefault: {locks} matches, expected 1"
     raise newException(
@@ -153,51 +222,22 @@ proc apply*(input: string): string =
     )
   echo "  [OK] upstream locks the main-window title (1 match)"
 
-  var hits = 0
-  result = result.replace(
-    FACTORY_PATTERN,
-    proc(m: RegexMatch2, s: string): string =
-      let funcName = s[m.group(0)]
-      let argName = s[m.group(1)]
-      let winVar = s[m.group(2)]
-      let electronVar = s[m.group(3)]
-      if argName != s[m.group(4)]:
-        # Not the `\2` shape: leave the site untouched (nre would not have
-        # matched it at all).
-        return s[m.boundaries]
-      inc hits
-      "function " & funcName & "(" & argName & "){return " & winVar & "=new " &
-        electronVar & ".BrowserWindow(" & argName & ")," &
-        # Profile-aware title injection. Wrapped in a single short-circuit
-        # expression so the comma chain still type-checks; evaluates to
-        # `false` (no-op) when CLAUDE_PROFILE is unset.
-        #
-        # Upstream owns the main-window title (it preventDefaults
-        # page-title-updated; up to v4.4212.0 it also called win.setTitle()
-        # on navigation). A one-shot setTitle could be overwritten, so we
-        # wrap THIS window's setTitle: every title, ours or upstream's, gets
-        # the suffix exactly once. Other windows keep their own setTitle.
-        "process.env.CLAUDE_PROFILE&&((globalThis." & SENTINEL &
-        "=true),((__cdb_w,__cdb_s)=>{" & "const __cdb_o=__cdb_w.setTitle.bind(__cdb_w);" &
-        "__cdb_w.setTitle=(__cdb_t)=>{__cdb_t=String(__cdb_t??\"\");" &
-        "return __cdb_o(__cdb_t.endsWith(__cdb_s)?__cdb_t:__cdb_t+__cdb_s)};" &
-        "__cdb_w.setTitle(__cdb_w.getTitle())})(" & winVar &
-        ",\" (\"+process.env.CLAUDE_PROFILE+\")\")," & POPOUT_HOOK &
-        "(\" (\"+process.env.CLAUDE_PROFILE+\")\")),",
-  )
-
-  if hits == 1:
-    echo &"  [OK] Main window title hook injected (function={hits} match)"
-  elif hits > 1:
-    # Defensive: should be exactly one main-window-construction site. If the
-    # pattern starts matching multiple BrowserWindow factories, that's a
-    # signal upstream changed shape and we should investigate rather than
-    # silently inject into windows that already lock their title.
-    echo &"  [FAIL] Expected 1 BrowserWindow construction site, got {hits}"
-    raise newException(ValueError, "fix_profile_window_title: ambiguous match")
-  else:
-    echo "  [FAIL] Main window construction pattern not found"
-    raise newException(ValueError, "fix_profile_window_title: 0 matches")
+  # Profile-aware title injection right after `return WIN=ARG,`. A single
+  # short-circuit expression so the comma chain still type-checks; evaluates
+  # to `undefined` (no-op) when CLAUDE_PROFILE is unset.
+  #
+  # Upstream owns the main-window title (it preventDefaults
+  # page-title-updated; up to v4.4212.0 it also called win.setTitle() on
+  # navigation). A one-shot setTitle could be overwritten, so we wrap THIS
+  # window's setTitle: every title, ours or upstream's, gets the suffix
+  # exactly once. Other windows keep their own setTitle.
+  let hook = hookFor(f.win)
+  result = result[0 ..< f.headEnd] & hook & result[f.headEnd .. ^1]
+  if result.count(SENTINEL) != 1 or
+      result.count("globalThis." & POPOUT_SENTINEL & "=true") != 1:
+    echo "  [FAIL] Main window title hook not present exactly once after injection"
+    raise newException(ValueError, "fix_profile_window_title: injection check failed")
+  echo &"  [OK] Main window title hook injected (factory {f.name}, window {f.win})"
 
 when isMainModule:
   if paramCount() != 1:

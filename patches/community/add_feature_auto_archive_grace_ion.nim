@@ -18,10 +18,13 @@
 # React aliases (names and slot counts are wildcards): useState / useEffect come
 # from the notice chunk's ccAutoArchiveOnPrClose preference subscriber, jsx from
 # the notice's role="status" div, jsxs / Fragment from the PR bar row's closing
-# fragment. Each local name is mapped to its vendor-frame export through the
-# notice chunk's import list, and that export to the rail chunk's own local
-# name through the rail chunk's import list; the rail's own `aside` call must
-# use the same jsxs.
+# fragment. The PR bar row shared the notice chunk until v5.11492.5 and has its
+# own chunk since v6.28899.2, so it is found by content across the SPA. Each
+# local name is mapped to its vendor-frame export through the import list of
+# the chunk it was read from (all three must import the same vendor-frame
+# file), and that export to the target chunk's own local name through the
+# target chunk's import list; the rail's own `aside` call must use the same
+# jsxs.
 import std/[os, strutils, tables]
 import regex
 
@@ -62,10 +65,10 @@ type Aliases = object
   vendor: string
   exports: array[5, string] # in `placeholders` order
 
-proc resolveAliases(notice: string): Aliases =
+proc resolveAliases(notice, row: string): Aliases =
   let subscriber = unique(
     notice,
-    re2"""\[[\w$]+,[\w$]+\]=([\w$]+)\(\),[^;]*;return [^;]*;let [^;]*?ccAutoArchiveOnPrClose===!0\)\};return [^;]*?onPreferencesChanged[^;]*?,([\w$]+)\([\w$]+,[\w$]+\),[\w$]+\}""",
+    re2"""\[[\w$]+,[\w$]+\]=([\w$]+)\(\),[^;]*;return [^;]*;let [^;]*?ccAutoArchiveOnPrClose===!0\)\};return [^;]*?getPreferences[^;]*?,([\w$]+)\([\w$]+,[\w$]+\),[\w$]+\}""",
     "preference subscriber",
   )
   let jsx = unique(
@@ -74,25 +77,32 @@ proc resolveAliases(notice: string): Aliases =
     "notice jsx",
   )
   let fragment = unique(
-    notice,
-    re2"""function [\w$]+\([\w$]+,[\w$]+\)\{let [\w$]+=[\w$]+\(\d+\),\{repoKey:[\w$]+,sessionRef:[\w$]+,sessionRepo:[\w$]+,isPrimary:[\w$]+,[\s\S]*?([\w$]+)\(([\w$]+),\{children:\[[\w$]+,[\w$]+,[\w$]+,[\w$]+,[\w$]+,[\w$]+\]\}\)\):[\w$]+\[\d+\]\}""",
+    row,
+    # `sessionRepos` is new in v6.28899.2.
+    re2"""function [\w$]+\([\w$]+,[\w$]+\)\{let [\w$]+=[\w$]+\(\d+\),\{repoKey:[\w$]+,sessionRef:[\w$]+,sessionRepo:[\w$]+,(?:sessionRepos:[\w$]+,)?isPrimary:[\w$]+,[\s\S]*?([\w$]+)\(([\w$]+),\{children:\[[\w$]+,[\w$]+,[\w$]+,[\w$]+,[\w$]+,[\w$]+\]\}\)\):[\w$]+\[\d+\]\}""",
     "PR bar row fragment",
   )
   let locals = [
     notice[subscriber.group(0)],
     notice[subscriber.group(1)],
     notice[jsx.group(0)],
-    notice[fragment.group(0)],
-    notice[fragment.group(1)],
+    row[fragment.group(0)],
+    row[fragment.group(1)],
   ]
   let imports = vendorImports(notice)
+  let rowImports = vendorImports(row)
+  if rowImports.file != imports.file:
+    raise newException(
+      ValueError, "notice and PR bar row import different vendor-frame files"
+    )
   result.vendor = imports.file
   for i, local in locals:
-    if local notin imports.byLocal:
+    let byLocal = if i < 3: imports.byLocal else: rowImports.byLocal
+    if local notin byLocal:
       raise newException(
         ValueError, placeholders[i] & ": " & local & " is not a vendor-frame import"
       )
-    result.exports[i] = imports.byLocal[local]
+    result.exports[i] = byLocal[local]
 
 proc helperFor(s: string, aliases: Aliases): string =
   let imports = vendorImports(s)
@@ -207,11 +217,14 @@ proc isRail(s: string): bool =
   "id:\"environment\",title:" in s and "id:\"pullRequests\",title:" in s and
     "outputsSession:" in s
 
+proc isRow(s: string): bool =
+  "repoKey:" in s and "sessionRepo:" in s and "isPrimary:" in s
+
 when isMainModule:
   if paramCount() != 1:
     quit("Usage: add_feature_auto_archive_grace_ion <ion-dist>", 1)
-  var noticePath, railPath, noticeInput, railInput: string
-  var notices, rails = 0
+  var noticePath, railPath, noticeInput, railInput, rowInput: string
+  var notices, rails, rows = 0
   for kind, file in walkDir(paramStr(1) / "assets" / "v1"):
     if kind != pcFile or not file.endsWith(".js"):
       continue
@@ -224,9 +237,12 @@ when isMainModule:
       inc rails
       railPath = file
       railInput = input
-  if notices != 1 or rails != 1 or noticePath == railPath:
+    if input.isRow:
+      inc rows
+      rowInput = input
+  if notices != 1 or rails != 1 or rows != 1 or noticePath == railPath:
     quit(
-      "[FAIL] archive grace UI: expected one notice and one distinct session rail chunk",
+      "[FAIL] archive grace UI: expected one notice, one PR bar row and one distinct session rail chunk",
       1,
     )
   try:
@@ -234,7 +250,10 @@ when isMainModule:
     # original text and must re-apply byte-identically.
     let noticeOriginal = restoreNotice(noticeInput)
     let railOriginal = restoreRail(railInput)
-    let aliases = resolveAliases(noticeOriginal)
+    # The row chunk is never written, unless it is the notice chunk itself.
+    let aliases = resolveAliases(
+      noticeOriginal, if rowInput == noticeInput: noticeOriginal else: rowInput
+    )
     let noticeOutput = applyNotice(noticeOriginal, aliases)
     let railOutput = applyRail(railOriginal, aliases)
     if (marker in noticeInput and noticeOutput != noticeInput) or

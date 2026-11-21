@@ -22,10 +22,11 @@
  * job's own workspace), so there is nothing to patch and the block prints
  * "SKIP real worker". That is not a coverage hole: in CI the guard against an
  * upstream re-minify is the patch itself, which runs in the build and fails the
- * whole job unless BOTH of its preconditions hold - the FileIndexHost.search
- * call-site anchor (exactly one hit) and the scorer still destructuring
- * `readyCount` off `this` (which the helper's full-set scan depends on; without
- * it multi-piece queries would silently return nothing). Part B is the LOCAL
+ * whole job unless its preconditions hold - the FileIndexHost.search call-site
+ * anchor (exactly one hit) and the scorer contract the helper's full-set scan
+ * depends on (since v6.28899.2: the index wrapper hands the limit straight to its
+ * table, and the table's top-N keeps every match until it holds `limit`; without
+ * that multi-piece queries would silently come back truncated). Part B is the LOCAL
  * end-to-end check: run it on a dev box with an extract under tmp/ (see
  * ./scripts/build-local.sh) after any change to the helper or the patch.
  */
@@ -51,11 +52,13 @@ const skip = (n, why) => console.log("  SKIP " + n + " -- " + why);
 // `paths` vs `lowerPaths`, 1.37937.3): a query carrying an uppercase character
 // is matched case-sensitively. The helper's ranking follows the same rule, so
 // the fake has to model it or the two would be asserted against each other.
-function fakeIndex(paths) {
+// `legacy` adds the v5-era `readyCount`; since v6.28899.2 the count is private
+// to upstream's scorer and the helper passes an unbounded limit instead.
+function fakeIndex(paths, legacy = false) {
   const calls = [];
   return {
     calls,
-    readyCount: paths.length,
+    ...(legacy ? { readyCount: paths.length } : {}),
     search(query, limit) {
       calls.push([query, limit]);
       if (limit <= 0) return [];
@@ -121,7 +124,16 @@ const SPEC = ["abstract.pdf-data-provider.ts", "user-service.spec.ts"];
   const one = h(idx, "user service", 1);
   ok(one.length === 1 && BOTH.indexOf(base(one[0])) >= 0, "limit is honoured after the merge");
   ok(idx.calls.length > 0 && idx.calls.every(([q, l]) => !/\s/.test(q)), "the index never sees a query containing whitespace");
-  ok(idx.calls.some(([q, l]) => l === PATHS.length), "per-piece scans ask for every ready path so the intersection is not lossy");
+  ok(idx.calls.some(([q, l]) => l >= PATHS.length), "per-piece scans ask for at least every indexed path so the intersection is not lossy");
+}
+{
+  const h = loadHelper("1");
+  const legacy = fakeIndex(PATHS, true);
+  eq(h(legacy, "user service", 10).map(base).sort(), BOTH, "legacy index with readyCount: same set");
+  ok(legacy.calls.every(([q, l]) => l === PATHS.length), "legacy index: per-piece scans ask for exactly readyCount");
+  const empty = fakeIndex(PATHS, true);
+  empty.readyCount = 0;
+  eq(h(empty, "user service", 10), [], "legacy index still building (readyCount 0): nothing, as before");
 }
 // --- ORDER: the file the query names, not its directories ------------------------
 // Measured live on 1.40609.0: the merge ordered by the SUMMED ORDINAL RANK of
@@ -205,10 +217,12 @@ const RANK_BOTH = BOTH.concat(["x.ts"]).sort();
 // --- Part B: the REAL worker, patched by the compiled Nim binary ---------------------
 {
   const bin = join(ROOT, "patches/community/add_feature_files_quick_open_worker");
-  // Newest versioned extract wins; a dir tagged STALE is never a candidate.
+  // The unversioned extract (the fresh one /update works on) wins, else the newest
+  // versioned one; a dir tagged STALE is never a candidate.
   const candidates = existsSync(join(ROOT, "tmp")) ? readdirSync(join(ROOT, "tmp"))
     .filter((d) => /^app\.asar\.contents(-\d+(\.\d+)*)?$/.test(d))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    .sort((a, b) => (a === "app.asar.contents") - (b === "app.asar.contents") ||
+      a.localeCompare(b, undefined, { numeric: true }))
     .map((d) => join(ROOT, "tmp", d, ".vite/build/file-index-worker/fileIndexWorker.js"))
     .filter((p) => existsSync(p)) : [];
   let runnable = false;

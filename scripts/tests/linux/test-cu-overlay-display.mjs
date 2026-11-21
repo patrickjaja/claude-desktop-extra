@@ -721,7 +721,9 @@ if (!haveBin || !existsSync(path.join(BUILD_DIR, "index.js"))) {
       // to the end of the factory: our assignment runs inside it, as at module
       // load. Its free names come from the bundle itself.
       const dpChunk = splitParts(patched).bodies.find((b) => DP_PATCHED_RE.test(b)) || "";
-      const cfg = /var ([\w$]+)=\{baseMs:[\d.]+,perBitMs:[\d.]+,targetPx:[\d.]+,minMs:[\d.]+,maxMs:[\d.]+,curve:/.exec(dpChunk);
+      // v6.28899.2 dropped maxMs (and the planner's clamp), and the activation
+      // takes a third argument: whether somebody is at the computer (glides only then).
+      const cfg = /var ([\w$]+)=\{baseMs:[\d.]+,perBitMs:[\d.]+,targetPx:[\d.]+,minMs:[\d.]+,(?:maxMs:[\d.]+,)?curve:/.exec(dpChunk);
       const [, facName, wrapName] = DP_PATCHED_RE.exec(dpChunk) || [];
       const facSrc = facName ? fnSource(dpChunk, facName) : null;
       const slice = cfg && facSrc ? dpChunk.slice(cfg.index, dpChunk.indexOf(facSrc) + facSrc.length) : "";
@@ -730,20 +732,20 @@ if (!haveBin || !existsSync(path.join(BUILD_DIR, "index.js"))) {
       const clampN = name(/Math\.round\(([\w$]+)\([\w$]+\.baseMs\+/);
       const elbowN = name(/\{elbow:[\w$]+\}=([\w$]+)/);
       const electronN = (/let [\w$]+=([\w$]+)\.screen\.getCursorScreenPoint\(\)/.exec(slice) || [])[1];
-      const motionN = name(/let [\w$]+=!([\w$]+)\(\)&&/);
+      const motionN = name(/let [\w$]+=(?:[\w$]+&&)?!([\w$]+)\(\)&&/);
       const logN = name(/([\w$]+)\.warn\(["`]\[cu-glow\] drawing/);
       const nativeN = name(/try\{[\w$]+=([\w$]+)\(\)\?\.cuSetSystemPointerHidden/);
       const wrapSrc = fnSource(slice, wrapName) || "";
       const stateN = (/let [\w$]+=([\w$]+);try/.exec(wrapSrc) || [])[1];
-      const activateN = stateN && (new RegExp("function ([\\w$]+)\\(([\\w$]+),([\\w$]+)\\)\\{" + esc(stateN) + "=\\2,[\\w$]+\\(\\3\\)\\}").exec(slice) || [])[1];
+      const activateN = stateN && (new RegExp("function ([\\w$]+)\\(([\\w$]+),([\\w$]+)(?:,[\\w$]+)?\\)\\{" + esc(stateN) + "=\\2,(?:[\\w$]+=[\\w$]+,)?[\\w$]+\\(\\3\\)\\}").exec(slice) || [])[1];
       const elbowSrc = elbowN && new RegExp("(?<![\\w$.])" + esc(elbowN) + "=\\{[^}]*elbow:\\{x:([\\d.]+),y:([\\d.]+)\\}").exec(dpChunk);
-      check("module free names derived from the bundle", [clampN, elbowN, electronN, motionN, logN, nativeN, stateN, activateN].every(Boolean) && !!elbowSrc, true);
+      check("module free names derived from the bundle", [elbowN, electronN, motionN, logN, nativeN, stateN, activateN].every(Boolean) && !!elbowSrc, true);
       // Load it; returns the glow show's arrow switch (NQa: the arrow on in a glow window).
       const loadDp = (screen, platform = "linux") => {
         delete globalThis.__cdbCuDrawnPointer;
-        const clampSrc = fnSource(dpChunk, clampN) || fnSource(blob, clampN);
-        const clamp = new Function(clampSrc + "\nreturn " + clampN + ";")();
-        return new Function("process", clampN, elbowN, electronN, motionN, logN, nativeN, slice + "\nreturn " + activateN + ";")(
+        const clampSrc = clampN && (fnSource(dpChunk, clampN) || fnSource(blob, clampN));
+        const clamp = clampN ? new Function(clampSrc + "\nreturn " + clampN + ";")() : null;
+        return new Function("process", clampN || "__cdbNoClamp", elbowN, electronN, motionN, logN, nativeN, slice + "\nreturn " + activateN + ";")(
           { platform }, clamp, { elbow: { x: +elbowSrc[1], y: +elbowSrc[2] } }, { screen }, () => false, { warn() {}, info() {}, debug() {}, error() {} }, () => null);
       };
       const glowWin = (bounds) => {
@@ -780,7 +782,7 @@ if (!haveBin || !existsSync(path.join(BUILD_DIR, "index.js"))) {
         const ex = globalThis.__linuxExecutor;
         const activate = loadDp(screen);
         const win = glowWin(glowBounds || displays[0].bounds);
-        if (arrow) activate(win, 0);
+        if (arrow) activate(win, 0, true);
         const d = globalThis.__cdbCuDrawnPointer;
         for (const k of ["glideTo", "jumpTo", "press", "realPointerGoesTo"]) {
           const f = d[k];

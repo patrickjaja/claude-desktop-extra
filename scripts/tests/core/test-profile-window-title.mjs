@@ -53,12 +53,14 @@ const cleanup = () => { try { rmSync(scratch, { recursive: true, force: true });
 process.on("exit", cleanup);
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => { cleanup(); process.exit(130); });
 
-// Upstream shapes (v5.1231.2): the preventDefault helper, the main-window
-// factory `WIN=new ELECTRON.BrowserWindow(arg),...`, and the helper called on
-// the window returned by the factory call.
+// Upstream shapes (v6.28899.2): the preventDefault helper, the main-window
+// factory that receives the constructed window and tags it as the MAIN_WINDOW,
+// the one call site `w=(e=>FACTORY(new ELECTRON.BrowserWindow(e)))(opts)`, and
+// the helper called on that window.
 const FIXTURE = `function PH(e){e.on("page-title-updated",(e=>{e.preventDefault()}))}
-function MK(o){return WIN=new E.BrowserWindow(o),WIN}
-function boot(){let w=MK({title:"x"});PH(w);return w}
+var KR={MAIN_WINDOW:"main-window"};function TAG(){}
+function MK(o){return WIN=o,TAG(WIN.webContents,KR.MAIN_WINDOW),WIN}
+function boot(){let w=(e=>MK(new E.BrowserWindow(e)))({title:"x"});PH(w);return w}
 `;
 
 function runPatch(name, src) {
@@ -116,8 +118,15 @@ const again = spawnSync(BIN, [p.file], { encoding: "utf8" });
 check("second run: already applied, file unchanged", [again.status, /already applied/.test(again.stdout), readFileSync(p.file, "utf8") === p.text], [0, true, true]);
 const half = runPatch("half.js", p.text.replace(/__cdb_popoutTitleHook/g, "x"));
 check("a half-patched bundle (no pop-out hook) fails loudly", [half.status !== 0, /pop-out hook is missing/.test(half.out)], [true, true]);
+const stray = runPatch("stray.js", FIXTURE + "globalThis.__cdb_titleHook=true;globalThis.__cdb_popoutTitleHook=true;\n");
+check("a sentinel outside the main-window factory fails loudly, file untouched",
+  [stray.status !== 0, /not in the main-window factory/.test(stray.out), stray.text === FIXTURE + "globalThis.__cdb_titleHook=true;globalThis.__cdb_popoutTitleHook=true;\n"], [true, true, true]);
 const bare = runPatch("nofactory.js", "function PH(e){e.on(\"page-title-updated\",(e=>{e.preventDefault()}))}\n");
 check("a bundle without the factory fails", bare.status !== 0, true);
+const untagged = runPatch("untagged.js", FIXTURE.replace("KR.MAIN_WINDOW", "KR.QUICK_ENTRY"));
+check("a factory that does not tag the MAIN_WINDOW is not the factory", untagged.status !== 0, true);
+const oldShape = runPatch("oldshape.js", FIXTURE.replace("return WIN=o,", "return WIN=new E.BrowserWindow(o),").replace("(e=>MK(new E.BrowserWindow(e)))({", "MK({"));
+check("the pre-v6 factory shape fails loud (re-audit)", oldShape.status !== 0, true);
 const patched = p.text;
 
 // ---- [2] main window / no profile ---------------------------------------------

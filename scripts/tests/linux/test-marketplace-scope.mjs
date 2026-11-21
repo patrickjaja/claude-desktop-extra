@@ -84,7 +84,7 @@ class Pm{entryToPluginInfo(e,t,n,r){return{id:e,name:e.split("@")[0]||e,installP
 // B's "already patched" check (copied from the .nim). The pristine fixture
 // must not trip it, or the patch would report success without patching.
 const B_IDEMPOTENCY_RE =
-  /if\([\w$]+\.scope==="user"\|\|[\w$]+\.scope==="project"&&[\w$]+\.projectPath/;
+  /(?:if\(|return )[\w$.]+==="user"\|\|[\w$]+\.scope==="project"&&[\w$]+\.projectPath/;
 
 // Every patch run is kept (exit code, combined stdout+stderr) and dumped when a
 // check fails: a binary that dies before printing anything (e.g. a std/nre
@@ -214,6 +214,54 @@ try {
   {
     const scope = resolver(patched, undefined);
     check("HOME unset: project@/home/u keeps project scope", scope(proj(HOME), "/home/u/work"), "project");
+  }
+
+  // v6.28899.2: the thunk's if/return became one conditional return. Verbatim
+  // from getAllLocalPluginsWithResolver (chunk DCZeUEzD), from `f=()=>` to the
+  // end of the conditional; `t.ect` (cwd inside projectPath) and the skipped
+  // helper `o` are stubbed.
+  section("[C0] v6.28899.2 ternary-thunk shape: scope promotion applies");
+  {
+    const TERNARY =
+      'f=()=>this.entryToPluginInfo(r,u,c,d),p=u.scope;return p==="user"?{plugin:f()}:' +
+      'p==="project"||p==="local"?typeof u.projectPath!="string"||!u.projectPath?o("never"):' +
+      'n&&t.ect(n,u.projectPath)?{plugin:f()}:{otherFolderPlugin:f()}:' +
+      'p==="managed"?{...o("never"),managed:{id:r,installPath:u.installPath}}:o("perhaps")';
+    const FIX2 = `"use strict";
+var t={ect:(e,p)=>{const n=require("path");e=n.normalize(e);p=n.normalize(p);return e===p||e.startsWith(p+n.sep)}};
+class Pm{entryToPluginInfo(e,t,n,r){return{id:e,scope:t.scope,enabled:n[e]===!0}}res(r,u,c,d,n){let o=e=>({skipped:e}),${TERNARY}}}
+`;
+    check("pristine ternary fixture does not trip B's 'already patched' check", B_IDEMPOTENCY_RE.test(FIX2), false);
+    const f = join(scratch, "ternary.js");
+    writeFileSync(f, FIX2);
+    const r1 = runPatch(f);
+    check("ternary: first run exits 0", r1.status, 0);
+    check("ternary: B reports the ternary-thunk match", /\[OK\] B scope normalization \(1 match, ternary-thunk-style\)/.test(r1.out), true);
+    const p2 = readFileSync(f, "utf8");
+    execFileSync("node", ["--check", f]);
+    check("ternary: patched fixture passes node --check", true, true);
+    const r2 = runPatch(f);
+    check("ternary: second run exits 0", r2.status, 0);
+    check("ternary: second run reports B already patched", /B already patched/.test(r2.out), true);
+    check("ternary: second run leaves the file byte-identical", readFileSync(f, "utf8") === p2, true);
+    const run = (src, home) => {
+      const sandbox = { process: { platform: "linux", env: home === undefined ? {} : { HOME: home } }, require: createRequire(import.meta.url), __pm: null };
+      vm.runInNewContext(src + "\n;__pm=new Pm;", vm.createContext(sandbox));
+      return (entry, cwd) => {
+        const out = sandbox.__pm.res("foo@market", entry, { "foo@market": true }, {}, cwd);
+        return out.plugin ? out.plugin.scope : out.otherFolderPlugin ? "other:" + out.otherFolderPlugin.scope : "skipped";
+      };
+    };
+    const before = run(FIX2, HOME), after = run(p2, HOME), noHome = run(p2, undefined);
+    check("ternary unpatched: project@$HOME, cwd below $HOME", before(proj(HOME), "/home/u/work"), "project");
+    check("ternary unpatched: project@$HOME, cwd elsewhere", before(proj(HOME), "/srv/x"), "other:project");
+    check("ternary patched: project@$HOME, cwd below $HOME", after(proj(HOME), "/home/u/work"), "user");
+    check("ternary patched: project@$HOME, cwd elsewhere", after(proj(HOME), "/srv/x"), "user");
+    check("ternary patched: user scope", after({ scope: "user" }, "/srv/x"), "user");
+    check("ternary patched: real project, cwd inside", after(proj("/home/u/work"), "/home/u/work/a"), "project");
+    check("ternary patched: real project, cwd outside", after(proj("/home/u/work"), "/srv/x"), "other:project");
+    check("ternary patched: local@$HOME stays local", after({ scope: "local", projectPath: HOME }, "/home/u/work"), "local");
+    check("ternary patched, HOME unset: project@/home/u keeps project scope", noHome(proj(HOME), "/home/u/work"), "project");
   }
 } finally {
   rmSync(scratch, { recursive: true, force: true });

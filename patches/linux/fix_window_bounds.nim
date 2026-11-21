@@ -32,39 +32,72 @@ const BOUNDS_FIX_JS =
   "setTimeout(function(){" & "if(__wb_w.isDestroyed())return;" &
   "__wb_w.setSize(__wb_s[0],__wb_s[1]);" & "__wb_fasc()" & "},50)" & "})" & "})"
 
-# Main window factory, stage 1: the head that pins the window variable.
-# Allow optional code between BrowserWindow() and the setup call (midCode),
-# AND between the setup call and the final `,W}` (trailing). v1.15962 added a
-# `,Cft(tt)` call after the MAIN_WINDOW setup call which broke the old adjacency anchor.
-# v1.19367.0 changed the window variable from a minified local (`it`) to a dotted
-# property path (`exports.mainWindow`), so winVar allows `.`-joined segments.
-# v1.26832.0 moved the logger-tagging helper and the window-name enum behind chunk
-# namespaces (`t.c(J.webContents,t.n.MAIN_WINDOW)`), so the setup call's callee and
-# the enum holder are dotted chains too.
-# Groups: 0 = prefix, 1 = winVar, 2 = electronVar, 3 = paramVar.
+# Main window factory. Since v6.28899.2 the window is constructed at its one
+# call site and handed in:
+#   f=(e=>BEe(new u.BrowserWindow(e)))(kOr({...}))
+#   function BEe(e){return oo=e,Ar(oo.webContents,kr.MAIN_WINDOW),SEe(oo),oo}
+# (up to v5.11492.5 the factory itself ran `oo=new u.BrowserWindow(e)`).
+# The IIFE goes in right before the factory's final `,WIN}`.
+# Head groups: 0 = NAME, 1 = ARG, 2 = WIN (a dotted path since v1.19367.0),
+# 3 = ARG again (must equal group 1).
 const MAIN_WIN_HEAD =
-  re2"(function [\w$]+\([\w$]+\)\{return )([\w$]+(?:\.[\w$]+)*)=new ([\w$]+)\.BrowserWindow\(([\w$]+)\),"
+  re2"function ([\w$]+)\(([\w$]+)\)\{return ([\w$]+(?:\.[\w$]+)*)=([\w$]+),"
 
-proc mainWinPattern(winVar: string): Regex2 =
-  ## Stage 2: the full factory with the window variable spliced in literally
-  ## where std/nre used the `\2` backreference. Same groups as the head, plus
-  ## 4 = midCode, 5 = setupCall, 6 = trailing.
-  let w = escapeRe(winVar)
-  re2(
-    r"(function [\w$]+\([\w$]+\)\{return )(" & w &
-      r")=new ([\w$]+)\.BrowserWindow\(([\w$]+)\),(.*?)([\w$]+(?:\.[\w$]+)*\(" & w &
-      r"\.webContents,[\w$]+(?:\.[\w$]+)*\.MAIN_WINDOW\))(.*?)," & w & r"\}"
-  )
+# The call site that constructs the window and hands it to the factory.
+# Groups: 0 = arrow param, 1 = FACTORY, 2 = arrow param again.
+const MAIN_WIN_CTOR =
+  re2"\(([\w$]+)=>([\w$]+)\(new [\w$]+\.BrowserWindow\(([\w$]+)\)\)\)\("
 
-proc findMainWindowFactory(s: string): (bool, RegexMatch2) =
-  ## Leftmost factory head whose full pattern matches at that very position
-  ## (what nre's `find` with the backreference returned).
-  for head in s.findAll(MAIN_WIN_HEAD):
-    var m = RegexMatch2()
-    if s.find(mainWinPattern(s[head.group(1)]), m, head.boundaries.a) and
-        m.boundaries.a == head.boundaries.a:
-      return (true, m)
-  (false, default(RegexMatch2))
+# How far after the factory head its MAIN_WINDOW tagging call may sit. Right
+# after the head on a pristine bundle; fix_profile_window_title (which sorts
+# before this patch) injects about 1.3 KB in between.
+const TAG_WINDOW = 4000
+
+type MainFactory = tuple[name, win: string, endAt: int, patched: bool]
+  ## endAt = offset of the factory's final `,WIN}`; patched = our IIFE on WIN
+  ## already sits right before it.
+
+proc boundsCall(win: string): string =
+  "," & BOUNDS_FIX_JS & "(" & win & ")"
+
+proc findMainWindowFactories(s: string): seq[MainFactory] =
+  for m in s.findAll(MAIN_WIN_HEAD):
+    if s[m.group(1)] != s[m.group(3)]:
+      continue
+    let name = s[m.group(0)]
+    let win = s[m.group(2)]
+    let a = m.boundaries.b + 1
+    # The first `.MAIN_WINDOW)` after the head, still inside this function (no
+    # `function ` keyword in between), must be the tagging call on WIN.
+    let tail = s[a ..< min(s.len, a + TAG_WINDOW)]
+    let t = tail.find(".MAIN_WINDOW)")
+    if t < 0 or tail[0 ..< t].contains("function "):
+      continue
+    let tagEnd = t + ".MAIN_WINDOW)".len
+    let tag = re2(
+      r"[\w$]+(?:\.[\w$]+)*\(" & escapeRe(win) &
+        r"\.webContents,[\w$]+(?:\.[\w$]+)*\.MAIN_WINDOW\)$"
+    )
+    if not tail[0 ..< tagEnd].contains(tag):
+      continue
+    # Trailing setup calls (`,SEe(oo)`) up to the final `,WIN}`: no braces,
+    # apart from our own IIFE right before `,WIN}` on a patched bundle.
+    let close = "," & win & "}"
+    let e = tail.find(close, tagEnd)
+    if e < 0:
+      continue
+    var seg = tail[tagEnd ..< e]
+    let patched = seg.endsWith(boundsCall(win))
+    if patched:
+      seg = seg[0 ..< seg.len - boundsCall(win).len]
+    if seg.contains('{') or seg.contains('}'):
+      continue
+    var ctors = 0
+    for c in s.findAll(MAIN_WIN_CTOR):
+      if s[c.group(1)] == name and s[c.group(0)] == s[c.group(2)]:
+        inc ctors
+    if ctors == 1:
+      result.add (name, win, a + e, patched)
 
 # Positive end state of Patch 2: the guard function whose single `||` arm blurs
 # and then hides the same window. Groups 0 and 1 must be the same variable.
@@ -80,35 +113,28 @@ proc apply*(input: string): string =
 
   # 1. Child view bounds fix + ready-to-show jiggle
   let boundsMarker = "__wb_fcb"
+  let factories = result.findMainWindowFactories()
   if boundsMarker in result:
+    # Positive end state: the IIFE on the main window, right before the
+    # factory's final `,WIN}`.
+    if factories.len != 1 or not factories[0].patched:
+      echo "  [FAIL] bounds-fix marker present but not in the main-window factory"
+      raise newException(
+        ValueError, "fix_window_bounds: bounds fix marker found outside the factory"
+      )
     echo "  [INFO] Window bounds fix already injected"
     applied.add("bounds-fix(skip)")
   else:
-    let (found, m) = result.findMainWindowFactory()
-    if found:
-      let prefix = result[m.group(0)]
-      let winVar = result[m.group(1)]
-      let electronVar = result[m.group(2)]
-      let paramVar = result[m.group(3)]
-      let midCode = result[m.group(4)]
-      let setupCall = result[m.group(5)]
-      # trailing: any setup calls between the MAIN_WINDOW call and the final `,W}`.
-      # v1.15962 added `,Cft(tt)`; on v1.15200 this is "". Already includes its own
-      # leading comma, so it slots in directly after setupCall.
-      let trailing = result[m.group(6)]
-      let iife = BOUNDS_FIX_JS & "(" & winVar & ")"
-      let replacement =
-        prefix & winVar & "=new " & electronVar & ".BrowserWindow(" & paramVar & ")," &
-        midCode & setupCall & trailing & "," & iife & "," & winVar & "}"
-      result =
-        result[0 ..< m.boundaries.a] & replacement & result[m.boundaries.b + 1 .. ^1]
-      echo "  [OK] Window bounds fix + size jiggle injected: 1 match(es)"
+    if factories.len == 1:
+      let f = factories[0]
+      result = result[0 ..< f.endAt] & boundsCall(f.win) & result[f.endAt .. ^1]
+      echo &"  [OK] Window bounds fix + size jiggle injected: 1 match(es) (factory {f.name})"
       applied.add("bounds-fix(1)")
     else:
       # Must raise on its own miss - do NOT rely on the `applied.len == 0` guard
       # below, which Patch 2 (Quick Entry blur) independently satisfies, masking a
       # silent Patch 1 miss and shipping broken child-view geometry on Linux.
-      echo "  [FAIL] Main window factory pattern not matched"
+      echo &"  [FAIL] Main window factory pattern matched {factories.len}/1"
       raise newException(
         ValueError, "fix_window_bounds: Main window factory pattern not matched"
       )

@@ -15,6 +15,8 @@
 //
 //   [A] the compiled patch on the verbatim 4.4212.0 shapes: applies once,
 //       idempotent, node --check, fails loud on a moved anchor
+//   [A6] the same on the verbatim 6.28899.2 shapes (options-object selector
+//       reached through an adapter), with [B] and [C] run on them too
 //   [B] the selector truth table: switch off (and helper missing) == upstream
 //       for every input; switch on == white on Linux
 //   [C] the refresh hook drives the real (fixture) wrapper and update
@@ -88,6 +90,21 @@ const FIXTURE =
   '"use strict";\nvar Y9=null,X9=null,Q9=[],$9=!1,_to=!1;function Sto(){}function VUi(){}' +
   SELECTOR + UPDATE + "function vto(){}" + WRAPPER + "\n";
 
+// Verbatim from the 6.28899.2 bundle: the selector now takes one options
+// object, the update function reaches it through a one-line adapter (Rec),
+// and opens with a `using` declaration. Update tail trimmed after setToolTip.
+const SELECTOR6 =
+  'function E7s({flavor:e,safeIcon:t,theme:n,taskbarIsDark:r,linuxFlavor:i}){switch(e){case"ico":return!t&&(r()??n.shouldUseDarkColorsForSystemIntegratedUI)?"Tray-Win32-Dark.ico":"Tray-Win32.ico";case"template-image":return"TrayIconTemplate.png";case"png":return t||i()==="gnome"||n.shouldUseDarkColors?"TrayIconLinux-Dark.png":"TrayIconLinux.png"}}';
+const ADAPTER6 =
+  'function Rec(e){return E7s({flavor:"png",safeIcon:e,theme:u.nativeTheme,taskbarIsDark:UHs,linuxFlavor:QD})}';
+const UPDATE6 =
+  'function zec(e){using t=Br("os:tray");if(!u.app.isReady())return;let r=jf("menuBarEnabled")&&!0,i=n.default.join(KM(),Rec(e));if(!r){Z9&&!Z9.isDestroyed()&&(Oec=[],Aec=!1,Z9.destroy()),Z9=null,Q9=null,Cwo();return}if(Z9&&!Z9.isDestroyed()){i!==Q9&&(Z9.setImage(k7s()??u.nativeImage.createFromPath(i)),Q9=i);return}Oec=[],Aec=!1;let a=!jec;Z9=new u.Tray(u.nativeImage.createFromPath(i)),Z9.setToolTip(u.app.getName()),Q9=i,jec=!0}';
+const WRAPPER6 =
+  "function Fec(){let e=Error.stackTraceLimit;Error.stackTraceLimit=50;let t=Z9;try{zec(!1)}catch(e){Iec(e);try{Z9&&Z9!==t&&!Z9.isDestroyed()&&(Z9.destroy(),Z9=null,Q9=null),zec(!0)}catch{if(Z9&&Z9!==t){try{Z9.isDestroyed()||Z9.destroy()}catch{}Z9=null,Q9=null}}}finally{Error.stackTraceLimit=e}}";
+const FIXTURE6 =
+  '"use strict";\nvar Z9=null,Q9=null,Oec=[],Aec=!1,jec=!1;function Iec(){}function Cwo(){}' +
+  SELECTOR6 + "function O7s(e){}" + ADAPTER6 + UPDATE6 + WRAPPER6 + "\n";
+
 function runPatch(file, bin = PATCH_BIN) {
   try {
     const out = execFileSync(bin, [file], { encoding: "utf8", stdio: "pipe" });
@@ -109,13 +126,16 @@ function patchString(src, scratch, name) {
 
 // The selector function out of a (patched or pristine) bundle text, with the
 // two free names it uses (electron alias, desktop-environment function).
+// Since 6.28899.2 the selector takes one options object
+// ({flavor, safeIcon, theme, taskbarIsDark, linuxFlavor}); `options` is then true.
 function extractSelector(text) {
   const m =
-    /function ([\w$]+)\(([\w$]+)\)\{switch\([^)]*\)\{case["`]ico["`][\s\S]*?["`]TrayIconLinux\.png["`]\)?\}\}/.exec(
+    /function ([\w$]+)\(([\w$]+|\{[^{}()]*\})\)\{switch\([^)]*\)\{case["`]ico["`][\s\S]*?["`]TrayIconLinux\.png["`]\)?\}\}/.exec(
       text
     );
   if (!m) return null;
   const src = m[0];
+  if (m[2].startsWith("{")) return { name: m[1], src, options: true };
   const electron = /([\w$]+)\.nativeTheme\.shouldUseDarkColors/.exec(src)[1];
   const de = /([\w$]+)\(\)===["`]gnome["`]/.exec(src)[1];
   return { name: m[1], src, electron, de };
@@ -124,15 +144,26 @@ function extractSelector(text) {
 // Evaluate the selector with a stubbed nativeTheme / desktop / switch.
 // helper: undefined = no __cdbTrayAlwaysWhite at all.
 function pick(sel, { fallback, desktop, dark, helper, platform = "linux" }) {
-  const ctx = {
-    process: { platform },
-    [sel.electron]: { nativeTheme: { shouldUseDarkColors: dark } },
-    [sel.de]: () => desktop,
-  };
+  const ctx = { process: { platform } };
+  if (sel.options) {
+    ctx.__opts = {
+      flavor: "png",
+      safeIcon: fallback,
+      theme: { shouldUseDarkColors: dark },
+      taskbarIsDark: () => undefined,
+      linuxFlavor: () => desktop,
+    };
+  } else {
+    ctx[sel.electron] = { nativeTheme: { shouldUseDarkColors: dark } };
+    ctx[sel.de] = () => desktop;
+  }
   if (helper !== undefined) ctx.__cdbTrayAlwaysWhite = () => helper;
   vm.createContext(ctx);
   vm.runInContext(sel.src, ctx);
-  return vm.runInContext(`${sel.name}(${JSON.stringify(fallback)})`, ctx);
+  return vm.runInContext(
+    sel.options ? `${sel.name}(__opts)` : `${sel.name}(${JSON.stringify(fallback)})`,
+    ctx
+  );
 }
 
 const upstream = ({ fallback, desktop, dark }) =>
@@ -181,10 +212,19 @@ function hookShape(text, selectorName, label) {
   if (!m) return null;
   const [, wrapper, update, param] = m;
   const body = text.slice(m.index + m[0].length, m.index + m[0].length + 1200);
+  // Directly via the selector, or (6.28899.2+) via a one-line adapter that
+  // forwards the parameter into the selector's options object.
   const j = new RegExp(
-    `([\\w$]+)=[\\w$]+(?:\\.[\\w$]+)*\\.join\\([\\w$]+\\(\\),${esc(selectorName)}\\(${esc(param)}\\)\\)`
+    `([\\w$]+)=[\\w$]+(?:\\.[\\w$]+)*\\.join\\([\\w$]+\\(\\),([\\w$]+)\\(${esc(param)}\\)\\)`
   ).exec(body);
-  check(`${label}: ${update} resolves its path via ${selectorName}(${param})`, !!j, true);
+  const via = j && j[2];
+  const viaOk =
+    !!j &&
+    (via === selectorName ||
+      new RegExp(
+        `function ${esc(via)}\\(([\\w$]+)\\)\\{return ${esc(selectorName)}\\(\\{[^{}()]*:\\1[,}]`
+      ).test(text));
+  check(`${label}: ${update} resolves its path via ${selectorName}(${param}) or an adapter`, viaOk, true);
   if (j) {
     check(
       `${label}: ${update} only re-sets the image when ${j[1]} changed`,
@@ -212,7 +252,7 @@ function hookShape(text, selectorName, label) {
 // update function through the hook. state: desktop, dark, white (the switch),
 // menuBar (upstream's menuBarEnabled), toolTipThrows (setToolTip throws once,
 // i.e. the update fails mid-create after the Tray exists).
-function bootFixture(text, state) {
+function bootFixture(text, state, v6 = false) {
   const images = [];
   const trays = [];
   class Tray {
@@ -226,6 +266,7 @@ function bootFixture(text, state) {
   }
   const ctx = {
     process: { platform: "linux" },
+    Symbol,
     u: {
       app: { isReady: () => true, getName: () => "Claude" },
       nativeTheme: { get shouldUseDarkColors() { return state.dark; } },
@@ -239,9 +280,68 @@ function bootFixture(text, state) {
     n: { default: { join: (a, b) => a + "/" + b } },
     __cdbTrayAlwaysWhite: () => state.white,
   };
+  if (v6) {
+    Object.assign(ctx, {
+      QD: () => state.desktop,
+      jf: () => state.menuBar !== false,
+      KM: () => "/res",
+      k7s: () => undefined,
+      UHs: () => undefined,
+      Br: () => ({ [Symbol.dispose]() {} }),
+    });
+  }
   vm.createContext(ctx);
-  vm.runInContext(text + "\n;xto();", ctx);
+  vm.runInContext(text + (v6 ? "\n;Fec();" : "\n;xto();"), ctx);
   return { ctx, images, trays };
+}
+
+function driveHook(patched, v6, label, names0) {
+  {
+    const names = hookShape(patched, names0.sel, label);
+    check(`${label}: hook calls the wrapper, not the raw update function`, names && names.wrapper, names0.wrapper);
+    check(`${label}: hook sits before the update function`, names && names.update, names0.update);
+    const state = { desktop: "kde", dark: false, white: false };
+    const { ctx, images } = bootFixture(patched, state, v6);
+    check(label + ": tray built with upstream's light-mode glyph", JSON.stringify(images), JSON.stringify([["new", "/res/" + BLACK]]));
+    check(label + ": the booted bundle publishes the hook", typeof ctx.__cdbTrayRefresh, "function");
+    // Without the hook the rest of this section has nothing to drive.
+    if (typeof ctx.__cdbTrayRefresh !== "function") ctx.__cdbTrayRefresh = () => {};
+    ctx.__cdbTrayRefresh();
+    check(label + ": refresh with nothing changed does not re-set the image", images.length, 1);
+    state.white = true;
+    ctx.__cdbTrayRefresh();
+    check(label + ": switch on + refresh -> white glyph", JSON.stringify(images[1]), JSON.stringify(["set", "/res/" + WHITE]));
+    state.white = false;
+    state.dark = true;
+    ctx.__cdbTrayRefresh();
+    check(label + ": switch off in dark mode stays white (upstream), no re-set", images.length, 2);
+    state.dark = false;
+    ctx.__cdbTrayRefresh();
+    check(label + ": switch off in light mode -> black again", JSON.stringify(images[2]), JSON.stringify(["set", "/res/" + BLACK]));
+  }
+  {
+    // The menu bar was off at boot (no tray), comes on, and the update throws
+    // after the Tray exists. Through the wrapper the half-built tray is
+    // destroyed and the update retried with the fallback (white) - a raw call
+    // of the update function would leave the broken tray and throw.
+    const state = { desktop: "kde", dark: false, white: false, menuBar: false };
+    const { ctx, trays } = bootFixture(patched, state, v6);
+    check(label + ": menu bar off at boot: no tray", trays.length, 0);
+    if (typeof ctx.__cdbTrayRefresh !== "function") ctx.__cdbTrayRefresh = () => {};
+    state.menuBar = true;
+    state.toolTipThrows = true;
+    let threw = false;
+    try { ctx.__cdbTrayRefresh(); } catch { threw = true; }
+    check(label + ": crash mid-create: the refresh does not throw", threw, false);
+    check(label + ": crash mid-create: the half-built tray is destroyed", trays.length > 0 && trays[0].dead, true);
+    check(label + ": crash mid-create: a second tray is built", trays.length, 2);
+    check(
+      "crash mid-create: it is live, current, and on the fallback (white) glyph",
+      trays.length === 2 && !trays[1].dead && ctx[names0.trayVar] === trays[1] && trays[1].img === "/res/" + WHITE,
+      true
+    );
+  }
+
 }
 
 const scratch = mkdtempSync(join(tmpdir(), "cdb-tray-theme-"));
@@ -341,50 +441,33 @@ try {
   }
 
   section("[C] the refresh hook on the fixture");
+  driveHook(patched, false, "fixture", { sel: "wto", wrapper: "xto", update: "Tto", trayVar: "Y9" });
+
+  section("[A6] the compiled patch applies to the 6.28899.2 shapes (options-object selector + adapter)");
   {
-    const names = hookShape(patched, "wto", "fixture");
-    check("fixture: hook calls the wrapper, not the raw update function", names && names.wrapper, "xto");
-    check("fixture: hook sits before the update function", names && names.update, "Tto");
-    const state = { desktop: "kde", dark: false, white: false };
-    const { ctx, images } = bootFixture(patched, state);
-    check("tray built with upstream's light-mode glyph", JSON.stringify(images), JSON.stringify([["new", "/res/" + BLACK]]));
-    check("fixture: the booted bundle publishes the hook", typeof ctx.__cdbTrayRefresh, "function");
-    // Without the hook the rest of this section has nothing to drive.
-    if (typeof ctx.__cdbTrayRefresh !== "function") ctx.__cdbTrayRefresh = () => {};
-    ctx.__cdbTrayRefresh();
-    check("refresh with nothing changed does not re-set the image", images.length, 1);
-    state.white = true;
-    ctx.__cdbTrayRefresh();
-    check("switch on + refresh -> white glyph", JSON.stringify(images[1]), JSON.stringify(["set", "/res/" + WHITE]));
-    state.white = false;
-    state.dark = true;
-    ctx.__cdbTrayRefresh();
-    check("switch off in dark mode stays white (upstream), no re-set", images.length, 2);
-    state.dark = false;
-    ctx.__cdbTrayRefresh();
-    check("switch off in light mode -> black again", JSON.stringify(images[2]), JSON.stringify(["set", "/res/" + BLACK]));
-  }
-  {
-    // The menu bar was off at boot (no tray), comes on, and the update throws
-    // after the Tray exists. Through the wrapper the half-built tray is
-    // destroyed and the update retried with the fallback (white) - a raw call
-    // of the update function would leave the broken tray and throw.
-    const state = { desktop: "kde", dark: false, white: false, menuBar: false };
-    const { ctx, trays } = bootFixture(patched, state);
-    check("menu bar off at boot: no tray", trays.length, 0);
-    if (typeof ctx.__cdbTrayRefresh !== "function") ctx.__cdbTrayRefresh = () => {};
-    state.menuBar = true;
-    state.toolTipThrows = true;
-    let threw = false;
-    try { ctx.__cdbTrayRefresh(); } catch { threw = true; }
-    check("crash mid-create: the refresh does not throw", threw, false);
-    check("crash mid-create: the half-built tray is destroyed", trays.length > 0 && trays[0].dead, true);
-    check("crash mid-create: a second tray is built", trays.length, 2);
+    const r6 = patchString(FIXTURE6, scratch, "fixture6.js");
+    check("6.28899.2: first run exits 0", r6.status, 0);
+    check("6.28899.2: names reported", /__cdbTrayRefresh -> Fec \(update zec, selector E7s\)/.test(r6.out), true);
     check(
-      "crash mid-create: it is live, current, and on the fallback (white) glyph",
-      trays.length === 2 && !trays[1].dead && ctx.Y9 === trays[1] && trays[1].img === "/res/" + WHITE,
+      "6.28899.2: png case asks the switch first, upstream stays the else branch",
+      r6.text.includes(
+        'case"png":return process.platform==="linux"&&globalThis.__cdbTrayAlwaysWhite?.()?"TrayIconLinux-Dark.png":(t||i()==="gnome"||n.shouldUseDarkColors?"TrayIconLinux-Dark.png":"TrayIconLinux.png")}}'
+      ),
       true
     );
+    let ok6 = true;
+    try {
+      execFileSync("node", ["--check", join(scratch, "fixture6.js")], { stdio: "pipe" });
+    } catch {
+      ok6 = false;
+    }
+    check("6.28899.2: node --check", ok6, true);
+    const r6b = runPatch(join(scratch, "fixture6.js"));
+    check("6.28899.2: second run exits 0, byte-identical", r6b.status === 0 && readFileSync(join(scratch, "fixture6.js"), "utf8") === r6.text, true);
+    const noAdapterFwd = patchString(FIXTURE6.replace("safeIcon:e,", "safeIcon:!1,"), scratch, "fixture6-nofwd.js");
+    check("6.28899.2: adapter that does not forward its parameter: exit 1", noAdapterFwd.status, 1);
+    truthTable(r6.text, "fixture6");
+    driveHook(r6.text, true, "fixture6", { sel: "E7s", wrapper: "Fec", update: "zec", trayVar: "Z9" });
   }
 
   section("[D] the real extract");

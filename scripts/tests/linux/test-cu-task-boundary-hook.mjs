@@ -427,7 +427,8 @@ if (patchMissing || !existsSync(stub)) {
     check(
       "success result {ok:!0,...,ended:<that expression>,...,coworkRemote:...}",
       // v5.1231.0 added workerDone/unknownStatus between ended and coworkRemote.
-      countRe(statusPart, new RegExp("\\{ok:!0,[^{}]*?,ended:" + esc(endedVar) + ",(?:[\\w$]+:[\\w$]+,)*coworkRemote:")),
+      // v6.28899.2: `ended:_,turnOver:S,...Number.isNaN(C)?{}:{lastEventAt:C},workerDone:T,unknownStatus:w,coworkRemote:E`.
+      countRe(statusPart, new RegExp("\\{ok:!0,[^{}]*?,ended:" + esc(endedVar) + ",(?:[^{}]|\\{[^{}]*\\})*?coworkRemote:")),
       1
     );
     check("transient result {ok:!1,transient:!0} present", count(statusPart, "{ok:!1,transient:!0}") >= 1, true);
@@ -553,7 +554,7 @@ if (patchMissing || !existsSync(stub)) {
     // knows windows upstream's executor hid, so KWin capture exclusions stayed.
     console.log("\n[7] 4h routes upstream's turn-end unhide to the Linux executor");
     const UNHIDE_RE =
-      /async function ([\w$]+)\(([\w$]+)\)\{if\(\2\.length!==0\)\{if\(process\.platform===(["`])win32\3\)\{let\{unhideComputerUseAppsWin32:[\w$]+\}=[^{}]{0,300}\}if\(process\.platform===\3linux\3\)\{let\{unhideComputerUseAppsLinux:([\w$]+)\}=[^{}]{0,300}await \4\(\2\);return\}/g;
+      /async function ([\w$]+)\(([\w$]+)\)\{if\(\2\.length!==0\)\{if\(process\.platform===(["`])win32\3\)\{(?=[^;]{0,300}unhideComputerUseAppsWin32)(?:[^{}]|\{[^{}]{0,120}\}){1,600}?\}if\(process\.platform===\3linux\3\)\{let\{unhideComputerUseAppsLinux:([\w$]+)\}=[^{}]{0,300}await \4\(\2\);return\}/g;
     const ROUTE = 'if(typeof globalThis.__linuxExecutor?.__unhideApps==="function"){await globalThis.__linuxExecutor.__unhideApps(';
     const unhidePristine = [...blob.matchAll(UNHIDE_RE)];
     check("pristine unhide function present once", unhidePristine.length, 1);
@@ -634,6 +635,9 @@ if (patchMissing || !existsSync(stub)) {
           },
         };
         ctx[e3Name || "e3"] = async () => ({ apps: { unhide: async (x) => calls.push(["upstream-darwin", [...x]]) } });
+        // v6.28899.2 wraps the win32 arm's promise in a helper (`await qQt(Promise.resolve()...)`).
+        const winWrap = /await ([\w$]+)\(Promise\.resolve\(\)/.exec(fnSrc)?.[1];
+        if (winWrap) ctx[winWrap] = async (p) => await p;
         if (executor) ctx.__linuxExecutor = executor(calls);
         vm.createContext(ctx);
         let error = null;

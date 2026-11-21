@@ -356,8 +356,9 @@ try {
   function hostPolicyReferences(c,r,e,a,ge){if(a!=="ordinary")return t.hm(e)?"org_requires_approval":0;return ge??=t._K(c?.query,r).then((e=>{let n=e;return t.jJ("desktop_ccd_own_ask_rules_read",{covers:n})}))}
   function nativeStartGate(e,r,i,a,o,c){if(!startTools.has(e)||t.qn(i,a))return!1;let l=a(i);return policy.continued(l)||remote(l,e,r)||count(l,o,c)>=10}`;
   const apiPart = `function apiTF(e){return!1}async function apiK(e,t){return flags.ownAsk}function apiHm(e){return flags.ask}function apiQn(e,t){return flags.unattended}
-  var mainWin=void 0;function makeMain(e){return mainWin=new u.BrowserWindow(e),zi(mainWin.webContents,Li.MAIN_WINDOW),mainWin}globalThis.makeMain=makeMain;
+  var mainWin=void 0;function makeMain0(e){return mainWin=e,zi(mainWin.webContents,Li.MAIN_WINDOW),mainWin}globalThis.makeMain=(e=>makeMain0(new u.BrowserWindow(e)));
   function nativeMatch(e,t){let n=e.trim().split("(")[0].trim(),r=t.indexOf("__",5),i=r===-1?"":t.slice(0,r);return n===t||n===i||n.includes("*")&&kor(n,t)}
+  function instanceMatch(e,t){let n=e.trim().split("(")[0].trim(),r=t.indexOf("__",5),i=t.slice(0,r).replace(/(_\d+)+$/,"");return!1}
   Object.defineProperty(exports,"TF",{enumerable:!0,get:function(){return apiTF}});Object.defineProperty(exports,"_K",{enumerable:!0,get:function(){return apiK}});
   Object.defineProperty(exports,"hm",{enumerable:!0,get:function(){return apiHm}});Object.defineProperty(exports,"qn",{enumerable:!0,get:function(){return apiQn}});
   Object.defineProperty(exports,"Xmt",{enumerable:!0,get:function(){return mainWin}});Object.defineProperty(exports,"matchToolRule",{enumerable:!0,get:function(){return nativeMatch}});`;
@@ -573,6 +574,8 @@ try {
       ["namespace from another chunk", original.replace('require("./index.chunk-api.js")', 'require("./index.chunk-other.js")')],
       ["export moved out of the namespace chunk", original.replace('Object.defineProperty(exports,"hm",{enumerable:!0,get:function(){return apiHm}});', "").replace("nativeStartGate(", 'nativeStartGate(){}Object.defineProperty(exports,"hm",{enumerable:!0,get:function(){return apiHm}});function x(')],
       ["Xmt is not the main window", original.replace("Li.MAIN_WINDOW", "Li.QUICK_ENTRY")],
+      ["main-window factory without its own argument", original.replace("return mainWin=e,", "return mainWin=other,")],
+      ["two plain rule matchers", original.replace("function instanceMatch(e,t){", 'function nativeMatch2(e,t){let n=e.trim().split("(")[0].trim(),r=t.indexOf("__",5),i=r===-1?"":t.slice(0,r);return n===t}function instanceMatch(e,t){')],
       ["start gate in another chunk", `"use strict";` + SPLIT("index.chunk-broker.js") + brokerPart.replace(/function nativeStartGate[^]*$/, "") + SPLIT("index.chunk-api.js") + apiPart + brokerPart.match(/function nativeStartGate[^]*$/)[0]],
       ["broker method missing", original.replace("async forceAskVerdict(", "async forceAskVerdictX(")],
       ["org-policy call site missing", original.replace('"org_requires_approval"', '"org_other"')],
@@ -628,7 +631,8 @@ try {
     const uuidNs = method.match(/=\(0,([\w$]+)\.randomUUID\)\(\)/)[1];
     // `if(a=<filter>(c,r,a),i=<identity>(i),h!==void 0&&a?.length&&this.askFirstSessionApprovals...`:
     // the input sanitizer and (5.11492+) the suggestion filter both pass their argument through here.
-    const preAsk = method.match(/(?:([\w$]+)=([\w$]+)\([\w$]+,[\w$]+,\1\),)?([\w$]+)=([\w$]+)\(\3\),[\w$]+(?:!==void 0)?&&[\w$]+\?\.length&&this\.askFirstSessionApprovals/);
+    // 6.28899.2: `a=ks(c,r,a),i=Bs(i);let x=...;if(h!==void 0&&a?.length&&(x||this.askFirstSessionApprovals...`.
+    const preAsk = method.match(/(?:([\w$]+)=([\w$]+)\([\w$]+,[\w$]+,\1\),)?([\w$]+)=([\w$]+)\(\3\)[,;][^{}]{0,200}?[\w$]+(?:!==void 0)?&&[\w$]+\?\.length&&\(?(?:[\w$]+\|\|)?this\.askFirstSessionApprovals/);
     assert.ok(preAsk, "real pre-ask sanitizer site found");
     const identity = preAsk[4], suggestionFilter = preAsk[2];
     const gate = brokerSrc.match(/function ([\w$]+)\([\w$]+,[\w$]+,[\w$]+,[\w$]+,[\w$]+,[\w$]+\)\{if\(!([\w$]+)\.has\([\w$]+\)[^{}]*;return [\w$]+\.[\w$]+\([\w$]+\)\|\|[\w$]+\([\w$]+,[\w$]+,[\w$]+\)\|\|[\w$]+\([\w$]+,[\w$]+,[\w$]+\)>=10\}/);
@@ -639,7 +643,7 @@ try {
     assert.ok(matcher, "real rule matcher found");
     const matcherExport = apiSrc.match(new RegExp(`"([\\w$]+)",\\{enumerable:!0,get:function\\(\\)\\{return ${matcher[2].replace(/\$/g, "\\$")}\\}\\}`))[1];
     assert.ok(method.includes(`${api}.${matcherExport}(`), "the hook calls the real matcher export");
-    const mainVar = apiSrc.match(/(?:^|[^\w$.])([\w$]+)=new [\w$]+\.BrowserWindow\([\w$]+\),[\w$]+\(\1\.webContents,[\w$]+\.MAIN_WINDOW\)/)[1];
+    const mainVar = apiSrc.match(/function [\w$]+\(([\w$]+)\)\{return ([\w$]+)=\1,[\w$]+\(\2\.webContents,[\w$]+\.MAIN_WINDOW\)/)[2];
     const mainExport = apiSrc.match(new RegExp(`"([\\w$]+)",\\{enumerable:!0,get:function\\(\\)\\{return ${mainVar.replace(/\$/g, "\\$")}\\}\\}`))[1];
     for (const n of [tfName, hmName, kName, qnName]) assert.ok(method.includes(`${api}.${n}(`), "the hook calls " + n);
     assert.ok(method.includes(`${api}.${mainExport}`), "the hook parents the dialog to the MAIN_WINDOW export");

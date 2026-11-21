@@ -142,7 +142,8 @@ function requiredChunk(body, ns) {
   const all = [...body.matchAll(new RegExp("(?<![\\w$.])" + esc(ns) + "=require\\(([\"'`])\\./([^\"'`]+)\\1\\)", "g"))];
   return all.length === 1 ? all[0][2] : null;
 }
-const DISPATCH_RE = /async function ([\w$]+)\(([\w$]+),[\w$]+,[\w$]+,[\w$]+\)\{let\{logger:[\w$]+,serverName:[\w$]+\}=\2,[\w$]+=[\w$]+\([\w$]+\);if\(\2\.isDisabled\(\)\)/;
+// v6.28899.2 builds the context with the adapter too: `o=wl(e,r)`.
+const DISPATCH_RE = /async function ([\w$]+)\(([\w$]+),[\w$]+,[\w$]+,[\w$]+\)\{let\{logger:[\w$]+,serverName:[\w$]+\}=\2,[\w$]+=[\w$]+\((?:\2,)?[\w$]+\);if\(\2\.isDisabled\(\)\)/;
 const SCREEN_REF_RE = /\{bundleId:([\w$]+)\.([\w$]+),displayName:"Screen"\}/;
 const DENIED_RE = /this\.isUserDenied=([\w$]+)\.([\w$]+)\(/;
 const SCREEN = "com.anthropic.cu.screen";
@@ -173,7 +174,16 @@ function loadDispatcher(disp) {
     const known = {};
     if (file === disp.nsFile) known[disp.screenAlias] = SCREEN;
     if (requiredChunk(disp.body, disp.deniedNs) === file) known[disp.deniedAlias] = denied;
-    const p = new Proxy(known, { get(t, k) { if (k in t) return t[k]; if (typeof k === "symbol") return undefined; return () => null; } });
+    // Unknown members are callables that also answer the array methods a chunk
+    // may run at load (v6.28899.2: `new Set(t.s.flatMap(...))`).
+    const stubFn = () => { const f = () => null; for (const [m, v] of [["flatMap", []], ["map", []], ["filter", []], ["some", false], ["includes", false], ["forEach", undefined]]) f[m] = () => v; return f; };
+    // v6.28899.2: the key tool asks the core chunk to split a chord into keys
+    // and modifiers (`function Bt(t){let n=e.K9(t);return e.R9(t)||n.length===1&&
+    // n[0]==="tab"&&e.G9(t).every(...)}`); both answer lists.
+    const chordRe = /let ([\w$]+)=([\w$]+)\.([\w$]+)\([\w$]+\);return \2\.[\w$]+\([\w$]+\)\|\|\1\.length===1&&\1\[0\]==="tab"&&\2\.([\w$]+)\([\w$]+\)\.every/;
+    const cm = chordRe.exec(disp.body);
+    if (cm && requiredChunk(disp.body, cm[2]) === file) { known[cm[3]] = () => []; known[cm[4]] = () => []; }
+    const p = new Proxy(known, { get(t, k) { if (k in t) return t[k]; if (typeof k === "symbol") return undefined; return stubFn(); } });
     nsCache.set(file, p);
     return p;
   };

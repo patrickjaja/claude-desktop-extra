@@ -453,6 +453,51 @@ async function partB() {
       });
       check("new shape: --startup launch with no tray host ends up visible", d.shownAfterLaunch, true);
     }
+
+    section("[B9] v6.28899.2 close handler: `&&!jv.active()` spares upstream's hidden appifact mode");
+    {
+      // Since 6.28899.2:
+      //   i=(P9s()||!1)&&!r&&!jv?.active();  ...
+      //   if(e.preventDefault(),!jf("menuBarEnabled")&&!jv.active()){...tray is disabled...}
+      const OLD_CLOSE = 'if(!$v("menuBarEnabled")){P.info("Quitting app on main window close since tray is disabled"),QA();return}e.preventDefault();';
+      const NEW_CLOSE = 'if(e.preventDefault(),!$v("menuBarEnabled")&&!jv.active()){P.info("Quitting app on main window close since tray is disabled"),QA();return}';
+      const OLD_GATE = "i=(__notStartup()||!1)&&!r;";
+      check("fixture carries the 2.26454 gate", FIXTURE.includes(OLD_GATE), true);
+      const v6 = (appifact) =>
+        `var jv={active:()=>${appifact}};` +
+        FIXTURE.replace(OLD_CLOSE, NEW_CLOSE).replace(OLD_GATE, "i=(__notStartup()||!1)&&!r&&!jv?.active();");
+      const file3 = join(scratch, "v6.js");
+      writeFileSync(file3, v6("__APPIFACT__"));
+      const r = runPatch(file3);
+      check("v6: patch exits 0", r.status, 0);
+      check("v6: gate joined with the appifact predicate", /gate i\|\|jv\.active\(\), show ZJ, settings \$v\)/.test(r.out), true);
+      const patched3 = readFileSync(file3, "utf8");
+      check("v6: close handler left verbatim", patched3.includes(NEW_CLOSE), true);
+      check("v6: hook passes i||jv.active()", patched3.includes(".startup(i||jv.active(),ZJ,()=>$v(\"menuBarEnabled\"))"), true);
+      check("v6: second run byte-identical", runPatch(file3).status === 0 && readFileSync(file3, "utf8") === patched3, true);
+      const plain = await drive(patched3.replace("__APPIFACT__", "!1"), {
+        bus: { busctl: "false" },
+        env: WAYLAND,
+        startup: true,
+        trayHost: "unsupported",
+      });
+      check("v6: --startup launch with no tray host ends up visible", plain.shownAfterLaunch, true);
+      const off = await drive(patched3.replace("__APPIFACT__", "!1"), {
+        bus: { busctl: "true" },
+        env: WAYLAND,
+        startup: true,
+        menuBarEnabled: false,
+      });
+      check("v6: --startup launch with the tray switched off ends up visible", off.shownAfterLaunch, true);
+      const appifact = await drive(patched3.replace("__APPIFACT__", "!0"), {
+        bus: { busctl: "false" },
+        env: WAYLAND,
+        startup: false,
+        menuBarEnabled: false,
+        trayHost: "unsupported",
+      });
+      check("v6: appifact launch (meant to run hidden) is never shown by the hook", appifact.shownAfterLaunch, false);
+    }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

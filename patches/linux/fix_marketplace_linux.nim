@@ -36,10 +36,16 @@ const ANCHOR_PUSH =
 const ANCHOR_THUNK =
   re2"""([\w$]+)=\(\)=>this\.entryToPluginInfo\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\),([\w$]+)=([\w$]+)\.scope;if\(([\w$]+)===["`]user["`]\)return\{plugin:([\w$]+)\(\)\};"""
 
+# Ternary-thunk anchor (v6.28899.2+; the if/return became one conditional return):
+#   P=()=>this.entryToPluginInfo(A,X,B,C),M=X.scope;return M==="user"?{plugin:P()}:M==="project"||...
+# Same groups and equality checks as the thunk-style anchor.
+const ANCHOR_TERNARY =
+  re2"""([\w$]+)=\(\)=>this\.entryToPluginInfo\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\),([\w$]+)=([\w$]+)\.scope;return ([\w$]+)===["`]user["`]\?\{plugin:([\w$]+)\(\)\}:"""
+
 # Positive end-state (Rule 6): our `||X.scope==="project"&&X.projectPath` arm
-# (the thunk-style injection tests the cached local `M==="user"` first).
+# (the thunk-style injections test the cached local `M==="user"` first).
 const ALREADY_PATCHED =
-  re2"""if\([\w$.]+==="user"\|\|[\w$]+\.scope==="project"&&[\w$]+\.projectPath"""
+  re2"""(?:if\(|return )[\w$.]+==="user"\|\|[\w$]+\.scope==="project"&&[\w$]+\.projectPath"""
 
 proc firstWithSameEntry(
     s: string, pattern: Regex2, entryGroup: int
@@ -73,9 +79,33 @@ proc apply*(input: string): string =
         foundThunk = true
         mThunk = m
         break
+    var foundTernary = false
+    var mTernary: RegexMatch2
+    for m in result.findAll(ANCHOR_TERNARY):
+      if result[m.group(6)] == result[m.group(2)] and
+          result[m.group(7)] == result[m.group(5)] and
+          result[m.group(8)] == result[m.group(0)]:
+        foundTernary = true
+        mTernary = m
+        break
     let (foundNew, mNew) = result.firstWithSameEntry(ANCHOR_RETURN, 2)
     let (foundOld, mOld) = result.firstWithSameEntry(ANCHOR_PUSH, 3)
-    if foundThunk:
+    if foundTernary:
+      let p = result[mTernary.group(0)]
+      let a = result[mTernary.group(1)]
+      let e = result[mTernary.group(2)]
+      let b = result[mTernary.group(3)]
+      let c = result[mTernary.group(4)]
+      let m = result[mTernary.group(5)]
+      result =
+        result[0 ..< mTernary.boundaries.a] & p & "=()=>this.entryToPluginInfo(" & a &
+        "," & e & "," & b & "," & c & ")," & m & "=" & e & ".scope;return " & m &
+        "===\"user\"||" & homedirArm(e) & "?{plugin:this.entryToPluginInfo(" & a &
+        ",{..." & e & ",scope:\"user\"}," & b & "," & c & ")}:" &
+        result[mTernary.boundaries.b + 1 .. ^1]
+      echo "  [OK] B scope normalization (1 match, ternary-thunk-style)"
+      inc patchesApplied
+    elif foundThunk:
       let p = result[mThunk.group(0)]
       let a = result[mThunk.group(1)]
       let e = result[mThunk.group(2)]

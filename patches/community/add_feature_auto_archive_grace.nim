@@ -83,7 +83,7 @@ proc apply*(input: string): string =
   # the unconfirmed-close binding `_`. This anchor survives our own patching.
   let locals = one(
     input,
-    re2"""async checkAndArchive\([\w$]+,[\w$]+,[\w$]+,[\w$]+\)\{let [\w$]+=[\w$]+\?"inactive":"pr";try\{let ([\w$]+)=this\.ownPrBindings\([\w$]+\.prs\),([\w$]+)=null,[\w$]+=!1,[\w$]+=!1,([\w$]+);""",
+    re2"""async checkAndArchive\([\w$]+,[\w$]+,[\w$]+,[\w$]+\)\{let [\w$]+=[\w$]+\?"inactive":"pr";try\{let ([\w$]+)=this\.ownPrBindings\([\w$]+\.prs\),([\w$]+)=null,(?:[\w$]+=!1,)+([\w$]+);""",
     "checkAndArchive locals",
   )
   let own = input[locals.group(0)]

@@ -34,9 +34,13 @@ const newMountPath =
 # Sub-patch B patterns. Variable names are minified and change between
 # versions (v1.7196: r===W.Win32?t.win:t.mac; v1.8089:
 # C===V.Win32?Ve.mountPath.win:Ve.mountPath.mac). Use [\w$.]+ wildcards.
+# Through v5.11492.5 the platform is compared with the SPA's enum member
+# (`Pe===ie.Win32?`); since v6.28899.2 the bundler inlines it to the string
+# (`be==="win32"?`). Both shapes are accepted; the Linux arm uses the same one.
 const alreadyPatchedPatB =
-  re2"""[\w$]+=== *[\w$]+\.Win32\?[\w$.]+\.win:[\w$]+=== *[\w$]+\.Linux\?[\w$.]+\.linux:[\w$.]+\.mac"""
-const ternaryPatB = re2"""([\w$]+)=== *([\w$]+)\.Win32\?([\w$.]+)\.win:([\w$.]+)\.mac"""
+  re2"""[\w$]+=== *(?:[\w$]+\.Win32|"win32")\?[\w$.]+\.win:[\w$]+=== *(?:[\w$]+\.Linux|"linux")\?[\w$.]+\.linux:[\w$.]+\.mac"""
+const ternaryPatB =
+  re2"""([\w$]+)=== *([\w$]+\.Win32|"win32")\?([\w$.]+)\.win:([\w$.]+)\.mac"""
 
 iterator spaFiles(ionDistDir: string): string =
   for dir in walkDir(ionDistDir / "assets" / "v1"):
@@ -49,11 +53,16 @@ proc applyTernary(content: string): string =
     ternaryPatB,
     proc(m: RegexMatch2, s: string): string =
       let condVar = s[m.group(0)]
-      let enumVar = s[m.group(1)]
+      let winCase = s[m.group(1)]
+      let linuxCase =
+        if winCase == "\"win32\"":
+          "\"linux\""
+        else:
+          winCase[0 ..< winCase.len - "Win32".len] & "Linux"
       let winObj = s[m.group(2)]
       let macObj = s[m.group(3)]
-      condVar & "===" & enumVar & ".Win32?" & winObj & ".win:" & condVar & "===" &
-        enumVar & ".Linux?" & winObj & ".linux:" & macObj & ".mac",
+      condVar & "===" & winCase & "?" & winObj & ".win:" & condVar & "===" & linuxCase &
+        "?" & winObj & ".linux:" & macObj & ".mac",
   )
 
 when isMainModule:

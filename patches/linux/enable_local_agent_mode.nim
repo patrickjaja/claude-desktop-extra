@@ -56,7 +56,7 @@ proc apply*(input: string): string =
   #
   # We override the features we genuinely provide the backend for on Linux.
   # Four of the seven are LOAD-BEARING and three are inert safety nets
-  # (re-verified v3.1623.0) - keep the distinction honest:
+  # (re-verified v3.1623.0 and v6.28899.2) - keep the distinction honest:
   #   quietPenguin   NEEDED  registry gives X(fn) -> unavailable when packaged
   #   louderPenguin  NEEDED  darwin/win32 + flag 4116586025 gated
   #   computerUse    NEEDED  since v2.19675.1 the platform Set includes linux,
@@ -111,14 +111,19 @@ proc apply*(input: string): string =
     echo "  [FAIL] feature merger: pre-2026-10-21 override run found without computerUseRollout - stale pre-patched input, re-extract a pristine bundle"
     quit(1)
   else:
-    # The async merger ends `return{...STATIC(),...LOCALS}}`: STATIC() is the
+    # The async merger ends `{...STATIC(),...LOCALS}}`: STATIC() is the
     # static feature registry, LOCALS the async-resolved overrides object. We
     # append our overrides LAST so they win over both. Match the merger
     # structurally, then VERIFY the match semantically: the spread callee must
     # be the static feature registry, i.e. its body lists `quietPenguin:`.
     # Minified names are only unique per chunk (v2.19675.1 defines `FU` in four
     # chunks), so look the callee up only inside the chunk holding the match.
-    let pattern3 = re2"return\{\.\.\.([\w$]+)\(\),\.\.\.[\w$]+\}\}"
+    # Shapes:
+    #   up to v5.11492.5:  ...};return{...cG(),...ye}}
+    #   v6.28899.2:        ...},Te=KR();return await _mi(),KR()!==Te&&Tz()&&Ez(),{...Cz(),...we}}
+    #   (the return became a comma sequence that re-reads the remote-download
+    #   policy first, so the object literal now follows a `,`).
+    let pattern3 = re2"(?:return|,)\{\.\.\.([\w$]+)\(\),\.\.\.[\w$]+\}\}"
     const splitMarker = "/*__CDB_SPLIT__"
     var m3Count = 0
     var m3End = -1
@@ -131,7 +136,14 @@ proc apply*(input: string): string =
         chunkEnd = result.len
       var defIdx = strutils.find(result, "function " & callee & "(", chunkStart)
       while defIdx >= 0 and defIdx < chunkEnd:
-        let sliceEnd = min(defIdx + 4000, chunkEnd - 1)
+        # Bound the look-up to the callee's own body: stop at the next
+        # `function ` keyword (the registry body has none, only arrows), so a
+        # small spread callee defined right before the registry cannot borrow
+        # the registry's `quietPenguin:`.
+        var sliceEnd = min(defIdx + 4000, chunkEnd - 1)
+        let nextFn = strutils.find(result, "function ", defIdx + 9)
+        if nextFn >= 0 and nextFn - 1 < sliceEnd:
+          sliceEnd = nextFn - 1
         if result[defIdx .. sliceEnd].contains("quietPenguin:"):
           inc m3Count
           m3End = m.boundaries.b

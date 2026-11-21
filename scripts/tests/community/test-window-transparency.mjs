@@ -933,7 +933,10 @@ function openPopout(r, opener, name, opts) {
   if (!existsSync(BIN)) {
     console.log("  skip patches/community/add_feature_window_transparency is not compiled: the fixture checks");
   } else {
-    const MAIN = "function mk(){return{backgroundColor:fQn({signedIn:c}),opacity:1,icon:z}}\n";
+    // 6.28899.2: the call-site literal closes with the backgroundColor/opacity
+    // pair and is handed to the options builder, which spreads it first.
+    const MAIN = "function kOr(e,t){return{...e,title:_yr(),titleBarStyle:\"hidden\",icon:z,webPreferences:{preload:P(\".vite/build/mainWindow.js\"),...t&&{additionalArguments:t}}}}" +
+      "function mk(){return(e=>BEe(new u.BrowserWindow(e)))(kOr({...rSe(e),titleBarOverlay:!0,backgroundColor:fQn({signedIn:c}),opacity:+!c},d?void 0:l))}\n";
     const MGR = "/*FX-BEGIN*/class M{constructor(){this.pendingWindows=new Map;this.config={devWarnings:!1}}" +
       "getDefaultWindowOptions(){return{width:800,webPreferences:{sandbox:!0}}}" +
       "buildConstructorOptions(e,n){return{transparent:e.transparent??!1,frame:e.frame??!0,titleBarStyle:e.titleBarStyle}}" +
@@ -1006,8 +1009,18 @@ function openPopout(r, opener, name, opts) {
     const shadowDefOpener = run('"use strict";' + MAIN + MGR.replace("n=this.getDefaultWindowOptions()", "e=this.getDefaultWindowOptions()").replace("{...n,...t,", "{...e,...t,"));
     ok(shadowDefOpener.code !== 0 && /shadows the frame name or the opener/.test(shadowDefOpener.out),
        "fixture whose defaults variable shadows the opener: the patch fails");
-    const half = run(good.text.replace("...globalThis.__cdbWinTransExtra(),", ""));
+    const spread = good.text.split("opacity:+!c,...globalThis.__cdbWinTransExtra()},d?void 0:l)").length - 1;
+    ok(spread === 1, "fixture: the spread closes the main-window literal handed to the options builder");
+    const half = run(good.text.replace(",...globalThis.__cdbWinTransExtra()}", "}"));
     ok(half.code !== 0 && /half-patched/.test(half.out), "a half-patched bundle fails instead of passing");
+    const ownKey = run('"use strict";' + MAIN.replace("icon:z,", "icon:z,transparent:!1,") + MGR);
+    ok(ownKey.code !== 0 && /sets transparent\/backgroundColor itself/.test(ownKey.out),
+       "fixture whose options builder sets transparent itself: the patch fails");
+    const noBuilder = run('"use strict";' + MAIN.replace("mainWindow.js", "quickWindow.js") + MGR);
+    ok(noBuilder.code !== 0 && /options builder matched 0\/1/.test(noBuilder.out),
+       "fixture without the main-window options builder: the patch fails");
+    const oldShape = run('"use strict";' + "function mk(){return{backgroundColor:fQn({signedIn:c}),opacity:1,icon:z}}\n" + MGR);
+    ok(oldShape.code !== 0, "the pre-v6 single-literal shape fails loud (re-audit)");
     rmSync(d, { recursive: true });
   }
 }

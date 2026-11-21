@@ -82,10 +82,12 @@ proc showFnRe(showFn: string): Regex2 =
   re2("function " & escapeRe(showFn) & """\(\)\{(?:[\w$]+\(\);)?let [\w$]+=([\w$]+);""")
 
 # Since v4.16336.0 the "Show App" handler is a wrapper that runs an updater
-# hook first and the restore routine last: `function zyi(){zvi(),aX()}`.
-# Group 0 = the last callee (the restore routine).
+# hook first and the restore routine last: `function zyi(){zvi(),aX()}`; since
+# v6.28899.2 the leading calls may take literal arguments:
+# `function Ewi(){ywi("tray_menu"),OSi(),Kz()}`.
+# Group 0 = the last callee (the restore routine), always called bare.
 proc showWrapperRe(showFn: string): Regex2 =
-  re2("function " & escapeRe(showFn) & """\(\)\{(?:[\w$]+\(\),)+([\w$]+)\(\)\}""")
+  re2("function " & escapeRe(showFn) & """\(\)\{(?:[\w$]+\([^()]*\),)+([\w$]+)\(\)\}""")
 
 proc allMatches(s: string, r: Regex2): seq[RegexMatch2] =
   for m in findAll(s, r):

@@ -1,7 +1,12 @@
 if(process.platform==="linux"){__cdbLx:{
-// Per-call compliance deny (parity with upstream's handleToolCall preamble, which this Linux
-// block returns before). Patch 11 publishes the captured HIPAA gate; unset (older shapes) = no check.
+// Per-call denies mirrored from upstream's handleToolCall preamble, which this Linux block
+// returns before (v6.28899.2: `if(t.ojt())return s(t.Y6);if(t.SV(i))return ...deny (CLI on an
+// SSH host)...,s(st);`). Mirrored: the organization compliance (HIPAA) gate, published by Patch 11
+// as __cdbCuHipaa (unset = no check), and the "CLI on an SSH host" deny, which Patch 6 writes in
+// place of the marker comment below with upstream's own predicate and refusal text. Not mirrored:
+// upstream's telemetry event for these refusals.
 if(typeof globalThis.__cdbCuHipaa==="function"&&globalThis.__cdbCuHipaa()){(globalThis.__cdbDiag||console.log)("[claude-cu] tool call denied: organization compliance settings");return{isError:!0,content:[{type:"text",text:"Computer Use isn't available under your organization's compliance settings. If you recently switched organizations, restart the app."}]}}
+/*__CDB_SSH_DENY__*/
 // Background display (issue #300): while its setting is invalid or the display
 // is down every tool returns the executor's refusal (never the user's desktop);
 // teach mode is refused there (its overlay draws on the desktop).

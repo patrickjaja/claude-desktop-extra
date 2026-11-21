@@ -283,8 +283,9 @@ const FIXTURE = {
 const CORE = {};
 const CORE_SITES = {
   // let o=e.jI(n),s=t=>{let n=e.EI(t.bundleId,t.displayName);
-  deniedFactory: [/let [\w$]+=([\w$]+)\.([\w$]+)\([\w$]+\),[\w$]+=[\w$]+=>\{let [\w$]+=\1\.[\w$]+\([\w$]+\.bundleId,[\w$]+\.displayName\)/, 2, () => () => false],
-  tierFor: [/let [\w$]+=([\w$]+)\.[\w$]+\([\w$]+\),[\w$]+=[\w$]+=>\{let [\w$]+=\1\.([\w$]+)\([\w$]+\.bundleId,[\w$]+\.displayName\)/, 2, () => "full"],
+  // v6.28899.2: let i=e.ret(n,r.isOutsideAllowedApps),a=t=>e.aet(t.bundleId,t.displayName,r.holdRemoteDesktops)
+  deniedFactory: [/let [\w$]+=([\w$]+)\.([\w$]+)\([\w$]+(?:,[\w$]+\.[\w$]+)?\),[\w$]+=[\w$]+=>(?:\{let [\w$]+=)?\1\.[\w$]+\([\w$]+\.bundleId,[\w$]+\.displayName[,)]/, 2, () => () => false],
+  tierFor: [/let [\w$]+=([\w$]+)\.[\w$]+\([\w$]+(?:,[\w$]+\.[\w$]+)?\),[\w$]+=[\w$]+=>(?:\{let [\w$]+=)?\1\.([\w$]+)\([\w$]+\.bundleId,[\w$]+\.displayName[,)]/, 2, () => "full"],
   // ||e.AI(t.bundleId,t.displayName)))
   policyDenied: [/\|\|([\w$]+)\.([\w$]+)\([\w$]+\.bundleId,[\w$]+\.displayName\)\)\)/, 2, () => false],
   // {...e.MI,...r.getGrantFlags()}
@@ -310,7 +311,13 @@ const coreStub = new Proxy(
       if (typeof k === "string" && Object.hasOwn(CORE, k)) return CORE[k];
       if (k === "__esModule") return true;
       if (typeof k === "symbol") return undefined;
-      return () => undefined;
+      // A callable that also answers the array methods a chunk may run at load
+      // (v6.28899.2: the builder chunk requires a second chunk and runs
+      // `new Set(t.s.flatMap(...))` at load).
+      const f = () => undefined;
+      for (const [m, v] of [["flatMap", []], ["map", []], ["filter", []], ["some", false], ["includes", false], ["forEach", undefined]])
+        f[m] = () => v;
+      return f;
     },
   }
 );
@@ -332,6 +339,7 @@ function makeCtx(opts = {}) {
   const ctx = {
     process: opts.process || procView(opts.exitHandlers || []),
     console,
+    performance,
     setTimeout: opts.setTimeout || setTimeout,
     clearTimeout: opts.clearTimeout || clearTimeout,
     AbortController,
@@ -426,12 +434,12 @@ if (patchMissing || !existsSync(stubPath)) {
     const builderChunk = [...pristine.keys()].find((k) => /\.\.\.[\w$]+\.appScoped\?[\w$]+\([\w$]+\.appScoped\.supportsRawInput/.test(pristine.get(k)));
     const keyChunk = findPart(/__cdbAxKey\?\.\(\)/) || [...pristine.keys()].find((k) => /\.adaptiveResolution\}`;/.test(pristine.get(k)));
     const roChunk = [...pristine.keys()].find((k) => /===(["`])computer_batch\1\)\{let [\w$]+=[\w$]+\.input\?\.actions;/.test(pristine.get(k)));
-    const handlerChunk = [...pristine.keys()].find((k) => /handleToolCall:async\([\w$]+,[\w$]+,[\w$]+,[\w$]+\)=>\{let [\w$]+=[\w$]+\([\w$]+\);if\([\w$]+\([\w$]+\.sessionId,[\w$]+\.sessionType\)/.test(pristine.get(k)));
+    const handlerChunk = [...pristine.keys()].find((k) => /handleToolCall:async\([\w$]+,[\w$]+,[\w$]+,[\w$]+(?:,[\w$]+)?\)=>\{let [\w$]+=[\w$]+\([\w$]+\);(?:if\()?[\w$]+\([\w$]+\.sessionId,[\w$]+\.sessionType\)/.test(pristine.get(k)));
     const bsrc = builderChunk ? pristine.get(builderChunk) : "";
     const coreMissing = bindCoreNames(bsrc);
     check("core-chunk helpers located in the builder chunk", coreMissing.join(","), "");
     const builderFn = (/function ([\w$]+)\(([\w$]+),[\w$]+,[\w$]+\)\{let [\w$]+=\2\.hitTest===/.exec(bsrc) || [])[1];
-    const bindFn = (/function ([\w$]+)\([\w$]+,[\w$]+,[\w$]+\)\{let\{logger:[\w$]+,serverName:[\w$]+\}=[\w$]+,[\w$]+,[\w$]+=[\w$]+\.skipFirstRequestWarnings/.exec(bsrc) || [])[1];
+    const bindFn = (/function ([\w$]+)\([\w$]+,[\w$]+,[\w$]+\)\{let\{logger:[\w$]+,serverName:[\w$]+\}=[\w$]+,[\w$]+,(?:[\w$]+=[^,;]{1,20},)*[\w$]+=[\w$]+\.skipFirstRequestWarnings/.exec(bsrc) || [])[1];
     const BKEY = builderFn && exportKeyFor(bsrc, builderFn);
     const DKEY = bindFn && exportKeyFor(bsrc, bindFn);
     check("builder + per-session dispatcher exported by the chunk", !!BKEY && !!DKEY, true);
@@ -524,7 +532,7 @@ if (patchMissing || !existsSync(stubPath)) {
     const VA_RE =
       /function (?<va>[\w$]+)\(\)\{let (?<loc>[\w$]+)=`\$\{(?<fa>[\w$]+)\(\)\}:\$\{(?<ns>[\w$]+)\.(?<teach>[\w$]+)\(\)\}:\$\{\k<ns>\.(?<adapt>[\w$]+)\(\)\.adaptiveResolution\}(?:\$\{process\.platform==="linux"&&\(globalThis\.__cdbAxKey\?\.\(\)\|\|""\)\+\(globalThis\.__cdbCuConsent\?\.key\?\.\(\)\|\|""\)\|\|""\})?`;\k<loc>!==(?<key>[\w$]+)&&\((?<ma>[\w$]+)=void 0,(?<ga>[\w$]+)=!1,\k<key>=\k<loc>\)\}/;
     const PA_RE =
-      /function (?<pa>[\w$]+)\((?<arg>[\w$]+)\)\{return (?<ha>[\w$]+)=[\w$]+\(\),(?<bns>[\w$]+)\.(?<bm>[\w$]+)\(\{\.\.\.(?<ns>[\w$]+)\.(?<caps>[\w$]+),teachMode:\k<ns>\.(?<teach>[\w$]+)\(\),adaptiveResolution:\k<ns>\.(?<adapt>[\w$]+)\(\)\.adaptiveResolution,appScoped:\k<ha>\?\{supportsRawInput:!0\}:void 0\},\k<ns>\.(?<mode>[\w$]+)\(\),\k<arg>\)\.map\(\(\k<arg>=>\(\{name:\k<arg>\.name,description:\k<arg>\.description\?\?"",inputSchema:\k<arg>\.inputSchema\}\)\)\)\}/;
+      /function (?<pa>[\w$]+)\((?<arg>[\w$]+)\)\{return (?<ha>[\w$]+)=[\w$]+\(\),(?<bns>[\w$]+)\.(?<bm>[\w$]+)\(\{\.\.\.(?<ns>[\w$]+)\.(?<caps>[\w$]+),teachMode:\k<ns>\.(?<teach>[\w$]+)\(\),adaptiveResolution:\k<ns>\.(?<adapt>[\w$]+)\(\)\.adaptiveResolution,appScoped:\k<ha>\?\{supportsRawInput:![01](?:,[\w$]+:![01])*\}:void 0\},\k<ns>\.(?<mode>[\w$]+)\(\),\k<arg>\)\.map\(\(\k<arg>=>\(\{name:\k<arg>\.name,description:\k<arg>\.description\?\?"",inputSchema:\k<arg>\.inputSchema\}\)\)\)\}/;
     const keyRig = (src, ctx, builder) => {
       const va = VA_RE.exec(src);
       const pa = PA_RE.exec(src);
@@ -964,18 +972,23 @@ if (patchMissing || !existsSync(stubPath)) {
     console.log("\n[6] regular mode through the patched handleToolCall injection");
     const hp = handlerChunk && pristine.get(handlerChunk);
     const hq = handlerChunk && patched.get(handlerChunk);
-    const HTC_RE = /handleToolCall:async\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\)=>\{/;
-    const mP = hp && HTC_RE.exec(hp.slice(hp.search(/isEnabled:[\w$]+=>[\w$]+\.sessionType===["`]ccd["`]\?/)));
-    const mQ = hq && HTC_RE.exec(hq.slice(hq.search(/isEnabled:[\w$]+=>[\w$]+\.sessionType===["`]ccd["`]\?/)));
+    const HTC_RE = /handleToolCall:async\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)(?:,[\w$]+)?\)=>\{/;
+    const mP = hp && HTC_RE.exec(hp.slice(hp.search(/isEnabled:[\w$]+=>(?:![\w$.]+\([\w$]+\)&&\()?[\w$]+\.sessionType===["`]ccd["`]\?/)));
+    const mQ = hq && HTC_RE.exec(hq.slice(hq.search(/isEnabled:[\w$]+=>(?:![\w$.]+\([\w$]+\)&&\()?[\w$]+\.sessionType===["`]ccd["`]\?/)));
     let injected = null;
     if (mP && mQ) {
-      const pStart = hp.search(/isEnabled:[\w$]+=>[\w$]+\.sessionType===["`]ccd["`]\?/) + mP.index + mP[0].length;
-      const qStart = hq.search(/isEnabled:[\w$]+=>[\w$]+\.sessionType===["`]ccd["`]\?/) + mQ.index + mQ[0].length;
+      const pStart = hp.search(/isEnabled:[\w$]+=>(?:![\w$.]+\([\w$]+\)&&\()?[\w$]+\.sessionType===["`]ccd["`]\?/) + mP.index + mP[0].length;
+      const qStart = hq.search(/isEnabled:[\w$]+=>(?:![\w$.]+\([\w$]+\)&&\()?[\w$]+\.sessionType===["`]ccd["`]\?/) + mQ.index + mQ[0].length;
       const upstreamHead = hp.slice(pStart, pStart + 60);
       const qEnd = hq.indexOf(upstreamHead, qStart);
       injected = qEnd > qStart ? hq.slice(qStart, qEnd) : null;
     }
     check("Patch 6 injection located in the patched handler", !!injected && injected.startsWith('if(process.platform==="linux"&&!globalThis.__cuKwinMode){'), true);
+    // Patch 6's mirror of upstream's per-call SSH-host deny refers to the
+    // handler chunk's namespace and refusal text; a vm rig stubs both (never an
+    // SSH host here).
+    const sshM = injected && /\/\*__cdbSshDeny\*\/if\(([\w$]+)\.([\w$]+)\([\w$]+\)\)\{[\s\S]*?text:([\w$]+)\}\]\}\}/.exec(injected);
+    const sshStubs = (ctx) => { if (sshM) { ctx[sshM[1]] = { [sshM[2]]: () => false }; ctx[sshM[3]] = "SSH host"; } };
     check("injection carries the accessibility branch", !!injected && injected.includes("__cdbAxHandles(") && readFileSync(HANDLER_JS, "utf8").includes("globalThis.__cdbAxHandles(__TOOL_NAME__)"), true);
     if (injected) {
       const [, sP, nP, iP, seP] = mQ;
@@ -993,6 +1006,7 @@ if (patchMissing || !existsSync(stubPath)) {
       rctx.__linuxExecutor = regExec;
       rctx.__cuKwinMode = false;
       loadAx(rctx);
+      sshStubs(rctx);
       const handler = vm.runInContext(`(async function(${sP},${nP},${iP},${seP}){${injected}return{content:[{type:"text",text:"UPSTREAM"}]}})`, rctx);
       const session = { sessionId: "local-1" };
       resetLog();
@@ -1120,6 +1134,7 @@ if (patchMissing || !existsSync(stubPath)) {
           vm.runInContext(readFileSync(CONSENT_JS, "utf8"), c);
         }
         loadAx(c);
+        sshStubs(c);
         const h = vm.runInContext(`(async function(${sP},${nP},${iP},${seP}){${injected}return{content:[{type:"text",text:"UPSTREAM"}]}})`, c);
         const grants = [{ bundleId: "org.xfce.mousepad", displayName: "Mousepad" }, { bundleId: "org.kde.kate", displayName: "Kate" }];
         const sess = { sessionId: "ask-" + ask, onComputerUsePermissionRequest: async () => ({}), getCuAllowedApps: () => grants, getCuGrantFlags: () => ({}) };
@@ -1741,6 +1756,7 @@ if (patchMissing || !existsSync(stubPath)) {
       const hc = axCtx("x11-bridge");
       let ab = false;
       hc.setTimeout = (fn, ms) => (ms >= 400 && ms <= 800 ? ((ab = true), setTimeout(fn, 0)) : setTimeout(fn, ms));
+      sshStubs(hc);
       const h = vm.runInContext(`(async function(${sP},${nP},${iP},${seP}){${injected}return{content:[{type:"text",text:"UPSTREAM"}]}})`, hc);
       resetLog();
       r = await h({}, "app_ax_find", { app: "org.kde.kate", window_id: "{kate-2}", title_contains: "Done", wait_for: { until: "appears", timeout_ms: 5000 } }, { sessionId: "hw", isAborted: () => ab });

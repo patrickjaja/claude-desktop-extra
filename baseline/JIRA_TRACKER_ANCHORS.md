@@ -17,7 +17,7 @@ for name, pat in [
     ("B accessor shape", r'async function [\w$]+\(\)\{if\([\w$]+\)return [\w$]+;let\{claudeCodeSessionManager:[\w$]+\}=await '),
     ("C export key", r'onNativeViewAttached:\(\)=>[\w$]+'),
     ("C registry shape (any name)", r'function [\w$]+\([\w$]+\)\{return [\w$]+\.add\([\w$]+\),\(\)=>\{[\w$]+\.delete\([\w$]+\)\}\}'),
-    ("startSession", r'async startSession\([\w$]+,[\w$]+\)\{this\.normalizeStartOptionsAtIngress\('),
+    ("startSession", r'async startSession\([\w$]+,[\w$]+\)\{(?:let [^;{}]*;)?this\.normalizeStartOptionsAtIngress\('),
     ("worktree setup call", r'ensureSessionWorktree\(\{sessionId:[\w$]+,options:[\w$]+,'),
     ("worktree flag", r'let [\w$]+=[\w$]+\.useWorktree===!0&&![\w$]+\.[\w$]+\('),
     ("unattended rule", r'unattended:[\w$]+\?\.sideSessionAuthorized!==!0&&\('),
@@ -67,7 +67,9 @@ EOF
 
 5.11492.2 (re-checked 2026-11-13): the B and C anchors moved to `index.chunk-1pEy0mTq.js` at the same offsets and names as 5.11492.0 (`getClaudeCodeSessionManager:()=>DC` @2476207, `async function DC(){` @2476472, `onNativeViewAttached:()=>GHi` @4608570, `function GHi(e){` @4609293); the session manager class (`async startSession(`, `exports.claudeCodeSessionManager=`) is in `index.chunk-CNlrPrcI.js`. Every census count equals the 5.11492.0 column.
 
-`exports.claudeCodeSessionManager=` appears in exactly one chunk (5.1231.2, 5.11492.0 and 5.11492.2).
+6.28899.2 (re-checked 2026-11-21): B is `getClaudeCodeSessionManager:()=>Gy` (index.chunk-CMMDcOF6.js@1963537), C is `onNativeViewAttached:()=>hwa` (index.chunk-CMMDcOF6.js@4977416); the session manager class (`async startSession(` @2513572, `exports.claudeCodeSessionManager=` @2775054) is in `index.chunk-BQH78Xn7.js`. Census deltas against 5.11492.0: `startSession` still 1, but the method now opens with one statement ahead of the ingress call (`async startSession(e,i){let a=e.message===void 0?void 0:i?.startWait??...;this.normalizeStartOptionsAtIngress(e);`), so the census regex above allows one optional `let ...;` there; the two-argument signature the send flow calls (`manager.startSession(options, startOpts)`) is unchanged. `route navigation` 4 -> 3 (the fast-mode-credits notification click left the bundle; gate 4 only needs `getSessionRoute`, still 1). `C registry shape (any name)` 22 -> 26 (informational). Every other line is unchanged.
+
+`exports.claudeCodeSessionManager=` appears in exactly one chunk (5.1231.2, 5.11492.0, 5.11492.2 and 6.28899.2).
 
 ## Gates (spec section 8)
 

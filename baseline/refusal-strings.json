@@ -8,6 +8,13 @@
   ],
   "strings": [
     {
+      "id": "d8ff834771c2",
+      "text": "${} ${} blocked by policy for computer use. Requests for ${} are automatically denied regardless of what the user has approved. There is no Settings override. Inform the user that you cannot access ${}",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Organization app denylist for computer use (blocked by policy); platform-neutral policy."
+    },
+    {
       "id": "b5e9a289b459",
       "text": "${} broker sign-in unavailable: the OS identity broker isn't available on this device (macOS needs the Company Portal SSO extension; Windows has it built in; Linux is unsupported). Enable it, or ${} to sign in with the system browser.",
       "status": "accepted",
@@ -43,13 +50,6 @@
       "reason": "Command-line sanitising regex that mentions --xdg-portal-required-version; not a refusal."
     },
     {
-      "id": "1527223a1d6f",
-      "text": "'previews_page' is not available for this platform.",
-      "status": "accepted",
-      "sites": 1,
-      "reason": "Device simulator/emulator support matrix; not a Linux desktop gate."
-    },
-    {
       "id": "b1bc046e4ab8",
       "text": "**Computer use is your only tool surface in this session.** Bash, file tools, web search, the Chrome MCP, and other connectors are NOT available \\u2014 do not suggest them or ask the user to install them.",
       "status": "accepted",
@@ -64,6 +64,20 @@
       "reason": "System-prompt guidance on tool choice; no gate."
     },
     {
+      "id": "1ca9b3afae4d",
+      "text": "[app-cu-win] native binary lacks the app-scoped exports \\u2014 background computer use unavailable on this build",
+      "status": "unreachable",
+      "sites": 1,
+      "reason": "Log line inside createWin32Executor, which throws on any platform but win32; Linux uses our executor."
+    },
+    {
+      "id": "f312a769fd3a",
+      "text": "[CCD] interruptSession for ${}: the interrupt had not left this computer ${} ms after the press; ${} ms later it has ${}; ${} B of stdin unanswered",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "[CCD] interruptSession log line (interrupt not yet sent from this computer); platform-neutral."
+    },
+    {
       "id": "65396c6cbfc5",
       "text": "[Chrome Extension MCP] Unsupported platform: ${}",
       "status": "accepted",
@@ -76,6 +90,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "3a0bedf191a2",
+      "text": "[computer-use] could not list folders linked from protected folders, so full-control Save As is refused until the app restarts: ${}",
+      "status": "unreachable",
+      "sites": 1,
+      "reason": "Log line of the macOS save-panel probe inside createDarwinExecutor; on Linux that factory returns globalThis.__linuxExecutor first and otherwise throws (process.platform!==\"darwin\")."
     },
     {
       "id": "adf83df4cab8",
@@ -118,6 +139,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "Dev-build fallback log in upstream's Linux Cowork VM client."
+    },
+    {
+      "id": "d2190f563dcc",
+      "text": "[oauth] an SSH host still gets no sign-in: the server refused a token of the account's, and the last click or key may have been computer use's, not a person's; a person's message or start on that host, from two minutes after computer use has ended, signs it in again",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "OAuth log line for an SSH host refused while the last input may have come from computer use; platform-neutral."
     },
     {
       "id": "b65c599a65fc",
@@ -211,11 +239,11 @@
       "reason": "Cowork VM shell note about unmounted network folders; platform-neutral."
     },
     {
-      "id": "a80b7351afe7",
-      "text": "\\n\\nComputer use (screenshots + desktop control) is available but disabled. If a task needs it, tell the user to enable it at [Settings \\u2192 This computer \\u2192 Computer use](/settings/desktop).",
+      "id": "6de061916c07",
+      "text": "\\n\\nComputer use (screenshots + desktop control) is available but disabled. If a task needs it, tell the user to turn it on in the Claude desktop app's Settings: it's under Capabilities, or under System if it isn't there.",
       "status": "accepted",
       "sites": 1,
-      "reason": "System-prompt note when the user's CU switch is off; true on every platform."
+      "reason": "System-prompt note when the user's CU switch is off (cuOptedOutSettings); true on every platform. Rewording of the v5 'Settings -> This computer -> Computer use' text."
     },
     {
       "id": "941aaa7b50ac",
@@ -223,6 +251,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "37349a8b31db",
+      "text": "A folder already at that place stops the move with an error from mv, on Linux that it cannot overwrite a directory.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Android pane setup notes for the model (how the Android CLI download is moved into ~/Android/android-cli); documents Linux behavior, not a refusal."
     },
     {
       "id": "d3397a54faba",
@@ -435,6 +470,13 @@
       "reason": "Session kind / approval / server-side condition; platform-neutral."
     },
     {
+      "id": "9df3ea87c825",
+      "text": "Computer use is not available in this session because this session's Claude Code runs on another computer over SSH. For tasks that need it, ask the person to start a session on their own computer.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "CU deny for a Code session whose CLI runs on an SSH host (cliOnSshHost); the screen is the remote machine's, same on every client platform."
+    },
+    {
       "id": "ed590c787c45",
       "text": "Computer use is not available on this device right now. Don't retry computer_* tools this turn.",
       "status": "accepted",
@@ -537,13 +579,6 @@
       "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
     },
     {
-      "id": "ce5caf2fcbf6",
-      "text": "Desktop's policy sets a limit that it can hold only on plugins copied from this computer",
-      "status": "accepted",
-      "sites": 1,
-      "reason": "Plugin policy diagnostics wording (plugins copied from this computer); platform-neutral."
-    },
-    {
       "id": "82f81f348c98",
       "text": "Detaching an Android device with \\u2318Q requires macOS",
       "status": "accepted",
@@ -563,6 +598,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
+    },
+    {
+      "id": "0cce8b9cf2fb",
+      "text": "dns_unresolved.connection_refused.connection_timeout.host_unreachable.proxy_failed.workspace_start_needed.teleport_login_needed.aws_login_needed.gcloud_login_needed.proxy_browser_sign_in_needed.jump_host_sign_in_needed.jump_host_forward_refused.jump_host_question_lost.proxy_command_not_found.host_sign_in_needed.host_session_unanswered.network_during_setup.download_server_busy.network_other.network_client_blocked.handshake_timeout.handshake_failed.handshake_closed_by_host.handshake_incompatible.handshake_config_unread.hostkey_unverified.hostkey_changed_app_record.hostkey_confirm_needed.hostkey_declined.hostkey_confirm_unavailable.hostkey_keys_not_kept.auth_publickey_rejected.auth_password_rejected.auth_no_credentials.auth_key_unusable.auth_key_missing.auth_prompt_cancelled.auth_sign_in_needed.auth_prompts_withheld.auth_key_rejected.auth_no_key_offered.auth_agent_refused.auth_too_many_keys.auth_key_algorithm_refused.auth_agent_keys_not_used.auth_key_touch_needed.auth_kerberos_failed.auth_certificate_failed.auth_key_sign_failed.auth_key_unprotected.auth_key_public_half.auth_key_putty_format.auth_key_not_private_key.auth_key_invalid_format.auth_key_passphrase_needed.auth_key_read_blocked.auth_key_protected_folder.auth_key_rsa_not_accepted.host_invalid.policy_denied.remote_setup_failed.remote_upload_failed.remote_cli_install_failed.remote_cli_not_runnable.remote_startup_output.remote_unsupported.remote_platform_unrecognized.remote_sftp_unavailable.remote_sftp_not_started.remote_exec_no_input.remote_session_limit.remote_programs_not_run.remote_not_preinstalled.remote_preinstalled_check_failed.remote_preinstalled_linux_only.local_app_predates_preinstalled.remote_disk_full.remote_read_only.remote_folder_not_writable.remote_cli_unresponsive.local_disk_full.local_download_web_page.local_download_failed.local_prepare_failed.local_ssh_config_error.local_ssh_config_stalled.local_ssh_unsupported.local_ssh_managed_unusable.local_network_blocked.local_ssh_block_skipped.local_ssh_helper_blocked.local_ssh_helper_unusable.local_ssh_helper_missing.local_ssh_login_refused.proxy_jump_unsupported.host_key_source_unsupported.kerberos_unsupported.same_device_unchecked.launcher_unchecked.session_folders_unchecked.unknown",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Dotted list of SSH connect failure codes (split into an enum), not a message; local_ssh_unsupported / remote_preinstalled_linux_only describe the SSH setup or the remote host, the same from every client platform."
     },
     {
       "id": "79c2eee1cf68",
@@ -621,6 +663,13 @@
       "reason": "Settings schema description; documentation text."
     },
     {
+      "id": "40b9f84de965",
+      "text": "file_upload is not available: this session's Claude Code runs on another machine or in a sandbox, so the files it reads are not this computer's. Do not retry; tell the user.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "file_upload refused for a Code session whose CLI is on SSH, untrusted or via a host CLI launcher; session kind, platform-neutral."
+    },
+    {
       "id": "89dc5f78dff2",
       "text": "FileStore requires O_NOFOLLOW support on this platform",
       "status": "accepted",
@@ -642,6 +691,13 @@
       "reason": "True on Wayland without the portal; our Quick Entry --toggle path and the KDE rebind patch are the documented answer. predicate-consumers allowlist: intentional."
     },
     {
+      "id": "f1a1986ea5eb",
+      "text": "Google publishes its Android CLI only for macOS and for Linux on x64, so the Android pane has no setup commands for this computer. Where Android Studio runs, the user can install Android's tools with it.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Android pane: Google publishes the Android CLI only for macOS and Linux x64; true on Linux aarch64, Linux x64 gets the commands."
+    },
+    {
       "id": "10560aedf737",
       "text": "Inside the Linux environment only (the user cannot see that location):",
       "status": "accepted",
@@ -661,13 +717,6 @@
       "status": "accepted",
       "sites": 1,
       "reason": "Device simulator/emulator support matrix; not a Linux desktop gate."
-    },
-    {
-      "id": "71d0bc2e5fa8",
-      "text": "is not supported by this platform",
-      "status": "accepted",
-      "sites": 1,
-      "reason": "Bundled zip library feature check; platform-neutral."
     },
     {
       "id": "346a176d5f44",
@@ -701,8 +750,8 @@
       "id": "30a72e4fe685",
       "text": "Local sessions are not available on this device because its managed settings could not be read.",
       "status": "accepted",
-      "sites": 4,
-      "reason": "Admin or organisation policy; same on every platform."
+      "sites": 7,
+      "reason": "Admin or organisation policy; same on every platform. 7 sites in v6 (all read the same managed-settings state): the session-start policyAllows check, the message constant, the error classifier, the deep-link error i18n default, the CLI download gate log, the prepare-result compare and the Code-tab host CLI runner."
     },
     {
       "id": "8470b033ad2f",
@@ -733,6 +782,13 @@
       "reason": "Admin or organisation policy; same on every platform."
     },
     {
+      "id": "fc1f38c2d39b",
+      "text": "Local sessions are not available on this device because your organization\\u2019s configuration has not loaded yet.",
+      "status": "accepted",
+      "sites": 7,
+      "reason": "Admin or organisation policy (configuration server has not applied yet); same on every platform. 7 sites: the message constant, the error classifier, the deep-link error i18n (compare + default message), the CLI download gate log, the prepare-result compare and the Code-tab host CLI runner."
+    },
+    {
       "id": "7eab7ab08781",
       "text": "macOS Accessibility / Screen Recording permissions aren't granted, and the grant prompt can't be shown during a scheduled run. Grant them in the Claude desktop app, then re-run the task. (Retrying returns this same result.)",
       "status": "accepted",
@@ -752,6 +808,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "Settings schema description (macOS-only sandbox option, ignored on Linux)."
+    },
+    {
+      "id": "69d8a9cdabf2",
+      "text": "macOS permissions are still missing, so these apps can't be requested yet: first call ${} with just \\`device\\` and a short \\`reason\\` (no \\`apps\\`) to show the user the prompt where they can grant what's missing.",
+      "status": "unreachable",
+      "sites": 1,
+      "reason": "remote-cu list_apps note when macOS TCC permissions are missing: getAppNamesList is only consulted when ensureOsPermissions() is not granted (or on win32), and upstream's ensureOsPermissions returns {granted:!0} for process.platform linux."
     },
     {
       "id": "e7f463f85669",
@@ -824,11 +887,18 @@
       "reason": "3P Claude in Chrome (managed mcp.claudeInChromeEnabled): upstream's Linux build compiles the platform check away; only the CLAUDE_E2E_LOCAL_PAIRING_* test override passes and the hybrid checks after it are dead code. True for the Linux build; 1P Claude in Chrome is unaffected. Re-check when upstream ships the Linux branch."
     },
     {
-      "id": "faa28f847d7b",
-      "text": "not_main_window.not_claude_page.not_served.no_press_watch.computer_use_active.starting.hourly_limit.too_soon.no_recent_press.extension_not_added.start_failed.connected_here.timed_out.replaced.window_gone.flag_off.not_macos.signed_out.account_switched.device_not_registered.device_keyless.device_lookup_failed.key_not_hardware_backed.could_not_sign.reconnect_needed.session_id_malformed.cancelled.bad_input.out_of_time.debugging_on.debugging_turned_on.not_found.credential_not_allowed.request_origin_not_allowed.device_proof_invalid.nonce_invalid.session_not_linked.turn_not_owners.allow_not_found.allow_lapsed.account_mismatch.organization_not_served.other_workspace.no_fill_call.provenance_unwired.managers_own_site.invalid_request.rate_limited.unavailable.unreadable_answer.no_answer.unknown",
+      "id": "d2b0fd13fa73",
+      "text": "not_main_window.not_claude_page.not_served.no_press_watch.computer_use_active.starting.hourly_limit.too_soon.card_just_up.no_recent_press.extension_not_added.start_failed.connected_here.timed_out.replaced.window_gone.flag_off.not_macos.signed_out.account_switched.device_not_registered.device_keyless.device_lookup_failed.key_not_hardware_backed.could_not_sign.reconnect_needed.session_id_malformed.cancelled.bad_input.out_of_time.debugging_on.debugging_turned_on.not_found.credential_not_allowed.request_origin_not_allowed.device_proof_invalid.nonce_invalid.session_not_linked.turn_not_owners.allow_not_found.allow_lapsed.account_mismatch.organization_not_served.other_workspace.no_fill_call.provenance_unwired.managers_own_site.invalid_request.rate_limited.unavailable.unreadable_answer.no_answer.unknown",
       "status": "accepted",
       "sites": 1,
-      "reason": "Log-step reason list of the 1Password connect flow, not a message; its not_macos code comes from upstream's Linux build, where the 1Password login fill is macOS-only (the platform check is compiled to return 'not_macos')."
+      "reason": "Log-step reason list of the 1Password connect flow, not a message; its not_macos code comes from upstream's Linux build, where the 1Password login fill is macOS-only. v6 adds card_just_up to the v5 list."
+    },
+    {
+      "id": "0b02983c3fab",
+      "text": "Nothing was approved, and the user did not decline. The \"Turn on computer use?\" dialog hasn't been answered in the Claude desktop app on the computer you called this tool on, and an approval from anywhere else can't answer it.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Remote computer-use request_access while chicagoOnByDefault (computer use on by default, never chosen by the user): upstream refuses until the in-app \"Turn on computer use?\" dialog is answered on the device; a consent step, same on every platform."
     },
     {
       "id": "fccacdc90b1a",
@@ -863,6 +933,13 @@
       "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
     },
     {
+      "id": "cd1e028f98b7",
+      "text": "Only a person at this device can answer it, and the folder is unavailable until they do: listing it, searching for it or requesting it again does not answer the prompt.]",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Cowork folder-mount note: a renamed folder waits for the person at this device to answer the prompt; platform-neutral."
+    },
+    {
       "id": "f3626bc00c63",
       "text": "Opening an installed app by its package id is not supported on this device.",
       "status": "accepted",
@@ -882,6 +959,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "Electron limitation under ozone Wayland."
+    },
+    {
+      "id": "33b1686b3a55",
+      "text": "preinstalled programs are required, and only a Linux host with a POSIX login shell can have them",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "SSH preinstalled-programs policy: the REMOTE host must be Linux with a POSIX shell; a property of the remote host, the same from every client platform."
     },
     {
       "id": "9bf0941a6637",
@@ -905,6 +989,13 @@
       "reason": "Session kind / approval / server-side condition; platform-neutral."
     },
     {
+      "id": "e680c69fbefb",
+      "text": "Resolve application names on this device before requesting computer-use access. ${} refuse to run until ${} has been approved with the \\`apps\\` entries this call returns, so start here.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Tool description of the remote-cu app resolver (resolve app names before requesting access); not a refusal, platform-neutral."
+    },
+    {
       "id": "792a68428f83",
       "text": "Run a shell command in a Linux VM on the user's machine (the desktop Cowork workspace); it can't control their apps.",
       "status": "accepted",
@@ -926,18 +1017,18 @@
       "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
     },
     {
+      "id": "75d2393b3a38",
+      "text": "Sign-in requests are not available on this computer.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Sign-in requests (browser pane, Cowork) off: its gate f$ is compiled to `return!1` in the Linux build, so the text is true on Linux; an upstream product decision for the Linux build, not one of our features."
+    },
+    {
       "id": "0aa96da04e88",
       "text": "sshClientPath cannot be a local file on this computer. Where one configuration reaches every platform, a Windows path stops SSH on Macs and Linux: send each platform its own value.",
       "status": "accepted",
       "sites": 1,
       "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
-    },
-    {
-      "id": "857f82a8ab7a",
-      "text": "sshHostLauncher cannot be used with a macOS host",
-      "status": "accepted",
-      "sites": 1,
-      "reason": "Remote SSH host is macOS (sshHostLauncher); a property of the remote host, same from every client platform."
     },
     {
       "id": "f9b64c12891d",
@@ -975,13 +1066,6 @@
       "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
     },
     {
-      "id": "92ea49e6510c",
-      "text": "target \"cloud\" is only available from a session on this computer; start it here (target \"local\") instead.",
-      "status": "accepted",
-      "sites": 1,
-      "reason": "Product feature availability on this device (connectors, browser tools, cloud, tasks, policy helpers); platform-neutral wording, not a Linux session gate."
-    },
-    {
       "id": "13897118fb94",
       "text": "Tear-off halo overlay requires macOS",
       "status": "accepted",
@@ -1001,6 +1085,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "Built-in browser chrome.tabs.update refusal for extensions; 'computer use may be acting' means the upstream CU lock is held, which our Linux executor also takes; platform-neutral safety rule."
+    },
+    {
+      "id": "64c2cc82aee8",
+      "text": "The Android pane has setup commands only for a Mac with Apple silicon and for Linux on x64, so on this computer it shows Android Studio's steps. The user can install Android's tools with Android Studio.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Android pane: setup commands exist for Apple-silicon Macs and Linux x64; on Linux aarch64 it shows Android Studio's steps. True on Linux (Google ships no linux-arm64 Android CLI)."
     },
     {
       "id": "d032e87f177c",
@@ -1052,11 +1143,11 @@
       "reason": "Device simulator/emulator support matrix; not a Linux desktop gate."
     },
     {
-      "id": "a5eb7a6e645e",
-      "text": "The screen is locked. app_screenshot continues to work in background mode, but actions (click, type, key, scroll, drag) need the screen unlocked \\u2014 macOS blocks window-level Accessibility while locked. Screenshot to observe; act once the user returns.",
+      "id": "0bd1cf4f36a6",
+      "text": "The middle button is not available on this computer yet. Use the left button; tab.click(x, y, { modifiers: [\"Control\"] }) holds a key down during it.",
       "status": "accepted",
       "sites": 1,
-      "reason": "macOS background (app-scoped) mode prompt; not advertised on Linux."
+      "reason": "Built-in browser (browser_repl): a middle-button left_click is refused unconditionally on every platform (Cr = computer + left_click + button middle)."
     },
     {
       "id": "7fd907f9b247",
@@ -1108,13 +1199,6 @@
       "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
     },
     {
-      "id": "05416a1b480e",
-      "text": "This launcher cannot be used with a macOS host",
-      "status": "accepted",
-      "sites": 1,
-      "reason": "Remote SSH host is macOS (sshHostLauncher); a property of the remote host, same from every client platform."
-    },
-    {
       "id": "d4719625deff",
       "text": "This session runs on a remote host over SSH, and these tools manage the disk of the computer the Claude app runs on, so they are unavailable here. Tell the user they can do this from Settings \\u203a This computer \\u203a Storage in the app.",
       "status": "accepted",
@@ -1134,6 +1218,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "Electron option documentation/warning; macOS-only by design."
+    },
+    {
+      "id": "5bac124df896",
+      "text": "typing a sign-in is not available on this computer",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Reason text of the browser sign-in typing flow when its GrowthBook flag (161716843) is off; the flag check is the same on Linux (compiled `Y(...)&&!0`)."
     },
     {
       "id": "5f184a125a74",
@@ -1171,11 +1262,11 @@
       "reason": "Native binary picker; linux-x64/linux-arm64 handled before the throw."
     },
     {
-      "id": "acdffdb13dc5",
-      "text": "Until then computer use, screen sharing and screen recording are off in every conversation, so close it as soon as you can, with tabs_close; if that is refused, ask the person to close it.",
+      "id": "b0d6e06a943d",
+      "text": "Until then computer use, screen sharing and screen recording are off in every conversation, so close it as soon as you can, with tabs_close (in a browser_repl program, browser.tabs.close(id)); if that is refused, ask the person to close it.",
       "status": "accepted",
       "sites": 1,
-      "reason": "1Password login-fill pause in the built-in browser: upstream's executor proxy wraps every executor, our __linuxExecutor included, and refuses screenshots and input while a fill is pending; true on Linux."
+      "reason": "1Password login-fill pause in the built-in browser: upstream's executor proxy wraps every executor, our __linuxExecutor included, and refuses screenshots and input while a fill is pending; true on Linux. Rewording (adds browser_repl) of the v5 text."
     },
     {
       "id": "49a35c4dc1ee",
@@ -1225,6 +1316,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "Chromium switch name / test regex for the xdg portal version; not a refusal."
+    },
+    {
+      "id": "e1e3ace8eee3",
+      "text": "Your organization allows SSH sessions only on Linux hosts it has set up for Claude.",
+      "status": "accepted",
+      "sites": 1,
+      "reason": "Organization SSH policy: only preinstalled Linux REMOTE hosts; a property of the remote host, the same from every client platform."
     }
   ]
 }

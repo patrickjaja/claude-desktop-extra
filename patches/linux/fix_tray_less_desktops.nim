@@ -29,7 +29,12 @@
 # also pins that all sites sit in the same window-creation function. Since
 # v2.31226.0 the condition is a comma expression that calls
 # `e.preventDefault()` first (`if(e.preventDefault(),!<settings>(...))`); any
-# such leading calls are accepted.
+# such leading calls are accepted. Since v6.28899.2 the condition also spares
+# an app that is meant to run hidden (upstream's "appifact" launch mode):
+#   if(e.preventDefault(),!jf("menuBarEnabled")&&!jv.active()){...tray is disabled...}
+# That `&&!<pred>()` is captured and joined to the gate we pass, so such a
+# launch is never shown by us either:
+#     ,(<probe>).startup(i||jv.active(),<showMainWindow>,()=><settings>("menuBarEnabled"))
 #
 # Idempotency: the injected startup hook present exactly once, and it is the
 # only marker in the input -> already applied (1/1). Any other marker state
@@ -55,7 +60,7 @@ proc probeExpr(): string =
 
 # Read-only anchor: captures the settings reader, never rewritten.
 let settingRe = re2(
-  """if\((?:[\w$]+(?:\.[\w$]+)*\([^()]*\),)*!([\w$]+)\(["`]menuBarEnabled["`]\)\)\{[\w$]+\.info\(["`]Quitting app on main window close since tray is disabled["`]\)"""
+  """if\((?:[\w$]+(?:\.[\w$]+)*\([^()]*\),)*!([\w$]+)\(["`]menuBarEnabled["`]\)(?:&&!([\w$]+(?:\.[\w$]+)*\(\)))?\)\{[\w$]+\.info\(["`]Quitting app on main window close since tray is disabled["`]\)"""
 )
 let showOptRe = re2"""show:([\w$]+)&&![\w$]+,backgroundColor:"""
 # `koo(c,{showMainWindow:aX,reopen:()=>u.app.emit("activate",{},!0)})` since
@@ -66,7 +71,7 @@ let showMainRe =
   re2("""[\w$]+\([\w$]+,\{showMainWindow:([\w$]+)""" & EXTRA_MEMBERS & """\}\)""")
 let startupDoneRe = re2(
   """\{showMainWindow:[\w$]+""" & EXTRA_MEMBERS &
-    """\}\),/\*__cdb_tray_host_v1__\*/\(\(\(\) =>[\s\S]*?\)\(\)\)\.startup\([\w$]+,[\w$]+,\(\)=>[\w$]+\("menuBarEnabled"\)\)"""
+    """\}\),/\*__cdb_tray_host_v1__\*/\(\(\(\) =>[\s\S]*?\)\(\)\)\.startup\([\w$]+(?:\|\|[\w$]+(?:\.[\w$]+)*\(\))?,[\w$]+,\(\)=>[\w$]+\("menuBarEnabled"\)\)"""
 )
 
 proc allMatches(s: string, r: Regex2): seq[RegexMatch2] =
@@ -120,13 +125,20 @@ proc apply*(input: string): string =
   let gateVar = input[sm.group(0)]
   let showFn = input[rm.group(0)]
   let settingFn = input[cm.group(0)]
+  # Upstream's "meant to run hidden" predicate from the close handler, if any:
+  # such a launch counts as visible for us, so the hook leaves it alone.
+  let gate =
+    if cm.group(1).a >= 0:
+      gateVar & "||" & input[cm.group(1)]
+    else:
+      gateVar
 
   let bEnd = rm.boundaries.b + 1
   let hook =
-    "," & MARKER & "(" & probeExpr() & ").startup(" & gateVar & "," & showFn & ",()=>" &
+    "," & MARKER & "(" & probeExpr() & ").startup(" & gate & "," & showFn & ",()=>" &
     settingFn & "(\"menuBarEnabled\"))"
   result = result[0 ..< bEnd] & hook & result[bEnd .. ^1]
-  echo &"  [OK] window creation: hidden launch shown when no tray (gate {gateVar}, show {showFn}, settings {settingFn})"
+  echo &"  [OK] window creation: hidden launch shown when no tray (gate {gate}, show {showFn}, settings {settingFn})"
   inc patchesApplied
 
   # Positive end-state: the injected hook is now present exactly once.

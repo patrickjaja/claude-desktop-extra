@@ -47,11 +47,22 @@
 # PRECONDITION, not a sub-patch: upstream still CONSUMES the option. C's end
 # state only proves that WE pass `loadLimits:`. If upstream renamed the option,
 # both constructor anchors would still match, C would print [OK], and the
-# manager would silently ignore the value. So its two reads are pinned, each to
-# exactly one site (2.9939.4 shapes, in an index.chunk-*):
+# manager would silently ignore the value. So its reads are pinned, each to
+# exactly one site (2.9939.4 shapes, in an index.chunk-*), and `this.config.
+# loadLimits` to exactly those two spellings:
 #   this.inProcess=new _e(e.loadLimits)   the in-process reader: the limits are
 #                                         merged over the defaults ({...ae,...e})
 #   let c=this.config.loadLimits          predictTranscriptTruncation's read
+#   o=5*(this.config.loadLimits?.mainBytes??52428800)
+#                                         since v6.28899.2: searchLeftFile's scan
+#                                         budget when the history window walks
+#                                         back into an earlier session file the
+#                                         conversation continued from. It stops
+#                                         after 5x the main tail size; a larger
+#                                         mainBytes widens that bounded budget in
+#                                         proportion, which is the intent (a
+#                                         session loaded in full may link earlier
+#                                         files of the same order of size)
 # Neither regex can match our own injection: C writes `loadLimits:globalThis...`
 # and js/transcript_limits_main.js must never spell either shape (not even in a
 # comment - it is injected verbatim), so an idempotent second run still counts 1.
@@ -80,6 +91,9 @@ let forkEndStateRe =
 # Precondition P: upstream's two reads of the option (see the header).
 let limitsCtorReadRe = re2"""new [\w$.]+\([\w$]+\.loadLimits\)"""
 let limitsConfigReadRe = re2"""this\.config\.loadLimits\b"""
+let limitsPredictReadRe = re2"""let [\w$]+=this\.config\.loadLimits;"""
+let limitsSearchReadRe =
+  re2"""[\w$]+=5\*\(this\.config\.loadLimits\?\.mainBytes\?\?\d+\)"""
 
 # Sub-patch C. Group 0 = `new <id>.<id>({`, group 1 = the `key:value,` properties
 # upstream places before the callback (empty, or starting with a key), as long as
@@ -103,8 +117,13 @@ proc forkEndStateCount(s: string): int =
 proc ctorEndStateCount(s: string): int =
   s.findAll(ctorEndRe).len
 
-proc limitsReadCounts(s: string): (int, int) =
-  (s.findAll(limitsCtorReadRe).len, s.findAll(limitsConfigReadRe).len)
+proc limitsReadCounts(s: string): (int, int, int, int) =
+  (
+    s.findAll(limitsCtorReadRe).len,
+    s.findAll(limitsConfigReadRe).len,
+    s.findAll(limitsPredictReadRe).len,
+    s.findAll(limitsSearchReadRe).len,
+  )
 
 proc apply*(input: string): string =
   result = input
@@ -141,12 +160,14 @@ proc apply*(input: string): string =
 
   # --- precondition P: upstream still reads the loadLimits option ---------------
   # Without it C would "succeed" into an option nothing reads (see the header).
-  let (ctorReads, configReads) = limitsReadCounts(result)
-  if ctorReads != 1 or configReads != 1:
+  let (ctorReads, configReads, predictReads, searchReads) = limitsReadCounts(result)
+  if ctorReads != 1 or configReads != 2 or predictReads != 1 or searchReads != 1:
     echo "  [FAIL] transcript limits: expected upstream to read loadLimits at exactly 1 " &
-      "`new <Reader>(<cfg>.loadLimits)` and 1 `this.config.loadLimits`, found " &
-      $ctorReads & " and " & $configReads & " - the option was renamed or its reads " &
-      "moved, so passing it would change nothing; re-audit before re-fitting C"
+      "`new <Reader>(<cfg>.loadLimits)` and 2 `this.config.loadLimits` (1 " &
+      "`let <x>=this.config.loadLimits;`, 1 `<x>=5*(this.config.loadLimits?.mainBytes??N)`), found " &
+      $ctorReads & ", " & $configReads & " (" & $predictReads & ", " & $searchReads &
+      ") - the option was renamed or its reads moved, so passing it may change nothing " &
+      "or something new; re-audit before re-fitting C"
     quit(1)
   echo "  [OK] transcript limits: upstream reads loadLimits (precondition met)"
 
@@ -199,7 +220,8 @@ when isMainModule:
     echo "  [PASS] transcript limits applied"
   else:
     if MARKER notin output or forkEndStateCount(output) != 1 or
-        limitsReadCounts(output) != (1, 1) or ctorEndStateCount(output) != CTOR_SITES:
+        limitsReadCounts(output) != (1, 2, 1, 1) or
+        ctorEndStateCount(output) != CTOR_SITES:
       echo "  [FAIL] No changes made and the end-state is absent"
       quit(1)
     echo "  [OK] Already applied (no changes needed)"

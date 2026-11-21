@@ -120,6 +120,31 @@ const TRANSP_FRAMED =
   "(typeof globalThis.__cdbWinTransPopoutFramed===\"function\"&&" &
   "(()=>{try{return globalThis.__cdbWinTransPopoutFramed()===!0}catch(_){return!1}})())"
 
+# Sub-patch 1a's marker (the builder's titleBarStyle), unique to this patch.
+const TBSTYLE_MARKER = "/*__CDB_NATIVE_TBSTYLE__*/"
+
+proc matchBrace(s: string, open: int): int =
+  ## Index of the `}` closing the `{` at `open`, skipping string and template
+  ## literals (no `${` nesting needed for an options literal); -1 if none.
+  var depth = 0
+  var i = open
+  while i < s.len:
+    let c = s[i]
+    if c == '"' or c == '\'' or c == '`':
+      inc i
+      while i < s.len and s[i] != c:
+        if s[i] == '\\':
+          inc i
+        inc i
+    elif c == '{':
+      inc depth
+    elif c == '}':
+      dec depth
+      if depth == 0:
+        return i
+    inc i
+  -1
+
 proc capture(s: string, pat: Regex2, name: string): string =
   ## Capture group 1 of the single match of `pat` in `s`, or raise with `name`
   ## in the message (no match, or more than one).
@@ -153,6 +178,11 @@ proc apply*(input: string): string =
       raise newException(
         ValueError, "marker present but the pop-out title bar gate (patch 3) is missing"
       )
+    if TBSTYLE_MARKER notin input:
+      raise newException(
+        ValueError,
+        "marker present but the builder's titleBarStyle gate (patch 1a) is missing",
+      )
     if TRANSP_FRAMED notin input:
       raise newException(
         ValueError,
@@ -180,84 +210,129 @@ proc apply*(input: string): string =
   # require("electron") is always valid in the main process.
   let electron = "require(\"electron\")"
 
-  # Patch 1: main BrowserWindow options. We splice six runtime-conditional
-  # options into the existing comma-list right after titleBarOverlay:
-  #   titleBarStyle:    "default" in native mode, "hidden" otherwise.
+  # Patch 1: main BrowserWindow options. Since v6.28899.2 they are built in two
+  # places (up to v5.11492.5 one literal held `titleBarStyle:"hidden",
+  # titleBarOverlay:!0`):
+  #   f=(e=>BEe(new u.BrowserWindow(e)))(kOr({...rSe(e),...e2i(),
+  #       titleBarOverlay:!0,trafficLightPosition:$wo(),show:i&&!0,
+  #       backgroundColor:WWi({signedIn:s}),opacity:+!c},d?void 0:l))
+  #   function kOr(e,t){return{...e,title:_yr(),titleBarStyle:"hidden",
+  #       icon:..,webPreferences:{preload:...mainWindow.js,..}}}
+  # 1a. In the builder: titleBarStyle -> "default" in native mode, "hidden"
+  #     otherwise (the builder's keys come after its spread, so the call site
+  #     cannot set it).
+  # 1b. At the builder's one call site, right after titleBarOverlay:
   #   titleBarOverlay:  Anthropic-themed style object in integrated mode,
   #                     false in bare mode (this is what disables the window
-  #                     controls), upstream var (true on win32, false
-  #                     elsewhere) otherwise.
+  #                     controls), upstream's value otherwise.
   #   frame:            false in BOTH frameless modes, true otherwise.
   #   hasShadow:        false in bare mode only - load-bearing, see the header.
   #   autoHideMenuBar:  true on Linux (Alt brings the GTK menu bar back).
   #
-  # We deliberately do NOT splice an `icon:` here. Upstream passes its own
-  # `icon:` LATER in the same object literal, and the last key wins, so ours was
-  # silently discarded from the day it was written. Upstream's icon.png ships in
-  # the tree we repackage, so there is nothing to fix - only dead code to not
-  # write. See the shadowing guard below.
+  # We deliberately do NOT splice an `icon:` here: upstream passes its own
+  # `icon:` (in the builder, after the spread), and the last key wins, so ours
+  # would be silently discarded. Upstream's icon.png ships in the tree we
+  # repackage, so there is nothing to fix. See the shadowing guard below.
   let overlayStyle =
     "{color:" & bgCall & ",symbolColor:" & electron &
     ".nativeTheme.shouldUseDarkColors?\"#fff\":\"#000\",height:36}"
+
+  # 1a. The builder: `function B(e,t){return{...e,title:F(),titleBarStyle:"hidden",`
+  # whose literal preloads .vite/build/mainWindow.js.
+  var builder = ""
+  var builderLit = (a: -1, b: -1) # the builder's returned literal, braces included
+  var builders = 0
+  for m in result.findAll(
+    re2"""function ([\w$]+)\(([\w$]+),[\w$]+\)\{return(\{)\.\.\.([\w$]+),title:[\w$]+\(\),titleBarStyle:["`]hidden["`],"""
+  ):
+    if result[m.group(1)] != result[m.group(3)]:
+      continue
+    let lb = m.group(2).a
+    let le = result.matchBrace(lb)
+    if le < 0 or not result[lb .. le].contains(".vite/build/mainWindow.js"):
+      continue
+    inc builders
+    builder = result[m.group(0)]
+    builderLit = (a: lb, b: le)
+  if builders != 1:
+    raise newException(ValueError, &"main window options builder: {builders}/1")
+  block:
+    let lit = result[builderLit.a .. builderLit.b]
+    let at = lit.find("titleBarStyle:")
+    let q = lit[at + "titleBarStyle:".len]
+    let oldVal = "titleBarStyle:" & q & "hidden" & q & ","
+    if not lit.continuesWith(oldVal, at):
+      raise newException(ValueError, "main window options builder: titleBarStyle shape")
+    let newLit =
+      lit[0 ..< at] & "titleBarStyle:" & LINUX_NATIVE & "?\"default\":\"hidden\"" &
+      TBSTYLE_MARKER & "," & lit[at + oldVal.len .. ^1]
+    result = result[0 ..< builderLit.a] & newLit & result[builderLit.b + 1 .. ^1]
+    builderLit.b += newLit.len - lit.len
+  echo &"  [OK] main window options builder {builder}: titleBarStyle follows the native mode"
+
+  # 1b. The builder's one call site `B({...})`.
+  var callLit = (a: -1, b: -1)
+  var calls = 0
+  for m in result.findAll(re2("(?:^|[^\\w$.])" & escapeRe(builder) & "\\((\\{)")):
+    inc calls
+    let lb = m.group(0).a
+    callLit = (a: lb, b: result.matchBrace(lb))
+  if calls != 1 or callLit.b < 0:
+    raise newException(ValueError, &"main window options builder call: {calls}/1")
   var n = 0
-  # v1.26832.0: `"hidden"` became a template literal and the titleBarOverlay
-  # value is the constant-folded `!0` rather than a win32-only variable, so the
-  # value slot accepts a boolean literal as well as an identifier chain.
-  result = result.replace(
-    re2"""titleBarStyle:["`]hidden["`],titleBarOverlay:(!\d|[\w$]+(?:\.[\w$]+)*)""",
-    proc(m: RegexMatch2, s: string): string =
-      inc n
-      "/*__CDB_NATIVE_FRAME__*/titleBarStyle:" & LINUX_NATIVE &
-        "?\"default\":\"hidden\"," & "titleBarOverlay:(" & LINUX_INTEGRATED & ")?" &
-        overlayStyle & ":(" & LINUX_BARE & ")?!1:" & s[m.group(0)] & ",frame:!(" &
-        LINUX_FRAMELESS & ")," & "hasShadow:!(" & LINUX_BARE & ")," &
-        "autoHideMenuBar:process.platform===\"linux\"",
-  )
-  if n != 1:
-    raise newException(ValueError, &"main window pattern: {n}/1")
+  block:
+    let lit = result[callLit.a .. callLit.b]
+    let newLit = lit.replace(
+      re2"""titleBarOverlay:(!\d|[\w$]+(?:\.[\w$]+)*)([,}])""",
+      proc(m: RegexMatch2, s: string): string =
+        inc n
+        "/*__CDB_NATIVE_FRAME__*/titleBarOverlay:(" & LINUX_INTEGRATED & ")?" &
+          overlayStyle & ":(" & LINUX_BARE & ")?!1:" & s[m.group(0)] & ",frame:!(" &
+          LINUX_FRAMELESS & ")," & "hasShadow:!(" & LINUX_BARE & ")," &
+          "autoHideMenuBar:process.platform===\"linux\"" & s[m.group(1)],
+    )
+    if n != 1:
+      raise newException(ValueError, &"main window pattern: {n}/1")
+    result = result[0 ..< callLit.a] & newLit & result[callLit.b + 1 .. ^1]
+    callLit.b += newLit.len - lit.len
   echo &"  [OK] main window options: {n}"
 
-  # Guard: upstream's options object continues PAST our splice point, and in a
-  # JS object literal the LAST key wins. Upstream already passes its own `icon:`
-  # after us - which is exactly why we no longer inject one. If a future release
-  # also passes `frame`, `hasShadow`, `titleBarStyle`, `titleBarOverlay` or
-  # `autoHideMenuBar` after us, our value would be silently discarded: no build
-  # failure, no runtime error, just a window opening in the wrong mode. That is
-  # the worst failure shape this project has, so make it loud here instead.
+  # Guard: in a JS object literal the LAST key wins. The builder spreads the
+  # call-site literal first and then sets its own keys, so a key of ours set
+  # in BOTH would be silently discarded: no build failure, no runtime error,
+  # just a window opening in the wrong mode. That is the worst failure shape
+  # this project has, so make it loud here instead.
   block:
-    let mi = result.find("/*__CDB_NATIVE_FRAME__*/")
-    if mi < 0:
-      raise newException(ValueError, "own marker missing right after patch 1")
-    let tail = result[mi ..< min(mi + 3000, result.len)]
-    let wp = tail.find("webPreferences:")
-    if wp < 0:
-      raise newException(
-        ValueError,
-        "options object shape changed: no webPreferences: within 3000 chars " &
-          "of our injection, so the shadowing guard cannot delimit the object",
-      )
-    let opts = tail[0 ..< wp]
-    for key in [
-      "titleBarStyle:", "titleBarOverlay:", "frame:", "hasShadow:", "autoHideMenuBar:"
-    ]:
-      var hits = 0
+    proc hits(lit, key: string): int =
       var at = 0
       while true:
-        let j = opts.find(key, at)
+        let j = lit.find(key, at)
         if j < 0:
           break
-        inc hits
+        inc result
         at = j + 1
-      if hits != 1:
+
+    let callObj = result[callLit.a .. callLit.b]
+    let builderObj = result[builderLit.a .. builderLit.b]
+    for key in ["titleBarOverlay:", "frame:", "hasShadow:", "autoHideMenuBar:"]:
+      if callObj.hits(key) != 1 or builderObj.hits(key) != 0:
         raise newException(
           ValueError,
-          &"option {key} appears {hits}x in the main-window options object - " &
-            "upstream likely passes its own now, which would shadow ours " &
-            "(later key wins). Re-audit before shipping.",
+          &"option {key} appears {callObj.hits(key)}x at the call site and " &
+            &"{builderObj.hits(key)}x in the options builder - upstream likely " &
+            "sets it itself now, which would shadow ours (later key wins). " &
+            "Re-audit before shipping.",
         )
-    # The captured background call is emitted into this object; its argument
-    # (e.g. `c` in `{signedIn:c}`) is only in scope if it came from here.
-    if ("backgroundColor:" & bgCall & ",") notin opts:
+    if builderObj.hits("titleBarStyle:") != 1 or callObj.hits("titleBarStyle:") != 0:
+      raise newException(
+        ValueError,
+        &"option titleBarStyle: appears {builderObj.hits(\"titleBarStyle:\")}x in the " &
+          &"options builder and {callObj.hits(\"titleBarStyle:\")}x at the call site, " &
+          "expected once in the builder only - re-audit",
+      )
+    # The captured background call is emitted into the call-site literal; its
+    # argument (e.g. `s` in `{signedIn:s}`) is only in scope if it came from there.
+    if ("backgroundColor:" & bgCall & ",") notin callObj:
       raise newException(
         ValueError,
         &"captured {bgCall} is not in the main-window options object we patched",
@@ -265,14 +340,17 @@ proc apply*(input: string): string =
     echo "  [OK] no upstream duplicate shadows our injected options"
 
   # Patch 2: overlay color inside the helper that builds the titleBarOverlay
-  # style for main and popout windows. Since v3.1623.0 it hoists the color into
-  # one declarator chain:
-  #   o=e==="main"&&pQn()||RI(),s=n?<dark>?"#f9f8f4":"#141412":r?e0n(o):o;
-  # (since v4.16336.0 without the `e==="main"&&` guard: `a=AXn()||oF(),...`).
-  # `o` is the plain window background, `e0n(o)` upstream's alpha-blend that
+  # style for main and popout windows. Since v6.28899.2 the window's own theme
+  # (`o`) can differ from the app's (`a`), and the color chain reads:
+  #   a=u.nativeTheme.shouldUseDarkColors,o=e==="main"&&yo!==void 0?a:zZi(),
+  #   s=o===a?GWi()||nW():jWi[o?"dark":"light"],
+  #   c=n?o?"#f9f8f4":"#141412":r?QZi(s):s;return o?{color:c,...
+  # (v3.1623.0 to v5.11492.5: `a=AXn()||oF(),s=n?<dark>?..:..:r?e0n(a):a;
+  # return u.nativeTheme.shouldUseDarkColors?{color:s,...`).
+  # `s` is the plain window background, `QZi(s)` upstream's alpha-blend that
   # has painted as a grey strip on Linux Wayland. Gate the blend off in Linux
-  # integrated mode: `r?e0n(o):o` -> `!(LINUX_INTEGRATED)&&r?e0n(o):o`, which
-  # parses as `(!(...)&&r)?e0n(o):o`. Only existing locals are used, so it does
+  # integrated mode: `r?QZi(s):s` -> `!(LINUX_INTEGRATED)&&r?QZi(s):s`, which
+  # parses as `(!(...)&&r)?QZi(s):s`. Only existing locals are used, so it does
   # not matter which code-split chunk the helper lives in.
   #
   # nim-regex has no backreferences: the three `o` captures (declarator, blend
@@ -281,7 +359,7 @@ proc apply*(input: string): string =
   n = 0
   var mismatch = ""
   result = result.replace(
-    re2"""(([\w$]+)=(?:[\w$]+===["`]main["`]&&)?[\w$]+\(\)\|\|[\w$]+\(\),([\w$]+)=[\w$]+\?[\w$]+\.nativeTheme\.shouldUseDarkColors\?["`]#[0-9a-fA-F]+["`]:["`]#[0-9a-fA-F]+["`]:)([\w$]+\?[\w$]+\(([\w$]+)\):([\w$]+);return [\w$]+\.nativeTheme\.shouldUseDarkColors\?\{color:([\w$]+),)""",
+    re2"""(([\w$]+)=[\w$]+===[\w$]+\?[\w$]+\(\)\|\|[\w$]+\(\):[\w$]+\[[\w$]+\?["`]dark["`]:["`]light["`]\],([\w$]+)=[\w$]+\?[\w$]+\?["`]#[0-9a-fA-F]+["`]:["`]#[0-9a-fA-F]+["`]:)([\w$]+\?[\w$]+\(([\w$]+)\):([\w$]+);return [\w$]+\?\{color:([\w$]+),)""",
     proc(m: RegexMatch2, s: string): string =
       inc n
       let bg = s[m.group(1)]
@@ -308,8 +386,9 @@ proc apply*(input: string): string =
   # renderer then picks os-frame. Bare mode is treated like native here: there
   # is no overlay to draw, so a pop-out gets the window manager's frame.
   # Integrated mode calls upstream's function unchanged.
-  # The schema-map entry `popoutTitleBarOverlay:A_,` has no call parens, so it
-  # does not match.
+  # The schema-map entry (`popoutTitleBarOverlay:A_,`, since v6.28899.2
+  # `popoutTitleBarOverlay:ws(),`) is told apart by its callee, which is not a
+  # status function.
   block:
     let pFn =
       re2"""function ([\w$]+)\(\)\{return [\w$]+\(\)\?\{status:["`]unsupported["`],reason:["`][^"`]*["`],unsupportedCode:["`]([\w]+)["`]\}:\{status:["`]supported["`]\}\}"""
@@ -317,29 +396,40 @@ proc apply*(input: string): string =
     var fns: seq[(string, string)]
     for m in result.findAll(pFn):
       fns.add (result[m.group(0)], result[m.group(1)])
+    # Since v6.28899.2 the schema map's entries are calls too
+    # (`popoutTitleBarOverlay:ws(),`), so only a call of a function in the
+    # status-function shape counts.
     var calls = 0
     var target = ""
-    for m in result.findAll(callRe):
-      inc calls
-      target = result[m.group(0)]
-    if calls != 1:
-      raise
-        newException(ValueError, &"popoutTitleBarOverlay call site: {calls}/1 matches")
     var code = ""
-    var found = 0
-    for (name, c) in fns:
-      if name == target:
-        inc found
-        code = c
-    if found != 1:
+    for m in result.findAll(callRe):
+      let callee = result[m.group(0)]
+      var found = 0
+      var c = ""
+      for (name, fc) in fns:
+        if name == callee:
+          inc found
+          c = fc
+      if found == 0:
+        continue
+      if found != 1:
+        raise newException(
+          ValueError,
+          &"popoutTitleBarOverlay: upstream status function {callee} defined {found}x - re-audit",
+        )
+      inc calls
+      target = callee
+      code = c
+    if calls != 1:
       raise newException(
         ValueError,
-        &"popoutTitleBarOverlay: upstream status function {target} not found " &
-          &"in the expected shape ({found}/1) - re-audit",
+        &"popoutTitleBarOverlay call site of an upstream status function in the expected shape: {calls}/1 - re-audit",
       )
     result = result.replace(
       callRe,
       proc(m: RegexMatch2, s: string): string =
+        if s[m.group(0)] != target:
+          return s[m.boundaries]
         POPOUT_MARKER & "popoutTitleBarOverlay:(" & LINUX & "&&(" & NATIVE_ON & "||" &
           BARE_ON & "||" & TRANSP_FRAMED & "))?{status:\"unsupported\",reason:\"" &
           "Pop-out title bar overlay is not used in the native or bare title bar mode or while the window is transparent\"," &

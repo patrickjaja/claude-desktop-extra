@@ -3,8 +3,9 @@
  * feature. Embedded at the head of upstream's file-index worker bundle
  * (.vite/build/file-index-worker/fileIndexWorker.js) by
  * patches/community/add_feature_files_quick_open_worker.nim, which also rewrites
- * the ONE call site `this.index.search(query, limit)` inside
- * FileIndexHost.search to `__cdbQoSearch(this.index, query, limit)`.
+ * the ONE call site `<index>.search(query, limit)` inside FileIndexHost.search
+ * (`r=this.builtIndex();if(r)for(...of r.search(e,t))` since v6.28899.2) to
+ * `__cdbQoSearch(<index>, query, limit)`.
  *
  * WHY: upstream's scorer walks the query character by character with indexOf,
  * so whitespace in the query has to occur literally in the path - "user
@@ -18,9 +19,15 @@
  * ordinal rank per piece and a sum of ordinals ranks directories above files.
  *
  * CONTRACT of `index` (upstream's scorer instance, class T in the worker):
- *   index.readyCount           number of indexed paths (0 while building)
  *   index.search(query, limit) -> [{ path, score: rank/n, positions: number[] }]
- *                                 best first, at most `limit`
+ *                                 best first, at most `limit`; a limit above the
+ *                                 number of matches returns EVERY match (the
+ *                                 scorer keeps a top-N that it only prunes once
+ *                                 it holds `limit` entries)
+ *   index.readyCount           up to v5.11492.5 only: number of indexed paths
+ *                              (0 while building). Since v6.28899.2 the count
+ *                              is a private field of the scorer's table, so
+ *                              the full-set scan passes an unbounded limit.
  *
  * GATE: process.env.CDB_FILES_QUICK_OPEN === "1". The main process mirrors the
  * `filesQuickOpen` pref into that variable (js/files_quick_open_main.js) and
@@ -111,8 +118,8 @@ function __cdbQoSearch(index, query, limit) {
   // Every piece scans the WHOLE ready set: intersecting two top-N lists would
   // drop a file that is a mediocre match for one piece and a great one for the
   // other, which is precisely the "user service" case.
-  var total = (typeof index.readyCount === "number" && index.readyCount > 0) ? index.readyCount : 0;
-  if (total === 0) return [];
+  var total = typeof index.readyCount === "number" ? index.readyCount : Number.MAX_SAFE_INTEGER;
+  if (total <= 0) return [];
 
   // Seed from the first piece: path -> { rank sum, positions }.
   var first = index.search(pieces[0], total);
@@ -155,7 +162,7 @@ function __cdbQoSearch(index, query, limit) {
   // file out of the top four entirely.
   // VS Code scores the label (file name) first, so score the basename and keep
   // upstream's ordinal only as the TIE-BREAK - as a sort key, not as a term in
-  // the score: the summed ordinal is unbounded (readyCount per piece) and any
+  // the score: the summed ordinal is unbounded (one rank per indexed path per piece) and any
   // scaled version of it would overpower the label tiers on a large index, which
   // is the very bug this replaces. The result SET is untouched; only the order.
   var merged = [];

@@ -150,16 +150,31 @@ proc apply*(input: string): string =
         "session-start: " & api & "." & name & " -> " & local &
           " is not defined once in " & apiChunk,
       )
-  # The main window: `V=new u.BrowserWindow(e),zi(V.webContents,Li.MAIN_WINDOW)`,
-  # and the one export that returns it.
+  # The main window: since v6.28899.2 the factory receives the constructed
+  # window, `function BEe(e){return oo=e,Ar(oo.webContents,kr.MAIN_WINDOW),...}`
+  # (up to v5.11492.5 `oo=new u.BrowserWindow(e),Ar(...)`), and the one export
+  # that returns it. The variable is the receiver of the only MAIN_WINDOW
+  # tagging call in the chunk, and that call must sit in a factory that stores
+  # its argument into the same variable. Other patches inject between the
+  # factory head and the tagging call, so the two are matched separately.
   var mainVar = ""
   var mainHits = 0
   for m in apiSrc.findAll(
-    re2"""(?:^|[^\w$.])([\w$]+)=new [\w$]+\.BrowserWindow\([\w$]+\),[\w$]+\(([\w$]+)\.webContents,[\w$]+\.MAIN_WINDOW\)"""
+    re2"""[\w$]+(?:\.[\w$]+)*\(([\w$]+)\.webContents,[\w$]+(?:\.[\w$]+)*\.MAIN_WINDOW\)"""
   ):
-    if apiSrc[m.group(0)] == apiSrc[m.group(1)]:
-      mainVar = apiSrc[m.group(0)]
-      inc mainHits
+    mainVar = apiSrc[m.group(0)]
+    inc mainHits
+    var heads = 0
+    for h in apiSrc.findAll(
+      re2"""function [\w$]+\(([\w$]+)\)\{return ([\w$]+)=([\w$]+),"""
+    ):
+      if apiSrc[h.group(1)] == mainVar and apiSrc[h.group(0)] == apiSrc[h.group(2)] and
+          h.boundaries.b < m.boundaries.a and m.boundaries.a - h.boundaries.b < 4000 and
+          not apiSrc[h.boundaries.b ..< m.boundaries.a].contains("function "):
+        inc heads
+    if heads != 1:
+      mainHits = 0
+      break
   if mainHits != 1:
     raise newException(
       ValueError,
@@ -188,8 +203,12 @@ proc apply*(input: string): string =
         "session-start: broker method " & meth & ") not found once in " & brokerPart.name,
       )
   # Resolve the bundle's own permission-rule matcher, not a second wildcard parser.
+  # Since v6.28899.2 a sibling with the same head matches MCP server instance
+  # suffixes (`t.slice(0,r).replace(/(_\d+)+$/,"")`); the plain matcher is the
+  # one whose prefix is `r===-1?"":t.slice(0,r)`, the one upstream's own ask-rule
+  # check calls.
   let matchers = input.findAll(
-    re2"""function ([\w$]+)\([\w$]+,[\w$]+\)\{let [\w$]+=[\w$]+\.trim\(\)\.split\("\("\)\[0\]\.trim\(\),[\w$]+=[\w$]+\.indexOf\("__",5\),"""
+    re2"""function ([\w$]+)\([\w$]+,[\w$]+\)\{let [\w$]+=[\w$]+\.trim\(\)\.split\("\("\)\[0\]\.trim\(\),[\w$]+=[\w$]+\.indexOf\("__",5\),[\w$]+=[\w$]+===-1\?"":"""
   )
   if matchers.len != 1:
     raise newException(ValueError, "session-start native rule matcher must match once")

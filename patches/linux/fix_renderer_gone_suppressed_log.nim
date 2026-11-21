@@ -118,8 +118,20 @@ proc apply*(input: string): string =
   # Count policy: exactly 1. A second copy means upstream duplicated the
   # handler and the site needs a re-audit; 0 means upstream changed the code.
   # Both fail loudly.
+  #   v6.28899.2: a leading block guard (upstream logs that one itself, without
+  #   the reason / exit code) drops the death of a process the view had already
+  #   left; a non-call statement precedes the `let`; between the first guard and
+  #   the remaining guards sit two `let`s with bare calls around them:
+  #     {if(ue&&!le?.isLeft&&!AU(e)){ue=!1,M.info("Electron reported the death of the
+  #       process the main webview had left; ...");return}oYi(e),(!le?.isLeft||!AU(e))
+  #       &&(le=void 0);let r=Date.now(),i=GJi(r),a=te.takeFields(r),o=mXi(n);
+  #       if(o!=="needs recovery"){o==="own kill"&&be("death notice");return}
+  #       PU();let s=ie!==void 0;C(),se();let c=x(),...,p={...};if(...){xe("abandoned");return}...
+  #   The leading guard (optional) gets our line too, so every early return of
+  #   the handler carries one (and the idempotency invariant stays "all of them").
+  #   Statements before the verdict `let` are matched as brace-free runs.
   let pattern =
-    re2"""(\.on\(["`]render-process-gone["`],\(?async\(([\w$]+),([\w$]+)\)=>\{)((?:[\w$]+(?:\.[\w$]+)*\([^()]*\);)*let (?:[^;]*,)?([\w$]+)=([\w$]+)\(([\w$]+)\);)(if\(([\w$]+)!==["`]needs recovery["`]\)\{[^{}]{0,100}return\})((?:[\w$]+(?:\.[\w$]+)*\([^()]*\)[,;])*)(let [^;]*;)((?:if\([^{}]{1,100}[^{}]{0,100}[^{}]{0,100}\)(?:return;|\{[^{}]{0,100}return\}))+)(([\w$]+(?:\.[\w$]+)*)\.info\(["`]Main webview render process gone: %o)"""
+    re2"""(\.on\(["`]render-process-gone["`],\(?async\(([\w$]+),([\w$]+)\)=>\{)((?:if\([^{}]{1,100}\)\{[^{}]{0,100}[^{}]{0,100}[^{}]{0,100}return\})?)((?:[^;{}]{1,100}[^;{}]{0,100};)*?let (?:[^;]*,)?([\w$]+)=([\w$]+)\(([\w$]+)\);)(if\(([\w$]+)!==["`]needs recovery["`]\)\{[^{}]{0,100}return\})((?:[\w$]+(?:\.[\w$]+)*\([^()]*\)[,;]|let [^;]*;)*)(let [^;]*;)((?:if\([^{}]{1,100}[^{}]{0,100}[^{}]{0,100}\)(?:return;|\{[^{}]{0,100}return\}))+)(([\w$]+(?:\.[\w$]+)*)\.info\(["`]Main webview render process gone: %o)"""
   var count = 0
   var guardCount = 0
   result = input.replace(
@@ -127,21 +139,23 @@ proc apply*(input: string): string =
     proc(m: RegexMatch2, s: string): string =
       # group(0) head incl. arrow params; group(1) is the (unused) event arg.
       let head = s[m.group(0)]
-      let preamble = s[m.group(3)]
-        # bare calls + `let ...,<v>=<pred>(<details>);`, verbatim
+      let leadGuard = s[m.group(3)] # optional `if(<c>){<body>;return}` before the `let`
+      let preamble = s[m.group(4)]
+        # statements + `let ...,<v>=<pred>(<details>);`, verbatim
       let details = s[m.group(2)] # RenderProcessGoneDetails
-      let verdictVar = s[m.group(4)] # the filter's verdict
-      let predArg = s[m.group(6)] # what the `let` passes to the predicate
-      let firstGuard = s[m.group(7)] # `if(<v>!=="needs recovery"){...;return}`
-      let guardVar = s[m.group(8)] # what the first guard tests
-      let bareCalls = s[m.group(9)] # `AN(),h(),S();` -- kept verbatim
-      let letStmt = s[m.group(10)] # interposed `let x=f(),...;` -- kept verbatim
-      let guards = s[m.group(11)] # the killed-grace / destroyed guards
-      let tail = s[m.group(12)] # the handled path's own `<logger>.info(...` call
-      let logger = s[m.group(13)] # module-level logger
+      let verdictVar = s[m.group(5)] # the filter's verdict
+      let predArg = s[m.group(7)] # what the `let` passes to the predicate
+      let firstGuard = s[m.group(8)] # `if(<v>!=="needs recovery"){...;return}`
+      let guardVar = s[m.group(9)] # what the first guard tests
+      let bareCalls = s[m.group(10)] # bare calls and lets -- kept verbatim
+      let letStmt = s[m.group(11)] # last interposed `let x=f(),...;` -- verbatim
+      let guards = s[m.group(12)] # the killed-grace / destroyed guards
+      let tail = s[m.group(13)] # the handled path's own `<logger>.info(...` call
+      let logger = s[m.group(14)] # module-level logger
       let whole = s[m.boundaries]
-      let ifs = firstGuard.count("if(") + guards.count("if(")
-      let rets = firstGuard.count("return") + guards.count("return")
+      let ifs = leadGuard.count("if(") + firstGuard.count("if(") + guards.count("if(")
+      let rets =
+        leadGuard.count("return") + firstGuard.count("return") + guards.count("return")
       if predArg != details or guardVar != verdictVar or ifs != rets:
         # The filter is fed something other than the event details, the first
         # guard tests something other than its verdict, or a guard has other
@@ -151,8 +165,8 @@ proc apply*(input: string): string =
       inc count
       guardCount = ifs
       let log = logCall(logger, details)
-      head & preamble & addLogs(firstGuard, log) & bareCalls & letStmt &
-        addLogs(guards, log) & tail,
+      head & addLogs(leadGuard, log) & preamble & addLogs(firstGuard, log) & bareCalls &
+        letStmt & addLogs(guards, log) & tail,
   )
   if count != 1:
     if HandledLog in input:

@@ -14,6 +14,16 @@
 #     case"png": return e||NO()==="gnome"||u.nativeTheme.shouldUseDarkColors?"TrayIconLinux-Dark.png":"TrayIconLinux.png"
 #   }}
 #
+# Since v6.28899.2 the selector takes one options object and reads the theme
+# from it, and the update function reaches it through a one-line adapter:
+#
+#   function E7s({flavor:e,safeIcon:t,theme:n,taskbarIsDark:r,linuxFlavor:i}){switch(e){
+#     case"ico": return!t&&(r()??n.shouldUseDarkColorsForSystemIntegratedUI)?...;
+#     ...
+#     case"png": return t||i()==="gnome"||n.shouldUseDarkColors?"TrayIconLinux-Dark.png":"TrayIconLinux.png"}}
+#   function Rec(e){return E7s({flavor:"png",safeIcon:e,theme:u.nativeTheme,...})}
+#
+# The png case's decision is unchanged, so both sub-patches are still needed.
 # (v1.26832.0 to v1.46388.2 used backticks for every literal; both quotings are
 # accepted. We anchor on the three case bodies, the one shape that survived the
 # v1.26832.0 and v1.30096.1 refactors.)
@@ -68,12 +78,22 @@ const ALREADY_A =
 # Group 1 = everything up to and including `case"png":return`,
 # group 2 = upstream's png expression (incl. the fallback-param prefix).
 const PATTERN_A =
-  re2"""(switch\((?:[\w$]+|["`][\w-]+["`])\)\{case["`]ico["`]:return\s*(?:!?[\w$]+&&)?[\w$]+(?:\.[\w$]+)*\.nativeTheme\.shouldUseDarkColors\?["`]Tray-Win32-Dark\.ico["`]:["`]Tray-Win32\.ico["`];case["`]template-image["`]:return\s*["`]TrayIconTemplate\.png["`];case["`]png["`]:return)\s*((?:[\w$]+\|\|)?[\w$]+(?:\.[\w$]+)*\(\)===["`]gnome["`]\|\|[\w$]+(?:\.[\w$]+)*\.nativeTheme\.shouldUseDarkColors\?["`]TrayIconLinux-Dark\.png["`]:["`]TrayIconLinux\.png["`])\}"""
+  re2"""(switch\((?:[\w$]+|["`][\w-]+["`])\)\{case["`]ico["`]:return[^;]*["`]Tray-Win32-Dark\.ico["`]:["`]Tray-Win32\.ico["`];case["`]template-image["`]:return\s*["`]TrayIconTemplate\.png["`];case["`]png["`]:return)\s*((?:[\w$]+\|\|)?[\w$]+(?:\.[\w$]+)*\(\)===["`]gnome["`]\|\|[\w$]+(?:\.[\w$]+)*\.shouldUseDarkColors\?["`]TrayIconLinux-Dark\.png["`]:["`]TrayIconLinux\.png["`])\}"""
 
 # The selector's name, read from its head - the same three case labels, so it
 # matches before and after sub-patch A. Group 1 = the selector function.
 const SELECTOR_HEAD =
-  re2"""function ([\w$]+)\([\w$]+\)\{switch\((?:[\w$]+|["`][\w-]+["`])\)\{case["`]ico["`]:return[^;]*["`]Tray-Win32\.ico["`];case["`]template-image["`]:return\s*["`]TrayIconTemplate\.png["`];case["`]png["`]:return"""
+  re2"""function ([\w$]+)\((?:[\w$]+|\{[^{}()]*\})\)\{switch\((?:[\w$]+|["`][\w-]+["`])\)\{case["`]ico["`]:return[^;]*["`]Tray-Win32\.ico["`];case["`]template-image["`]:return\s*["`]TrayIconTemplate\.png["`];case["`]png["`]:return"""
+
+# Since v6.28899.2 the selector takes one options object
+#   function E7s({flavor:e,safeIcon:t,theme:n,taskbarIsDark:r,linuxFlavor:i}){switch(e){...}}
+# and the update function calls it through a one-line adapter that forwards
+# its parameter into that object:
+#   function Rec(e){return E7s({flavor:"png",safeIcon:e,theme:u.nativeTheme,...})}
+# Groups: 1 adapter, 2 its parameter, 3 the called function (must be the
+# selector), 4 the object members (must contain `:<param>`).
+const ADAPTER =
+  re2"""function ([\w$]+)\(([\w$]+)\)\{return ([\w$]+)\(\{([^{}()]*)\}\)\}"""
 
 # A function that resolves an icon path from a call of one-argument function:
 #   function Tto(e){if(!u.app.isReady())return;let t=$b("menuBarEnabled"),r=n.default.join(wJ(),wto(e));
@@ -183,13 +203,22 @@ proc apply*(input: string): string =
         " selector functions, expected 1"
     else:
       let selector = result[heads[0].group(0)]
+      # The update function calls the selector directly (<= v5) or through an
+      # adapter that forwards its parameter into the options object (v6+).
+      var callees = @[selector]
+      for m in result.findAll(ADAPTER):
+        let param = result[m.group(1)]
+        let members = "," & result[m.group(3)] & ","
+        if result[m.group(2)] == selector and (":" & param & ",") in members:
+          callees.add result[m.group(0)]
       var sites: seq[RegexMatch2]
       for m in result.findAll(UPDATE_HEAD):
-        if result[m.group(3)] == selector and result[m.group(4)] == result[m.group(1)]:
+        if result[m.group(3)] in callees and result[m.group(4)] == result[m.group(1)]:
           sites.add m
       if sites.len != 1:
         echo "  [FAIL] tray refresh hook: " & $sites.len &
-          " functions resolve the path via " & selector & "(<param>), expected 1"
+          " functions resolve the path via " & callees.join("/") &
+          "(<param>), expected 1"
       else:
         let site = sites[0]
         let fnName = result[site.group(0)]

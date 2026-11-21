@@ -71,7 +71,7 @@
         "namespaceKey": "isComputerUseEnabled"
       },
       "definitionShape": [
-        "^\\{if\\(process\\.platform===[\"`]linux[\"`]\\)return globalThis\\.__cdbCuHipaa=[\\w$]+,![\\w$]+\\(\\)&&[\\w$]+\\(\\);"
+        "^\\{if\\(process\\.platform===[\"`]linux[\"`]\\)return globalThis\\.__cdbCuHipaa=[\\w$]+,![\\w$]+\\(\\)&&[\\w$]+\\(\\)&&[\\w$]+\\(\\)&&![\\w$]+\\(\\);"
       ]
     }
   ],
@@ -113,11 +113,12 @@
     },
     {
       "predicate": "isWaylandSession",
-      "anchorRegex": "^mayCaptureOnTimer:\\(\\)=>process\\.platform!==[\"`]win32[\"`]&&![\\w$]+\\(\\)\\|\\|![\\w$]+\\(\\)$",
+      "anchorRegex": "^mayCaptureOnTimer:[\\w$]+$",
       "scope": "statement",
+      "via": "derived",
       "consumers": 1,
       "verdict": "upstream-ok",
-      "reason": "Computer Use live preview ([cu-live-preview]), mayCaptureOnTimer is new in v5.1231.0: with flag 284836866 on, upstream stops the timer-driven preview captures on a Wayland session (as on win32); flag off (the default) keeps the v4 timer captures. The preview still updates from every screenshot Claude takes (onScreenshotFrame in the CU tool wrapper, executor-agnostic), so on Wayland the flag only means fewer screenshot() calls into our bridges; nothing is refused, and X11 keeps the timer captures."
+      "reason": "Computer Use live preview ([cu-live-preview]) mayCaptureOnTimer, moved in v6.28899.2 from an inline arrow into a named helper (function(mode,t=!1){return process.platform===\"win32\"&&mode===\"display\"&&!t&&!flag(\"247924829\")?!1:process.platform!==\"win32\"&&!isWaylandSession()||!flag284836866()}); the new leading term is win32-only, the Linux logic is unchanged from v5: with flag 284836866 on, upstream stops the timer-driven preview captures on a Wayland session; flag off keeps them. The preview still updates from every screenshot Claude takes (onScreenshotFrame, executor-agnostic), so on Wayland the flag only means fewer screenshot() calls into our bridges; nothing is refused, X11 keeps the timer captures."
     },
     {
       "predicate": "isWaylandSession",
@@ -178,9 +179,9 @@
       "predicate": "isWaylandSession",
       "anchor": "supportsRawInput",
       "via": "PLATFORM_CAPABILITIES",
-      "consumers": 2,
+      "consumers": 4,
       "verdict": "intentional",
-      "reason": "CU tool definitions (Code/Cowork session server and the device-bridge tools) spread the static preset: on Linux both arms carry screenshotFiltering 'none' (Wayland upstream, X11 via fix_computer_use_linux sub-patch 2b); what each backend really filters is told by our consent text and prompt suffix, not by this preset."
+      "reason": "CU tool definitions (Code/Cowork session server and the device-bridge tools) spread the static preset: on Linux both arms carry screenshotFiltering 'none' (Wayland upstream, X11 via fix_computer_use_linux sub-patch 2b); what each backend really filters is told by our consent text and prompt suffix, not by this preset. v6.28899.2 adds two reads of PLATFORM_CAPABILITIES.platform in the device-bridge tool builder (the win32 app-names-list test and the win32 wording of the resolve-apps 'apps' description); both read only .platform, 'linux' in every Linux preset."
     },
     {
       "predicate": "isWaylandSession",
@@ -277,10 +278,10 @@
     },
     {
       "predicate": "desktopEnvironment",
-      "anchor": "TrayIconLinux-Dark.png",
+      "anchorRegex": "\\{flavor:[\"`]png[\"`],safeIcon:[\\w$]+,theme:",
       "consumers": 1,
       "verdict": "intentional",
-      "reason": "Tray icon flavour: GNOME gets the dark glyph. Our 'Always use the white tray icon' switch (globalThis.__cdbTrayAlwaysWhite) overrides it only when ON; with the switch off upstream's GNOME rule applies, which is the intended default."
+      "reason": "Tray icon flavour: since v6.28899.2 the classifier is passed as a value (linuxFlavor) to the tray-icon filename picker, whose png arm gives GNOME the dark glyph. fix_tray_icon_theme puts our 'Always use the white tray icon' term (process.platform==='linux'&&globalThis.__cdbTrayAlwaysWhite?.()) in front of that arm; with the switch off upstream's GNOME rule applies, which is the intended default."
     },
     {
       "predicate": "desktopEnvironment",
@@ -296,6 +297,46 @@
       "verdict": "intentional",
       "reason": "GNOME-only (XDG_CURRENT_DESKTOP) suppression of upstream's bare-Alt-tap app-menu popup (flag 1550954491, gated by 1116624256) in the main-window before-input-event handler; window UX, not a Wayland or Computer Use path; flag left at the upstream default (template comment only).",
       "anchorRegex": "\\.onKey\\([\\w$]+\\)===[\"`]open[\"`]"
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "3676943315",
+      "via": "derived",
+      "consumers": 1,
+      "verdict": "upstream-ok",
+      "reason": "Allowed-apps gate (new in v6.28899.2, function(){return!listReadable()||listHasEntry()&&isWaylandSession()}) read by upstream's Computer Use availability core (the function that also checks the Linux GrowthBook gate 3676943315). The list is server policy (GrowthBook 947159281): unreadable (not a list of strings) keeps CU off everywhere ('computer use stays off until it sends one'); with an entry, X11 enforces it per app (apps outside it are filtered from grants, always-allowed apps, the capture context and the app list, and maskFailClosed is forced), while a Wayland session turns CU off because the list cannot be enforced per app there. No entry (the default) changes nothing. Our Linux branch of isComputerUseEnabled is stricter than this gate: it turns CU off whenever the list is unreadable or has an entry, on X11 too (&&listReadable()&&!listHasEntry()), because our Linux tool-call path does not enforce the list per app; whenever this core refuses, our gate refuses as well. Server policy, like the managed key and the HIPAA gate."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "no_typing_here",
+      "via": "PLATFORM_CAPABILITIES",
+      "consumers": 1,
+      "verdict": "upstream-ok",
+      "reason": "New in v6.28899.2: the browser-preview hold that lets the person type into a tab Claude holds (sign-in) refuses with no_typing_here ('this computer cannot keep the typing out of pictures') when PLATFORM_CAPABILITIES.screenshotFiltering is 'none', which it is in every Linux preset (X11 via fix_computer_use_linux 2b). Refusing is the safe side: no Linux preset promises that Computer Use screenshots leave Claude's own window out. Possible future opt-in: answer from the live executor's mask capability on backends that mask (unverified, not a regression)."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "anchor": "36693946",
+      "via": "PLATFORM_CAPABILITIES",
+      "consumers": 1,
+      "verdict": "upstream-ok",
+      "reason": "Device-bridge getAppNamesList (new in v6.28899.2): reads only PLATFORM_CAPABILITIES.platform ('linux' in every Linux preset) to pick the win32 note and to build app-name paths; the non-win32 arm depends on flag 36693946, not on the session."
+    },
+    {
+      "predicate": "isOzoneWayland",
+      "anchor": "native_wayland",
+      "consumers": 1,
+      "verdict": "upstream-ok",
+      "reason": "New in v6.28899.2: Design/Slides (typed artifact) cover capture refuses under native Wayland ({reason:'native_wayland'}). The capture loads the artifact into a WebContentsView inside a never-shown BaseWindow (show:false, focusable:false) and polls webContents.capturePage(); under Ozone Wayland an unmapped surface gets no frame callbacks, so Chromium produces no frames and the capture would time out or come back blank. XWayland (--ozone-platform=x11) and X11 keep capturing. User-visible effect: no cover pictures on Design/Slides cards on native Wayland. Not live-verified."
+    },
+    {
+      "predicate": "isOzoneWayland",
+      "anchorRegex": "^getArtifactThumbnail:[\\w$]+=>[\\w$]+\\([\\w$]+\\)$",
+      "scope": "statement",
+      "via": "derived",
+      "consumers": 1,
+      "verdict": "upstream-ok",
+      "reason": "Read side of the same Design/Slides cover rule (v6.28899.2): the thumbnail reader returns null for a typed artifact under native Wayland instead of reading the stored cover, so the card list matches the refused capture. Same user-visible effect: no cover pictures on native Wayland."
     }
   ],
   "coveredSites": [
@@ -335,6 +376,12 @@
       "shape": "function [\\w$]+\\(\\)\\{if\\(process\\.platform===[\"`]linux[\"`]&&globalThis\\.__cdbCuEscapeAbortEnabled\\?\\.\\(\\)===true&&globalThis\\.__cdbCuEscWatch\\?\\.arm\\([\\w$]+,[\\w$]+\\.currentHolder,[\\w$]+\\)===true\\)\\{if\\([\\w$]+\\)\\{[\\w$]+\\.globalShortcut\\.unregister\\([\"`]Escape[\"`]\\);[\\w$]+=!1;[\\w$]+=0\\}return\\}process\\.platform===[\"`]linux[\"`]&&globalThis\\.__cdbCuEscapeAbortEnabled\\?\\.\\(\\)!==true&&globalThis\\.__cdbCuEscWatch\\?\\.disarm\\([\"`]switch off[\"`]\\);if\\(!\\([\\w$]+\\|\\|@@\\(\\)\\)\\)",
       "consumers": 1,
       "reason": "Community switch 'Escape stops Computer Use' (add_feature_cu_escape_abort, default off): with it on and a watcher armed, our watcher replaces upstream's Escape register; with it off, or when no watcher can run, upstream's path runs untouched by design, its Wayland skip included."
+    },
+    {
+      "predicate": "isWaylandSession",
+      "shape": "function [\\w$]+\\(([\\w$]+)=\\{\\}\\)\\{if\\(process\\.platform===[\"`]linux[\"`]\\)return [\\w$]+\\(\\1\\);return [\\w$]+\\([\\w$]+\\)\\?[\\w$]+\\(\\)\\|\\|![\\w$]+\\(\\)\\|\\|@@\\(\\)\\?!1:",
+      "consumers": 1,
+      "reason": "isComputerUseRegisterable (fix_computer_use_linux 12): our Linux early return delegates to the patch-11 isComputerUseEnabled gate, which carries its own, stricter allowed-apps term (off whenever the list is unreadable or has an entry); upstream's flag-on arm with its own allowed-apps test is unreachable on Linux."
     }
   ],
   "envSites": [

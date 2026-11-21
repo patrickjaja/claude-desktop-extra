@@ -5,9 +5,8 @@
 # (focus-follows-mouse on KWin, Cinnamon, ...; anthropics/claude-code#75905).
 #
 # Upstream moves keyboard focus into the window's WebContentsView from the
-# window's `focus` event: the main window through its focus helper
-# (`(<flag>?<win>.webContents:<view>).focus()`), popouts through
-# `<win>.on("focus",()=>{<view>.isDestroyed()||<view>.focus()})`. On Linux,
+# window's `focus` event (since v6.28899.2 through one shared helper, see B).
+# On Linux,
 # Electron's WebContents::Focus() first calls `owner_window()->Focus(true)`,
 # i.e. `Widget::Activate()`, which has no "already active" check: on Wayland it
 # sends an xdg_activation token + `activate`, on X11 `_NET_ACTIVE_WINDOW`, and
@@ -32,8 +31,16 @@
 #      the view's focus is stored and restored on the first hover. It is skipped
 #      once the window has been active, because a request then could carry a
 #      valid serial and be granted.
-#   A. The main window's focus helper calls it instead of `.focus()`.
-#   B. The popout window's `focus` handler calls it instead of `.focus()`.
+#   A. The main window's focus function calls it instead of `.focus()` on its
+#      direct path (startup and non-focus-event callers).
+#   B. Upstream's shared focus-handler helper (v6.28899.2:
+#      `function kv(e,t){!e.isFocused()||t.isFocused()||t.focus()}`, used by
+#      the main window, the main-view pop-outs, artifact pop-ups and the
+#      full-screen view cover) calls it instead of its final `.focus()`.
+#      Upstream's helper absorbed the "window not active" and "contents already
+#      focused" skips; what stays ours is the deferred re-check when the window
+#      is active but the contents do not hold focus yet, and the startup
+#      prefocus (A).
 #
 # Scope is deliberately limited to calls made from `focus` handlers. Every
 # other activation path (tray "Show App", second-instance, notifications,
@@ -110,64 +117,98 @@ proc apply*(input: string): string =
     echo "  [OK] focus-no-raise helper prepended"
     patchesApplied += 1
 
-  # ── A. Main window focus helper ────────────────────────────────────────────
-  # v3.1623.3:
-  #   y=()=>{let e=p.webContents;!e||e.isDestroyed()||((To?l.webContents:e).focus(),...
-  # Groups (0-based): 0 and 1 = view contents (guard), 2 = flag, 3 = window,
-  # 4 = view contents (ternary else). 0, 1 and 4 must name the same variable.
-  let mainDone =
-    re2"!([\w$]+)\|\|[\w$]+\.isDestroyed\(\)\|\|\(__cdbFocusNoRaise\([\w$]+,[\w$]+\?[\w$]+\.webContents:[\w$]+\),"
-  if result.contains(mainDone):
-    echo "  [INFO] main window focus helper already rewritten"
+  # ── B. Upstream's focus-handler helper (resolved first: A needs its name) ──
+  # v6.28899.2 routes every window `focus` handler (main window, main-view
+  # pop-outs, artifact pop-ups, the full-screen view cover) through one helper:
+  #   function kv(e,t){!e.isFocused()||t.isFocused()||t.focus()}
+  # It already skips the call when the window is not active or the contents
+  # already hold focus; the remaining `t.focus()` (window active, contents not
+  # focused yet) is the raising call. Up to v5.11492.5 each handler called
+  # `.focus()` itself (`c.on("focus",(()=>{n.isDestroyed()||n.focus()}))`).
+  # Groups (0-based): 0 = name, 1 = window, 2 = contents, 3 = window (guard),
+  # 4 and 5 = contents (guard, call); 1 == 3 and 2 == 4 == 5.
+  var helperName = ""
+  let kvDone =
+    re2"function ([\w$]+)\(([\w$]+),([\w$]+)\)\{!([\w$]+)\.isFocused\(\)\|\|([\w$]+)\.isFocused\(\)\|\|__cdbFocusNoRaise\(([\w$]+),([\w$]+)\)\}"
+  var doneHits = 0
+  for m in result.findAll(kvDone):
+    let w = result[m.group(1)]
+    let c = result[m.group(2)]
+    if result[m.group(3)] == w and result[m.group(4)] == c and result[m.group(5)] == w and
+        result[m.group(6)] == c:
+      inc doneHits
+      helperName = result[m.group(0)]
+  if doneHits == 1:
+    echo "  [INFO] focus-handler helper already rewritten"
     patchesApplied += 1
+  elif doneHits > 1:
+    echo &"  [FAIL] focus-handler helper: rewritten {doneHits}x, expected 1"
   else:
-    let mainPat =
-      re2"!([\w$]+)\|\|([\w$]+)\.isDestroyed\(\)\|\|\(\(([\w$]+)\?([\w$]+)\.webContents:([\w$]+)\)\.focus\(\),"
+    let kvPat =
+      re2"function ([\w$]+)\(([\w$]+),([\w$]+)\)\{!([\w$]+)\.isFocused\(\)\|\|([\w$]+)\.isFocused\(\)\|\|([\w$]+)\.focus\(\)\}"
     var count = 0
     result = result.replace(
-      mainPat,
+      kvPat,
       proc(m: RegexMatch2, s: string): string =
-        let v = s[m.group(0)]
-        if s[m.group(1)] != v or s[m.group(4)] != v:
+        let w = s[m.group(1)]
+        let c = s[m.group(2)]
+        if s[m.group(3)] != w or s[m.group(4)] != c or s[m.group(5)] != c:
           return s[m.boundaries]
         inc count
-        &"!{v}||{v}.isDestroyed()||(__cdbFocusNoRaise({s[m.group(3)]},{s[m.group(2)]}?{s[m.group(3)]}.webContents:{v}),",
+        helperName = s[m.group(0)]
+        &"function {helperName}({w},{c}){{!{w}.isFocused()||{c}.isFocused()||__cdbFocusNoRaise({w},{c})}}",
     )
     if count == 1:
-      echo "  [OK] main window focus helper rewritten (1 match)"
+      echo &"  [OK] focus-handler helper {helperName} rewritten (1 match)"
       patchesApplied += 1
     else:
-      echo &"  [FAIL] main window focus helper: {count} matches, expected 1"
+      echo &"  [FAIL] focus-handler helper: {count} matches, expected 1"
+      helperName = ""
 
-  # ── B. Popout window focus handler ─────────────────────────────────────────
-  # v3.1623.3:
-  #   c.on("focus",(()=>{n.isDestroyed()||n.focus()}))
-  # Groups (0-based): 0 = window, 1 = contents (guard), 2 = contents (call);
-  # 1 and 2 must name the same variable.
-  let popoutDone =
-    re2"[\w$]+\.on\(""focus"",\(\(\)=>\{[\w$]+\.isDestroyed\(\)\|\|__cdbFocusNoRaise\([\w$]+,[\w$]+\)\}"
-  if result.contains(popoutDone):
-    echo "  [INFO] popout focus handler already rewritten"
-    patchesApplied += 1
+  # ── A. Main window focus function ──────────────────────────────────────────
+  # v6.28899.2: called as re(!0) from the main window's `focus` event (through
+  # the helper above) and as re() at startup and from other paths, which call
+  # `.focus()` directly:
+  #   re=(e=!1)=>{...,i=n??r??t;e?kv(f,i):i.focus(),AZi(t),...}
+  # The direct call goes through __cdbFocusNoRaise too: at startup it arms the
+  # one-time prefocus (see the header). Up to v5.11492.5:
+  #   y=()=>{let e=p.webContents;!e||e.isDestroyed()||((To?l.webContents:e).focus(),...
+  # Groups (0-based): 0 = flag, 1 = helper, 2 = window, 3 = contents (helper
+  # call), 4 = contents (direct call); 1 == helper name, 3 == 4.
+  if helperName.len == 0:
+    echo "  [FAIL] main window focus function: helper name unknown (sub-patch B failed)"
   else:
-    let popoutPat =
-      re2"([\w$]+)\.on\(""focus"",\(\(\)=>\{([\w$]+)\.isDestroyed\(\)\|\|([\w$]+)\.focus\(\)\}"
-    var count = 0
-    result = result.replace(
-      popoutPat,
-      proc(m: RegexMatch2, s: string): string =
-        let w = s[m.group(0)]
-        let c = s[m.group(1)]
-        if s[m.group(2)] != c:
-          return s[m.boundaries]
-        inc count
-        &"{w}.on(\"focus\",(()=>{{{c}.isDestroyed()||__cdbFocusNoRaise({w},{c})}}",
+    let h = escapeRe(helperName)
+    let mainDone = re2(
+      r"[\w$]+\?" & h & r"\(([\w$]+),([\w$]+)\):__cdbFocusNoRaise\(([\w$]+),([\w$]+)\),"
     )
-    if count == 1:
-      echo "  [OK] popout focus handler rewritten (1 match)"
+    var doneHits = 0
+    for m in result.findAll(mainDone):
+      if result[m.group(0)] == result[m.group(2)] and
+          result[m.group(1)] == result[m.group(3)]:
+        inc doneHits
+    if doneHits == 1:
+      echo "  [INFO] main window focus function already rewritten"
       patchesApplied += 1
     else:
-      echo &"  [FAIL] popout focus handler: {count} matches, expected 1"
+      let mainPat =
+        re2(r"([\w$]+)\?" & h & r"\(([\w$]+),([\w$]+)\):([\w$]+)\.focus\(\),")
+      var count = 0
+      result = result.replace(
+        mainPat,
+        proc(m: RegexMatch2, s: string): string =
+          let w = s[m.group(1)]
+          let c = s[m.group(2)]
+          if s[m.group(3)] != c:
+            return s[m.boundaries]
+          inc count
+          &"{s[m.group(0)]}?{helperName}({w},{c}):__cdbFocusNoRaise({w},{c}),",
+      )
+      if count == 1 and doneHits == 0:
+        echo "  [OK] main window focus function rewritten (1 match)"
+        patchesApplied += 1
+      else:
+        echo &"  [FAIL] main window focus function: {count} matches (already rewritten: {doneHits}), expected 1"
 
   if patchesApplied < EXPECTED_PATCHES:
     raise newException(

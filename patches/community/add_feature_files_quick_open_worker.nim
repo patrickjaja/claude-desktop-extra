@@ -7,14 +7,17 @@
 # __cdbQoSearch(index, query, limit) - VS Code's multi-piece AND search on top of
 # the unchanged scorer, gated by process.env.CDB_FILES_QUICK_OPEN - and
 # (2) rewrites the ONE call site inside FileIndexHost.search:
-#     for(let{path:r,positions:i}of this.index.search(e,t))
-#  -> for(let{path:r,positions:i}of __cdbQoSearch(this.index,e,t))
+#     search(e,t){let n=[],r=this.builtIndex();if(r)for(let{path:i,positions:a}of r.search(e,t))
+#  -> ...of __cdbQoSearch(r,e,t))
+# (up to v5.11492.5 the index was a field: `if(this.index)for(...of this.index.search(e,t))`;
+# since v6.28899.2 the host builds it lazily through a method and reads it into a local).
 #
 # Break risk: LOW. The anchor is the structural shape of FileIndexHost.search
-# (a `let x=[]` followed by a for-of over this.index.search with the method's own
-# two parameters); every identifier is a wildcard and the parameter names are
-# cross-checked in the replacement. A second precondition pins `readyCount` on
-# the scorer, which the helper needs and the call-site anchor does not cover.
+# (a `let x=[],<idx>=this.<method>()` followed by `if(<idx>)` and a for-of over
+# `<idx>.search` with the method's own two parameters); every identifier is a
+# wildcard and the names are cross-checked in the replacement. Two
+# preconditions pin the scorer contract the helper's full-set scan needs and the
+# call-site anchor does not cover (see below).
 
 import std/[os, strutils]
 import regex
@@ -24,28 +27,49 @@ const MARKER = "__CDB_QOPEN_WORKER__"
 const DIRECTIVES = ["\"use strict\";", "'use strict';"]
 
 # The rewritten call site, matched by SHAPE rather than by the bare substring
-# "__cdbQoSearch(this.index," - that substring also occurs in the helper's own
+# "__cdbQoSearch(" - that name also occurs in the helper's own
 # doc comment, so a substring test would report "call present" the moment the
 # helper is prepended, even if the rewrite never happened (Rule 6: an [OK] must
 # rest on a positively verified end-state).
-let callRe = re2"\}of __cdbQoSearch\(this\.index,[\w$]+,[\w$]+\)\)"
+let callRe = re2"\}of __cdbQoSearch\([\w$]+,[\w$]+,[\w$]+\)\)"
 
-proc hasCallSite(s: string): bool = s.contains(callRe)
+proc hasCallSite(s: string): bool =
+  s.contains(callRe)
 
-# search(<q>,<lim>){let <acc>=[];if(this.index)for(let{path:<p>,positions:<pos>}of this.index.search(<q2>,<lim2>))
-# Groups: 0 = everything up to and including "of ", 1 = q, 2 = lim, 3 = q2, 4 = lim2
-let anchor = re2"(search\(([\w$]+),([\w$]+)\)\{let [\w$]+=\[\];if\(this\.index\)for\(let\{path:[\w$]+,positions:[\w$]+\}of )this\.index\.search\(([\w$]+),([\w$]+)\)\)"
+# search(<q>,<lim>){let <acc>=[],<idx>=this.<build>();if(<idx>)for(let{path:<p>,positions:<pos>}of <idx>.search(<q2>,<lim2>))
+# Groups: 0 = everything up to and including "of ", 1 = q, 2 = lim, 3 = idx (let),
+# 4 = idx (if), 5 = idx (receiver), 6 = q2, 7 = lim2
+let anchor =
+  re2"(search\(([\w$]+),([\w$]+)\)\{let [\w$]+=\[\],([\w$]+)=this\.[\w$]+\(\);if\(([\w$]+)\)for\(let\{path:[\w$]+,positions:[\w$]+\}of )([\w$]+)\.search\(([\w$]+),([\w$]+)\)\)"
 
-# PRECONDITION for the helper's multi-piece path: js/files_quick_open_worker.js
-# scans the WHOLE ready set per piece (`index.search(piece, index.readyCount)`),
-# because intersecting two top-N lists would drop the very files the space fix
-# exists for. If the scorer stops exposing `readyCount`, the helper reads
-# `undefined`, falls into `total === 0` and returns [] for every multi-piece
-# query - a SILENT regression the call-site anchor alone cannot catch. So pin it:
-# the scorer's search() destructures it off `this`
-# (measured 1.37937.3 and 1.40609.0: `{paths:u,lowerPaths:d,charBits:f,pathLens:p,readyCount:h}=this`)
-# and the field is assigned somewhere in the bundle.
-let readyCountRe = re2"readyCount:[\w$]+\}=this"
+# PRECONDITIONS for the helper's multi-piece path: js/files_quick_open_worker.js
+# scans the WHOLE match set per piece, because intersecting two top-N lists
+# would drop the very files the space fix exists for. Up to v5.11492.5 it asked
+# for `index.readyCount` results; since v6.28899.2 that count is a private field
+# (`#c`, set by `publish(n)`) of the scorer's table, so the helper passes an
+# unbounded limit instead. That returns every match only while
+#   (1) the index wrapper hands a non-empty query and the limit straight to the
+#       table: `search(e,t){return t<=0?[]:e.length===0?<top-level cache>:this.table.search(e,t)}`
+#   (2) the table's top-N keeps pushing until it holds `limit` entries:
+#       `if(ne+=...,s.length<t)s.push({pathIndex:e,...` (pruning only starts at s.length===t)
+# A change to either would make the multi-piece path return a truncated or
+# empty set - silently - so both are pinned, exactly once each.
+let wrapperRe =
+  re2"search\(([\w$]+),([\w$]+)\)\{return ([\w$]+)<=0\?\[\]:([\w$]+)\.length===0\?[^;]*?:this\.table\.search\(([\w$]+),([\w$]+)\)\}"
+let topNRe = re2"[(,]([\w$]+)\.length<([\w$]+)\)([\w$]+)\.push\(\{pathIndex:"
+
+proc wrapperCount(s: string): int =
+  for m in s.findAll(wrapperRe):
+    let q = s[m.group(0)]
+    let lim = s[m.group(1)]
+    if s[m.group(2)] == lim and s[m.group(3)] == q and s[m.group(4)] == q and
+        s[m.group(5)] == lim:
+      inc result
+
+proc topNCount(s: string): int =
+  for m in s.findAll(topNRe):
+    if s[m.group(0)] == s[m.group(2)]:
+      inc result
 
 proc apply*(input: string): string =
   result = input
@@ -60,23 +84,35 @@ proc apply*(input: string): string =
       " call=" & $hasCall & ") - refusing to patch on top; re-audit the worker bundle"
     quit(1)
 
-  if not result.contains(readyCountRe) or "this.readyCount=" notin result:
-    echo "  [FAIL] files quick open worker: scorer no longer exposes readyCount - the helper's full-set scan would silently return nothing; re-audit"
+  let nWrap = wrapperCount(result)
+  let nTopN = topNCount(result)
+  if nWrap != 1 or nTopN != 1:
+    echo "  [FAIL] files quick open worker: the scorer's full-set contract moved (index wrapper " &
+      $nWrap & "/1, top-N fill " & $nTopN & "/1) - the helper's unbounded scan could " &
+      "silently return a truncated or empty set; re-audit"
     quit(1)
 
   var count = 0
-  result = result.replace(anchor, proc(m: RegexMatch2, s: string): string =
-    let q = s[m.group(1)]
-    let lim = s[m.group(2)]
-    if s[m.group(3)] != q or s[m.group(4)] != lim:
-      echo "  [FAIL] files quick open worker: inner search() args (" & s[m.group(3)] & "," &
-        s[m.group(4)] & ") are not the method parameters (" & q & "," & lim & ")"
-      quit(1)
-    inc count
-    s[m.group(0)] & "__cdbQoSearch(this.index," & q & "," & lim & "))"
+  result = result.replace(
+    anchor,
+    proc(m: RegexMatch2, s: string): string =
+      let q = s[m.group(1)]
+      let lim = s[m.group(2)]
+      let idx = s[m.group(3)]
+      if s[m.group(4)] != idx or s[m.group(5)] != idx:
+        echo "  [FAIL] files quick open worker: the for-of searches " & s[m.group(5)] &
+          ", not the index local " & idx & " the method built and checked"
+        quit(1)
+      if s[m.group(6)] != q or s[m.group(7)] != lim:
+        echo "  [FAIL] files quick open worker: inner search() args (" & s[m.group(6)] &
+          "," & s[m.group(7)] & ") are not the method parameters (" & q & "," & lim & ")"
+        quit(1)
+      inc count
+      s[m.group(0)] & "__cdbQoSearch(" & idx & "," & q & "," & lim & "))",
   )
   if count != 1:
-    echo "  [FAIL] files quick open worker: expected exactly 1 FileIndexHost.search anchor, found " & $count
+    echo "  [FAIL] files quick open worker: expected exactly 1 FileIndexHost.search anchor, found " &
+      $count
     quit(1)
 
   # Prepend the helper after the directive prologue (a directive only counts when

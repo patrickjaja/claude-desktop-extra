@@ -205,10 +205,19 @@ proc apply*(input: string): string =
   #                   :e.reason==="clean-exit"||e.reason==="killed"&&eI()?"teardown":"needs recovery"}
   #   groups: 0 filterFn, 1 param, 2 latch, 3..4 param, 5 push, 6..7 param, 8 quitting
   const Reasons = """["`](?:crashed|killed)["`]"""
+  # v6.28899.2 keeps the unconditional clean-exit "teardown" (not absorbed) but
+  # binds the token first and passes the push a "signaled first" bit:
+  #   function mXi(e){let t=lXi();return t?((e.reason==="crashed"||e.reason==="killed")
+  #     &&fXi(e.reason==="killed"&&t.signaledFirst),"own kill"):e.reason==="clean-exit"
+  #     ||e.reason==="killed"&&rb()?"teardown":"needs recovery"}
+  # The token head (`return M()?` or `let t=M();return t?`) and the push's
+  # argument list are matched generically; group numbers are unchanged.
+  const TokenHead = """\{(?:let [\w$]+=|return )([\w$]+)\(\)(?:;return [\w$]+)?\?"""
+  const TokenHeadNc = """\{(?:let [\w$]+=|return )[\w$]+\(\)(?:;return [\w$]+)?\?"""
   let filterRe = re2(
-    """function ([\w$]+)\(([\w$]+)\)\{return ([\w$]+)\(\)\?\(\(([\w$]+)\.reason===""" &
+    """function ([\w$]+)\(([\w$]+)\)""" & TokenHead & """\(\(([\w$]+)\.reason===""" &
       Reasons & """\|\|([\w$]+)\.reason===""" & Reasons &
-      """\)&&([\w$]+)\(\),["`]own kill["`]\):([\w$]+)\.reason===["`]clean-exit["`]\|\|""" &
+      """\)&&([\w$]+)\([^()]{0,80}\),["`]own kill["`]\):([\w$]+)\.reason===["`]clean-exit["`]\|\|""" &
       """([\w$]+)\.reason===["`]killed["`]&&([\w$]+)\(\)\?["`]teardown["`]:""" &
       """["`]needs recovery["`]\}"""
   )
@@ -221,9 +230,9 @@ proc apply*(input: string): string =
   # The whole patched filter (token branch still upstream's "own kill"), to
   # recover its name for the handler cross-check.
   let filterPatchedRe = re2(
-    """function ([\w$]+)\(([\w$]+)\)\{return [\w$]+\(\)\?\(\([\w$]+\.reason===""" &
+    """function ([\w$]+)\(([\w$]+)\)""" & TokenHeadNc & """\(\([\w$]+\.reason===""" &
       Reasons & """\|\|[\w$]+\.reason===""" & Reasons &
-      """\)&&[\w$]+\(\),["`]own kill["`]\):[\w$]+\.reason===""" &
+      """\)&&[\w$]+\([^()]{0,80}\),["`]own kill["`]\):[\w$]+\.reason===""" &
       """["`]clean-exit["`]&&!globalThis\.__cdbCleanExitRecoverable\([\w$]+,[\w$]+\)\|\|""" &
       """[\w$]+\.reason===["`]killed["`]&&[\w$]+\(\)\?["`]teardown["`]:["`]needs recovery["`]\}"""
   )
@@ -361,6 +370,14 @@ proc apply*(input: string): string =
   # in the bundle, a no-argument statement on a bare identifier, followed by
   # the helper's timing log; and the handler's "own kill" verdict hands the
   # death to a post-kill reload that logs "Reloading after the hang kill".
+  # v6.28899.2: the call sits in a comma expression,
+  #   Ie=()=>{te.noteKill();let t=performance.now(),n=MJi(e,u);n&&oXi(),
+  #     e.forcefullyCrashRenderer(),te.noteKillReturned();let r=Math.round(...);
+  #     return M.info("The hang kill blocked the main process for %d ms (SIGKILL
+  #     sent to the page's process first: %s)",...
+  # The "SIGKILL first" signaler MJi is `function MJi(e,t){return!1}` in the
+  # Linux build, so upstream still never escalates on Linux and D stays. The
+  # timing log may now be preceded by one `,x.y()` call.
   const crashCall = ".forcefullyCrashRenderer()"
   const JsIdent = {'a' .. 'z', 'A' .. 'Z', '0' .. '9', '_', '$'}
   let anyCrash = result.count(".forcefullyCrashRenderer(")
@@ -378,7 +395,7 @@ proc apply*(input: string): string =
     let tailEnd = min(result.len, at + crashCall.len + 200)
     let tail = result[at + crashCall.len ..< tailEnd]
     let timingRe = re2(
-      """^;let ([\w$]+)=Math\.round\(performance\.now\(\)-[\w$]+\);return [\w$]+(?:\.[\w$]+)*""" &
+      """^(?:,[\w$]+(?:\.[\w$]+)*\(\))?;let ([\w$]+)=Math\.round\(performance\.now\(\)-[\w$]+\);return [\w$]+(?:\.[\w$]+)*""" &
         """\.info\(["`]The hang kill blocked the main process for %d ms"""
     )
     siteOk =

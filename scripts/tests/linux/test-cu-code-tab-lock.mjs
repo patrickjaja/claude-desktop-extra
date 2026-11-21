@@ -175,7 +175,8 @@ const OUR_LOST = (/var __LK_LOST=("(?:[^"\\]|\\.)*")/.exec(handlerSrc) || [])[1]
 // ── [B] upstream's shapes ──────────────────────────────────────────────────
 console.log("\n[B] upstream's dispatcher, session context and lock users (pristine bundle)");
 const LOCK_BRANCH_RE = /else if\(([\w$]+)\.checkCuLock\)\{let ([\w$]+)=await\(\1\.checkExclusiveLock\?\.\(\)\?\?\1\.checkCuLock\(\)\);if\(\2\.holder!==void 0&&!\2\.isSelf\)return\{content:\[\{type:"text",text:\1\.formatLockHeldMessage\?\.\(\2\.holder\)\?\?([\w$]+)\}\],isError:!0,telemetry:\{error_kind:"cu_lock_held"\}\}/;
-const APP_BRANCH_RE = /if\(([\w$]+)\(([\w$]+)\)&&([\w$]+)\.checkCuLock\)\{let ([\w$]+)=await\(\3\.checkExclusiveLock\?\.\(\)\?\?\3\.checkCuLock\(\)\);if\(\2!=="app_release"&&\4\.holder!==void 0&&!\4\.isSelf\)return\{content:\[\{type:"text",text:\3\.formatLockHeldMessage\?\.\(\4\.holder\)\?\?([\w$]+)\}\],isError:!0,telemetry:\{error_kind:"cu_lock_held"\}\}/;
+// v6.28899.2 stores the app-scoped test first: `let D=Bs(d);if(D&&r.checkCuLock){`.
+const APP_BRANCH_RE = /(?:if\(|let [\w$]+=)([\w$]+)\(([\w$]+)\)(?:&&|;if\([\w$]+&&)([\w$]+)\.checkCuLock\)\{let ([\w$]+)=await\(\3\.checkExclusiveLock\?\.\(\)\?\?\3\.checkCuLock\(\)\);if\(\2!=="app_release"&&\4\.holder!==void 0&&!\4\.isSelf\)return\{content:\[\{type:"text",text:\3\.formatLockHeldMessage\?\.\(\4\.holder\)\?\?([\w$]+)\}\],isError:!0,telemetry:\{error_kind:"cu_lock_held"\}\}/;
 const EXEMPT_RE = /let ([\w$]+)=([\w$]+)\(([\w$]+),([\w$]+)\),([\w$]+)=([\w$]+)\(\3\)\|\|\3==="wait"\|\|\3==="switch_display"\|\|\1,/;
 const ACQUIRE_RE = /if\(([\w$]+)\)\{await\(([\w$]+)\.acquireCuLock\?\.\(\)\);let ([\w$]+)=await \2\.checkCuLock\(\);if\(!\3\.isSelf\)return [\w$]+\(\{content:\[\{type:"text",text:\(\3\.holder===void 0\?void 0:\2\.formatLockHeldMessage\?\.\(\3\.holder\)\)\?\?([\w$]+)\}\],isError:!0,telemetry:\{error_kind:"cu_lock_held"\}\},[\w$]+,"lock_lost"\)/;
 const disp = partOf(P, (b) => LOCK_BRANCH_RE.test(b));
@@ -219,7 +220,7 @@ if (disp) {
 ok(up.lost !== undefined && up.lost === (OUR_LOST && JSON.parse(OUR_LOST)), "the block's lock_lost text is upstream's dispatcher fallback, byte for byte", up.lost && up.lost.slice(0, 60));
 // The tool object's own session context (the chunk holding handleToolCall).
 // The tool object as sub-patch 6 anchors it.
-const HTC_RE = /(([\w$]+)=\{[^{}]{0,80}isEnabled:[\w$]+=>(?:[\w$]+\.sessionType===["`]ccd["`]\?[\w$]+(?:\.[\w$]+)?\((?:\{[\w$]+:![01]\})?\)(?:&&![\w$]+\.[\w$]+)?:[\w$]+(?:\.[\w$]+)?\((?:\{[\w$]+:![01]\})?\)|[\w$]+\(\)),handleToolCall:async\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)\)=>\{)/;
+const HTC_RE = /(([\w$]+)=\{[^{}]{0,80}isEnabled:[\w$]+=>(?:![\w$]+(?:\.[\w$]+)?\([\w$]+\)&&\()?(?:[\w$]+\.sessionType===["`]ccd["`]\?[\w$]+(?:\.[\w$]+)?\((?:\{[\w$]+:![01]\})?\)(?:&&![\w$]+\.[\w$]+)?(?:&&!\([^()]{0,80}\([^()]{0,40}\)\))?:[\w$]+(?:\.[\w$]+)?\((?:\{[\w$]+:![01]\})?\)|[\w$]+\(\))\)?,handleToolCall:async\(([\w$]+),([\w$]+),([\w$]+),([\w$]+)(?:,[\w$]+)?\)=>\{)/;
 const tool = partOf(P, (b) => HTC_RE.test(b) && b.includes("formatLockHeldMessage:"));
 let upHeld;
 if (tool) {
@@ -228,8 +229,14 @@ if (tool) {
   upHeld = fm && strConst(tool.body, fm[1]);
   ok(/checkCuLock:([\w$]+)\.checkCuLock\?async\(\)=>\1\.checkCuLock\(\):void 0,checkExclusiveLock:\1\.checkCuExclusiveLock\?async\(\)=>\1\.checkCuExclusiveLock\(\):void 0,acquireCuLock:\1\.acquireCuLock\?async\(\)=>\{[\w$]+\.[\w$]+\("cu_lock",\1\.sessionId\)\|\|\1\.acquireCuLock\(\)\}:void 0/.test(tool.body),
     "that context maps the session's checkCuLock / checkCuExclusiveLock / acquireCuLock (absent -> no lock; acquire refused only under the HIPAA gate, which the block refuses earlier)");
-  ok(countRe(tool.body, /checkCuLock:([\w$]+)\.checkCuLock,checkCuExclusiveLock:\1\.checkCuExclusiveLock,acquireCuLock:\1\.acquireCuLock,/) === 1, "the internal MCP session hands the host session's lock functions through");
-  ok(/isAborted:([\w$]+)\.isAborted,/.test(tool.body), "and its isAborted");
+  // v6.28899.2 copies the host session's fields by a key list instead of an
+  // object literal: `var Ha="sessionCwd.model....checkCuLock.checkCuExclusiveLock.acquireCuLock....isAborted...".split(".");function Ua(e){return Object.fromEntries(Ha.map((t=>[t,e[t]])))}`.
+  const PICK_RE = /=["`]([\w.]+)["`]\.split\(["`]\.["`]\);function [\w$]+\(([\w$]+)\)\{return Object\.fromEntries\([\w$]+\.map\(\(?\(?([\w$]+)\)?=>\[\3,\2\[\3\]\]\)?\)\)\}/;
+  const pick = PICK_RE.exec(tool.body);
+  const picked = new Set(pick ? pick[1].split(".") : []);
+  ok(countRe(tool.body, /checkCuLock:([\w$]+)\.checkCuLock,checkCuExclusiveLock:\1\.checkCuExclusiveLock,acquireCuLock:\1\.acquireCuLock,/) === 1 ||
+    ["checkCuLock", "checkCuExclusiveLock", "acquireCuLock"].every((k) => picked.has(k)), "the internal MCP session hands the host session's lock functions through");
+  ok(/isAborted:([\w$]+)\.isAborted,/.test(tool.body) || picked.has("isAborted"), "and its isAborted");
 } else ok(false, "the chunk holding handleToolCall and its session context");
 ok(upHeld !== undefined && upHeld === (OUR_HELD && JSON.parse(OUR_HELD)), "the block's cu_lock_held text is the one upstream gives these sessions, byte for byte", upHeld && upHeld.slice(0, 60));
 // The Code tab (local_ ids) and local Cowork lock functions, and their releases.
@@ -239,13 +246,15 @@ const codePart = partOf(P, (b) => /releaseTurnScopedState\([\w$]+\)\{/.test(b) &
 const coworkPart = partOf(P, (b) => COWORK_LOCK_RE.test(b));
 ok(!!codePart, "the Code tab's session: checkCuLock / checkCuExclusiveLock / acquireCuLock on upstream's lock", codePart && codePart.name);
 ok(!!coworkPart, "local Cowork's session: the same, acquire records cu_lock_acquired", coworkPart && coworkPart.name);
-const RTS_RE = /releaseTurnScopedState\(([\w$]+)\)\{this\.markTrackerStaleIfNoAdvance\(\1\),([\w$]+)\.([\w$]+)\.release\(\1\.sessionId\),/;
+// v6.28899.2: the first call became a free function (`Xh(e),`).
+const RTS_RE = /releaseTurnScopedState\(([\w$]+)\)\{(?:this\.markTrackerStaleIfNoAdvance\(\1\)|[\w$]+\(\1\)),([\w$]+)\.([\w$]+)\.release\(\1\.sessionId\),/;
 ok(!!codePart && RTS_RE.test(codePart.body), "Code tab: releaseTurnScopedState releases the lock first");
 ok(!!codePart && /markNotRunning\(([\w$]+)\)\{let [\w$]+=\1\.isRunning;\1\.isRunning=!1,[^}]*this\.releaseTurnScopedState\(\1\)/.test(codePart.body), "Code tab: markNotRunning (every turn end: result, interrupt, process end, stop) calls it");
 ok(!!codePart && /async stopSession\(([\w$]+),[\w$]+="user",[\w$]+\)\{[\s\S]{0,300}?this\.teardownSession\(\1,/.test(codePart.body), "Code tab: stopSession tears the session down");
 ok(!!coworkPart && /\.[\w$]+\.release\(([\w$]+)\.sessionId\),this\.permissionRouter\.denyPendingPermissionsForSession\(\1\.sessionId,"Turn ended","turn_completed"\)/.test(coworkPart.body), "local Cowork: turn completion releases the lock");
 // The Escape stop handler upstream passes to its Escape and Stop sharing aborts.
-const STOP_RE = /let ([\w$]+)=([\w$]+)=>\{([\w$]+)\(\)\?\.stopSession\(\2\),([\w$]+)\(\)\?\.stopSession\(\2\),([\w$]+)\(\2,"esc"\);/;
+// v6.28899.2 notes the stop time first (`Dya(e),`).
+const STOP_RE = /let ([\w$]+)=([\w$]+)=>\{(?:[\w$]+\(\2\),)?([\w$]+)\(\)\?\.stopSession\(\2\),([\w$]+)\(\)\?\.stopSession\(\2\),([\w$]+)\(\2,"esc"\);/;
 const stopPart = partOf(Q, (b) => STOP_RE.test(b));
 const sm = stopPart && STOP_RE.exec(stopPart.body);
 ok(!!sm && countRe(stopPart.body, STOP_RE) === 1, "the Escape stop handler stops the id in both session managers", sm && sm[3] + "() / " + sm[4] + "()");
@@ -755,9 +764,13 @@ if (tm) {
   clickTools = [...travelPart.body.matchAll(new RegExp('case"([a-z_]+)":return ' + esc(clickFn) + "\\(", "g"))].map((m) => m[1]).sort();
 }
 ok(J(clickTools) === J(["double_click", "left_click", "middle_click", "right_click", "triple_click"]), "  the function holding it serves exactly the five click tools (a batch's click sub-actions included)", J(clickTools));
-const adapterPart = partOf(P, (b) => /isAborted:\(\)=>([\w$]+)\.isAborted\?\.\(\)===!0\|\|([\w$]+)\.timeLimitPassed,isUnattended:\1\.isUnattendedSession,getPointerActionsBackToBack:\(\)=>\2\.anyRunning[,}]/.test(b));
-ok(!!adapterPart && /[\w$]+\([\w$]+,[\w$]+\.altToolModeCalls\)/.test(adapterPart.body), "  its state: isAborted = session.isAborted() || altToolModeCalls.timeLimitPassed, isUnattended = session.isUnattendedSession, back to back = altToolModeCalls.anyRunning", adapterPart && adapterPart.name);
-ok(!!travelPart && /isAborted:([\w$]+)\.isAborted,isUnattended:\1\.isUnattended\?\.\(\),pointerActionsBackToBack:\1\.getPointerActionsBackToBack\?\.\(\)/.test(travelPart.body), "  read once per tool call into the dispatcher's state");
+// v6.28899.2 adds `onAppCapture:e=>{}` to the adapter and more fields between
+// the dispatcher-state reads, and isAborted also follows the call's abort signal
+// when one is handed in (`isAborted:v?()=>r.isAborted?.()===!0||v.aborted:r.isAborted`).
+const adapterPart = partOf(P, (b) => /isAborted:\(\)=>([\w$]+)\.isAborted\?\.\(\)===!0\|\|([\w$]+)\.timeLimitPassed,isUnattended:\1\.isUnattendedSession,(?:onAppCapture:[\w$]+=>\{\},)?getPointerActionsBackToBack:\(\)=>\2\.anyRunning[,}]/.test(b));
+// v6.28899.2: the adapter takes the whole state and destructures it (`function ht(e,r){let{altToolModeCalls:a}=r,...`).
+ok(!!adapterPart && (/[\w$]+\([\w$]+,[\w$]+\.altToolModeCalls\)/.test(adapterPart.body) || /function [\w$]+\([\w$]+,([\w$]+)\)\{let\{altToolModeCalls:[\w$]+\}=\1[,;]/.test(adapterPart.body)), "  its state: isAborted = session.isAborted() || altToolModeCalls.timeLimitPassed, isUnattended = session.isUnattendedSession, back to back = altToolModeCalls.anyRunning", adapterPart && adapterPart.name);
+ok(!!travelPart && /isAborted:(?:[\w$]+\?\(\)=>[\w$]+\.isAborted\?\.\(\)===!0\|\|[\w$]+\.aborted:)?([\w$]+)\.isAborted,[^{}]{0,200}?isUnattended:\1\.isUnattended\?\.\(\),[^{}]{0,200}?pointerActionsBackToBack:\1\.getPointerActionsBackToBack\?\.\(\)/.test(travelPart.body), "  read once per tool call into the dispatcher's state");
 // Upstream reports the display: a screenshot on another display than the
 // selected one, and switch_display (auto = undefined).
 ok(!!travelPart && countRe(travelPart.body, /\.displayId!==([\w$]+)\.selectedDisplayId&&\([^;]{0,200}?\1\.onResolvedDisplayUpdated\?\.\(([\w$]+)\.displayId\)\)/) === 1, "upstream: a screenshot whose display is not the selected one -> onResolvedDisplayUpdated(displayId)");

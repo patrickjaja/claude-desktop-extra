@@ -180,6 +180,36 @@ try {
     );
     check("does not claim idempotency", r3.out.includes("already present (idempotent)"), false);
     check("file left untouched", readFileSync(legacyFile, "utf8") === legacyFixture, true);
+
+    // v6.28899.2: the merger no longer ends `return{...REG(),...LOCALS}}` - the
+    // return is a comma sequence that re-reads the remote-download policy first
+    // (verbatim tail from .vite/build/index.chunk-CMMDcOF6.js). A decoy spread
+    // whose callee is NOT the registry must be ignored by the registry check.
+    console.log("\n[5] v6.28899.2 merger tail: `return await X(),...,{...Cz(),...we}}`");
+    const V6_REGISTRY =
+      'function Cz(){let e=Ayi();return{launch:yz,trayIcon:yz,quietPenguin:Kvi(Kyi),chillingSlothFeat:tyi(),chillingSlothLocal:iyi(),ccdPlugins:yz,computerUse:Xyi(),computerUseRollout:Zyi("computerUseRollout")}}';
+    const V6_DECOY = "function W(){return{...H(),...x}}function H(){return{turns:0}}";
+    const V6_TAIL =
+      "async function Ybi(e){let[t]=await Promise.all([Yyi()]),we={louderPenguin:t},Te=KR();return await _mi(),KR()!==Te&&Tz()&&Ez(),{...Cz(),...we}}";
+    const v6File = join(scratch, "index-v6.js");
+    const v6Fixture = V6_DECOY + "\n" + V6_REGISTRY + "\n" + V6_TAIL + "\n" + PREFS + "\n";
+    writeFileSync(v6File, v6Fixture);
+    const r5 = runPatch(v6File);
+    check("exit 0", r5.status, 0);
+    check("reported via Cz()", r5.out.includes("[OK] feature merger via Cz(): 7 features overridden (1 match)"), true);
+    const v6Patched = readFileSync(v6File, "utf8");
+    check("override run sits last in the v6 merger", count(v6Patched, "{...Cz(),...we" + OVERRIDES + "}}"), 1);
+    check("decoy spread untouched", count(v6Patched, "return{...H(),...x}}"), 1);
+    let v6SyntaxOk = true;
+    try {
+      execFileSync("node", ["--check", v6File], { stdio: "pipe" });
+    } catch {
+      v6SyntaxOk = false;
+    }
+    check("patched v6 fixture passes node --check", v6SyntaxOk, true);
+    const r5b = runPatch(v6File);
+    check("second run exit 0", r5b.status, 0);
+    check("second run byte-identical", readFileSync(v6File, "utf8") === v6Patched, true);
   }
 
   console.log("\n[4] the SPA's decision (verbatim) with the override vs upstream's Linux value");

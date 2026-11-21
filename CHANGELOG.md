@@ -2,6 +2,25 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-21
+
+### Upstream v6.28899.2 (major bump from v5.11492.5; Electron 45.2.1 -> 45.3.3)
+
+Upstream's release notes: [claude.com/docs/cowork/changelog](https://claude.com/docs/cowork/changelog) (v6.6395.0, v6.6395.1 and v6.28899.2 are covered by this entry; Claude Code 2.1.328, agent SDK 0.3.328).
+
+- **22 of 76 patches re-fitted, none removed.** The re-minify (604 -> 696 chunks) reshaped the main-window factory (options are now split between the call site and a builder function), the tray icon selector, the app `ready` handler, the feature-flag merger and store setter, the Code session env copy, the file index and the Setup SPA's chunk layout. No patch was absorbed by upstream.
+- **Focus-follows-mouse (`fix_focus_follows_mouse_raise.nim`)**: upstream now routes every window focus handler through one helper that skips inactive windows and already-focused views. The patch keeps what upstream still lacks: no window activation (raise) when an active window refocuses its view, and none from the startup prefocus. Pop-outs of the main view are covered by the same helper.
+- **Tray-less desktops (`fix_tray_less_desktops.nim`)**: the shown-instead-of-hidden startup respects upstream's new hidden launch mode for artifact apps (inactive in this build).
+- **Computer Use (`fix_computer_use_linux.nim`)**: 14 sub-patches re-fitted (70/70 apply). New upstream policy: when the server sends an organization's allowed-apps list, upstream enforces it per app on X11 and switches Computer Use off on Wayland. This build switches Computer Use off on every Linux session while such a list is present (our tool-call path does not enforce the list per app); without a list nothing changes. Upstream's new per-call refusal for sessions whose Claude Code runs on an SSH host applies on Linux too, and the whole-screen grant of cloud sessions honors the new remote-desktop hold.
+- **Custom models (`add_feature_custom_models.nim`)**: upstream now removes `BUN_*` variables from the environment it builds for Claude Code. The filter runs before our injection, so the preload still loads ([baseline/CUSTOM_MODELS_ANCHORS.md](baseline/CUSTOM_MODELS_ANCHORS.md) tracks it).
+- **Files quick open (`add_feature_files_quick_open_worker.nim`)**: rewritten for upstream's new file-index table (the ready count became private); space-separated pieces match as before.
+- **Auto-archive delay UI in 3P (`add_feature_auto_archive_grace_ion.nim`)**: rewritten for the Setup SPA's new chunk layout (the PR row moved into its own chunk).
+- **Settings -> Extra -> Deployment**: 20 new managed-settings keys (237 total), among them `autoModeRules`, `sshHostSandboxUnavailable`, `codeDefaultPermissionMode`, `isArtifactAppsEnabled` and `workAcrossAppsEnabled`.
+- **Feature-flag catalog** (`docs/claude-desktop-extra.jsonc`): 879 -> 1150 flags (+290, -19).
+- **New upstream entry point**: `package.json` now starts `launcher.js` (a V8 compile-cache loader; our build drops the cache, so it falls through to a plain load), and `index.pre.js` can hand startup to the new `earlyShell.js`, which loads the main bundle only after `ready`. The early shell opts out when the app is started with arguments or on a Wayland session, so it never runs in our packages (the launcher always passes at least one Chromium switch).
+- **Upstream on Linux, unchanged by us**: the Android emulator pane works on x64 (arm64 gets Android Studio's manual steps); custom keyboard shortcuts for the app's own actions are rolling out for 1P accounts and do not include Voice mode, New voice chat or Read aloud, so Custom Shortcuts stays; "Install as App" for artifacts, sign-in requests in the built-in browser and the typing hold in browser previews are off in the Linux build; upstream captures cover pictures for Design and Slides cards only under XWayland and X11, not on native Wayland.
+- Census baselines refreshed (`baseline/predicate-consumers.json`: Computer Use definition shape re-pinned, 6 new reviewed entries, 3 re-keyed; `baseline/refusal-strings.json`: 24 new strings pinned, 10 stale pins dropped), platform-gate baseline re-audited (no new gate that excludes Linux).
+
 ## 2026-11-19
 
 ### Transparent window: no dark boxes behind question cards, page headers and side panes; Code transcript fades at the input (thanks @sidlikesgrapess, #353)

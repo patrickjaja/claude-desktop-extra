@@ -295,16 +295,19 @@ const railFixture = [
   'import{Ga as o,Ka as c,Wa as u,To as l,go as h}from"./vendor-frame-test.js";',
   'function Side(e){let $=Q7(124),{session:t,pullRequests:n,plan:r,artifacts:i,repoMenuItems:a,outputsSession:s,controls:k}=e;let x=o(Vb,{id:"environment",title:"Environment"}),z=o(Vb,{id:"pullRequests",title:"Changes"});if(!t)return null;let je="header",We="content";return J4($,118,ke,Ae,je,We)?K4($,118,ke,Ae,je,We,c("aside",{ref:De,"aria-label":ke,tabIndex:-1,onMouseDownCapture:Km,onClickCapture:Km,onDoubleClickCapture:Km,className:Ae,children:[je,We]})):$[122]}function After(){}'
 ].join("\n");
-function runIon(notice, rail) {
+// Since v6.28899.2 the PR bar row (jsxs / Fragment aliases) lives in its own
+// chunk; `row` is that chunk, written only when given.
+function runIon(notice, rail, row) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cdb-grace-ion-")), assets = path.join(dir, "assets/v1");
   fs.mkdirSync(assets, { recursive: true });
   const noticeFile = path.join(assets, "notice.js"), railFile = path.join(assets, "rail.js");
   fs.writeFileSync(noticeFile, notice); fs.writeFileSync(railFile, rail);
+  if (row !== undefined) fs.writeFileSync(path.join(assets, "row.js"), row);
   const run = spawnSync(ionBinary, [dir], { encoding: "utf8" });
   return { dir, noticeFile, railFile, run };
 }
-function checkIon(notice, rail) {
-  const first = runIon(notice, rail);
+function checkIon(notice, rail, row) {
+  const first = runIon(notice, rail, row);
   try {
     assert.equal(first.run.status, 0, first.run.stdout + first.run.stderr);
     for (const file of [first.noticeFile, first.railFile]) execFileSync(process.execPath, ["--check", file]);
@@ -329,7 +332,7 @@ await test("ion patch: applies to upstream's shapes with renamed aliases and slo
 await test("ion patch: fails closed on changed anchors, a missing chunk and a stale injection", async () => {
   const out = checkIon(noticeFixture, railFixture);
   const broken = [
-    [noticeFixture.replace("onPreferencesChanged", "onPrefs"), railFixture],
+    [noticeFixture.replace("getPreferences", "getPrefs"), railFixture],
     [noticeFixture.replace("{hold:t,sessionRef:n}", "{reason:t,sessionRef:n}"), railFixture],
     [noticeFixture.replace("isPrimary:a", "primary:a"), railFixture],
     [noticeFixture.replace("Ka as jxs", "Ka as jxz"), railFixture],
@@ -345,6 +348,30 @@ await test("ion patch: fails closed on changed anchors, a missing chunk and a st
   ];
   for (const [notice, rail] of broken) {
     const r = runIon(notice, rail);
+    try { assert.notEqual(r.run.status, 0, "must fail"); assert.match(r.run.stdout + r.run.stderr, /\[FAIL\]/); }
+    finally { fs.rmSync(r.dir, { recursive: true, force: true }); }
+  }
+});
+// v6.28899.2 layout: the PR bar row (now with sessionRepos) is a third chunk
+// with its own local names for the same vendor exports.
+const splitNotice = noticeFixture.split("\n").filter(line => !line.startsWith("function Row(")).join("\n")
+  .replace("Zn?.onPreferencesChanged?.(t)", "Ki(t)");
+const rowFixture = [
+  'import{Ka as r,Wa as n}from"./vendor-frame-test.js";',
+  'function Row(e,t){let $=Q7(494),{repoKey:i,sessionRef:a,sessionRepo:c,sessionRepos:l,isPrimary:u,archiveRowKey:C}=e;return J5($,487,u,d,c,p,m,g)?K5($,487,u,d,c,p,m,g,r(n,{children:[u,d,c,p,m,g]})):$[493]}'
+].join("\n");
+await test("ion patch: PR bar row in its own chunk (v6.28899.2) resolves jsxs / Fragment through that chunk's imports", async () => {
+  const out = checkIon(splitNotice, railFixture, rowFixture);
+  for (const alias of ["= st(null)", "eff(() =>", "jxs(Frag, {children:"]) assert.ok(out.notice.includes(alias), "notice helper uses " + alias);
+  for (const alias of ["= l(null)", "h(() =>", "c(u, {children:"]) assert.ok(out.rail.includes(alias), "rail helper uses " + alias);
+  const broken = [
+    [splitNotice, railFixture, rowFixture.replace("vendor-frame-test", "vendor-frame-other")],
+    [splitNotice, railFixture, rowFixture.replace("Ka as r,", "")],
+    [splitNotice, railFixture, rowFixture.replace("isPrimary:u", "primary:u")],
+    [splitNotice, railFixture, undefined]
+  ];
+  for (const [notice, rail, row] of broken) {
+    const r = runIon(notice, rail, row);
     try { assert.notEqual(r.run.status, 0, "must fail"); assert.match(r.run.stdout + r.run.stderr, /\[FAIL\]/); }
     finally { fs.rmSync(r.dir, { recursive: true, force: true }); }
   }
@@ -374,6 +401,7 @@ await test("ion wrappers: the keep control is appended inside the rail's aside, 
 // The real target chunks from a pristine extract: CDB_ION_DIST (an ion-dist
 // directory or ion-dist.asar), else tmp/extract's resources/ion-dist.asar.
 const isRailChunk = buf => buf.includes('id:"environment",title:') && buf.includes('id:"pullRequests",title:') && buf.includes("outputsSession:");
+const isRowChunk = buf => buf.includes("repoKey:") && buf.includes("sessionRepo:") && buf.includes("isPrimary:");
 function readAsarChunks(file) {
   const fd = fs.openSync(file, "r"), found = {};
   try {
@@ -386,6 +414,7 @@ function readAsarChunks(file) {
       const buf = Buffer.alloc(entry.size); fs.readSync(fd, buf, 0, entry.size, base + Number(entry.offset));
       if (buf.includes(ION_TARGET)) found.notice = { name, buf };
       if (isRailChunk(buf)) found.rail = { name, buf };
+      if (isRowChunk(buf)) found.row = { name, buf };
     }
   } finally { fs.closeSync(fd); }
   return found;
@@ -401,6 +430,7 @@ function pristineIonChunks() {
       const buf = fs.readFileSync(path.join(assets, name));
       if (buf.includes(ION_TARGET)) found.notice = { name, buf };
       if (isRailChunk(buf)) found.rail = { name, buf };
+      if (isRowChunk(buf)) found.row = { name, buf };
     }
     return found;
   }
@@ -411,7 +441,8 @@ function pristineIonChunks() {
   if (!real || !real.notice || !real.rail) console.log("SKIP ion patch on the real chunks: " + (real ? "target chunks not found in " + real.from : "no pristine ion-dist (set CDB_ION_DIST or extract to tmp/extract)"));
   else if (real.notice.buf.includes("__cdb") || real.rail.buf.includes("__cdb")) console.log("SKIP ion patch on the real chunks: " + real.from + " is already patched");
   else await test(`ion patch: applies to the real pristine chunks (${real.notice.name}, ${real.rail.name}), node --check, idempotent`, async () => {
-    const out = checkIon(real.notice.buf, real.rail.buf);
+    const row = real.row && real.row.name !== real.notice.name && real.row.name !== real.rail.name ? real.row.buf : undefined;
+    const out = checkIon(real.notice.buf, real.rail.buf, row);
     for (const text of [out.notice, out.rail]) assert.equal(text.split("/*cdb-archive-grace-ui*/").length, 2);
     assert.ok(out.notice.includes("function __cdbArchiveNativeNotice(") && out.rail.includes("function __cdbArchiveNativeRail("));
   });

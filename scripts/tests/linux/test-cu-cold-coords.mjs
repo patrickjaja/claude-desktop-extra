@@ -427,8 +427,10 @@ if (!haveBundle) {
   ok(J(asks) === J([true]), "5e asks with asked = true (upstream's captures always pass an allowlist)", J(asks));
   // Why asked = true is the real state: every capture of upstream's dispatch
   // passes its allowlist (grants.captureAllowedBundleIds, an array).
-  const caps = pristine.match(/\.(?:screenshot|resolvePrepareCapture)\(\{/g) || [];
-  const capsAl = pristine.match(/\.(?:screenshot|resolvePrepareCapture)\(\{allowedBundleIds:/g) || [];
+  // v6.28899.2 has a device-bridge hint text naming `tab.screenshot({ scale: 0.5 })`
+  // (a browser tab, not an executor): left out.
+  const caps = pristine.match(/(?<!\btab)\.(?:screenshot|resolvePrepareCapture)\(\{/g) || [];
+  const capsAl = pristine.match(/(?<!\btab)\.(?:screenshot|resolvePrepareCapture)\(\{allowedBundleIds:/g) || [];
   ok(caps.length > 0 && caps.length === capsAl.length, "upstream: every executor screenshot / resolvePrepareCapture call passes allowedBundleIds", capsAl.length + "/" + caps.length);
   globalThis.__linuxExecutor = kwinLike;
   const plat = Object.getOwnPropertyDescriptor(process, "platform");

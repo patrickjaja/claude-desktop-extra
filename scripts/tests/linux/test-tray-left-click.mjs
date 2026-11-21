@@ -60,6 +60,16 @@ function G$r(){return[{label:X().formatMessage({defaultMessage:"Show App",id:"DQ
 function I7i(){let r="TrayIconLinux-Dark.png";Y9=new a.Tray(a.nativeImage.createFromPath(r)),Y9.setToolTip(a.app.getName()),X9=r,Z9=G$r(),Y9.setContextMenu(Z9)}
 `;
 
+// 6.28899.2: the "Show App" handler is a wrapper whose leading calls take
+// arguments (`ywi("tray_menu")`); the restore routine opens with a call
+// statement. Anchors verbatim, the rest trimmed.
+const FIXTURE6 = `"use strict";
+var oo=null,Z9=null,Q9=null,$9=null;function H(){return{formatMessage:m=>m.defaultMessage}}function mo(){__ev.push("mo")}function tb(){}function ywi(){__ev.push("ywi")}function OSi(){}
+function Kz(){tb();let e=oo;!e||e.isDestroyed()||(e.isMinimized()?(e.restore(),e.focus()):e.isVisible()?e.focus():(mo(),e.show()))}function Ewi(){ywi("tray_menu"),OSi(),Kz()}
+function LTo(){return[{label:H().formatMessage({defaultMessage:"Show App",id:"DQTgg21B7g"}),click:()=>Ewi()},{label:H().formatMessage({defaultMessage:"Quit",id:"dKX0bpR+a2"}),click:()=>{}}]}
+function zec(e){let i="TrayIconLinux-Dark.png";Z9=new u.Tray(u.nativeImage.createFromPath(i)),Z9.setToolTip(u.app.getName()),Q9=i,$9=LTo(),Z9.setContextMenu($9)}
+`;
+
 function runPatch(file) {
   try {
     const out = execFileSync(PATCH_BIN, [file], { encoding: "utf8", stdio: "pipe" });
@@ -145,6 +155,54 @@ try {
   const r2 = runPatch(file);
   check("second run exits 0", r2.status, 0);
   check("second run leaves the file byte-identical", readFileSync(file, "utf8"), patched);
+
+  section("[A6] the 6.28899.2 shapes (wrapper with argument calls)");
+  {
+    const f6 = join(scratch, "index6.js");
+    writeFileSync(f6, FIXTURE6);
+    const r = runPatch(f6);
+    check("6.28899.2: first run exits 0", r.status, 0);
+    check("6.28899.2: captured names reported", /tray Z9, window oo, show Ewi/.test(r.out), true);
+    const p6 = readFileSync(f6, "utf8");
+    execFileSync("node", ["--check", f6]);
+    check("6.28899.2: node --check", true, true);
+    const r6b = runPatch(f6);
+    check("6.28899.2: second run exits 0, byte-identical", r6b.status === 0 && readFileSync(f6, "utf8") === p6, true);
+    const src = p6.replace(/\bu\./g, "a.");
+    const run6 = (win) => {
+      const ev = [];
+      const handlers = {};
+      class Tray {
+        on(n, f) { (handlers[n] ||= []).push(f); return this; }
+        setToolTip() {}
+        setContextMenu() {}
+        emit(n) { for (const f of handlers[n] || []) f(); }
+      }
+      const w = {
+        ...win,
+        isDestroyed: () => false,
+        isMinimized: () => w.minimized,
+        isVisible: () => w.visible,
+        isFocused: () => w.focused,
+        restore: () => ev.push("restore"),
+        focus: () => ev.push("focus"),
+        show: () => ev.push("show"),
+        close: () => ev.push("close"),
+      };
+      const sb = {
+        __ev: ev,
+        __w: w,
+        __tray: null,
+        process: { platform: "linux" },
+        a: { Tray, nativeImage: { createFromPath: (x) => x }, app: { getName: () => "Claude", on() {} } },
+      };
+      vm.runInNewContext(src + "\n;oo=__w;zec();__tray=Z9;", vm.createContext(sb));
+      sb.__tray.emit("click");
+      return ev.join(",");
+    };
+    check("6.28899.2: hidden window -> Show App handler (telemetry + show)", run6({ visible: false, minimized: false, focused: false }), "ywi,mo,show");
+    check("6.28899.2: focused window -> close (hide to tray)", run6({ visible: true, minimized: false, focused: true }), "close");
+  }
 
   section("[A2] a moved anchor fails loud");
   {
