@@ -913,8 +913,10 @@ section("reset screen sharing");
 section("win32 build (downstream): every channel refuses");
 {
   const w = load({ platform: "win32" });
+  globalThis.__cdbCuPolicy = { loaded: () => true, allowReadable: () => true, allowHasEntry: () => true, allowApps: () => ["x"] };
   const outs = await Promise.all(["read", "tpm-enable", "tpm-disable", "reset-screen-sharing"].map((c) => w.call("cdb-cu-status:" + c)));
-  ok(outs.every((o) => J(o) === J({ ok: false, error: "Computer Use status is Linux only" })), "Linux only, from every channel", J(outs));
+  delete globalThis.__cdbCuPolicy;
+  ok(outs.every((o) => J(o) === J({ ok: false, error: "Computer Use status is Linux only" })), "Linux only, from every channel (no policy field, even with readers present)", J(outs));
 }
 
 section("helper (packaging/udev/cdb-tpm-access), run unprivileged");
@@ -1111,6 +1113,87 @@ section("ask before Computer Use controls an app: switch and screenshot facts");
   st = await read();
   ok(st.ok === true && st.screenshots.filtering === "unknown", "a throwing executor -> unknown, the read still answers", J(st.screenshots));
   delete globalThis.__linuxExecutor;
+
+  // The policy gates of upstream's enable gate (sub-patch 11 publishes their
+  // readers as globalThis.__cdbCuPolicy): allowed-apps list, the managed
+  // computerUseEnabled key, the compliance (HIPAA) restriction.
+  {
+    const U = { state: "unknown" };
+    const pol = (o) => ({ loaded: () => true, allowReadable: () => true, allowHasEntry: () => false, allowApps: () => null,
+      managedAllows: () => true, managedUnreadable: () => false, hipaa: () => false, wayland: () => false, sshCliDeny: () => false, ...o });
+    delete globalThis.__cdbCuPolicy;
+    st = await read();
+    ok(J(st.policy) === J({ allowedApps: U, managed: U, compliance: U, sshCli: U }), "no readers published: every gate unknown (never none)", J(st.policy));
+    globalThis.__cdbCuPolicy = pol({});
+    st = await read();
+    ok(J(st.policy) === J({ allowedApps: { state: "none" }, managed: { state: "none" }, compliance: { state: "none" }, sshCli: { state: "off" } }), "nothing active: none x3, SSH rule off", J(st.policy));
+    globalThis.__cdbCuPolicy = pol({ allowHasEntry: () => true, allowApps: () => ["org.gnome.Calculator", " firefox ", 7, "", "<img src=x onerror=alert(1)>"] });
+    st = await read();
+    ok(J(st.policy.allowedApps) === J({ state: "list", count: 3, apps: ["org.gnome.Calculator", "firefox", "<img src=x onerror=alert(1)>"], effect: "off-cannot-enforce" }), "list on X11: count, ids as given (strings only, trimmed), off: cannot enforce", J(st.policy.allowedApps));
+    globalThis.__cdbCuPolicy = pol({ allowHasEntry: () => true, allowApps: () => ["a"], wayland: () => true });
+    st = await read();
+    ok(st.policy.allowedApps.effect === "off-wayland", "list on Wayland: off, as Anthropic's build", J(st.policy.allowedApps));
+    globalThis.__cdbCuPolicy = pol({ allowHasEntry: () => true, allowApps: () => ["a"], wayland: () => { throw new Error("boom"); } });
+    st = await read();
+    ok(st.policy.allowedApps.state === "list" && st.policy.allowedApps.effect === "off", "list, session kind unreadable: off, no claim about why", J(st.policy.allowedApps));
+    globalThis.__cdbCuPolicy = pol({ allowHasEntry: () => true, allowApps: () => Array.from({ length: 30 }, (_, i) => "app" + i + "x".repeat(200)) });
+    st = await read();
+    ok(st.policy.allowedApps.count === 30 && st.policy.allowedApps.apps.length === 20 && st.policy.allowedApps.apps.every((x) => x.length === 120), "list: at most 20 ids, 120 chars each, the full count", J([st.policy.allowedApps.count, st.policy.allowedApps.apps.length]));
+    globalThis.__cdbCuPolicy = pol({ allowReadable: () => false });
+    st = await read();
+    ok(st.policy.allowedApps.state === "unreadable", "unreadable value -> unreadable", J(st.policy));
+    globalThis.__cdbCuPolicy = pol({ loaded: () => false, allowReadable: () => true, allowHasEntry: () => false });
+    st = await read();
+    ok(st.policy.allowedApps.state === "unknown", "server values not loaded yet -> unknown, not none", J(st.policy));
+    globalThis.__cdbCuPolicy = pol({ allowHasEntry: () => { throw new Error("boom"); }, managedAllows: () => { throw new Error("boom"); }, hipaa: () => { throw new Error("boom"); } });
+    st = await read();
+    ok(st.ok === true && J(st.policy) === J({ allowedApps: U, managed: U, compliance: U, sshCli: { state: "off" } }), "throwing readers -> unknown, the read still answers", J(st.policy));
+    globalThis.__cdbCuPolicy = pol({ sshCliDeny: () => true });
+    st = await read();
+    ok(st.policy.sshCli.state === "on", "SSH-host rule on", J(st.policy.sshCli));
+    globalThis.__cdbCuPolicy = pol({ sshCliDeny: () => { throw new Error("boom"); } });
+    st = await read();
+    ok(st.policy.sshCli.state === "unknown", "SSH-host rule reader throws -> unknown", J(st.policy.sshCli));
+    globalThis.__cdbCuPolicy = pol({ loaded: () => false, sshCliDeny: () => false });
+    st = await read();
+    ok(st.policy.sshCli.state === "unknown", "SSH-host rule before the server values loaded -> unknown", J(st.policy.sshCli));
+    globalThis.__cdbCuPolicy = pol({ managedAllows: () => false });
+    st = await read();
+    ok(st.policy.managed.state === "off", "computerUseEnabled false -> managed off", J(st.policy));
+    globalThis.__cdbCuPolicy = pol({ managedAllows: () => false, managedUnreadable: () => true });
+    st = await read();
+    ok(st.policy.managed.state === "unreadable", "device management unreadable at start -> managed unreadable", J(st.policy));
+    globalThis.__cdbCuPolicy = pol({ hipaa: () => true });
+    st = await read();
+    ok(st.policy.compliance.state === "restricted", "compliance restricted", J(st.policy));
+    globalThis.__cdbCuPolicy = pol({ hipaa: () => true, managedAllows: () => false, allowHasEntry: () => true, allowApps: () => ["a"] });
+    st = await read();
+    ok(J(st.policy) === J({ allowedApps: { state: "list", count: 1, apps: ["a"], effect: "off-cannot-enforce" }, managed: { state: "off" }, compliance: { state: "restricted" }, sshCli: { state: "off" } }), "several at once", J(st.policy));
+    globalThis.__cdbCuPolicy = { loaded: () => true };
+    st = await read();
+    ok(J(st.policy) === J({ allowedApps: U, managed: U, compliance: U, sshCli: U }), "missing readers -> unknown", J(st.policy));
+    delete globalThis.__cdbCuPolicy;
+    // Who holds Computer Use: upstream's lock instance (sub-patch 4b publishes it).
+    delete globalThis.__cdbCuLock;
+    st = await read();
+    ok(J(st.lock) === J({ state: "free" }), "lock never taken in this run -> free", J(st.lock));
+    globalThis.__cdbCuLock = { currentHolder: undefined };
+    st = await read();
+    ok(J(st.lock) === J({ state: "free" }), "lock released -> free", J(st.lock));
+    globalThis.__cdbCuLock = { currentHolder: "local_abc" };
+    st = await read();
+    ok(J(st.lock) === J({ state: "held", kind: "code" }), "held by a Code session (local_ id)", J(st.lock));
+    globalThis.__cdbCuLock = { currentHolder: "cse_123" };
+    st = await read();
+    ok(J(st.lock) === J({ state: "held", kind: "session" }), "held by another session", J(st.lock));
+    globalThis.__cdbCuLock = { get currentHolder() { throw new Error("boom"); } };
+    st = await read();
+    ok(J(st.lock) === J({ state: "unknown" }), "throwing lock -> unknown", J(st.lock));
+    globalThis.__cdbCuLock = null;
+    st = await read();
+    ok(J(st.lock) === J({ state: "unknown" }), "a non-object lock -> unknown", J(st.lock));
+    delete globalThis.__cdbCuLock;
+  }
   if (savedDesk === undefined) delete process.env.XDG_CURRENT_DESKTOP; else process.env.XDG_CURRENT_DESKTOP = savedDesk;
   reset();
   [J1, JC].forEach((f, i) => { if (saved[i] === null) rmSync(f, { force: true }); else writeFileSync(f, saved[i]); });

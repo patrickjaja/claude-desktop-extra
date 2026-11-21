@@ -492,7 +492,7 @@ proc endStateMarkers(): seq[EndStateMarker] =
     ),
     rx(
       "4b cu lock acquire",
-      """,process\.platform==="linux"&&globalThis\.__linuxExecutor\?\.__setLockHeld\?\.\(!0,[\w$]+\)\.catch\?\.\(""",
+      """,process\.platform==="linux"&&\(globalThis\.__cdbCuLock=this\),process\.platform==="linux"&&globalThis\.__linuxExecutor\?\.__setLockHeld\?\.\(!0,[\w$]+\)\.catch\?\.\(""",
     ),
     lit(
       "4b.2 cu lock release",
@@ -588,6 +588,11 @@ proc endStateMarkers(): seq[EndStateMarker] =
       """[{;]if\(![\w$]+\|\|process\.platform==="linux"&&globalThis\.__cdbCuGlowOff\?\.\(\)===!0\)return Promise\.resolve\(\);""",
     ),
     lit("10c glow-off helper (executor)", "globalThis.__cdbCuGlowOff=function(){"),
+    rx(
+      # The policy readers for our status page, right before the gate.
+      "11 policy readers",
+      """process\.platform==="linux"&&\(globalThis\.__cdbCuPolicy=\{loaded:[\w$]+,allowReadable:[\w$]+,allowHasEntry:[\w$]+,allowApps:\(\)=>\{let __cdbCuAllowV=[\w$]+\(\)\.value;return Array\.isArray\(__cdbCuAllowV\)\?__cdbCuAllowV:null\},managedAllows:[\w$]+,managedUnreadable:[\w$]+,hipaa:[\w$]+,wayland:[\w$]+,sshCliDeny:[\w$]+\}\);function [\w$]+\([\w$]+=\{\}\)\{if\(process\.platform==="linux"\)return globalThis\.__cdbCuHipaa=""",
+    ),
     rx(
       "11 isEnabled gate",
       """function [\w$]+\((?:[\w$]+=\{\})?\)\{if\(process\.platform==="linux"\)return(?: ?!0| globalThis\.__cdbCuHipaa=[\w$]+,![\w$]+\(\)(?:&&[\w$]+\(\))?(?:&&[\w$]+\(\)&&![\w$]+\(\))?);return ?!?(?:[\w$]+(?:\.[\w$]+)*\.has\(process\.platform\)|[\w$]+\(\))(?:\|\|![\w$]+\(\))?(?:\|\|[\w$]+\(\))?(?:\|\|[\w$]+\(\))?\?(?:!1:)?[\w$]+\([\w$]*\)&&[\w$]+(?:\.[\w$]+)*\(["'`]chicagoEnabled["'`]\)(?::!1)?\}""",
@@ -1094,6 +1099,9 @@ proc apply*(input: string): string =
   # 4.4212.0 (#293): also pass the holder just assigned (the captured right-hand
   # side of `this.exclusiveHolder=`, `e` in 4.4212.0), so the executor knows the
   # cloud session id it may poll for the turn end (js/cu_session_check.js).
+  # It also publishes the lock instance as globalThis.__cdbCuLock (Linux only),
+  # so the Settings status can say which session holds Computer Use; unset
+  # until the first acquire of the run (nobody held it yet).
   block:
     # v1.26832.0: the trailing callback became a method call (`e.nn()`) and the
     # event name a backtick literal. Capture the whole emit-and-callback tail and
@@ -1110,7 +1118,7 @@ proc apply*(input: string): string =
         content,
         pat,
         proc(m: RegexMatch): string =
-          m.captures[0] &
+          m.captures[0] & "process.platform===\"linux\"&&(globalThis.__cdbCuLock=this)," &
             "process.platform===\"linux\"&&globalThis.__linuxExecutor?.__setLockHeld?.(!0," &
             m.captures[1] &
             ").catch?.(e=>(globalThis.__cdbDiag||console.warn)(\"[linux-executor] failed to start bridge session on lock acquire\",e))," &
@@ -2640,6 +2648,8 @@ proc apply*(input: string): string =
       var allowGate = ""
       var allowReadable = ""
       var allowHasEntry = ""
+      var allowReader = ""
+      var allowWayland = ""
       var allowOk = true
       if v5Hits[0].captures.contains(4):
         allowGate = v5Hits[0].captures[4]
@@ -2673,10 +2683,95 @@ proc apply*(input: string): string =
           allowOk =
             waylandPredicateDefs(content, gates[0].captures[2]) == 1 and readerR.len == 1 and
             readerE.len == 1 and readerR[0].captures[0] == readerE[0].captures[0]
+          if readerR.len == 1:
+            allowReader = readerR[0].captures[0]
+          allowWayland = gates[0].captures[2]
+      # v6.28899.2 shape only: publish the gate's policy readers for our own
+      # status page (Settings -> Extra -> Cowork (Linux) -> Computer Use),
+      # assigned at the chunk's load, before any window opens:
+      #   process.platform==="linux"&&(globalThis.__cdbCuPolicy={loaded:Z,
+      #   allowReadable:R,allowHasEntry:E,allowApps:()=>...S().value...,
+      #   managedAllows:M,managedUnreadable:V,hipaa:H});function G(e={}){...
+      # Z: GrowthBook has loaded any values (`function Z(){return X!=="none"}`,
+      # X the load-source var, `X="none"` initially); V: upstream's own "could
+      # not read its device management settings" test, the one its capability
+      # check pairs with `if(!M())return V()?{...could not read its device
+      # management settings when it started...`. W: the gate's Wayland check;
+      # S: the per-call SSH-host deny's server switch. All in the gate's chunk.
+      var policyJs = ""
+      var policyOk = true
+      if allowGate != "" and allowOk:
+        policyOk = false
+        let (gps, gpe) = partSpan(content, v5Hits[0].matchBounds.a)
+        let gPart = content[gps ..< gpe]
+        var loadedFns: seq[RegexMatch] = @[]
+        for d in gPart.findIter(
+          re"""function ([\w$]+)\(\)\{return ([\w$]+)!==["`]none["`]\}"""
+        ):
+          loadedFns.add d
+        var unreadFns: seq[string] = @[]
+        for d in gPart.findIter(
+          re(
+            "if\\(!" & escapeRe(managed) &
+              """\(\)\)return ([\w$]+)\(\)\?\{status:["`]unsupported["`],reason:["`]Computer use is off on this computer because the app could not read its device management settings when it started\."""
+          )
+        ):
+          unreadFns.add d.captures[0]
+        if loadedFns.len == 1 and unreadFns.len == 1:
+          let srcVar = escapeRe(loadedFns[0].captures[1])
+          let srcOk =
+            countMatches(gPart, re("[,;\\s]" & srcVar & "=[\"`]none[\"`][,;]")) == 1 and
+            countMatches(gPart, re("(?<![\\w$.])" & srcVar & "===[\"`]network[\"`]")) >=
+            1
+          let unreadOk =
+            countMatches(
+              gPart,
+              re(
+                "function " & escapeRe(unreadFns[0]) &
+                  """\(\)\{return [\w$]+\(["`]computerUseEnabled["`]\)\}"""
+              ),
+            ) == 1
+          # The per-call SSH-host deny's switch (`function N(e){return
+          # e.cliOnSshHost===!0&&F()}`, F a server flag), for the status
+          # page's standing fact; same chunk.
+          var sshFlags: seq[string] = @[]
+          for d in gPart.findIter(
+            re"""function [\w$]+\(([\w$]+)\)\{return \1\.cliOnSshHost===!0&&([\w$]+)\(\)\}"""
+          ):
+            sshFlags.add d.captures[1]
+          let sshFlagOk =
+            sshFlags.len == 1 and
+            countMatches(
+              gPart,
+              re(
+                "function " & escapeRe(sshFlags[0]) &
+                  """\(\)\{return [\w$]+\(["`]\d+["`]\)\}"""
+              ),
+            ) == 1
+          if srcOk and unreadOk and sshFlagOk and allowReader != "" and
+              allowWayland != "":
+            policyOk = true
+            policyJs =
+              "process.platform===\"linux\"&&(globalThis.__cdbCuPolicy={loaded:" &
+              loadedFns[0].captures[0] & ",allowReadable:" & allowReadable &
+              ",allowHasEntry:" & allowHasEntry & ",allowApps:()=>{let __cdbCuAllowV=" &
+              allowReader &
+              "().value;return Array.isArray(__cdbCuAllowV)?__cdbCuAllowV:null},managedAllows:" &
+              managed & ",managedUnreadable:" & unreadFns[0] & ",hipaa:" &
+              v5Hits[0].captures[3] & ",wayland:" & allowWayland & ",sshCliDeny:" &
+              sshFlags[0] & "});"
+        let before = (
+          if v5Hits[0].matchBounds.a > 0: content[v5Hits[0].matchBounds.a - 1]
+          else: ';'
+        )
+        if before notin {'}', ';'}:
+          policyOk = false
       if not readerOk:
         echo &"  [FAIL] 11 isEnabled gate: {managed}() is not the managed computerUseEnabled check ({readers.len} definitions) - re-audit"
       elif not allowOk:
         echo &"  [FAIL] 11 isEnabled gate: {allowGate}() is not `return!R()||E()&&W()` with W the Wayland check, R `S().readable` and E `S().value!==NONE` - re-audit"
+      elif not policyOk:
+        echo "  [FAIL] 11 policy readers: GrowthBook's `function Z(){return X!==\"none\"}` or upstream's \"could not read its device management settings\" test not found once in the gate's chunk (or no statement boundary before the gate) - re-audit"
       else:
         n = replaceFirst(
           content,
@@ -2693,7 +2788,7 @@ proc apply*(input: string): string =
                 "&&" & allowReadable & "()&&!" & allowHasEntry & "()"
               else:
                 ""
-            m.captures[0] &
+            policyJs & m.captures[0] &
               "if(process.platform===\"linux\")return globalThis.__cdbCuHipaa=" &
               hipaaName & ",!" & hipaaName & "()&&" & managedName & "()" & allowTerm &
               ";" & whole[headerLen ..^ 1],
@@ -2705,6 +2800,8 @@ proc apply*(input: string): string =
             else:
               ""
           echo &"  [OK] 11 isEnabled: Linux keeps the managed computerUseEnabled check {managed}(), the HIPAA gate{allowNote}"
+          if policyJs != "":
+            echo "  [OK] 11 policy readers published as globalThis.__cdbCuPolicy at the gate chunk's load"
     if n == 0 and v5Hits.len == 0:
       n = replaceFirst(
         content,

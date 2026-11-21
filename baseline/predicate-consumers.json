@@ -379,6 +379,12 @@
     },
     {
       "predicate": "isWaylandSession",
+      "shape": "\\},managedAllows:[\\w$]+,managedUnreadable:[\\w$]+,hipaa:[\\w$]+,wayland:@@",
+      "consumers": 1,
+      "reason": "Our own statement in front of isComputerUseEnabled (fix_computer_use_linux 11): it publishes upstream's policy readers, the gate's own Wayland check among them, for the Settings -> Extra -> Cowork (Linux) restrictions note (js/extra_settings_main.js reads them for display only: which sentence the allowed-apps entry shows). No decision is taken from it; the gate itself does not use the session type."
+    },
+    {
+      "predicate": "isWaylandSession",
       "shape": "function [\\w$]+\\(([\\w$]+)=\\{\\}\\)\\{if\\(process\\.platform===[\"`]linux[\"`]\\)return [\\w$]+\\(\\1\\);return [\\w$]+\\([\\w$]+\\)\\?[\\w$]+\\(\\)\\|\\|![\\w$]+\\(\\)\\|\\|@@\\(\\)\\?!1:",
       "consumers": 1,
       "reason": "isComputerUseRegisterable (fix_computer_use_linux 12): our Linux early return delegates to the patch-11 isComputerUseEnabled gate, which carries its own, stricter allowed-apps term (off whenever the list is unreadable or has an entry); upstream's flag-on arm with its own allowed-apps test is unreachable on Linux."

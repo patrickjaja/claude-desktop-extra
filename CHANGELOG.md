@@ -4,6 +4,13 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 ## 2026-11-21
 
+### Computer Use: Settings shows why it is off or busy
+
+- Settings -> Extra -> Cowork (Linux) -> **Computer Use** now opens with a note whenever a policy keeps Computer Use off on this computer, one entry per policy with who set it and what you can do: your organization's compliance (HIPAA) settings, `computerUseEnabled: false` in the device management settings (or settings that could not be read at start), and an organization's allowed-apps list (present or unreadable; the listed app ids are shown). The allowed-apps entry says what applies to your session: off on Wayland as in Anthropic's build, off on X11 because this build cannot enforce the list per app yet (stricter than Anthropic's build, which does). No policy, no note; **Re-check** updates it ([guide](docs/computer-use.md#when-computer-use-is-off-or-does-not-work)).
+- Two more rows under **This desktop**, shown only when they apply: **In use by a session** (another session holds Computer Use, with how to free it) and **Sessions over SSH** (sessions whose Claude Code runs on another computer over SSH cannot use this computer while Anthropic's rule for that is on).
+- The policy state is also logged once per change in `claude-patches.log` (`[ExtraSettings] cu-status: policy ...`, states and the list's size only).
+- The flag catalog (`docs/claude-desktop-extra.jsonc`) described the organization's allowed-apps list flag `947159281` as an iOS simulator gate; uncommenting it as written turned Computer Use off. It and the denied-apps list flag `259215703` now say what they are and that they are not meant to be overridden.
+
 ### Upstream v6.28899.2 (major bump from v5.11492.5; Electron 45.2.1 -> 45.3.3)
 
 Upstream's release notes: [claude.com/docs/cowork/changelog](https://claude.com/docs/cowork/changelog) (v6.6395.0, v6.6395.1 and v6.28899.2 are covered by this entry; Claude Code 2.1.328, agent SDK 0.3.328).

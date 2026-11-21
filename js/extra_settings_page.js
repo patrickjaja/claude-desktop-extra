@@ -1592,7 +1592,8 @@
   var CUS_API = ["cuStatusRead", "cuStatusTpmEnable", "cuStatusTpmDisable", "cuStatusResetScreenSharing"];
   var CUS_WORD = { ok: "OK", action: "Needs action", na: "Not available", unknown: "Unknown" };
   var CUS_TITLES = { desktop: "This desktop", tpm: "Device key (TPM)", cloud: "Cloud Cowork and Dispatch",
-    kvm: "KVM (/dev/kvm)", vsock: "VM socket (/dev/vhost-vsock)", vmTools: "QEMU, OVMF and virtiofsd", vm: "Local VM" };
+    kvm: "KVM (/dev/kvm)", vsock: "VM socket (/dev/vhost-vsock)", vmTools: "QEMU, OVMF and virtiofsd", vm: "Local VM",
+    lock: "In use by a session", ssh: "Sessions over SSH" };
   // KVM access: the same buttons as TPM; an older preload without these gets
   // the command to run instead of a button.
   var CUS_KVM_API = ["cuStatusKvmEnable", "cuStatusKvmDisable"];
@@ -1760,6 +1761,76 @@
   // hosts (`hosts.status` takes the wait line and a failed read, the others
   // their section's rows). `scope` is the element whose buttons a running
   // action disables; `recheck` the page's Re-check button.
+  // Policy restrictions on Computer Use (cdb-cu-status:read `policy`): every
+  // gate of upstream's enable gate that is active, one sentence each saying
+  // what, who set it and what the user can do. "none" and "unknown" draw
+  // nothing; the app ids come from Anthropic's server and are text only.
+  var CUS_MANAGED_FILE = "/etc/claude-desktop/managed-settings.json";
+  function cusPolicyTexts(policy) {
+    var p = policy && typeof policy === "object" ? policy : {};
+    var out = [];
+    var c = p.compliance && p.compliance.state;
+    if (c === "restricted") {
+      out.push({ key: "compliance", text: "Your Claude organization's compliance (HIPAA) settings turn Computer Use off. " +
+        "Nothing on this computer changes that: ask your organization's admin. After the setting changes, or if you " +
+        "switched organizations, restart Claude." });
+    }
+    var m = p.managed && p.managed.state;
+    if (m === "off") {
+      out.push({ key: "managed", text: "An administrator of this computer turned Computer Use off: computerUseEnabled is " +
+        "false in its device management settings (on Linux " + CUS_MANAGED_FILE + "). Only an administrator of this " +
+        "computer can change it; restart Claude afterwards." });
+    } else if (m === "unreadable") {
+      out.push({ key: "managed", text: "Claude could not read this computer's device management settings (on Linux " +
+        CUS_MANAGED_FILE + ") when it started, so Computer Use stays off. Restart Claude to read them again; if it stays " +
+        "off, ask an administrator of this computer to fix that file." });
+    }
+    var a = p.allowedApps && p.allowedApps.state;
+    if (a === "list") {
+      var apps = Array.isArray(p.allowedApps.apps) ? p.allowedApps.apps.filter(function (x) { return typeof x === "string" && x; }) : [];
+      var n = typeof p.allowedApps.count === "number" && p.allowedApps.count >= apps.length ? p.allowedApps.count : apps.length;
+      var named = apps.join(", ") + (n > apps.length ? ", and " + (n - apps.length) + " more" : "");
+      var lead = "Your Claude organization allows Computer Use only for a list of apps (" + n +
+        (n === 1 ? " app" : " apps") + (named ? ": " + named : "") + "). ";
+      var ask = " Ask your organization's admin about the list; nothing on this computer changes it.";
+      var eff = p.allowedApps.effect;
+      if (eff === "off-wayland") {
+        out.push({ key: "allowedApps", text: lead + "On a Wayland session Computer Use is off while such a list exists, " +
+          "the same as in Anthropic's own build." + ask });
+      } else if (eff === "off-cannot-enforce") {
+        out.push({ key: "allowedApps", text: lead + "Anthropic's own build enforces that list app by app on X11, but this " +
+          "build cannot yet: it names apps by their desktop entry, while the list names them the way Anthropic's build does " +
+          "(by program), so it keeps Computer Use off rather than risk controlling an app outside the list. That is stricter " +
+          "than Anthropic's build." + ask });
+      } else {
+        out.push({ key: "allowedApps", text: lead + "This build keeps Computer Use off while the list exists (on Wayland " +
+          "Anthropic's own build does the same; on X11 it enforces the list per app, which this build cannot do yet)." + ask });
+      }
+    } else if (a === "unreadable") {
+      out.push({ key: "allowedApps", text: "The allowed-apps list Anthropic's server sent for your organization could not " +
+        "be read, so Computer Use stays off, as in Anthropic's own build on every platform. It clears by itself when the " +
+        "server sends a readable list (or none) on its next refresh; restarting Claude asks the server at once. If it " +
+        "stays, ask your organization's admin." });
+    }
+    return out;
+  }
+  function cusPolicyNote(host, policy) {
+    var list = cusPolicyTexts(policy);
+    if (!list.length) return 0;
+    var box = el("div", "cdbx-note cdbx-warn cdbx-cus-policy");
+    box.setAttribute("role", "note");
+    box.appendChild(el("div", "cdbx-cus-policy-lead", "Computer Use is off on this computer:"));
+    var ul = el("ul", "cdbx-cubg-restr");
+    list.forEach(function (r) {
+      var li = el("li", null, r.text);
+      li.setAttribute("data-policy", r.key);
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    host.appendChild(box);
+    return list.length;
+  }
+
   function renderCuStatusBlock(scope, hosts, recheck, onState) {
     var running = false;
     var all = [hosts.status, hosts.cloud, hosts.local, hosts.cu];
@@ -1946,8 +2017,32 @@
           "This build's main side does not report the local VM - reinstall to pick it up."));
       }
 
-      // Computer Use: this desktop.
+      // Computer Use: policy restrictions first (they explain "off"
+      // completely), then this desktop.
+      var restricted = cusPolicyNote(hosts.cu, st.policy);
       var desk = cusRow(hosts.cu, "desktop", rows.desktop);
+      if (restricted) {
+        desk.main.appendChild(el("div", "cdbx-note cdbx-cus-policy-row",
+          "Computer Use stays off while the restriction above applies; this row checks only the desktop side."));
+      }
+      // Status facts (not policies), each only when it applies.
+      var lk = st.lock && typeof st.lock === "object" ? st.lock : null;
+      if (lk && lk.state === "held") {
+        cusRow(hosts.cu, "lock", { status: "action",
+          fact: (lk.kind === "code" ? "A Code session" : "A Claude session") + " is using Computer Use right now.",
+          note: "Only one session controls this computer at a time; other sessions are refused until it is done. To free it, " +
+            "let that session's task finish or stop that session. The hold lives only in the running app: if it does not " +
+            "clear after that session has ended, restarting Claude clears it." });
+      } else if (lk && lk.state === "unknown") {
+        cusRow(hosts.cu, "lock", { status: "unknown", fact: "Could not read whether a session is using Computer Use right now.", note: "" });
+      }
+      var ssh = st.policy && st.policy.sshCli && st.policy.sshCli.state;
+      if (ssh === "on") {
+        cusRow(hosts.cu, "ssh", { status: "na",
+          fact: "Computer Use is not available to sessions whose Claude Code runs on another computer over SSH.",
+          note: "Anthropic's server has this rule on for your account. If your session runs Claude Code on a remote host " +
+            "over SSH, start a session on this computer to use Computer Use here." });
+      }
       var shots = cusShotsLine(st.screenshots);
       if (shots) {
         var sl = el("div", "cdbx-note cdbx-cus-shots", shots);

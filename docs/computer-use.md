@@ -99,6 +99,21 @@ See [CLAUDE_BUILT_IN_MCP.md](../baseline/CLAUDE_BUILT_IN_MCP.md#17-computer-use)
 - **Stop sharing** on the GNOME or KDE screen-share indicator stops the running Computer Use turn at once (the app watches the bridge's folder in your `$XDG_RUNTIME_DIR`; when the desktop session's umask left that folder group-writable, as on Ubuntu, the app sets it to 0700 first, and it never watches a folder another account could write to) (always on, in Code sessions as in local and cloud Cowork); so does the desktop ending the share itself, for example a portal restart. Like Escape and Stop, it stops the session's turn the hard way: in a Code session the Claude Code process is restarted with the next message. On X11, while Anthropic's Escape grab is registered, an Escape Claude itself presses is let through to the app (the grab is dropped for the injection and registered again right after) and never taken for yours.
 - **Escape** stops Computer Use on X11, Hyprland, sway and KDE Plasma Wayland when you switch on **Escape stops Computer Use** under Settings -> Extra -> Community Features or on the Extra -> Cowork (Linux) page under Computer Use -> Options (off by default; off keeps Anthropic's own handling, which on X11 takes Escape from your apps while Claude is working). What Escape does to your apps differs per desktop, and GNOME and niri have no stop key: see [Escape stops Computer Use](cu-escape-abort.md).
 
+## When Computer Use is off or does not work
+
+Open Settings -> Extra -> Cowork (Linux) -> **Computer Use**. The **This desktop** row names your session, the bridge in use and what screenshots show. Above it, the section lists every policy that turns Computer Use off on this computer, each with who set it and what you can do:
+
+- **Your Claude organization's compliance (HIPAA) settings.** Nothing on this computer changes them; ask your organization's admin. Restart Claude after the setting changes or after you switch organizations.
+- **`computerUseEnabled` is false in this computer's device management settings** (`/etc/claude-desktop/managed-settings.json`), or those settings could not be read when the app started. An administrator of this computer changes or repairs that file; restart Claude afterwards.
+- **Your Claude organization allows Computer Use only for a list of apps.** On a Wayland session Computer Use is off while such a list exists, the same as in Anthropic's own build. On X11 Anthropic's build enforces the list app by app; this build cannot yet (it names apps by their desktop entry, the list names them by program), so it keeps Computer Use off rather than risk controlling an app outside the list. The note shows the listed apps. The list comes from Anthropic's server for your organization; ask your organization's admin. If the list arrived unreadable, Computer Use stays off until the server sends a readable one (or none).
+
+With no policy in the way the section shows no such note. Under **This desktop** two more rows appear only when they apply:
+
+- **In use by a session.** Only one session controls this computer at a time, and other sessions are refused until it is done. Let that session's task finish or stop it. The hold lives only in the running app: if it does not clear after that session has ended, restart Claude.
+- **Sessions over SSH.** While Anthropic's server has this rule on for your account, a session whose Claude Code runs on another computer over SSH cannot use this computer's Computer Use. Start a session on this computer instead.
+
+**Re-check** reads everything again, and `claude-desktop --diagnose` in a terminal prints the full report for an issue.
+
 ## Computer Use in cloud Cowork and Dispatch
 
 Cowork and Dispatch tasks that run in the cloud reach this computer's Computer Use only when the desktop has registered with a TPM-backed device key. Without read and write access to `/dev/tpmrm0` (the TPM 2.0 resource manager) the desktop registers keyless, and those sessions get no computer tools ("No matching tools found"). Code tab sessions use Computer Use locally and are not affected. A computer without a TPM 2.0 cannot offer Computer Use to cloud Cowork or Dispatch; Code sessions still work there.

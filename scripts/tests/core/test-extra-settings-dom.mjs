@@ -2179,6 +2179,95 @@ async function cusPanel(cuItem) {
     panel = await remount();
     ok(shots() === null, "an older main side (no screenshots fact) draws no line");
   }
+
+  // --- policy restrictions at the top of the Computer Use section (main's policy fact)
+  {
+    const cuHost = function () { return document.querySelector('.cdbx-panel [data-cdbx-section="cu"] .cdbx-cus'); };
+    const note = function () { return document.querySelector('.cdbx-panel [data-cdbx-section="cu"] .cdbx-cus-policy'); };
+    const items = function () { const n = note(); return n ? Array.prototype.map.call(n.querySelectorAll("li"), function (li) { return li.getAttribute("data-policy") + "=" + li.textContent; }) : []; };
+    const rowNote = function () { return !!(row("desktop") && row("desktop").querySelector(".cdbx-cus-policy-row")); };
+    const N = { state: "none" }, U = { state: "unknown" };
+    const withPolicy = async function (policy) {
+      window.__cusState = { ok: true, rows: window.__cusRows(), actions: { tpmEnable: PK_EN }, policy: policy };
+      return remount();
+    };
+    const EVIL = "<img src=x onerror=window.__cdbPwned=1>";
+    panel = await withPolicy({ allowedApps: { state: "list", count: 3, apps: ["org.gnome.Calculator", "firefox", EVIL] }, managed: N, compliance: N });
+    let it = items();
+    ok(!!note() && cuHost().firstChild === note() && note().classList.contains("cdbx-warn") &&
+       note().querySelector(".cdbx-cus-policy-lead").textContent === "Computer Use is off on this computer:",
+       "a list: one warning note, the first thing in the Computer Use section, above This desktop");
+    ok(it.length === 1 && it[0].indexOf("allowedApps=Your Claude organization allows Computer Use only for a list of apps (3 apps: org.gnome.Calculator, firefox, " + EVIL + ").") === 0 &&
+       /on X11 it enforces the list per app, which this build cannot do yet/.test(it[0]) &&
+       /Ask your organization's admin about the list; nothing on this computer changes it\.$/.test(it[0]),
+       "list, no effect fact: the apps as given, why this build is stricter, who to ask: " + it[0]);
+    panel = await withPolicy({ allowedApps: { state: "list", count: 1, apps: ["firefox"], effect: "off-cannot-enforce" }, managed: N, compliance: N });
+    it = items();
+    ok(it.length === 1 && /Anthropic's own build enforces that list app by app on X11, but this build cannot yet: it names apps by their desktop entry, while the list names them the way Anthropic's build does \(by program\)/.test(it[0]) &&
+       /That is stricter than Anthropic's build\. Ask your organization's admin/.test(it[0]), "list on X11: off, the missing capability named: " + it[0]);
+    panel = await withPolicy({ allowedApps: { state: "list", count: 1, apps: ["firefox"], effect: "off-wayland" }, managed: N, compliance: N });
+    it = items();
+    ok(it.length === 1 && /On a Wayland session Computer Use is off while such a list exists, the same as in Anthropic's own build\./.test(it[0]), "list on Wayland: off as Anthropic's build: " + it[0]);
+    ok(!note().querySelector("img") && window.__cdbPwned === undefined, "an app id with markup stays text");
+    ok(rowNote(), "This desktop says Computer Use stays off while the restriction applies");
+    panel = await withPolicy({ allowedApps: { state: "list", count: 25, apps: ["a", "b"] }, managed: N, compliance: N });
+    ok(/\(25 apps: a, b, and 23 more\)/.test(items()[0] || ""), "more ids than sent: the rest counted: " + items()[0]);
+    panel = await withPolicy({ allowedApps: { state: "unreadable" }, managed: N, compliance: N });
+    it = items();
+    ok(it.length === 1 && /^allowedApps=The allowed-apps list Anthropic's server sent for your organization could not be read, so Computer Use stays off, as in Anthropic's own build on every platform\. It clears by itself/.test(it[0]) &&
+       /restarting Claude asks the server at once/.test(it[0]), "unreadable list: off, clears by itself, restart re-asks: " + it[0]);
+    panel = await withPolicy({ allowedApps: N, managed: { state: "off" }, compliance: N });
+    it = items();
+    ok(it.length === 1 && /^managed=An administrator of this computer turned Computer Use off: computerUseEnabled is false in its device management settings \(on Linux \/etc\/claude-desktop\/managed-settings\.json\)\. Only an administrator of this computer can change it; restart Claude afterwards\.$/.test(it[0]),
+       "managed key off: where it is set, who changes it: " + it[0]);
+    panel = await withPolicy({ allowedApps: N, managed: { state: "unreadable" }, compliance: N });
+    it = items();
+    ok(it.length === 1 && /^managed=Claude could not read this computer's device management settings/.test(it[0]) && /Restart Claude to read them again/.test(it[0]),
+       "device management unreadable: restart re-reads: " + it[0]);
+    panel = await withPolicy({ allowedApps: N, managed: N, compliance: { state: "restricted" } });
+    it = items();
+    ok(it.length === 1 && /^compliance=Your Claude organization's compliance \(HIPAA\) settings turn Computer Use off\. Nothing on this computer changes that: ask your organization's admin\./.test(it[0]),
+       "compliance restricted: who to ask: " + it[0]);
+    panel = await withPolicy({ allowedApps: { state: "list", count: 1, apps: ["x"] }, managed: { state: "off" }, compliance: { state: "restricted" } });
+    ok(items().map(function (t) { return t.split("=")[0]; }).join(",") === "compliance,managed,allowedApps", "several at once: one entry each, in one note: " + items().length);
+    for (const [label, pol] of [["none", { allowedApps: N, managed: N, compliance: N }], ["unknown", { allowedApps: U, managed: U, compliance: U }], ["no policy fact (older main side)", undefined]]) {
+      panel = await withPolicy(pol);
+      ok(!note() && !rowNote() && !!row("desktop"), label + ": no note, no filler");
+    }
+    // Status rows after This desktop: who holds Computer Use, the SSH-host rule.
+    {
+      const withFacts = async function (lock, ssh) {
+        window.__cusState = { ok: true, rows: window.__cusRows(), actions: { tpmEnable: PK_EN }, lock: lock,
+          policy: { allowedApps: N, managed: N, compliance: N, sshCli: ssh } };
+        return remount();
+      };
+      const fact = function (k) { const r = row(k); return r ? r.querySelector(".cdbx-cus-fact").textContent + " | " + (r.querySelector(".cdbx-note") ? r.querySelector(".cdbx-note").textContent : "") : null; };
+      panel = await withFacts({ state: "held", kind: "code" }, { state: "off" });
+      ok(/^A Code session is using Computer Use right now\. \| Only one session controls this computer at a time/.test(fact("lock") || "") && word("lock") === "Needs action" &&
+         /restarting Claude clears it\.$/.test(fact("lock")) && !row("ssh"), "lock held by a Code session: the row, how to free it: " + fact("lock"));
+      ok(row("desktop").compareDocumentPosition(row("lock")) & Node.DOCUMENT_POSITION_FOLLOWING, "the lock row follows This desktop");
+      panel = await withFacts({ state: "held", kind: "session" }, { state: "off" });
+      ok(/^A Claude session is using/.test(fact("lock") || ""), "held by another kind of session: " + fact("lock"));
+      panel = await withFacts({ state: "free" }, { state: "off" });
+      ok(!row("lock") && !row("ssh"), "free, SSH rule off: no rows");
+      panel = await withFacts({ state: "unknown" }, { state: "unknown" });
+      ok(word("lock") === "Unknown" && /^Could not read/.test(fact("lock") || "") && !row("ssh"), "lock unknown: an Unknown row, never fine; SSH unknown: nothing claimed");
+      panel = await withFacts(undefined, { state: "on" });
+      ok(!row("lock") && /^Computer Use is not available to sessions whose Claude Code runs on another computer over SSH\. \| Anthropic's server has this rule on for your account\./.test(fact("ssh") || "") &&
+         word("ssh") === "Not available", "SSH rule on: the standing fact and what to do: " + fact("ssh"));
+    }
+    // Re-check redraws from the new read.
+    panel = await withPolicy({ allowedApps: N, managed: N, compliance: N });
+    ok(!note(), "before Re-check: no restriction");
+    window.__cusState = Object.assign({}, window.__cusState, { policy: { allowedApps: { state: "list", count: 1, apps: ["org.kde.dolphin"] }, managed: N, compliance: N } });
+    btn(panel, "Re-check").click();
+    await sleep(80);
+    ok(!!note() && /org\.kde\.dolphin/.test(items()[0] || ""), "after Re-check: the note appears");
+    window.__cusState = Object.assign({}, window.__cusState, { policy: { allowedApps: N, managed: N, compliance: N } });
+    btn(panel, "Re-check").click();
+    await sleep(80);
+    ok(!note() && !rowNote(), "after the next Re-check: gone again");
+  }
   window.__cusCalls.read = readsBeforeAsk;
 
   const sec = row("tpm").querySelector(".cdbx-cus-sec");
