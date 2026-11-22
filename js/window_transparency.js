@@ -528,6 +528,11 @@
       // (0,1,1) so solid surface-2/3, dialog, menu, listbox and elevated-card
       // rules below still win.
       "html .dframe-root :where([data-transcript-cards],[class~=\"bg-[var(--epitaxy-transcript-surface,var(--cds-surface-1))]\"],[class~=\"dock:bg-surface-1\"]){background-color:transparent!important}" +
+      // 6.28899 moved that slot's backing onto its ::before
+      // (before:bg-[var(--epitaxy-transcript-surface,var(--cds-surface-1))]),
+      // which the class rule above cannot reach: the box behind question cards
+      // came back. Cleared on the pseudo-element.
+      "html .dframe-root [class~=\"before:bg-[var(--epitaxy-transcript-surface,var(--cds-surface-1))]\"]::before{background:transparent!important}" +
       // With those backings clear, Code transcript lines met the input with a
       // hard edge and could show behind the model/mode row when the scroller
       // extends under [data-code-composer-column] (--epitaxy-docked-column-height).
@@ -562,6 +567,11 @@
       // in-flow surfaces. A floating one is an elevated card and is made solid
       // again by the rule after this one.
       "html .dframe-root .cds-pane-ground{background:transparent!important}" +
+      // 6.28899's docked session rail (the Environment / Context pane) is a
+      // [data-session-rail-flat] container with pane-ground + bg-surface-2, not
+      // .cds-pane-ground, so the solid bg-surface-2 rule kept it opaque. Cleared
+      // while flat (docked); a floating rail keeps its solid ground.
+      "html .dframe-root [data-session-rail-flat].pane-ground.bg-surface-2{background:transparent!important}" +
       // Elevated cards - the floating session rail (shadow-panel-md), large
       // panels (shadow-panel-lg), popovers (shadow-popover) - lie over the page,
       // so they must hide it, whatever surface class they carry. shadow-panel-sm
@@ -581,13 +591,14 @@
       // the slider.
       "html .dframe-root [data-cds=Toolbar]>[data-cds-part=toolbar-ground],html .dframe-root [data-cds=Page] [data-cds-part=page-header-ground]{--_toolbar-ground-fill:" + P + "!important;background-color:" + mix("--cds-page-bg") + "!important}" +
       "html .dframe-root[data-engine-backdrop-on] [data-cds=Toolbar]>[data-cds-part=toolbar-ground],html .dframe-root[data-engine-backdrop-on] [data-cds=Page] [data-cds-part=page-header-ground]{background:transparent!important}" +
-      // Pages without a [data-cds=Page] wrapper (Customize, Artifacts, Scheduled)
-      // put the page-header-ground straight into a plain "sticky top-0" header,
-      // so the two rules above miss it and upstream's own ground stays: a
-      // near-solid bar across the window. Clearing its background did not help
-      // (it still painted dark), so it is hidden; the header becomes part of the
-      // see-through page like the rest of it.
-      "html .dframe-root [data-cds-part=page-header-ground]:not([data-cds=Page] *,[data-cds=Dialog] *){display:none!important}" +
+      // A page-header-ground inside the frame is hidden. On 5.11492 Customize,
+      // Artifacts and Scheduled put it straight into a plain "sticky top-0"
+      // header; on 6.28899 Customize wraps it in [data-cds=Page], where the rule
+      // above paints the page colour at the window alpha and upstream adds its
+      // own blur, so it read as a near-solid bar either way. Clearing its
+      // background did not help (it still painted dark), so it is hidden; the
+      // header becomes part of the see-through page. Dialogs keep theirs.
+      "html .dframe-root [data-cds-part=page-header-ground]:not([data-cds=Dialog] *){display:none!important}" +
       // Docked side panes (Background tasks and the other panes in a .tiles-slot)
       // paint a [data-cds=Panel] and its .cds-root on top of the frame: a second
       // layer, so the pane read darker than the transcript next to it. :where()

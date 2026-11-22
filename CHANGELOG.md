@@ -2,6 +2,12 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-22
+
+### Transparent window: question cards, the session rail and page headers see-through again on 6.28899
+
+- Claude Desktop 6.28899 brought back three dark layers under **Transparent window**: the Code transcript's card slot now paints its backing on `::before` (`before:bg-[var(--epitaxy-transcript-surface,...)]`), the docked session rail (Environment / Context pane) is a `[data-session-rail-flat].pane-ground.bg-surface-2` instead of `.cds-pane-ground`, and Customize wraps its header ground in `[data-cds=Page]`. The `::before` backing and the docked rail now go clear (a floating rail stays solid), and every page header ground inside the frame is hidden except in dialogs (`js/window_transparency.js`).
+
 ## 2026-11-21
 
 ### Computer Use: Settings shows why it is off or busy
