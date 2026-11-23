@@ -2,6 +2,16 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-23
+
+### Custom Shortcuts: Send queued message now (`send-now`)
+
+- Added **Send queued message now** (`sendNow`, CLI slug `send-now`) to **Settings → Extra → Custom Shortcuts** (`js/custom_shortcuts_main.js`, `js/custom_shortcuts_page.js`, `scripts/claude-desktop-launcher.sh`, [guide](docs/custom-shortcuts.md)). Upstream disables the `Send now` keyboard chord in Code and Chat sessions; binding a key (e.g. `Alt+Enter`) or running `claude-desktop --trigger-shortcut send-now` clicks the newest visible enabled `Send now` / `Send N now` button (`button[data-testid="awaiting-turn-send-now"]`, with fiber and label fallbacks) without stealing focus from the composer.
+
+### Settings modal search includes Extra pages and items
+
+- Upstream's Settings search box (`SettingsNavSearch`) now also indexes and displays matching **Extra** sections and items — Themes, Community Features, Cowork (Linux), Custom Models (providers and models), Custom Shortcuts, Anthropic Features, and Deployment keys — jumping directly to and highlighting the selected row (`js/extra_settings_page.js`, `js/extra_settings_page.css`).
+
 ## 2026-11-22
 
 ### Transparent window: question cards, the session rail and page headers see-through again on 6.28899

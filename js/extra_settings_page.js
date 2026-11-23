@@ -2123,7 +2123,7 @@
     { id: "cu", title: "Computer Use" }
   ];
 
-  function renderCu(panel) {
+  function renderCu(panel, target) {
     clear(panel);
     var top = el("div", "cdbx-cus-top");
     top.appendChild(el("div", "cdbx-h1", "Cowork (Linux)"));
@@ -2200,6 +2200,16 @@
     CU_ROWS.forEach(function (render) { if (render(cuWrap, panel, ctx)) rows++; });
     if (!rows) opts.remove();
     jsoncFootnote(panel);
+    if (target) {
+      if (target.rowTitle) {
+        flashRowByTitle(panel, target.rowTitle);
+      } else if (target.section) {
+        var secNode = panel.querySelector('[data-cdbx-section="' + target.section + '"]');
+        if (secNode) {
+          try { secNode.scrollIntoView({ block: "start" }); } catch (e) {}
+        }
+      }
+    }
   }
 
   function copyTextWithFallback(text, selectNode) {
@@ -3696,10 +3706,10 @@
   function renderCustomShortcutsRow(panel) {
     return renderToggleRow(panel, {
       title: "Custom shortcuts",
-      note: "Assign custom keyboard shortcuts for Voice mode in the current chat, opening a new voice chat, and Read Aloud on the newest Claude reply. Configure bindings in Settings > Extra > Custom Shortcuts. Off and unbound by default; applies live.",
+      note: "Assign custom keyboard shortcuts for Voice mode, New voice chat, Read Aloud, and Send now on queued messages. Configure bindings in Settings > Extra > Custom Shortcuts. Off and unbound by default; applies live.",
       links: [{ text: "Settings > Extra > Custom Shortcuts", kind: "shortcuts" }],
-      keywords: "hotkey keybind voice mode speech tts read aloud dictate shortcut",
-      ariaLabel: "enable custom keyboard shortcuts for voice and speech",
+      keywords: "hotkey keybind voice mode speech tts read aloud dictate send now queue queued shortcut",
+      ariaLabel: "enable custom keyboard shortcuts",
       read: "customShortcutsRead",
       write: "customShortcutsSet",
       lockFile: "claude-desktop-extra.jsonc",
@@ -4043,7 +4053,7 @@
     });
   }
 
-  function renderThemes(panel) {
+  function renderThemes(panel, target) {
     clear(panel);
     panel.appendChild(el("div", "cdbx-h1", "Themes"));
     panel.appendChild(el("div", "cdbx-sub",
@@ -4052,6 +4062,7 @@
 
     renderTransparentChatComposerRow(panel);
     renderFrostedReplyFieldRow(panel);
+    if (target && target.rowTitle) flashRowByTitle(panel, target.rowTitle);
 
     var status = el("div", "cdbx-empty", "Loading themes...");
     panel.appendChild(status);
@@ -4068,7 +4079,7 @@
       search.type = "search";
       search.placeholder = "Filter " + result.entries.length + " themes";
       panel.appendChild(search);
-      focusFilter(search);
+      if (!(target && target.rowTitle)) focusFilter(search);
 
       var host = el("div", "cdbx-sections");
       panel.appendChild(host);
@@ -4187,7 +4198,12 @@
       }
 
       search.addEventListener("input", function () { draw(search.value); });
-      draw("");
+      var initFilter = (target && target.filter) ? String(target.filter) : "";
+      if (initFilter) search.value = initFilter;
+      draw(initFilter);
+      if (target && target.rowTitle) {
+        setTimeout(function () { flashRowByTitle(panel, target.rowTitle); }, 0);
+      }
     }, function (err) {
       status.className = "cdbx-error";
       status.textContent = "Themes are unavailable: " + (err && err.message ? err.message : String(err));
@@ -4266,7 +4282,7 @@
     ] }
   ];
 
-  function renderFeatures(panel) {
+  function renderFeatures(panel, target) {
     clear(panel);
     panel.appendChild(el("div", "cdbx-h1", "Community Features"));
     panel.appendChild(el("div", "cdbx-sub",
@@ -4316,7 +4332,7 @@
     // Nothing to filter is not a filter bar: an install whose preload predates
     // every one of these switches gets the explanation below instead.
     if (!rows.length) search.style.display = "none";
-    else focusFilter(search);
+    else if (!(target && target.rowTitle)) focusFilter(search);
 
     var empty = el("div", "cdbx-empty", rows.length
       ? "No feature matches that filter."
@@ -4349,7 +4365,10 @@
     }
 
     search.addEventListener("input", function () { draw(search.value); });
-    draw("");
+    var initFilter = (target && target.filter) ? String(target.filter) : "";
+    if (initFilter) search.value = initFilter;
+    draw(initFilter);
+    if (target && target.rowTitle) flashRowByTitle(panel, target.rowTitle);
 
     jsoncFootnote(panel);
   }
@@ -5524,7 +5543,7 @@
   // most of them once at startup, so this panel carries the restart notice the
   // Community Features panel does not need.
 
-  function renderFlags(panel) {
+  function renderFlags(panel, target) {
     clear(panel);
     panel.appendChild(el("div", "cdbx-h1", "Anthropic Features"));
 
@@ -5721,7 +5740,12 @@
       }
 
       search.addEventListener("input", function () { draw(search.value); });
-      draw("");
+      var initFilter = (target && target.filter) ? String(target.filter) : "";
+      if (initFilter) search.value = initFilter;
+      draw(initFilter);
+      if (target && target.rowTitle) {
+        setTimeout(function () { flashRowByTitle(panel, target.rowTitle); }, 0);
+      }
     }, function (err) {
       status.className = "cdbx-error";
       status.textContent = "Flags are unavailable: " + (err && err.message ? err.message : String(err));
@@ -5770,7 +5794,7 @@
     return String(value);
   }
 
-  function renderDeploy(panel) {
+  function renderDeploy(panel, target) {
     clear(panel);
     panel.appendChild(el("div", "cdbx-h1", "Deployment"));
     panel.appendChild(el("div", "cdbx-sub",
@@ -5794,7 +5818,7 @@
         return;
       }
       status.remove();
-      drawDeploy(panel, state);
+      drawDeploy(panel, state, target);
     }, function (err) {
       status.className = "cdbx-error";
       status.textContent = "The deployment configuration is unavailable: " +
@@ -5802,7 +5826,7 @@
     });
   }
 
-  function drawDeploy(panel, state) {
+  function drawDeploy(panel, state, target) {
     var values = (state.local && state.local.values) || {};
     var expected = state.expected;
 
@@ -6267,7 +6291,12 @@
 
     search.addEventListener("input", function () { draw(search.value); });
     allInput.addEventListener("change", function () { draw(search.value); });
-    draw("");
+    var initFilter = (target && target.filter) ? String(target.filter) : "";
+    if (initFilter) {
+      search.value = initFilter;
+      allInput.checked = true;
+    }
+    draw(initFilter);
     syncSetCount();
 
     // --- raw file + paths --------------------------------------------------
@@ -6443,11 +6472,11 @@
     return "Global registration inactive (" + String(gs.reason || "unavailable") + "); in-app trigger still works.";
   }
 
-  function renderShortcuts(panel) {
+  function renderShortcuts(panel, target) {
     clear(panel);
     panel.appendChild(el("div", "cdbx-h1", "Custom Shortcuts"));
     panel.appendChild(el("div", "cdbx-sub",
-      "Assign custom keyboard shortcuts for Voice mode and Read Aloud. Separate from Claude Desktop's " +
+      "Assign custom keyboard shortcuts for Voice mode, Read Aloud, and Send now on queued messages. Separate from Claude Desktop's " +
       "built-in Desktop app shortcuts so upstream defaults and custom Linux extras stay independent."));
 
     if (!api || typeof api.customShortcutsRead !== "function") {
@@ -6526,9 +6555,9 @@
       stList.appendChild(stRow);
       host.appendChild(stList);
 
-      // 2. Voice and speech actions
+      // 2. Shortcut actions
       var actHead = el("div", "cdbx-sec-h");
-      actHead.appendChild(el("span", "cdbx-sec-t", "Voice and speech"));
+      actHead.appendChild(el("span", "cdbx-sec-t", "Actions"));
       actHead.appendChild(el("span", "cdbx-sec-n", actions.length + " action" + (actions.length === 1 ? "" : "s")));
       host.appendChild(actHead);
 
@@ -6833,6 +6862,20 @@
       }
       status.remove();
       draw(res);
+      if (target) {
+        var hitRow = target.actionId
+          ? host.querySelector('[data-sc-action="' + target.actionId + '"]')
+          : null;
+        if (hitRow) {
+          try { hitRow.scrollIntoView({ block: "center" }); } catch (e) {}
+          hitRow.classList.remove("cdbx-flash");
+          void hitRow.offsetWidth;
+          hitRow.classList.add("cdbx-flash");
+          setTimeout(function () { hitRow.classList.remove("cdbx-flash"); }, 1400);
+        } else if (target.rowTitle) {
+          flashRowByTitle(panel, target.rowTitle);
+        }
+      }
     }, function (err) {
       status.className = "cdbx-error";
       status.textContent = "Custom shortcuts unavailable: " + (err && err.message ? err.message : String(err));
@@ -6929,7 +6972,7 @@
     releaseSelection();
   }
 
-  function show(kind, item) {
+  function show(kind, item, target) {
     if (!mounted) return;
     var pane = mounted.panel
       ? mounted.pane
@@ -6963,8 +7006,887 @@
     }
     selectOurs(item.control);
     var render = PANELS[kind] || renderThemes;
-    render(mounted.panel);
-    mounted.panel.scrollTop = 0;
+    render(mounted.panel, target);
+    if (!target) mounted.panel.scrollTop = 0;
+  }
+
+  // --- upstream Settings modal search integration --------------------------
+  // Upstream's Settings modal renders a search input (`input[data-settings-search]`)
+  // backed by a Base UI Popover (`SettingsNavSearch`) in document.body. Its
+  // results box is `<div id="<A>" tabindex="-1">` immediately after `<p role="status">`,
+  // and `input[aria-controls]` points to `<A>` whenever upstream has >= 1 match.
+  //
+  // We hook that input via event delegation on the dialog (survives React
+  // swapping the placeholder input for the lazy-loaded combobox), append our
+  // matching Extra sections/settings/themes/shortcuts/models/deployment keys/
+  // feature flags inside the same scrolling listbox, and hide (never remove)
+  // upstream's "No matching settings" empty state when Extra has matches.
+
+  function flashRowByTitle(panel, title) {
+    if (!panel || !title) return false;
+    var want = String(title).trim().toLowerCase();
+    var ids = panel.querySelectorAll(".cdbx-id");
+    for (var i = 0; i < ids.length; i++) {
+      var txt = (ids[i].textContent || "").trim().toLowerCase();
+      if (txt === want || txt.indexOf(want) === 0) {
+        var row = (ids[i].closest && ids[i].closest(".cdbx-row")) || ids[i];
+        try { row.scrollIntoView({ block: "center" }); } catch (e) {}
+        row.classList.remove("cdbx-flash");
+        void row.offsetWidth;
+        row.classList.add("cdbx-flash");
+        setTimeout(function () { row.classList.remove("cdbx-flash"); }, 1400);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  var EXTRA_SEARCH_SECTIONS = {
+    themes: {
+      title: "Themes",
+      keywords: "theme themes color scheme palette dark light backdrop wallpaper overlay appearance spinner"
+    },
+    features: {
+      title: "Community Features",
+      keywords: "community extra optional switches tweaks customization features"
+    },
+    cu: {
+      title: "Cowork (Linux)",
+      keywords: "cowork computer use linux vm kvm tpm dispatch cloud local qemu ovmf virtiofsd vsock"
+    },
+    models: {
+      title: "Custom models",
+      keywords: "models custom provider endpoint deepseek openrouter gateway api key web search subagent"
+    },
+    shortcuts: {
+      title: "Custom Shortcuts",
+      keywords: "keyboard shortcuts hotkey keybind voice mode read aloud speech tts global compositor"
+    },
+    flags: {
+      title: "Anthropic Features",
+      keywords: "anthropic feature flags growthbook rollout overrides experiments"
+    },
+    deploy: {
+      title: "Deployment",
+      keywords: "deployment 1p 3p personal enterprise third-party managed settings bedrock vertex foundry inference gateway proxy"
+    }
+  };
+
+  var EXTRA_SEARCH_STATIC = [
+    // Community Features - Code
+    { kind: "features", title: "Panel tabs", rowTitle: "Panel tabs",
+      keywords: "layout split divider resize background live preview side by side code tab" },
+    { kind: "features", title: "Files quick open", rowTitle: "Files quick open",
+      keywords: "ctrl+p vs code quick-open arrow keys enter file tab spaces split query files panel filter composer @ file picker index" },
+    { kind: "features", title: "Diff view modes", rowTitle: "Diff view modes",
+      keywords: "expand collapse all button branched from committed work latest turn scope source control git" },
+    { kind: "features", title: "Load large sessions in full", rowTitle: "Load large sessions in full",
+      keywords: "transcript limits too large 50 mib 32 mib 256 mib 192 mib subagents browser screenshots memory" },
+    { kind: "features", title: "Native dialog with 'Allow always' for starting other sessions",
+      rowTitle: "Native dialog with 'Allow always' for starting other sessions",
+      keywords: "session start native dialog asking project displayed local destination permission mode preset cloud" },
+    { kind: "features", title: "Jira issue tracker", rowTitle: "Jira issue tracker",
+      keywords: "jira atlassian ticket issue jql transition status board agent api token keyring sidebar ctrl+shift+j" },
+    { kind: "features", title: "Trusted Auto-fix PR authors", rowTitle: "Trusted Auto-fix PR authors",
+      keywords: "pull request github pr auto-fix author binding discovery branch authentication" },
+    { kind: "features", title: "Auto-fix notices: ready to merge, comments after merge",
+      rowTitle: "Auto-fix notices: ready to merge, comments after merge",
+      keywords: "pull request github pr checks green reviews done conflicts auto-merge notifications" },
+    { kind: "features", title: "Auto-archive delay after a PR merges or closes",
+      rowTitle: "Auto-archive delay after a PR merges or closes",
+      keywords: "pull request github pr grace period sweep archive inactivity" },
+    // Community Features - App and window
+    { kind: "features", title: "Hide window controls", rowTitle: "Hide window controls",
+      keywords: "frameless 4px border xfwm4 xfce i3 awesome overlay shadow alt+f4 integrated titlebar window" },
+    { kind: "features", title: "Native titlebar", rowTitle: "Native titlebar",
+      keywords: "integrated titlebar xfwm4 xfce i3 awesome 4px border frameless window manager right-click menu" },
+    { kind: "features", title: "Transparent window", rowTitle: "Transparent window",
+      keywords: "hyprland kwin blur compositor x11 opacity transparency backdrop glass" },
+    { kind: "features", title: "Always use the white tray icon", rowTitle: "Always use the white tray icon",
+      keywords: "tray glyph dark light panel color scheme black icon gnome system tray" },
+    { kind: "features", title: "Theme picker", rowTitle: "Theme picker",
+      keywords: "ctrl+shift+t shortcut hotkey gallery card palette quick switcher" },
+    { kind: "features", title: "Custom shortcuts", rowTitle: "Custom shortcuts",
+      keywords: "hotkey keybind voice mode speech tts read aloud dictate shortcut" },
+    { kind: "features", title: "Frosted message input", rowTitle: "Frosted message input",
+      keywords: "composer chat bar blur glass translucent footer strip" },
+    { kind: "features", title: "Frost only the input field", rowTitle: "Frost only the input field",
+      keywords: "composer chat bar blur glass translucent footer strip reply" },
+    { kind: "features", title: "GitHub alert callouts", rowTitle: "GitHub alert callouts",
+      keywords: "markdown alert note tip warning caution callout blockquote github admonition" },
+    { kind: "features", title: "Alert icons", rowTitle: "Alert icons",
+      keywords: "markdown alert callout icon glyph label" },
+    { kind: "features", title: "Developer tools", rowTitle: "Developer tools",
+      keywords: "chromium devtools ctrl+alt+i toggle dev tools developer_settings.json inspect" },
+    // Community Features - Models and 3P
+    { kind: "features", title: "Custom models", rowTitle: "Custom models",
+      keywords: "endpoint subscription routing deepseek openrouter gateway model picker" },
+    { kind: "features", title: "Allow non-Anthropic models", rowTitle: "Allow non-Anthropic models",
+      keywords: "gpt-oss model ids filter gateway claude-3p default model fallback" },
+    // Community Features - Computer Use
+    { kind: "features", title: "Escape stops Computer Use", rowTitle: "Escape stops Computer Use",
+      keywords: "escape esc abort stop cancel computer use hotkey" },
+    // Cowork (Linux)
+    { kind: "cu", title: "Cloud Cowork", section: "cloud",
+      keywords: "device key tpm dispatch cloud cowork" },
+    { kind: "cu", title: "Local Cowork VM", section: "local",
+      keywords: "kvm /dev/kvm vsock /dev/vhost-vsock qemu ovmf virtiofsd local vm" },
+    { kind: "cu", title: "Computer Use", section: "cu",
+      keywords: "desktop screen sharing screenshots portal kwin wlroots x11 wayland" },
+    { kind: "cu", title: "Ask before Computer Use controls an app", rowTitle: "Ask before Computer Use controls an app",
+      keywords: "permission prompt approve app computer use" },
+    { kind: "cu", title: "Computer Use on a background display", rowTitle: "Computer Use on a background display",
+      keywords: "xvfb xephyr headless sway second display background experimental" },
+    { kind: "cu", title: "Computer Use: read app controls (accessibility)", rowTitle: "Computer Use: read app controls (accessibility)",
+      keywords: "at-spi a11y accessibility tree screen reader controls" },
+    { kind: "cu", title: "Show the glow while Claude uses the computer", rowTitle: "Show the glow while Claude uses the computer",
+      keywords: "orange glow rim border overlay computer use" },
+    { kind: "cu", title: "Drawn cursor in the glow", rowTitle: "Drawn cursor in the glow",
+      keywords: "arrow cursor animation glide growthbook flag computer use" },
+    // Themes
+    { kind: "themes", title: "Overlay", rowTitle: "Overlay",
+      keywords: "matugen pywal wallust wallpaper generated theme merge overlay" },
+    { kind: "themes", title: "Backdrop", rowTitle: "Backdrop",
+      keywords: "animated svg backdrop scene frosted glass wallpaper" },
+    // Deployment
+    { kind: "deploy", title: "Deployment mode (1P / 3P)",
+      keywords: "personal claude.ai third-party inference bedrock vertex foundry gateway switch" }
+  ];
+
+  var searchState = null;
+
+  function activeNavKinds() {
+    var map = {};
+    for (var i = 0; i < NAV_ITEMS.length; i++) map[NAV_ITEMS[i].kind] = NAV_ITEMS[i];
+    return map;
+  }
+
+  function isSettingsSearchInput(node) {
+    if (!node || node.nodeType !== 1 || node.tagName !== "INPUT") return false;
+    if (node.closest && node.closest(".cdbx-panel")) return false;
+    if (node.hasAttribute("data-settings-search")) return true;
+    var nav = node.closest ? node.closest("nav") : null;
+    if (!nav) return false;
+    if (node.getAttribute("role") === "combobox") return true;
+    var t = (node.type || "").toLowerCase();
+    return t === "search" || t === "text";
+  }
+
+  function loadDynamicSearchItems(st, onUpdate) {
+    if (st.dynamicStarted) return;
+    st.dynamicStarted = true;
+    var kinds = activeNavKinds();
+
+    function pushBatch(items) {
+      if (!items || !items.length || searchState !== st) return;
+      for (var i = 0; i < items.length; i++) st.dynamicItems.push(items[i]);
+      onUpdate();
+    }
+
+    if (kinds.themes && typeof api.themesList === "function") {
+      api.themesList().then(function (res) {
+        if (failed(res) || !Array.isArray(res.entries)) return;
+        pushBatch(res.entries.map(function (e) {
+          var title = e.displayName || e.name || "";
+          return {
+            kind: "themes",
+            title: title,
+            keywords: [e.name, e.category, e.backdrop, e.blurb, e.category === "linux" ? "linux distro" : ""].filter(Boolean).join(" "),
+            tier: 6,
+            target: { filter: title }
+          };
+        }));
+      }, function () {});
+    }
+
+    if (kinds.shortcuts && typeof api.customShortcutsRead === "function") {
+      api.customShortcutsRead().then(function (res) {
+        if (failed(res) || !Array.isArray(res.actions)) return;
+        pushBatch(res.actions.map(function (a) {
+          return {
+            kind: "shortcuts",
+            title: a.title || a.id,
+            keywords: [a.description, a.accelerator, a.slug, "shortcut hotkey"].filter(Boolean).join(" "),
+            tier: 6,
+            target: { actionId: a.id }
+          };
+        }));
+      }, function () {});
+    }
+
+    if (kinds.models && typeof api.customModelsConfig === "function") {
+      api.customModelsConfig().then(function (res) {
+        if (failed(res) || !Array.isArray(res.providers)) return;
+        var out = [];
+        res.providers.forEach(function (p) {
+          if (!p) return;
+          if (p.id || p.name) {
+            out.push({
+              kind: "models",
+              title: p.name || p.id,
+              keywords: [p.id, p.baseUrl, "custom model provider"].filter(Boolean).join(" "),
+              tier: 6,
+              target: { rowTitle: p.name || p.id }
+            });
+          }
+          if (Array.isArray(p.models)) {
+            p.models.forEach(function (m) {
+              if (!m) return;
+              var label = m.name || m.id || "";
+              if (!label) return;
+              out.push({
+                kind: "models",
+                title: label,
+                keywords: [m.id, m.alias, p.name, p.id, "custom model"].filter(Boolean).join(" "),
+                tier: 6,
+                target: { rowTitle: label }
+              });
+            });
+          }
+        });
+        pushBatch(out);
+      }, function () {});
+    }
+
+    if (kinds.deploy && typeof api.deployRead === "function") {
+      api.deployRead().then(function (res) {
+        if (failed(res) || !Array.isArray(res.keys)) return;
+        pushBatch(res.keys.map(function (k) {
+          var label = k.label || k.key;
+          return {
+            kind: "deploy",
+            title: label,
+            keywords: [k.key, k.note, k.group, "deployment 3p managed"].filter(Boolean).join(" "),
+            tier: 6,
+            target: { filter: k.key }
+          };
+        }));
+      }, function () {});
+    }
+
+    if (kinds.flags && typeof api.flagsCatalog === "function") {
+      api.flagsCatalog().then(function (res) {
+        if (failed(res) || !Array.isArray(res.entries)) return;
+        pushBatch(res.entries.map(function (f) {
+          return {
+            kind: "flags",
+            title: f.id,
+            keywords: f.note || "",
+            tier: 8,
+            minLen: 2,
+            target: { filter: f.id }
+          };
+        }));
+      }, function () {});
+    }
+  }
+
+  function matchScore(title, keywords, tokens, baseTier) {
+    var tl = (title || "").toLowerCase();
+    var kl = (keywords || "").toLowerCase();
+    var all = tl + " " + kl;
+    for (var i = 0; i < tokens.length; i++) {
+      if (all.indexOf(tokens[i]) < 0) return -1;
+    }
+    var full = tokens.join(" ");
+    if (tl === full) return baseTier;
+    if (tl.indexOf(full) === 0) return baseTier + 0.1;
+    var allInTitle = true;
+    for (var j = 0; j < tokens.length; j++) {
+      if (tl.indexOf(tokens[j]) < 0) { allInTitle = false; break; }
+    }
+    if (allInTitle) return baseTier + 0.5;
+    return baseTier + 1.5;
+  }
+
+  function searchExtraSettings(st, rawQuery) {
+    var q = (rawQuery || "").trim().toLowerCase();
+    if (!q) return [];
+    var tokens = q.split(/\s+/).filter(Boolean);
+    if (!tokens.length) return [];
+
+    var kinds = activeNavKinds();
+    var buckets = {};
+    function bucketFor(kind) {
+      if (!buckets[kind]) {
+        var nav = kinds[kind];
+        var meta = EXTRA_SEARCH_SECTIONS[kind] || { title: nav ? nav.label : kind, keywords: "" };
+        buckets[kind] = {
+          kind: kind,
+          sectionTitle: meta.title,
+          icon: nav ? nav.icon : ICON_FEATURES,
+          sectionScore: 999,
+          nameMatched: false,
+          children: [],
+          seen: {}
+        };
+      }
+      return buckets[kind];
+    }
+
+    // 1. Sections (NAV_ITEMS)
+    for (var i = 0; i < NAV_ITEMS.length; i++) {
+      var nav = NAV_ITEMS[i];
+      var meta = EXTRA_SEARCH_SECTIONS[nav.kind] || { title: nav.label, keywords: "" };
+      var s = matchScore(meta.title + " " + nav.label, meta.keywords, tokens, 0);
+      if (s >= 0) {
+        var b = bucketFor(nav.kind);
+        b.sectionScore = Math.min(b.sectionScore, s);
+        b.nameMatched = s < 1;
+      }
+    }
+
+    // 2. Static settings + dynamic items
+    var pool = [];
+    for (var j = 0; j < EXTRA_SEARCH_STATIC.length; j++) {
+      var item = EXTRA_SEARCH_STATIC[j];
+      if (!kinds[item.kind]) continue;
+      pool.push({
+        kind: item.kind,
+        title: item.title,
+        keywords: item.keywords || "",
+        tier: 2,
+        minLen: 1,
+        target: item.section ? { section: item.section } : item.rowTitle ? { rowTitle: item.rowTitle } : null
+      });
+    }
+    for (var d = 0; d < st.dynamicItems.length; d++) {
+      var di = st.dynamicItems[d];
+      if (kinds[di.kind]) pool.push(di);
+    }
+
+    for (var p = 0; p < pool.length; p++) {
+      var entry = pool[p];
+      if (entry.minLen && q.length < entry.minLen) continue;
+      var sc = matchScore(entry.title, entry.keywords, tokens, entry.tier);
+      if (sc < 0) continue;
+      var bk = bucketFor(entry.kind);
+      var dedup = entry.title.toLowerCase();
+      if (bk.seen[dedup]) continue;
+      bk.seen[dedup] = 1;
+      bk.children.push({ title: entry.title, score: sc, target: entry.target || null });
+      if (sc < bk.sectionScore) bk.sectionScore = sc;
+    }
+
+    var groups = Object.keys(buckets).map(function (k) { return buckets[k]; });
+    groups.sort(function (a, b) { return a.sectionScore - b.sectionScore; });
+
+    var rows = [];
+    var MAX_CHILDREN = 3;
+    for (var g = 0; g < groups.length; g++) {
+      var grp = groups[g];
+      grp.children.sort(function (a, b) { return a.score - b.score; });
+
+      if (!grp.nameMatched && grp.children.length === 1) {
+        var only = grp.children[0];
+        rows.push({
+          type: "hit",
+          kind: grp.kind,
+          icon: grp.icon,
+          title: grp.sectionTitle,
+          via: only.title,
+          target: only.target
+        });
+        continue;
+      }
+
+      rows.push({
+        type: "hit",
+        kind: grp.kind,
+        icon: grp.icon,
+        title: grp.sectionTitle,
+        via: "",
+        target: null
+      });
+
+      var limit = st.expandedKinds[grp.kind] ? grp.children.length : MAX_CHILDREN;
+      var showN = Math.min(grp.children.length, limit);
+      for (var c = 0; c < showN; c++) {
+        rows.push({
+          type: "child",
+          kind: grp.kind,
+          title: grp.children[c].title,
+          target: grp.children[c].target
+        });
+      }
+      var rest = grp.children.length - showN;
+      if (rest > 0) {
+        rows.push({
+          type: "more",
+          kind: grp.kind,
+          count: rest,
+          title: "+" + rest + " more"
+        });
+      }
+    }
+    return rows;
+  }
+
+  function appendHighlighted(node, text, query) {
+    var str = String(text || "");
+    var q = (query || "").trim().toLowerCase();
+    if (!q) { node.textContent = str; return; }
+    var tokens = q.split(/\s+/).filter(Boolean);
+    var lower = str.toLowerCase();
+    var ranges = [];
+    for (var t = 0; t < tokens.length; t++) {
+      var tok = tokens[t];
+      var pos = 0;
+      while ((pos = lower.indexOf(tok, pos)) >= 0) {
+        ranges.push([pos, pos + tok.length]);
+        pos += tok.length;
+      }
+    }
+    if (!ranges.length) { node.textContent = str; return; }
+    ranges.sort(function (a, b) { return a[0] - b[0]; });
+    var merged = [ranges[0]];
+    for (var r = 1; r < ranges.length; r++) {
+      var last = merged[merged.length - 1];
+      if (ranges[r][0] <= last[1]) last[1] = Math.max(last[1], ranges[r][1]);
+      else merged.push(ranges[r]);
+    }
+    var cur = 0;
+    for (var m = 0; m < merged.length; m++) {
+      if (merged[m][0] > cur) node.appendChild(document.createTextNode(str.slice(cur, merged[m][0])));
+      node.appendChild(el("mark", "cdbx-sr-mark", str.slice(merged[m][0], merged[m][1])));
+      cur = merged[m][1];
+    }
+    if (cur < str.length) node.appendChild(document.createTextNode(str.slice(cur)));
+  }
+
+  function findSearchPopupBox(st, input) {
+    var ac = input && input.getAttribute("aria-controls");
+    if (ac) {
+      st.controlsId = ac;
+      var byAc = document.getElementById(ac);
+      if (byAc && byAc.isConnected) return byAc;
+    }
+    if (st.controlsId) {
+      var cached = document.getElementById(st.controlsId);
+      if (cached && cached.isConnected) return cached;
+    }
+    // Upstream's SettingsNavSearch renders `<p role="status" class="sr-only">`
+    // immediately followed by `<div id="..." tabindex="-1">` inside the popover.
+    var candidates = document.querySelectorAll('p[role="status"] + div[tabindex="-1"][id]');
+    if (!candidates.length) return null;
+    var inRect = null;
+    try {
+      var r = input.getBoundingClientRect();
+      if (r.width > 0 || r.height > 0) inRect = r;
+    } catch (e) {}
+    var best = null;
+    var bestDist = Infinity;
+    for (var i = 0; i < candidates.length; i++) {
+      var cand = candidates[i];
+      if (cand.closest && cand.closest(".cdbx-panel")) continue;
+      if (!inRect) { best = cand; break; }
+      try {
+        var cr = cand.getBoundingClientRect();
+        if (cr.width === 0 && cr.height === 0) continue;
+        var dist = Math.abs(cr.left - inRect.left) + Math.abs(cr.top - inRect.bottom);
+        if (dist < bestDist) { bestDist = dist; best = cand; }
+      } catch (e2) {}
+    }
+    if (best) st.controlsId = best.id;
+    return best;
+  }
+
+  function restoreHiddenEmpty(box) {
+    if (!box) return;
+    var hidden = box.querySelectorAll('[data-cdbx-sr-hidden="1"]');
+    for (var i = 0; i < hidden.length; i++) {
+      hidden[i].style.display = hidden[i].getAttribute("data-cdbx-sr-prevdisp") || "";
+      hidden[i].removeAttribute("data-cdbx-sr-hidden");
+      hidden[i].removeAttribute("data-cdbx-sr-prevdisp");
+    }
+  }
+
+  function upstreamOptionsIn(box) {
+    if (!box) return [];
+    var all = box.querySelectorAll('[role="option"]');
+    var out = [];
+    for (var i = 0; i < all.length; i++) {
+      if (!all[i].closest || !all[i].closest(".cdbx-sr-wrap")) out.push(all[i]);
+    }
+    return out;
+  }
+
+  function clearSearchInput(input) {
+    if (!input) return;
+    try {
+      var desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+      if (desc && typeof desc.set === "function") desc.set.call(input, "");
+      else input.value = "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch (e) {
+      input.value = "";
+    }
+    try { input.blur(); } catch (e2) {}
+  }
+
+  function detachSettingsSearch() {
+    var st = searchState;
+    searchState = null;
+    if (!st) return;
+    if (st.timer) { clearTimeout(st.timer); st.timer = 0; }
+    if (st.popupObserver) { st.popupObserver.disconnect(); st.popupObserver = null; }
+    if (st.bodyObserver) { st.bodyObserver.disconnect(); st.bodyObserver = null; }
+    if (st.popupBox && st.popupBox.isConnected) {
+      restoreHiddenEmpty(st.popupBox);
+      var old = st.popupBox.querySelector(".cdbx-sr-wrap");
+      if (old) old.remove();
+    }
+    if (st.dialog && st.onInput) {
+      st.dialog.removeEventListener("input", st.onInput, true);
+      st.dialog.removeEventListener("keydown", st.onKeyDown, true);
+      st.dialog.removeEventListener("focusin", st.onFocusIn, true);
+    }
+  }
+
+  function attachSettingsSearch(dialog) {
+    detachSettingsSearch();
+    var st = {
+      dialog: dialog,
+      input: null,
+      controlsId: "",
+      popupBox: null,
+      popupObserver: null,
+      bodyObserver: null,
+      dynamicStarted: false,
+      dynamicItems: [],
+      expandedKinds: {},
+      lastQuery: "",
+      activeIdx: -1,
+      mutating: false,
+      timer: 0
+    };
+    searchState = st;
+
+    function setActiveExtra(idx) {
+      st.activeIdx = idx;
+      if (!st.popupBox) return;
+      var wrap = st.popupBox.querySelector(".cdbx-sr-wrap");
+      if (!wrap) return;
+      var opts = wrap.querySelectorAll(".cdbx-sr-opt");
+      for (var i = 0; i < opts.length; i++) {
+        var on = i === idx;
+        if (on) {
+          opts[i].setAttribute("data-highlighted", "");
+          opts[i].setAttribute("aria-selected", "true");
+          try { opts[i].scrollIntoView({ block: "nearest" }); } catch (e) {}
+        } else {
+          opts[i].removeAttribute("data-highlighted");
+          opts[i].setAttribute("aria-selected", "false");
+        }
+      }
+    }
+
+    function activateExtraRow(row) {
+      if (row.type === "more") {
+        st.expandedKinds[row.kind] = true;
+        syncNow();
+        if (st.input) {
+          try { st.input.focus({ preventScroll: true }); } catch (e) {}
+        }
+        return;
+      }
+      var input = st.input;
+      st.activeIdx = -1;
+      st.expandedKinds = {};
+      if (st.popupBox) {
+        restoreHiddenEmpty(st.popupBox);
+        var old = st.popupBox.querySelector(".cdbx-sr-wrap");
+        if (old) old.remove();
+      }
+      clearSearchInput(input);
+      if (!mounted || !mounted.items) return;
+      for (var i = 0; i < mounted.items.length; i++) {
+        if (mounted.items[i].kind === row.kind) {
+          show(row.kind, mounted.items[i], row.target || null);
+          return;
+        }
+      }
+    }
+
+    function bindPopupBox(box) {
+      if (st.popupBox === box) return;
+      if (st.popupObserver) { st.popupObserver.disconnect(); st.popupObserver = null; }
+      st.popupBox = box;
+      if (!box) return;
+      if (!box.hasAttribute("data-cdbx-sr-bound")) {
+        box.setAttribute("data-cdbx-sr-bound", "1");
+        // Clicking an upstream search result while an Extra panel is open must
+        // hand the content pane back to upstream.
+        box.addEventListener("click", function (ev) {
+          var opt = ev.target && ev.target.closest ? ev.target.closest('[role="option"]') : null;
+          if (!opt || opt.closest(".cdbx-sr-wrap")) return;
+          restoreUpstream();
+        }, true);
+        box.addEventListener("mousemove", function (ev) {
+          var opt = ev.target && ev.target.closest ? ev.target.closest('[role="option"]') : null;
+          if (opt && !opt.closest(".cdbx-sr-wrap") && st.activeIdx >= 0) {
+            setActiveExtra(-1);
+          }
+        }, true);
+      }
+      st.popupObserver = new MutationObserver(function (records) {
+        if (st.mutating || searchState !== st) return;
+        for (var i = 0; i < records.length; i++) {
+          var tgt = records[i].target;
+          if (tgt && tgt.closest && tgt.closest(".cdbx-sr-wrap")) continue;
+          scheduleSync();
+          return;
+        }
+      });
+      st.popupObserver.observe(box, { childList: true });
+    }
+
+    function syncNow() {
+      if (searchState !== st) return;
+      var input = st.input;
+      if (!input || !input.isConnected) return;
+      var raw = input.value || "";
+      var q = raw.trim();
+      if (!q) {
+        st.lastQuery = "";
+        st.activeIdx = -1;
+        st.expandedKinds = {};
+        if (st.bodyObserver) { st.bodyObserver.disconnect(); st.bodyObserver = null; }
+        if (st.popupBox && st.popupBox.isConnected) {
+          st.mutating = true;
+          try {
+            restoreHiddenEmpty(st.popupBox);
+            var w0 = st.popupBox.querySelector(".cdbx-sr-wrap");
+            if (w0) w0.remove();
+          } finally { st.mutating = false; }
+        }
+        return;
+      }
+
+      if (q !== st.lastQuery) {
+        st.lastQuery = q;
+        st.activeIdx = -1;
+        st.expandedKinds = {};
+      }
+
+      loadDynamicSearchItems(st, scheduleSync);
+
+      var box = findSearchPopupBox(st, input);
+      if (!box) {
+        // The Base UI popover portal may mount on the next tick. Watch body
+        // briefly until it appears.
+        if (!st.bodyObserver) {
+          st.bodyObserver = new MutationObserver(function () {
+            if (searchState !== st) return;
+            var found = findSearchPopupBox(st, st.input);
+            if (found) {
+              st.bodyObserver.disconnect();
+              st.bodyObserver = null;
+              syncNow();
+            }
+          });
+          st.bodyObserver.observe(document.body, { childList: true, subtree: true });
+        }
+        return;
+      }
+      if (st.bodyObserver) { st.bodyObserver.disconnect(); st.bodyObserver = null; }
+      bindPopupBox(box);
+
+      var rows = searchExtraSettings(st, q);
+      var upOpts = upstreamOptionsIn(box);
+      var solo = upOpts.length === 0;
+
+      st.mutating = true;
+      try {
+        var existing = box.querySelector(".cdbx-sr-wrap");
+        if (!rows.length) {
+          if (existing) existing.remove();
+          restoreHiddenEmpty(box);
+          return;
+        }
+
+        // Hide upstream's empty-state placeholder (never remove React's node).
+        if (solo) {
+          for (var c = 0; c < box.children.length; c++) {
+            var kid = box.children[c];
+            if (kid.classList.contains("cdbx-sr-wrap")) continue;
+            if (!kid.hasAttribute("data-cdbx-sr-hidden")) {
+              kid.setAttribute("data-cdbx-sr-hidden", "1");
+              kid.setAttribute("data-cdbx-sr-prevdisp", kid.style.display || "");
+              kid.style.display = "none";
+            }
+          }
+        } else {
+          restoreHiddenEmpty(box);
+        }
+
+        var wrap = existing || el("div", "cdbx-sr-wrap");
+        wrap.className = "cdbx-sr-wrap" + (solo ? " cdbx-sr-solo" : "");
+        clear(wrap);
+
+        var hdr = el("div", "cdbx-sr-hdr");
+        hdr.appendChild(el("span", "cdbx-navgroup", "Extra"));
+        wrap.appendChild(hdr);
+
+        rows.forEach(function (row, idx) {
+          var btn = el("button", "cdbx-sr-opt" +
+            (row.type === "child" ? " cdbx-sr-child" : row.type === "more" ? " cdbx-sr-more" : ""));
+          btn.type = "button";
+          btn.setAttribute("role", "option");
+          btn.setAttribute("tabindex", "-1");
+          btn.setAttribute("aria-selected", "false");
+          btn.setAttribute("data-cdbx-sr-kind", row.kind);
+
+          if (row.type === "hit") {
+            var ic = el("span", "cdbx-sr-icon");
+            ic.setAttribute("aria-hidden", "true");
+            ic.appendChild(iconSvg(row.icon || ICON_FEATURES));
+            btn.appendChild(ic);
+            var body = el("span", "cdbx-sr-body");
+            var ttl = el("span", "cdbx-sr-title");
+            appendHighlighted(ttl, row.title, q);
+            body.appendChild(ttl);
+            if (row.via) {
+              var via = el("span", "cdbx-sr-via");
+              appendHighlighted(via, row.via, q);
+              body.appendChild(via);
+            }
+            btn.appendChild(body);
+          } else if (row.type === "child") {
+            var cBody = el("span", "cdbx-sr-title");
+            appendHighlighted(cBody, row.title, q);
+            btn.appendChild(cBody);
+          } else {
+            btn.textContent = row.title;
+          }
+
+          btn.addEventListener("mousedown", function (ev) { ev.preventDefault(); });
+          btn.addEventListener("mousemove", function () { setActiveExtra(idx); });
+          btn.addEventListener("click", function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            activateExtraRow(row);
+          });
+          wrap.appendChild(btn);
+        });
+
+        if (wrap.parentElement !== box || box.lastElementChild !== wrap) {
+          box.appendChild(wrap);
+        }
+
+        if (solo && rows.length > 0 && st.activeIdx < 0) {
+          setActiveExtra(0);
+        } else if (st.activeIdx >= rows.length) {
+          setActiveExtra(solo ? 0 : -1);
+        } else if (st.activeIdx >= 0) {
+          setActiveExtra(st.activeIdx);
+        }
+      } finally {
+        st.mutating = false;
+      }
+    }
+
+    function scheduleSync() {
+      if (searchState !== st || st.timer) return;
+      st.timer = setTimeout(function () {
+        st.timer = 0;
+        syncNow();
+      }, 0);
+    }
+
+    st.onFocusIn = function (ev) {
+      if (!isSettingsSearchInput(ev.target)) return;
+      st.input = ev.target;
+      if ((ev.target.value || "").trim()) scheduleSync();
+    };
+
+    st.onInput = function (ev) {
+      if (!isSettingsSearchInput(ev.target)) return;
+      st.input = ev.target;
+      scheduleSync();
+    };
+
+    st.onKeyDown = function (ev) {
+      if (!isSettingsSearchInput(ev.target)) return;
+      st.input = ev.target;
+      var q = (ev.target.value || "").trim();
+      if (!q || !st.popupBox || !st.popupBox.isConnected) return;
+      var wrap = st.popupBox.querySelector(".cdbx-sr-wrap");
+      if (!wrap) return;
+      var exOpts = wrap.querySelectorAll(".cdbx-sr-opt");
+      if (!exOpts.length) return;
+      var upOpts = upstreamOptionsIn(st.popupBox);
+
+      if (ev.key === "Escape") {
+        st.activeIdx = -1;
+        return;
+      }
+
+      if (upOpts.length === 0) {
+        if (ev.key === "ArrowDown") {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          setActiveExtra((st.activeIdx + 1) % exOpts.length);
+        } else if (ev.key === "ArrowUp") {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          setActiveExtra((st.activeIdx - 1 + exOpts.length) % exOpts.length);
+        } else if (ev.key === "Enter" && !ev.repeat) {
+          var target = exOpts[st.activeIdx >= 0 ? st.activeIdx : 0];
+          if (target) {
+            ev.preventDefault();
+            ev.stopImmediatePropagation();
+            target.click();
+          }
+        }
+        return;
+      }
+
+      // Both upstream and Extra options exist: step seamlessly from the end of
+      // upstream's list into Extra, and back.
+      var upIdx = -1;
+      for (var i = 0; i < upOpts.length; i++) {
+        if (upOpts[i].hasAttribute("data-highlighted")) { upIdx = i; break; }
+      }
+      if (st.activeIdx < 0) {
+        if (ev.key === "ArrowDown" && upIdx === upOpts.length - 1) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          setActiveExtra(0);
+        } else if (ev.key === "ArrowUp" && upIdx <= 0) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          setActiveExtra(exOpts.length - 1);
+        }
+      } else {
+        if (ev.key === "ArrowDown") {
+          if (st.activeIdx < exOpts.length - 1) {
+            ev.preventDefault();
+            ev.stopImmediatePropagation();
+            setActiveExtra(st.activeIdx + 1);
+          } else {
+            // Let upstream's ArrowDown wrap back to upstream index 0.
+            setActiveExtra(-1);
+          }
+        } else if (ev.key === "ArrowUp") {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          if (st.activeIdx > 0) setActiveExtra(st.activeIdx - 1);
+          else setActiveExtra(-1);
+        } else if (ev.key === "Enter" && !ev.repeat) {
+          var exBtn = exOpts[st.activeIdx];
+          if (exBtn) {
+            ev.preventDefault();
+            ev.stopImmediatePropagation();
+            exBtn.click();
+          }
+        }
+      }
+    };
+
+    dialog.addEventListener("focusin", st.onFocusIn, true);
+    dialog.addEventListener("input", st.onInput, true);
+    dialog.addEventListener("keydown", st.onKeyDown, true);
   }
 
   function install(dialog) {
@@ -7048,6 +7970,7 @@
       restoreUpstream();
     }, true);
 
+    attachSettingsSearch(dialog);
     diag("installed", "[ExtraSettings] Extra nav group added to the settings dialog (" +
       found.rows.length + " upstream nav rows, " +
       (built.fallback ? "appended behind a divider" :
@@ -7174,6 +8097,7 @@
     // forgetting about it, or it stays display:none with an orphan panel next to
     // it and the modal looks broken.
     if (mounted) {
+      detachSettingsSearch();
       restoreUpstream();
       mounted = null;
     }

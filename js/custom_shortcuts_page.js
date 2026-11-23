@@ -23,6 +23,9 @@
  *       button[aria-label="Use voice mode"]
  *       React fiber props: qR ({ state, onStart, onEnd, onCancel, onToggleMute }),
  *       xR ({ onPrimaryClick, items })
+ *   - Send Now (queued messages):
+ *       button[data-testid="awaiting-turn-send-now"]
+ *       React fiber props: onSendNow / onSendNowChord
  *   - Recording guard:
  *       [data-keyboard-shortcut-input]
  *
@@ -48,6 +51,7 @@
     '[data-testid="message-actions"][data-deferred], [data-cds="MessageActions"][data-deferred]';
   var ACTIONS_BOX_SEL = '[data-testid="message-actions"], [data-cds="MessageActions"]';
   var VOICE_BTN_SEL = 'button[aria-label="Use voice mode"]';
+  var SEND_NOW_SEL = 'button[data-testid="awaiting-turn-send-now"]';
   var RECORDING_INPUT_SEL = "[data-keyboard-shortcut-input]";
 
   var MAX_FIBER_HOPS = 25;
@@ -651,10 +655,122 @@
     return waitForNewChatAndStart(nextOpts);
   }
 
+  function isSettingsDialogEl(el) {
+    if (!el || typeof el.closest !== "function") return false;
+    try {
+      var dlg = el.closest(SETTINGS_DIALOG_SEL);
+      if (!dlg) return false;
+      return !!(dlg.querySelector('nav[aria-label="Settings"], .cdbx-item, [data-testid="general-settings"]'));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function isButtonBusy(btn) {
+    if (!btn) return false;
+    return btn.getAttribute("aria-busy") === "true" || btn.getAttribute("data-busy") === "true";
+  }
+
+  function isButtonDisabled(btn) {
+    if (!btn) return true;
+    return !!btn.disabled || btn.getAttribute("aria-disabled") === "true";
+  }
+
+  function buttonLabelWithoutKbd(btn) {
+    if (!btn) return "";
+    try {
+      if (!btn.querySelector("kbd")) return (btn.textContent || "").trim();
+      var clone = btn.cloneNode(true);
+      var kbds = clone.querySelectorAll("kbd");
+      for (var i = 0; i < kbds.length; i++) kbds[i].remove();
+      return (clone.textContent || "").trim();
+    } catch (e) {
+      return (btn.textContent || "").trim();
+    }
+  }
+
+  function findSendNowCandidate() {
+    // 1. Primary upstream selector: cf7fce8a8 renders data-testid="awaiting-turn-send-now"
+    //    on Code, Cowork, and Chat queued-message "Send now" / "Send N now" buttons.
+    var direct = document.querySelectorAll(SEND_NOW_SEL);
+    var sawBusy = false;
+    var sawDisabled = false;
+    for (var i = direct.length - 1; i >= 0; i--) {
+      var b = direct[i];
+      if (!isVisible(b) || isSettingsDialogEl(b)) continue;
+      if (isButtonBusy(b)) { sawBusy = true; continue; }
+      if (isButtonDisabled(b)) { sawDisabled = true; continue; }
+      return { btn: b, source: "testid" };
+    }
+    if (sawBusy) return { btn: null, reason: "busy" };
+    if (sawDisabled) return { btn: null, reason: "disabled" };
+
+    // 2. Fallback: React fiber props (onSendNow) paired with button-level marker
+    //    or "Send [N] now" label (never clicks sibling row buttons like Remove),
+    //    or plain visible "Send [N] now" button (also covers held-message banners).
+    var labelRe = /^Send(?:\s+\d+)?\s+now$/i;
+    var btns = document.querySelectorAll("button");
+    var fiberHit = null;
+    var labelHit = null;
+    for (var j = btns.length - 1; j >= 0; j--) {
+      var bj = btns[j];
+      if (!isVisible(bj) || isSettingsDialogEl(bj)) continue;
+      var lbl = buttonLabelWithoutKbd(bj);
+      var hasSendMarker = bj.hasAttribute("data-press-renders-now") ||
+        bj.hasAttribute("data-transcript-continues-turn");
+      var matchesLabel = labelRe.test(lbl);
+      if (!hasSendMarker && !matchesLabel) continue;
+      var props = findFiberAncestorProps(bj, function (p) {
+        return typeof p.onSendNow === "function";
+      });
+      if (props) {
+        if (isButtonBusy(bj)) { sawBusy = true; continue; }
+        if (isButtonDisabled(bj)) { sawDisabled = true; continue; }
+        if (!fiberHit) fiberHit = bj;
+        continue;
+      }
+      if (matchesLabel) {
+        if (isButtonBusy(bj)) { sawBusy = true; continue; }
+        if (isButtonDisabled(bj)) { sawDisabled = true; continue; }
+        if (!labelHit) labelHit = bj;
+      }
+    }
+    if (fiberHit) {
+      warnOnce("send-now-fiber-fallback", "matched Send now button via fiber props");
+      return { btn: fiberHit, source: "fiber" };
+    }
+    if (labelHit) {
+      warnOnce("send-now-label-fallback", "matched Send now button via label fallback");
+      return { btn: labelHit, source: "label" };
+    }
+    if (sawBusy) return { btn: null, reason: "busy" };
+    if (sawDisabled) return { btn: null, reason: "disabled" };
+    return { btn: null, reason: "no-queued-message" };
+  }
+
+  function triggerSendNow() {
+    var hit = findSendNowCandidate();
+    if (hit.btn) {
+      hit.btn.click();
+      return Promise.resolve({ ok: true, action: "sendNow", detail: "clicked:" + hit.source });
+    }
+    if (hit.reason === "busy") {
+      showNotice("Queued message is already being sent");
+      return Promise.resolve({ ok: false, action: "sendNow", reason: "busy" });
+    }
+    if (hit.reason === "disabled") {
+      showNotice("Send now is currently unavailable");
+      return Promise.resolve({ ok: false, action: "sendNow", reason: "disabled" });
+    }
+    showNotice("No queued message ready to send now");
+    return Promise.resolve({ ok: false, action: "sendNow", reason: "no-queued-message" });
+  }
+
   function trigger(actionId, opts) {
     if (actionId === "readAloud") return triggerReadAloud();
     if (actionId === "voiceMode") return triggerVoiceMode();
     if (actionId === "newVoiceChat") return triggerNewVoiceChat(opts);
+    if (actionId === "sendNow") return triggerSendNow();
     return Promise.resolve({ ok: false, action: String(actionId || ""), reason: "unknown-action" });
   }
 
@@ -665,6 +781,7 @@
     state: function () {
       var msgs = document.querySelectorAll(ASSISTANT_MSG_SEL);
       var readBtns = document.querySelectorAll(READ_ALOUD_SEL);
+      var sendNowBtns = document.querySelectorAll(SEND_NOW_SEL);
       var playing = 0;
       for (var i = 0; i < readBtns.length; i++) {
         if (readBtns[i].getAttribute("data-state") === "playing") playing++;
@@ -676,7 +793,9 @@
         readAloudButtons: readBtns.length,
         readAloudPlaying: playing,
         voiceActive: !!findActiveVoiceBar(),
-        voiceIdleAvailable: !!findIdleVoiceStarter()
+        voiceIdleAvailable: !!findIdleVoiceStarter(),
+        sendNowButtons: sendNowBtns.length,
+        sendNowAvailable: !!findSendNowCandidate().btn
       };
     }
   };

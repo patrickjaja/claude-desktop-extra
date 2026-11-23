@@ -1,8 +1,8 @@
 # @patch-target: app.asar.contents/.vite/build/index.js
 # @patch-type: nim
 #
-# Custom keyboard shortcuts for Voice mode, New voice chat, and Read aloud
-# (issues #350, #352).
+# Custom keyboard shortcuts for Voice mode, New voice chat, Read aloud, and
+# Send now on queued messages (issues #350, #352).
 #
 # Injects js/custom_shortcuts_main.js (with js/custom_shortcuts_page.js embedded)
 # after the bundle's "use strict"; prologue (at the head if absent).

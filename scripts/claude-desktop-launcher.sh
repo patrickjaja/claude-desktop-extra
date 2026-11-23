@@ -3349,7 +3349,7 @@ Options:
   --trigger-shortcut ACTION Trigger a configured Custom Shortcuts action on the
                             running app (~5-25 ms via Unix socket; exits 1 if
                             not running). ACTION is one of:
-                            voice-mode, new-voice-chat, read-aloud.
+                            voice-mode, new-voice-chat, read-aloud, send-now.
                             Bind this in compositors without GlobalShortcuts
                             portal (sway, niri, river, Hyprland, GNOME <48).
   --install-gnome-hotkey [ACCEL]
@@ -3528,8 +3528,9 @@ HELP
             voice-mode|voiceMode) _sc_slug="voice-mode" ;;
             new-voice-chat|newVoiceChat) _sc_slug="new-voice-chat" ;;
             read-aloud|readAloud) _sc_slug="read-aloud" ;;
+            send-now|sendNow) _sc_slug="send-now" ;;
             *)
-                echo >&2 "claude-desktop: invalid --trigger-shortcut action '$_sc_arg' (expected: voice-mode, new-voice-chat, or read-aloud)"
+                echo >&2 "claude-desktop: invalid --trigger-shortcut action '$_sc_arg' (expected: voice-mode, new-voice-chat, read-aloud, or send-now)"
                 exit 2
                 ;;
         esac

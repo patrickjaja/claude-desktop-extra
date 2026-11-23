@@ -464,10 +464,11 @@ function loadMainHarness(opts = {}) {
 
   const st0 = h.ipcHandlers["cdb-shortcuts:pref-read"](h.trustedEv());
   ok(st0.ok === true && st0.enabled === false && st0.enabledLocked === false &&
-     st0.lockedByJsonc === false && st0.actions.length === 3 &&
+     st0.lockedByJsonc === false && st0.actions.length === 4 &&
+     st0.actions.some((a) => a.id === "sendNow" && a.slug === "send-now") &&
      st0.actions.every((a) => a.accelerator === "" && a.scope === "app") &&
      st0.session.sessionType === "x11",
-     "default state is off, 3 unbound app-scoped actions, X11 detected");
+     "default state is off, 4 unbound app-scoped actions (including sendNow), X11 detected");
 
   ok(h.execJsCalls.length === 0,
      "opt-in gating: dom-ready does NOT inject page script while customShortcuts is disabled");
@@ -563,6 +564,21 @@ function loadMainHarness(opts = {}) {
   await h.api.trigger("newVoiceChat", "socket");
   ok(h.navCalls.includes("/new") && h.winFocusCalls() >= 1 && h.execJsCalls.length > execBefore,
      "newVoiceChat dispatches /new navigation and focuses window when triggered externally");
+
+  // Bind sendNow to Alt+Enter (normalized -> Alt+Return), match Enter & NumpadEnter, and verify socket trigger does not steal window focus
+  const bindSendNow = h.ipcHandlers["cdb-shortcuts:bind"](h.trustedEv(), "sendNow", "alt+enter");
+  const sendNowRow = bindSendNow.actions && bindSendNow.actions.find((a) => a.id === "sendNow");
+  const hitSendEnter = h.fireBeforeInput({ type: "keyDown", alt: true, key: "Enter", code: "Enter" });
+  const hitSendNumpad = h.fireBeforeInput({ type: "keyDown", alt: true, key: "Enter", code: "NumpadEnter" });
+  const focusBeforeSend = h.winFocusCalls();
+  const execBeforeSend = h.execJsCalls.length;
+  const sockSend = await h.api.trigger("send-now", "socket");
+  ok(bindSendNow.ok && sendNowRow && sendNowRow.accelerator === "Alt+Return" &&
+     hitSendEnter && hitSendNumpad &&
+     sockSend.ok && h.execJsCalls.length > execBeforeSend &&
+     h.execJsCalls[h.execJsCalls.length - 1].includes('"sendNow"') &&
+     h.winFocusCalls() === focusBeforeSend,
+     "sendNow binds Alt+Enter -> Alt+Return, matches Enter/NumpadEnter, and triggers via send-now slug without stealing focus");
 
   // Reset prunes customShortcuts cleanly when off
   h.ipcHandlers["cdb-shortcuts:reset"](h.trustedEv());
@@ -875,6 +891,87 @@ try {
   ok(!resC.__error, "New Voice Chat headless scenario ran without error");
   for (const [k, v] of Object.entries(resC)) {
     if (k !== "__error") ok(v === true, "New Voice Chat: " + k);
+  }
+
+  // Scenario D: Send Now (primary testid on /code preserving composer focus, newest visible,
+  // busy/disabled guards without fallback leak, fiber fallback without clicking sibling Remove,
+  // label fallback with "Send N now" + <kbd> ignoring Settings dialog, and empty state)
+  const resD = await runChromeScenario("send-now", buildScenarioHtml(`
+    history.pushState({}, "", "/code/session-42");
+    const root = document.getElementById("root");
+    root.innerHTML = \`
+      <textarea id="composer"></textarea>
+      <button id="hiddenSn" data-testid="awaiting-turn-send-now" style="display:none;width:80px;height:24px;">Send now</button>
+      <button id="oldSn" data-testid="awaiting-turn-send-now" style="width:80px;height:24px;">Send now</button>
+      <button id="newSn" data-testid="awaiting-turn-send-now" style="width:80px;height:24px;">Send 2 now</button>
+    \`;
+    const comp = document.getElementById("composer");
+    comp.focus();
+    let hiddenClicks = 0, oldClicks = 0, newClicks = 0;
+    document.getElementById("hiddenSn").addEventListener("click", () => { hiddenClicks++; });
+    document.getElementById("oldSn").addEventListener("click", () => { oldClicks++; });
+    document.getElementById("newSn").addEventListener("click", () => { newClicks++; });
+    const stBefore = window.__cdbCustomShortcuts.state();
+    const r1 = await window.__cdbCustomShortcuts.trigger("sendNow");
+    tOk(stBefore.sendNowButtons === 3 && stBefore.sendNowAvailable === true &&
+        r1.ok && r1.detail === "clicked:testid" &&
+        hiddenClicks === 0 && oldClicks === 0 && newClicks === 1 &&
+        document.activeElement === comp,
+        "sendNow_clicks_newest_visible_testid_preserving_composer_focus");
+
+    // Busy button refuses cleanly without double-clicking or falling through to unrelated buttons
+    root.innerHTML = \`
+      <button id="busySn" data-testid="awaiting-turn-send-now" aria-busy="true" disabled style="width:80px;height:24px;">Send now</button>
+      <button id="otherSn" style="width:80px;height:24px;">Send now</button>
+    \`;
+    let busyClicks = 0, otherClicks = 0;
+    document.getElementById("busySn").addEventListener("click", () => { busyClicks++; });
+    document.getElementById("otherSn").addEventListener("click", () => { otherClicks++; });
+    const r2 = await window.__cdbCustomShortcuts.trigger("sendNow");
+    tOk(!r2.ok && r2.reason === "busy" && busyClicks === 0 && otherClicks === 0 &&
+        !!document.querySelector(".cdb-sc-toast"),
+        "sendNow_reports_busy_without_double_click_or_fallback_leak");
+
+    // Fiber fallback when data-testid moved: skips sibling Remove button sharing parent onSendNow fiber
+    root.innerHTML = \`
+      <button id="snFiber" data-press-renders-now="true" style="width:80px;height:24px;">Jetzt senden</button>
+      <button id="removeSibling" aria-label="Remove queued message" style="width:24px;height:24px;">X</button>
+    \`;
+    const snFiber = document.getElementById("snFiber");
+    const remBtn = document.getElementById("removeSibling");
+    const sharedParentFiber = { memoizedProps: { onSendNow: () => {} }, return: null };
+    snFiber.__reactFiber$test = { return: sharedParentFiber };
+    remBtn.__reactFiber$test = { return: sharedParentFiber };
+    let fiberClicks = 0, remClicks = 0;
+    snFiber.addEventListener("click", () => { fiberClicks++; });
+    remBtn.addEventListener("click", () => { remClicks++; });
+    const r3 = await window.__cdbCustomShortcuts.trigger("sendNow");
+    tOk(r3.ok && r3.detail === "clicked:fiber" && fiberClicks === 1 && remClicks === 0 &&
+        window.__diagLines.some((l) => l.includes("send-now-fiber-fallback")),
+        "sendNow_fiber_fallback_requires_marker_and_never_clicks_sibling_remove");
+
+    // Label fallback handles "Send 3 now" + <kbd> shortcut hint and ignores Settings dialog buttons
+    root.innerHTML = \`
+      <div role="dialog"><div class="cdbx-item"></div><button id="dlgSn" style="width:80px;height:24px;">Send now</button></div>
+      <button id="lblSn" style="width:120px;height:24px;">Send 3 now<kbd>Ctrl+↵</kbd></button>
+    \`;
+    let dlgClicks = 0, lblClicks = 0;
+    document.getElementById("dlgSn").addEventListener("click", () => { dlgClicks++; });
+    document.getElementById("lblSn").addEventListener("click", () => { lblClicks++; });
+    const r4 = await window.__cdbCustomShortcuts.trigger("sendNow");
+    tOk(r4.ok && r4.detail === "clicked:label" && dlgClicks === 0 && lblClicks === 1 &&
+        window.__diagLines.some((l) => l.includes("send-now-label-fallback")),
+        "sendNow_label_fallback_strips_kbd_and_ignores_settings_dialog");
+
+    // Empty state shows toast and returns no-queued-message
+    root.innerHTML = '<div>No queued messages</div>';
+    const r5 = await window.__cdbCustomShortcuts.trigger("sendNow");
+    tOk(!r5.ok && r5.reason === "no-queued-message" && !window.__cdbCustomShortcuts.state().sendNowAvailable,
+        "sendNow_reports_no_queued_message_when_absent");
+  `), 2500);
+  ok(!resD.__error, "Send Now headless scenarios ran without error");
+  for (const [k, v] of Object.entries(resD)) {
+    if (k !== "__error") ok(v === true, "Send Now: " + k);
   }
 } finally {
   server.close();

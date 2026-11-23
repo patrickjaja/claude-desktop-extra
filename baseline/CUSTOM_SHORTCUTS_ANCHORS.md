@@ -1,6 +1,6 @@
 # Custom Shortcuts Runtime Anchors
 
-Anchors relied upon by [`js/custom_shortcuts_page.js`](../js/custom_shortcuts_page.js) (injected by [`patches/community/add_feature_custom_shortcuts.nim`](../patches/community/add_feature_custom_shortcuts.nim)) and verified against **upstream `5.11492.5`** (`ion-dist.asar`).
+Anchors relied upon by [`js/custom_shortcuts_page.js`](../js/custom_shortcuts_page.js) (injected by [`patches/community/add_feature_custom_shortcuts.nim`](../patches/community/add_feature_custom_shortcuts.nim)) and verified against **upstream `6.28899.2`** (`ion-dist.asar`; Read Aloud / Voice Mode originally inventoried on `5.11492.5`).
 
 Remember: `claude.ai` itself is remote web code and can change independently of a `.deb` release. Every missing anchor in `custom_shortcuts_page.js` degrades to a short toast notice plus a deduped `[cdb-shortcuts]` warning line in DevTools and `claude-patches.log`.
 
@@ -15,6 +15,7 @@ Remember: `claude.ai` itself is remote web code and can change independently of 
 | **Voice Mode — mistap guard** | Composer mount / `startsVoice` flip settle delay (`350 ms`) | `ER` (`c4a9ee384`) | `VOICE_MISTAP_SETTLE_MS = 400` in `custom_shortcuts_page.js` checks for active voice bar and retries once if voice stayed idle |
 | **Voice Mode — stop** | React fiber `qR` (`state === "active" \| "connecting"`, `onEnd` / `onCancel`) | `qR` (`c4a9ee384`) | DOM fallback looks for visible `Stop` / `Cancel` / `End voice mode` adjacent to microphone mute or held-voice controls (`[cdb-shortcuts] voice-active-dom-fallback`) |
 | **New Voice Chat** | `globalThis.__cdbNavigation.getDispatcher(wc).dispatchNavigate("/new")` or `a[href="/new"]` / `[data-testid="new-chat-trigger"]` | `Navigation` plugin (captured by `add_feature_extra_settings.nim`) + sidebar link | Polls until `location.pathname` is `/new` (or `/`) and an idle voice starter renders, waits `400 ms` past mistap guard, then starts Voice Mode |
+| **Send Now — queued message** | `button[data-testid="awaiting-turn-send-now"]` (`data-press-renders-now="true"`, `data-transcript-continues-turn=""`, `aria-busy` / `disabled` while sending) | `D` (`cf7fce8a8` in `6.28899.2`), rendered by Code (`ce461fba7`, `chord: false`), Chat (`c04a1223c`, no `chord`), and Cowork (`98e00d40...`) | Picks newest visible enabled button (skips buttons inside Settings dialog; reports busy/disabled cleanly without double-sending). Fallback matches React fiber `onSendNow` paired with `data-press-renders-now`/`data-transcript-continues-turn`/label (`send-now-fiber-fallback`), or visible button text `/^Send(?:\s+\d+)?\s+now$/i` ignoring `<kbd>` hints (`send-now-label-fallback`, also covers held-message banner CTAs in `cc43287c9`) |
 | **Shortcut recorder lock** | `[data-keyboard-shortcut-input]` | Upstream shortcut recorder components (`shared-21`, `shared-36`) + Extra Settings `.cdbx-sc-pill` | `focusin`/`focusout` notifies `cdbExtra.customShortcutsRecording(bool)` so `before-input-event` and `globalShortcut` pause during recording |
 
 ## `[cdb-shortcuts]` warning keys
@@ -27,6 +28,8 @@ Any of these once-per-page lines in DevTools or `logs/claude-patches.log` indica
 - `voice-active-dom-fallback` — active voice pill fiber (`state`/`onEnd`) moved; fell back to adjacent mic-button DOM check.
 - `voice-button-missing` / `new-voice-button-missing` — no Voice Mode button/fiber found on the active chat route.
 - `new-chat-nav-missing` / `new-chat-timeout` — navigating to `/new` failed or timed out waiting for the new-chat voice button.
+- `send-now-fiber-fallback` — `data-testid="awaiting-turn-send-now"` moved; fell back to React fiber `onSendNow` + button marker/label.
+- `send-now-label-fallback` — matched `"Send now"` / `"Send N now"` via visible button text (testid/fiber absent, or held-message banner CTA).
 
 ## DevTools console verification recipes
 
@@ -42,9 +45,11 @@ window.__cdbCustomShortcuts.state()
   readAloudButtons: document.querySelectorAll('[data-testid="action-bar-read-aloud"]').length,
   deferredBars: document.querySelectorAll('[data-cds="MessageActions"][data-deferred], [data-testid="message-actions"][data-deferred]').length,
   voiceButtons: document.querySelectorAll('button[aria-label="Use voice mode"]').length,
+  sendNowButtons: document.querySelectorAll('button[data-testid="awaiting-turn-send-now"]').length,
   recorders: document.querySelectorAll('[data-keyboard-shortcut-input]').length
 })
 
-// 3. Test live trigger (with at least one completed reply)
+// 3. Test live trigger (with at least one completed reply or queued message)
 await window.__cdbCustomShortcuts.trigger("readAloud")
+await window.__cdbCustomShortcuts.trigger("sendNow")
 ```

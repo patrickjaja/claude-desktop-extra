@@ -1,6 +1,6 @@
 # Custom Shortcuts
 
-Assign optional, user-configurable keyboard shortcuts for **Voice mode**, **New voice chat**, and **Read aloud** (issues [#350](https://github.com/patrickjaja/claude-desktop-extra/issues/350) and [#352](https://github.com/patrickjaja/claude-desktop-extra/issues/352)).
+Assign optional, user-configurable keyboard shortcuts for **Voice mode**, **New voice chat**, **Read aloud**, and **Send queued message now** (issues [#350](https://github.com/patrickjaja/claude-desktop-extra/issues/350) and [#352](https://github.com/patrickjaja/claude-desktop-extra/issues/352)).
 
 To keep upstream and custom behavior cleanly separated, this feature adds its own **Custom Shortcuts** page in **Settings → Extra → Custom Shortcuts** (placed between **Models** and **Anthropic**) plus an opt-in **Custom shortcuts** master switch in **Settings → Extra → Community Features**. Upstream's own **Settings → Desktop app** shortcuts (**Quick Entry** and **Dictation**) are left untouched.
 
@@ -13,19 +13,20 @@ Everything starts **off and unbound** by default. When disabled or unbound, upst
 | **Voice mode in current chat** | `voiceMode` | `voice-mode` | Starts Voice mode in the focused chat view (closing Settings if open), or ends/cancels an active/connecting voice session. Shows a notice when invoked on unsupported views such as `/code` or `/cowork`. |
 | **New voice chat** | `newVoiceChat` | `new-voice-chat` | Ends any active voice session, navigates to `/new`, waits past the app's composer mistap guard, and starts Voice mode in the new thread. |
 | **Read aloud latest reply** | `readAloud` | `read-aloud` | Pauses/resumes an active Read Aloud button if one is playing/loading, otherwise starts Read Aloud on the newest completed Claude reply (hydrating deferred message actions without stealing focus from the composer). |
+| **Send queued message now** | `sendNow` | `send-now` | Clicks the visible **Send now** (or **Send N now**) button on a queued message in Code, Chat, or Cowork so Claude reads it immediately instead of waiting for the current turn, without stealing focus from the composer. |
 
 ## Shortcut recorder rules
 
 Click a shortcut pill in **Settings → Extra → Custom Shortcuts** and press the combination you want:
 
 - **Modifiers:** Requires at least one primary modifier (`Ctrl`, `Alt`, `Super`), unless you bind a standalone function key (`F1`–`F24`). `Shift` alone is rejected so normal typing never breaks.
-- **Reserved & conflicting keys:** Standard editing/app shortcuts (`Ctrl+C`, `Ctrl+V`, `Ctrl+X`, `Ctrl+A`, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+W`, `Ctrl+Q`, `Ctrl+N`, `Ctrl+T`, `Ctrl+R`, `Ctrl+F`, `Ctrl+P`, `Ctrl+D`, `Ctrl+,`, `Ctrl+Tab`, `Ctrl+Shift+Tab`, `Ctrl+Alt+Space`, `Ctrl+Shift+I`, `Ctrl+Alt+I`, `Ctrl+Shift+T`, `Ctrl+Shift+J`, `Ctrl+Shift+P`, `Ctrl+Shift+R`, `Alt+F4`, `F5`, `F11`, `F12`) and `AltGr` are rejected, as are duplicate bindings across the three custom actions.
+- **Reserved & conflicting keys:** Standard editing/app shortcuts (`Ctrl+C`, `Ctrl+V`, `Ctrl+X`, `Ctrl+A`, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+W`, `Ctrl+Q`, `Ctrl+N`, `Ctrl+T`, `Ctrl+R`, `Ctrl+F`, `Ctrl+P`, `Ctrl+D`, `Ctrl+,`, `Ctrl+Tab`, `Ctrl+Shift+Tab`, `Ctrl+Alt+Space`, `Ctrl+Shift+I`, `Ctrl+Alt+I`, `Ctrl+Shift+T`, `Ctrl+Shift+J`, `Ctrl+Shift+P`, `Ctrl+Shift+R`, `Alt+F4`, `F5`, `F11`, `F12`) and `AltGr` are rejected, as are duplicate bindings across the custom actions.
 - **Cancel / clear:** Press `Escape` while recording to cancel without changing the binding; press `Backspace`/`Delete` while recording or click the pill's `×` button to clear the binding.
 - **Keyboard layouts (QWERTZ / AZERTY / non-Latin):** Latin letters match by produced character on your active layout (e.g. `Z` on German QWERTZ), digits match by `Digit0`–`Digit9` keycode so shifted symbols work cleanly, and non-Latin active XKB groups fall back to physical `Key*` codes. Auto-repeat and IME composition events are ignored, and shortcuts do not fire while any shortcut recorder (`[data-keyboard-shortcut-input]`) is focused.
 
 ## Scope & Linux desktop matrix
 
-Each action can be set to **In-app** or **Global**, and all three can also be triggered over the per-profile Quick Entry Unix socket via `claude-desktop --trigger-shortcut <action>`:
+Each action can be set to **In-app** or **Global**, and all actions can also be triggered over the per-profile Quick Entry Unix socket via `claude-desktop --trigger-shortcut <action>`:
 
 | Session type / DE | In-app shortcut | Global scope (`electron.globalShortcut`) | Recommended global fallback |
 |-------------------|----------------|------------------------------------------|-----------------------------|
@@ -50,13 +51,14 @@ Settings are saved per profile under `customShortcuts` in `~/.config/Claude/clau
       "voiceMode": { "accelerator": "Ctrl+Shift+V", "scope": "app" },
       "newVoiceChat": { "accelerator": "Ctrl+Alt+V", "scope": "global" },
       // Shorthand string form defaults to scope "app"
-      "readAloud": "Ctrl+Alt+R"
+      "readAloud": "Ctrl+Alt+R",
+      "sendNow": "Alt+Return"
     }
   }
 }
 ```
 
-- Setting `"customShortcuts": false` in `.jsonc` disables and locks the entire feature and all three bindings.
+- Setting `"customShortcuts": false` in `.jsonc` disables and locks the entire feature and all bindings.
 - Setting only `"bindings"` in `.jsonc` locks only those specific action rows while leaving the master switch editable.
 
 ## Implementation files

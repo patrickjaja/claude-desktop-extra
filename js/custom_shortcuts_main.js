@@ -63,6 +63,13 @@
       title: "Read aloud latest reply",
       description: "Start, pause, or resume Read Aloud on Claude's newest reply.",
       focusWindow: false
+    },
+    {
+      id: "sendNow",
+      slug: "send-now",
+      title: "Send queued message now",
+      description: "Click \"Send now\" on a queued message so Claude reads it immediately instead of waiting for the current turn.",
+      focusWindow: false
     }
   ];
 

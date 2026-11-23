@@ -115,7 +115,7 @@ function dialog(navInner, nested) {
 <div role="dialog" tabindex="-1" data-cds="Dialog" class="dialog" aria-labelledby="ttl">
   <nav aria-label="Settings" class="navcol">
     <h2 id="ttl" class="sr-only">Settings</h2>
-    <div class="shrink-0 px-md pt-md"><input type="search" placeholder="Search settings"></div>
+    <div class="shrink-0 px-md pt-md"><input type="text" data-settings-search="" role="combobox" placeholder="Search" aria-label="Search settings"></div>
     <div id="navbox" class="navbox">${navInner}</div>
   </nav>
   <div id="pane" class="pane">
@@ -447,7 +447,7 @@ async function featuresPanel(featuresItem) {
     ok(noteLinks.length === 1 && (noteLinks[0].tagName === "BUTTON" || noteLinks[0].tagName === "A") &&
        noteLinks[0].tabIndex >= 0, "the link is focusable");
     ok(links(cmRow.querySelector(".cdbx-state")).length === 0, "configured: the state line carries no link");
-    const csSwitch = panel.querySelector('.cdbx-switch[aria-label="enable custom keyboard shortcuts for voice and speech"]');
+    const csSwitch = panel.querySelector('.cdbx-switch[aria-label="enable custom keyboard shortcuts"]');
     const csRow = csSwitch && csSwitch.closest(".cdbx-row");
     const otherLinks = links(panel).filter(function (l) {
       return !cmRow.contains(l) && !(csRow && csRow.contains(l));
@@ -2588,6 +2588,193 @@ async function cusPanel(cuItem) {
 // without it, it asks main to navigate (cdb-extra:open-settings) and the next
 // mount within 10 s finishes the job; a stale pending entry is dropped; a
 // failed navigation says where to go by hand.
+async function settingsSearchPanel(items) {
+  const sIn = document.querySelector('input[data-settings-search]');
+  ok(!!sIn, "search: settings search input is present in dialog");
+  if (!sIn) return;
+
+  // Mount a simulated upstream Base UI Popover (exact structure of SettingsNavSearch):
+  // <p role="status" class="sr-only"> + <div id="up-search-lb" tabindex="-1">.
+  const pop = document.createElement("div");
+  pop.id = "up-search-pop";
+  const stP = document.createElement("p");
+  stP.setAttribute("role", "status");
+  stP.className = "sr-only";
+  const lb = document.createElement("div");
+  lb.id = "up-search-lb";
+  lb.setAttribute("tabindex", "-1");
+  pop.appendChild(stP);
+  pop.appendChild(lb);
+  document.body.appendChild(pop);
+
+  function setUpstreamEmpty() {
+    sIn.removeAttribute("aria-controls");
+    sIn.setAttribute("aria-expanded", "false");
+    lb.removeAttribute("role");
+    Array.from(lb.children).forEach(function (c) {
+      if (!c.classList.contains("cdbx-sr-wrap")) c.remove();
+    });
+    const em = document.createElement("div");
+    em.className = "up-empty";
+    em.textContent = "No matching settings";
+    lb.insertBefore(em, lb.firstChild);
+    return em;
+  }
+
+  function setUpstreamHits(labels) {
+    sIn.setAttribute("aria-controls", lb.id);
+    sIn.setAttribute("aria-expanded", "true");
+    lb.setAttribute("role", "listbox");
+    Array.from(lb.children).forEach(function (c) {
+      if (!c.classList.contains("cdbx-sr-wrap")) c.remove();
+    });
+    labels.forEach(function (lbl, i) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("role", "option");
+      b.className = "up-opt";
+      if (i === 0) b.setAttribute("data-highlighted", "");
+      b.textContent = lbl;
+      lb.insertBefore(b, lb.querySelector(".cdbx-sr-wrap"));
+    });
+  }
+
+  async function typeQuery(q) {
+    sIn.focus();
+    sIn.value = q;
+    sIn.dispatchEvent(new Event("input", { bubbles: true }));
+    await sleep(30);
+  }
+
+  // 1. Upstream has 0 matches (no aria-controls!) + Extra matches "jira".
+  const em1 = setUpstreamEmpty();
+  await typeQuery("jira");
+  const wrap1 = lb.querySelector(".cdbx-sr-wrap");
+  ok(!!wrap1 && wrap1.classList.contains("cdbx-sr-solo"),
+     "search: Extra solo results render when upstream has no matches (no aria-controls)");
+  ok(em1.style.display === "none" && em1.isConnected,
+     "search: upstream empty state is hidden (not removed) when Extra has matches");
+  const opts1 = wrap1 ? Array.from(wrap1.querySelectorAll(".cdbx-sr-opt")) : [];
+  ok(opts1.length >= 1 && /Jira issue tracker/i.test(opts1[0].textContent),
+     "search: 'jira' matches Jira issue tracker (" + (opts1[0] ? opts1[0].textContent : "none") + ")");
+  ok(opts1[0] && opts1[0].hasAttribute("data-highlighted"),
+     "search: first solo Extra result is highlighted for Enter");
+
+  // Press Enter -> opens Community Features, flashes Jira row, clears search input.
+  sIn.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  await sleep(60);
+  ok(sIn.value === "", "search: activating an Extra result clears the search input");
+  const pJira = document.querySelector(".cdbx-panel");
+  ok(!!pJira && pJira.querySelector(".cdbx-h1").textContent === "Community Features",
+     "search: Enter on Jira result opens Community Features");
+  const jiraFlashed = pJira && Array.from(pJira.querySelectorAll(".cdbx-row.cdbx-flash .cdbx-id"))
+    .some(function (n) { return /Jira issue tracker/.test(n.textContent); });
+  ok(!!jiraFlashed, "search: Jira issue tracker row is highlighted with .cdbx-flash");
+
+  // 2. Both upstream and Extra match "theme": Extra appends below upstream without solo class.
+  setUpstreamHits(["Appearance"]);
+  await typeQuery("theme");
+  const wrap2 = lb.querySelector(".cdbx-sr-wrap");
+  ok(!!wrap2 && !wrap2.classList.contains("cdbx-sr-solo"),
+     "search: Extra results append below upstream results without solo class");
+  ok(lb.querySelectorAll(".up-opt").length === 1, "search: upstream options are preserved untouched");
+  // ArrowDown from the last upstream item moves highlight into Extra.
+  sIn.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+  await sleep(20);
+  const exOpts2 = wrap2 ? Array.from(wrap2.querySelectorAll(".cdbx-sr-opt")) : [];
+  ok(exOpts2[0] && exOpts2[0].hasAttribute("data-highlighted"),
+     "search: ArrowDown from last upstream option highlights first Extra option");
+  // Clicking an upstream option while an Extra panel is open restores upstream pane.
+  lb.querySelector(".up-opt").click();
+  await sleep(40);
+  ok(!document.querySelector(".cdbx-panel"),
+     "search: clicking an upstream search option while an Extra panel is open restores upstream");
+
+  // 3. Dynamic sources: installed theme ("nord") opens Themes pre-filtered.
+  setUpstreamEmpty();
+  await typeQuery("nord");
+  const nordOpt = Array.from(lb.querySelectorAll(".cdbx-sr-opt"))
+    .find(function (b) { return /Nord/i.test(b.textContent); });
+  ok(!!nordOpt, "search: dynamic theme catalog indexes 'Nord'");
+  if (nordOpt) {
+    nordOpt.click();
+    await sleep(80);
+    const pThemes = document.querySelector(".cdbx-panel");
+    const tSearch = pThemes && pThemes.querySelector("input.cdbx-search");
+    ok(!!pThemes && pThemes.querySelector(".cdbx-h1").textContent === "Themes",
+       "search: clicking Nord opens Themes panel");
+    ok(!!tSearch && tSearch.value === "Nord",
+       "search: Themes filter is pre-filled to 'Nord' (" + (tSearch ? tSearch.value : "none") + ")");
+  }
+
+  // 4. Dynamic sources: Anthropic GrowthBook flag opens Flags pre-filtered.
+  const firstFlag = window.__flagCatalog && window.__flagCatalog[0];
+  if (firstFlag) {
+    setUpstreamEmpty();
+    await typeQuery(firstFlag.id);
+    const flagOpt = Array.from(lb.querySelectorAll(".cdbx-sr-opt"))
+      .find(function (b) { return b.textContent.indexOf(firstFlag.id) >= 0; });
+    ok(!!flagOpt, "search: dynamic flag catalog indexes " + firstFlag.id);
+    if (flagOpt) {
+      flagOpt.click();
+      await sleep(80);
+      const pFlags = document.querySelector(".cdbx-panel");
+      const fSearch = pFlags && pFlags.querySelector("input.cdbx-search");
+      ok(!!pFlags && pFlags.querySelector(".cdbx-h1").textContent === "Anthropic Features",
+         "search: clicking flag result opens Anthropic Features");
+      ok(!!fSearch && fSearch.value === firstFlag.id,
+         "search: Anthropic Features filter is pre-filled to " + firstFlag.id);
+    }
+  }
+
+  // 5. Dynamic sources: Deployment key opens Deployment pre-filtered with all providers checked.
+  setUpstreamEmpty();
+  await typeQuery("inferenceProvider");
+  const depOpt = Array.from(lb.querySelectorAll(".cdbx-sr-opt"))
+    .find(function (b) { return b.getAttribute("data-cdbx-sr-kind") === "deploy"; });
+  ok(!!depOpt, "search: dynamic deployment keys index 'inferenceProvider'");
+  if (depOpt) {
+    depOpt.click();
+    await sleep(80);
+    const pDep = document.querySelector(".cdbx-panel");
+    const dSearch = pDep && pDep.querySelector("input.cdbx-search");
+    ok(!!pDep && pDep.querySelector(".cdbx-h1").textContent === "Deployment",
+       "search: clicking deployment key opens Deployment panel");
+    ok(!!dSearch && dSearch.value === "inferenceProvider",
+       "search: Deployment filter is pre-filled to 'inferenceProvider'");
+  }
+
+  // 6. No-match query restores upstream empty state cleanly.
+  const emNone = setUpstreamEmpty();
+  await typeQuery("zzzz_no_such_setting_xyz");
+  ok(!lb.querySelector(".cdbx-sr-wrap"), "search: non-matching query injects no Extra wrapper");
+  ok(emNone.style.display !== "none", "search: upstream empty state stays visible when Extra also has 0 matches");
+
+  // 7. Drift guard: every .cdbx-id rendered on Community Features is searchable.
+  items[1].click();
+  await sleep(60);
+  const featIds = Array.from(document.querySelectorAll(".cdbx-panel .cdbx-id"))
+    .map(function (n) { return (n.firstChild ? n.firstChild.textContent : n.textContent).trim(); })
+    .filter(Boolean);
+  let missingFeat = [];
+  for (let fi = 0; fi < featIds.length; fi++) {
+    setUpstreamEmpty();
+    await typeQuery(featIds[fi]);
+    const hit = Array.from(lb.querySelectorAll(".cdbx-sr-opt")).some(function (b) {
+      return b.textContent.toLowerCase().indexOf(featIds[fi].toLowerCase()) >= 0;
+    });
+    if (!hit) missingFeat.push(featIds[fi]);
+  }
+  ok(missingFeat.length === 0,
+     "search: every Community Features row is searchable (missing: " + missingFeat.join(", ") + ")");
+
+  // Cleanup
+  await typeQuery("");
+  pop.remove();
+  document.getElementById("row-account").click();
+  await sleep(30);
+}
+
 async function deepLink() {
   function toastText() { const t = document.querySelector(".cdbx-toast"); return t ? t.textContent : ""; }
   function h1() { const n = document.querySelector(".cdbx-panel .cdbx-h1"); return n ? n.textContent : ""; }
@@ -3199,10 +3386,10 @@ async function shortcutsPanel(featuresItem, shortcutsItem) {
   const sw = panel.querySelector(".cdbx-sc-status .cdbx-switch");
   ok(!!sw && sw.getAttribute("aria-checked") === "false", "master switch starts off");
   const pills = Array.from(panel.querySelectorAll("[data-keyboard-shortcut-input]"));
-  ok(pills.length === 3, "renders 3 shortcut recorder pills (" + pills.length + ")");
+  ok(pills.length === 4, "renders 4 shortcut recorder pills (" + pills.length + ")");
   ok(!!panel.querySelector(".cdbx-sc-sess") &&
-     panel.querySelectorAll(".cdbx-sc-cli-row code").length === 3,
-     "renders Linux session note and 3 CLI trigger commands");
+     panel.querySelectorAll(".cdbx-sc-cli-row code").length === 4,
+     "renders Linux session note and 4 CLI trigger commands");
 
   // Click Voice mode pill to enter recording mode and test reserved rejection + valid bind.
   const voiceRow = panel.querySelector('[data-sc-action="voiceMode"]');
@@ -3875,6 +4062,41 @@ async function run() {
         ok(fWinInputs.length === 6 && fWinInputs[4].value === "claude-desktop-extra/1.0" && fWinInputs[5].value === "x-opencode-session",
            "Windows: opencode-go preset prefills User-Agent and Session header in Add a provider");
       }
+      // Windows search: Linux-only items stay absent; Models still matches.
+      {
+        const sIn = document.querySelector('input[data-settings-search]');
+        const pop = document.createElement("div");
+        pop.id = "win-search-pop";
+        const stP = document.createElement("p");
+        stP.setAttribute("role", "status");
+        stP.className = "sr-only";
+        const lb = document.createElement("div");
+        lb.id = "win-search-lb";
+        lb.setAttribute("tabindex", "-1");
+        const emptyEl = document.createElement("div");
+        emptyEl.className = "up-empty";
+        emptyEl.textContent = "No matching settings";
+        lb.appendChild(emptyEl);
+        pop.appendChild(stP);
+        pop.appendChild(lb);
+        document.body.appendChild(pop);
+
+        sIn.value = "jira";
+        sIn.dispatchEvent(new Event("input", { bubbles: true }));
+        await sleep(50);
+        ok(!lb.querySelector(".cdbx-sr-wrap"), "Windows search: Linux-only setting (jira) produces no Extra results");
+        ok(emptyEl.style.display !== "none", "Windows search: upstream empty state stays visible when no Extra match");
+
+        sIn.value = "deepseek";
+        sIn.dispatchEvent(new Event("input", { bubbles: true }));
+        await sleep(50);
+        ok(!!lb.querySelector(".cdbx-sr-wrap"), "Windows search: Models keyword (deepseek) produces Extra results");
+        ok(emptyEl.style.display === "none", "Windows search: upstream empty state hides when Extra matches");
+        sIn.value = "";
+        sIn.dispatchEvent(new Event("input", { bubbles: true }));
+        await sleep(30);
+        pop.remove();
+      }
     }
     return;
   }
@@ -4040,6 +4262,7 @@ async function run() {
       await drawnCursorRow(items[2], items[5]);
       await cuGlowRow(items[2]);
       await deployPanel(items[6]);
+      await settingsSearchPanel(items);
       // Last: it re-mounts the nav, so the items above are stale afterwards.
       await deepLink();
     }
@@ -4586,7 +4809,8 @@ window.cdbExtra = {
         actions: [
           { id: "voiceMode", slug: "voice-mode", title: "Voice mode in current chat", description: "Open or exit Voice mode in the chat you have open.", accelerator: "", scope: "app", locked: false, globalStatus: null },
           { id: "newVoiceChat", slug: "new-voice-chat", title: "New voice chat", description: "Open a new chat thread and start Voice mode immediately.", accelerator: "", scope: "app", locked: false, globalStatus: null },
-          { id: "readAloud", slug: "read-aloud", title: "Read aloud latest reply", description: "Start, pause, or resume Read Aloud on Claude's newest reply.", accelerator: "", scope: "app", locked: false, globalStatus: null }
+          { id: "readAloud", slug: "read-aloud", title: "Read aloud latest reply", description: "Start, pause, or resume Read Aloud on Claude's newest reply.", accelerator: "", scope: "app", locked: false, globalStatus: null },
+          { id: "sendNow", slug: "send-now", title: "Send queued message now", description: "Click \\"Send now\\" on a queued message so Claude reads it immediately instead of waiting for the current turn.", accelerator: "", scope: "app", locked: false, globalStatus: null }
         ]
       };
     }
@@ -4763,7 +4987,7 @@ for (const [name, fixture] of scenarios) {
     // 30 s: the background-display setup page tests (issue #300), the Models link tests and the drawn-cursor row tests.
     dump = execFileSync(CHROMIUM, [
       "--headless", "--disable-gpu", "--no-sandbox", "--hide-scrollbars",
-      "--window-size=1000,700", "--virtual-time-budget=30000",
+      "--window-size=1000,700", "--virtual-time-budget=45000",
       "--dump-dom", "file://" + file
     ], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
   } catch (e) {

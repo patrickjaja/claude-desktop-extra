@@ -1176,3 +1176,95 @@
   gap: 10px;
   flex-wrap: wrap;
 }
+
+/* --- settings modal search results --------------------------------------- *
+ * Appended inside upstream's SettingsNavSearch popover listbox so Extra
+ * settings, themes, shortcuts, models, deployment keys and feature flags are
+ * searchable alongside Anthropic's own settings. Uses only inherited colors
+ * and color-mix, matching the rest of this sheet in light and dark mode.
+ */
+.cdbx-sr-wrap {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+.cdbx-sr-wrap.cdbx-sr-solo {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.cdbx-sr-hdr {
+  padding: 4px 8px 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cdbx-sr-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+.cdbx-sr-opt:hover,
+.cdbx-sr-opt[data-highlighted] {
+  background: color-mix(in srgb, currentColor 9%, transparent);
+}
+.cdbx-sr-opt:focus-visible {
+  outline: 2px solid color-mix(in srgb, currentColor 38%, transparent);
+  outline-offset: -2px;
+}
+.cdbx-sr-opt.cdbx-sr-child {
+  padding-left: 34px;
+}
+.cdbx-sr-opt.cdbx-sr-more {
+  padding-left: 34px;
+  font-size: 12px;
+  opacity: 0.65;
+}
+.cdbx-sr-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.75;
+  margin-top: 1px;
+  font-size: 18px;
+}
+.cdbx-sr-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.cdbx-sr-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cdbx-sr-via {
+  font-size: 11px;
+  opacity: 0.62;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cdbx-sr-mark {
+  background: none;
+  color: hsl(var(--accent-brand, 15 63.1% 59.6%));
+  font-weight: 600;
+}
