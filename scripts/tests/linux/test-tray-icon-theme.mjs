@@ -712,7 +712,7 @@ section("[E] Extra settings: trayIconAlwaysWhite read / write / lock");
     (page.match(/section: "Options"/g) || []).length === 4 &&
     cuOptionFns.every((m) => !!m && /section: "Options"/.test(m[0]) && /sharedSection: true/.test(m[0])) &&
     !/section: "Computer Use"/.test(page), true);
-  const cuPage = /function renderCu\(panel\) \{[\s\S]*?\n {2}\}\n/.exec(page);
+  const cuPage = /function renderCu\(panel(?:, target)?\) \{[\s\S]*?\n {2}\}\n/.exec(page);
   check("page: renderCu draws the status block first, then the Options heading, then CU_ROWS",
     !!cuPage && (() => {
       const t = cuPage[0];
