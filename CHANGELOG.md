@@ -12,6 +12,12 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 - Upstream's Settings search box (`SettingsNavSearch`) now also indexes and displays matching **Extra** sections and items — Themes, Community Features, Cowork (Linux), Custom Models (providers and models), Custom Shortcuts, Anthropic Features, and Deployment keys — jumping directly to and highlighting the selected row (`js/extra_settings_page.js`, `js/extra_settings_page.css`).
 
+### GTA VI theme redrawn
+
+- The palette follows the VI logo's indigo, magenta, coral and orange sunset gradient: a plum night with cream text and a coral-pink accent in dark mode, a golden-hour peach and blush with a magenta accent in light mode. The pink, cyan and gold neon look is gone.
+- The spinner is the block VI with a violet rim, a cream keyline and the sunset gradient in six bands; the second flip frame adds a diagonal gleam, like light across a sticker.
+- Backdrop scenes redrawn: dark has a striped sunset sun at the horizon, a lit skyline, palms and a water reflection; light has a golden-hour sky, lilac palms and pastel hotels.
+
 ## 2026-11-22
 
 ### Transparent window: question cards, the session rail and page headers see-through again on 6.28899

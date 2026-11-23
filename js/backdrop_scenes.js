@@ -2551,165 +2551,269 @@ function gtaVDarkSvg() {
 // =============================================================================
 // 13. GTA VI - Leonida & Vice City Synthwave Sunset (Light + Dark)
 // =============================================================================
+function gta6Rnd(seed) {
+  var s = seed >>> 0;
+  return function () {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+function gta6Frond(cx, cy, ang, len, wid, droop) {
+  var a = ang * Math.PI / 180, dx = Math.cos(a), dy = Math.sin(a);
+  var tx = cx + dx * len, ty = cy + dy * len + droop * len;
+  var kx = cx + dx * len * 0.55, ky = cy + dy * len * 0.55 - droop * len * 0.4;
+  var up = [], dn = [], N = 11, i;
+  for (i = 0; i <= N; i++) {
+    var t = i / N, u = 1 - t;
+    var px = u * u * cx + 2 * u * t * kx + t * t * tx, py = u * u * cy + 2 * u * t * ky + t * t * ty;
+    var gx = 2 * u * (kx - cx) + 2 * t * (tx - kx), gy = 2 * u * (ky - cy) + 2 * t * (ty - ky);
+    var gl = Math.sqrt(gx * gx + gy * gy) || 1;
+    gx /= gl; gy /= gl;
+    var nx = gy, ny = -gx;
+    if (ny > 0) { nx = -nx; ny = -ny; }
+    var w = wid * Math.pow(Math.sin(Math.PI * (0.12 + 0.88 * t)), 0.6);
+    up.push(Math.round(px + nx * w * 0.3) + " " + Math.round(py + ny * w * 0.3));
+    dn.unshift(Math.round(px - nx * w * 0.3) + " " + Math.round(py - ny * w * 0.3));
+    if (i > 0 && i < N) {
+      up.push(Math.round(px + nx * w * 0.7 - gx * w * 0.12) + " " + Math.round(py + ny * w * 0.7 - gy * w * 0.12 + w * 0.45));
+      dn.unshift(Math.round(px - nx * w * 1.25 - gx * w * 0.12) + " " + Math.round(py - ny * w * 1.25 - gy * w * 0.12 + w * 0.7));
+    }
+  }
+  return "M" + up.join(" ") + " " + dn.join(" ") + "Z";
+}
+var GTA6_FRONDS = [[-176, 1, 0.55], [-154, 1.05, 0.45], [-130, 0.95, 0.32], [-106, 0.75, 0.2], [-84, 0.6, 0.1], [-62, 0.85, 0.22], [-38, 1, 0.34], [-16, 1.05, 0.45], [4, 1, 0.55], [28, 0.8, 0.75], [152, 0.8, 0.75]];
+function gta6PalmDef(id, H, lean, seed) {
+  var r = gta6Rnd(seed), cx = lean, cy = -H, L = H * 0.42, d = "", i;
+  for (i = 0; i < GTA6_FRONDS.length; i++) {
+    var f = GTA6_FRONDS[i];
+    d += gta6Frond(cx, cy, f[0] + (r() - 0.5) * 10, L * f[1] * (0.9 + r() * 0.2), L * 0.16, f[2]);
+  }
+  var k = Math.round(lean * 0.12);
+  return '<g id="' + id + '"><path d="M-11 0Q' + k + " " + Math.round(-H * 0.55) + " " + (cx - 5) + " " + (cy + 4) + "L" + (cx + 5) + " " + (cy + 4) + "Q" + (k + 18) + " " + Math.round(-H * 0.55) + ' 11 0Z"/>' +
+    '<path d="' + d + '"/><circle cx="' + (cx - 6) + '" cy="' + (cy + 10) + '" r="6"/><circle cx="' + (cx + 5) + '" cy="' + (cy + 12) + '" r="6"/></g>';
+}
+function gta6Palm(id, x, s, flip, sway, fill, extra) {
+  return '<g transform="translate(' + x + ' 1000) scale(' + (flip ? -s : s) + " " + s + ')"' + (extra || "") + '><g class="' + sway + '"><use href="#' + id + '" fill="' + fill + '"/></g></g>';
+}
+function gta6Bush(x, flip) {
+  var m = flip ? -1 : 1;
+  return '<g fill="#767bbd" transform="translate(' + x + ' 0) scale(' + m + ' 1)">' +
+    '<use href="#gta6PalmA" transform="translate(-60 1235) scale(0.62 0.5)"/>' +
+    '<use href="#gta6PalmA" transform="translate(60 1215) scale(-0.5 0.46)"/>' +
+    '<use href="#gta6PalmA" transform="translate(-40 1290) scale(0.75 0.62)" fill="#8186c6"/>' +
+    '<ellipse cx="-20" cy="1018" rx="150" ry="52"/></g>';
+}
+function gta6Far(x0, x1, base, minH, maxH, minW, maxW, seed, fill) {
+  var r = gta6Rnd(seed), x = x0, d = "";
+  while (x < x1) {
+    var w = Math.round(minW + r() * (maxW - minW)), h = Math.round(minH + r() * (maxH - minH));
+    if (r() < 0.12) h = Math.round(h * 1.7);
+    d += "M" + x + " " + base + "v-" + h + "h" + w + "v" + h + "z";
+    x += w + (r() < 0.25 ? Math.round(r() * 14) : 0);
+  }
+  return '<path d="' + d + '" fill="' + fill + '"/>';
+}
+function gta6Towers(list, base, seed, inner) {
+  var r = gta6Rnd(seed), body = ["", ""], win = ["", "", ""], blink = "", neon = ["", ""], roof = "", mast = "", lit = 0, i;
+  for (i = 0; i < list.length; i++) {
+    var b = list[i], x = b[0], w = b[1], top = base - b[2], k = i % 2;
+    body[k] += "M" + x + " " + base + "V" + top + "h" + w + "V" + base + "z";
+    if (b[3] === 1) body[k] += "M" + (x + Math.round(w * 0.2)) + " " + top + "v-22h" + Math.round(w * 0.6) + "v22z";
+    if (b[3] === 2) mast += "M" + (x + Math.round(w / 2) - 1) + " " + top + "v-" + Math.round(b[2] * 0.16) + "h2v" + Math.round(b[2] * 0.16) + "z";
+    var ex = inner > 0 ? x + w - 2 : x;
+    neon[k] += "M" + ex + " " + (top + 4) + "h2V" + base + "h-2z";
+    if (r() < 0.6) roof += "M" + x + " " + (top - 1) + "h" + w + "v2h-" + w + "z";
+    for (var wy = top + 10; wy < base - 8; wy += 13) {
+      for (var wx = x + 6; wx < x + w - 6; wx += 9) {
+        if (r() < 0.17) {
+          var q = r(), c = q < 0.62 ? 0 : (q < 0.86 ? 1 : 2), sq = "M" + wx + " " + wy + "h3v5h-3z";
+          lit++;
+          if (lit % 11 === 0) blink += sq; else win[c] += sq;
+        }
+      }
+    }
+  }
+  return '<path d="' + body[0] + '" fill="#1f0a34"/><path d="' + body[1] + '" fill="#2e0e43"/>' +
+    '<path d="' + mast + '" fill="#2e0e43"/>' +
+    '<path d="' + neon[0] + '" fill="#ed9663" opacity="0.7"/><path d="' + neon[1] + '" fill="#e24c86" opacity="0.75"/>' +
+    '<path d="' + roof + '" fill="#4bd1d9" opacity="0.7"/>' +
+    '<path d="' + win[0] + '" fill="#f4d1c8" opacity="0.8"/><path d="' + win[1] + '" fill="#e14d86"/><path d="' + win[2] + '" fill="#6ecde2"/>' +
+    '<path class="gta6Blink" d="' + blink + '" fill="#f4d1c8"/>';
+}
+function gta6Hotels(list, base, seed, shadeLeft) {
+  var r = gta6Rnd(seed), d = ["", ""], sh = "", rows = "", i;
+  for (i = 0; i < list.length; i++) {
+    var b = list[i], x = b[0], w = b[1], top = base - b[2], sw = Math.round(w * 0.3);
+    d[i % 2] += "M" + x + " " + base + "V" + top + "h" + w + "V" + base + "z";
+    if (b[3] === 1) d[i % 2] += "M" + (x + 6) + " " + top + "q" + (w / 2 - 6) + " -" + Math.round(w * 0.45) + " " + (w - 12) + " 0zM" + (x + w / 2 - 1) + " " + (top - Math.round(w * 0.45)) + "v-30h2v30z";
+    sh += "M" + (shadeLeft ? x : x + w - sw) + " " + base + "V" + top + "h" + sw + "V" + base + "z";
+    for (var y = top + 12; y < base - 6; y += 12 + Math.round(r() * 2)) rows += "M" + (x + 5) + " " + y + "h" + (w - 10) + "v2h-" + (w - 10) + "z";
+  }
+  return '<path d="' + d[0] + '" fill="#fab9a5"/><path d="' + d[1] + '" fill="#f3ba9d"/>' +
+    '<path d="' + sh + '" fill="#c79ab8" opacity="0.45"/><path d="' + rows + '" fill="#fff0e6" opacity="0.55"/>';
+}
+function gta6Stars(n, seed, fill) {
+  var r = gta6Rnd(seed), out = ["", "", "", ""], i;
+  for (i = 0; i < n; i++) {
+    out[i % 4] += '<circle cx="' + Math.round(-500 + r() * 2600) + '" cy="' + Math.round(14 + r() * 470) + '" r="' + (0.7 + Math.round(r() * 8) / 10) + '"/>';
+  }
+  return '<g fill="' + fill + '" opacity="0.75">' + out[0] + '<g class="gta6Tw">' + out[1] + '</g><g class="gta6Tw b">' + out[2] + '</g><g class="gta6Tw c">' + out[3] + '</g></g>';
+}
+function gta6Logo(x, y, s, halo) {
+  return '<g transform="translate(' + x + " " + y + ") scale(" + s + ')">' + (halo || "") +
+    '<use href="#gta6VI" fill="none" stroke="#1e0031" stroke-width="17" stroke-linejoin="round"/>' +
+    '<use href="#gta6VI" fill="none" stroke="#4c266c" stroke-width="12" stroke-linejoin="round"/>' +
+    '<use href="#gta6VI" fill="none" stroke="#fdfcfd" stroke-width="5" stroke-linejoin="round"/>' +
+    '<use href="#gta6VI" fill="url(#gta6LogoG)"/>' +
+    '<g clip-path="url(#gta6VIClip)" opacity="0.3"><use href="#gta6PalmA" fill="#38035b" transform="translate(18 100) scale(0.16)"/><use href="#gta6PalmA" fill="#38035b" transform="translate(104 108) scale(-0.15 0.15)"/></g>' +
+    '</g>';
+}
+var GTA6_LOGO_DEFS =
+  '<path id="gta6VI" d="M0 0H26L38 40L50 0H76L50 72H26ZM84 0H108V72H84Z"/>' +
+  '<clipPath id="gta6VIClip"><use href="#gta6VI"/></clipPath>' +
+  '<linearGradient id="gta6LogoG" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0" stop-color="#545dc9"/><stop offset="0.09" stop-color="#6b55c6"/><stop offset="0.18" stop-color="#8745bf"/><stop offset="0.27" stop-color="#ae3bbd"/>' +
+    '<stop offset="0.36" stop-color="#c642aa"/><stop offset="0.45" stop-color="#db5598"/><stop offset="0.54" stop-color="#ef6b90"/><stop offset="0.63" stop-color="#fa7785"/>' +
+    '<stop offset="0.72" stop-color="#fe8073"/><stop offset="0.81" stop-color="#ff8c5f"/><stop offset="0.9" stop-color="#ff9b53"/><stop offset="1" stop-color="#ffb352"/>' +
+  '</linearGradient>';
+var GTA6_SWAY_CSS =
+  '.gta6Sw{transform-origin:0px 0px;animation:gta6Sway 9s ease-in-out infinite alternate}' +
+  '.gta6Sw.b{animation-duration:12s;animation-direction:alternate-reverse}' +
+  '.gta6Sw.c{animation-duration:10.5s;animation-delay:-4s}' +
+  '@keyframes gta6Sway{from{transform:rotate(-1.4deg)}to{transform:rotate(1.4deg)}}';
+
 function gtaVILightSvg() {
+  var base = 846;
   return openSvg(
-    '.palm{transform-origin:142px 1000px;animation:gta6Palm 8.5s ease-in-out infinite alternate}' +
-    '.palm.b{transform-origin:1458px 1000px;animation-duration:11s;animation-direction:alternate-reverse}' +
-    '.wave{animation:gta6Wave 14s ease-in-out infinite alternate}' +
-    '.blimp{animation:gta6Blimp 60s linear infinite alternate}' +
-    '.neon{animation:gta6NeonL 4.2s ease-in-out infinite alternate}' +
-    '@keyframes gta6Palm{from{transform:rotate(-3deg)}to{transform:rotate(3deg)}}' +
-    '@keyframes gta6Wave{from{transform:translateX(-30px)}to{transform:translateX(30px)}}' +
-    '@keyframes gta6Blimp{from{transform:translateX(-60px)}to{transform:translateX(60px)}}' +
-    '@keyframes gta6NeonL{from{opacity:0.34}to{opacity:0.48}}',
-    '<linearGradient id="gta6SkyL" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0" stop-color="#fdebf4"/><stop offset="0.5" stop-color="#f9d5e8"/><stop offset="0.82" stop-color="#fce0c8"/><stop offset="1" stop-color="#ccf2f7"/>' +
+    GTA6_SWAY_CSS +
+    '.gta6Plane{animation:gta6Fly 80s linear infinite}' +
+    '.gta6Glint{transform-origin:800px 900px;animation:gta6Glint 7s ease-in-out infinite alternate}' +
+    '@keyframes gta6Fly{0%{transform:translateX(-160px);opacity:0}8%{opacity:0.7}88%{opacity:0.7}100%{transform:translateX(520px);opacity:0}}' +
+    '@keyframes gta6Glint{from{opacity:0.45;transform:scaleX(0.92)}to{opacity:0.8;transform:scaleX(1.06)}}',
+    '<linearGradient id="gta6SkyL" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="' + base + '">' +
+      '<stop offset="0" stop-color="#e9def0"/><stop offset="0.35" stop-color="#f1e0ed"/><stop offset="0.62" stop-color="#f9e2e9"/>' +
+      '<stop offset="0.82" stop-color="#fde3df"/><stop offset="1" stop-color="#feddc8"/>' +
     '</linearGradient>' +
-    '<linearGradient id="gta6SunL" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0" stop-color="#ffbc24" stop-opacity="0.34"/><stop offset="0.55" stop-color="#ff4cb9" stop-opacity="0.24"/><stop offset="1" stop-color="#2fd8ff" stop-opacity="0.10"/>' +
+    '<linearGradient id="gta6LagoonL" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#f6d6dc"/><stop offset="0.4" stop-color="#f1d3de"/><stop offset="1" stop-color="#f7dcd3"/>' +
     '</linearGradient>' +
+    radGrad("gta6GlowL", "#fc8f92", 0.42) +
+    '<linearGradient id="gta6DiscL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff5ea"/><stop offset="1" stop-color="#ffd6bd"/></linearGradient>' +
+    radGrad("gta6CoreL", "#ffcaa2", 0.9) +
+    '<clipPath id="gta6AboveL"><rect x="-800" y="0" width="3200" height="' + base + '"/></clipPath>' +
+    '<clipPath id="gta6BelowL"><rect x="-800" y="' + base + '" width="3200" height="200"/></clipPath>' +
+    gta6PalmDef("gta6PalmA", 520, 70, 7) +
+    GTA6_LOGO_DEFS +
     CALM_LIGHT
   ) +
   '<rect x="-800" width="3200" height="1000" fill="url(#gta6SkyL)"/>' +
-  '<rect x="-800" y="905" width="3200" height="100" fill="#baeef5" opacity="0.52"/>' +
-  '<g class="cdb-flank-lt">' +
-    '<g transform="translate(190 140)"><g class="blimp" fill="#9d3478" opacity="0.24">' +
-      '<ellipse cx="0" cy="0" rx="46" ry="16"/><polygon points="-42,0 -56,-10 -56,10"/><rect x="-12" y="15" width="20" height="5"/>' +
-    '</g></g>' +
-  '</g>' +
-  '<g class="cdb-flank-rt">' +
-    '<circle cx="1450" cy="145" r="130" fill="url(#gta6SunL)"/>' +
-    '<g transform="translate(1410 62)"><g class="neon" opacity="0.42">' +
-      '<circle cx="60" cy="60" r="52" fill="url(#gta6SunL)"/>' +
-      '<path d="M16 24 L46 94 L76 24 H60 L46 64 L32 24 Z" fill="#f9eaf2" stroke="#0891b2" stroke-width="2.5"/>' +
-      '<rect x="82" y="24" width="18" height="70" fill="#f9eaf2" stroke="#d97706" stroke-width="2.5"/>' +
-    '</g></g>' +
-  '</g>' +
+  '<g clip-path="url(#gta6AboveL)"><g class="cdb-pane-c">' +
+    '<circle cx="800" cy="720" r="330" fill="url(#gta6GlowL)"/>' +
+    '<circle cx="800" cy="720" r="120" fill="url(#gta6CoreL)" opacity="0.7"/>' +
+    '<circle cx="800" cy="720" r="62" fill="url(#gta6DiscL)" opacity="0.94"/>' +
+  '</g></g>' +
+  gta6Far(-800, 2400, base, 8, 34, 22, 64, 41, "#eecbd3") +
+  '<rect x="-800" y="' + base + '" width="3200" height="160" fill="url(#gta6LagoonL)"/>' +
+  '<path d="M-800 ' + (base + 18) + 'h3200v2h-3200zM-800 ' + (base + 52) + 'h3200v2h-3200zM-800 ' + (base + 98) + 'h3200v3h-3200z" fill="#fff4ee" opacity="0.6"/>' +
+  '<g clip-path="url(#gta6BelowL)"><g class="cdb-pane-c"><g class="gta6Glint">' +
+    '<path d="M700 854h200v4h-200zM722 868h156v4h-156zM744 884h112v3h-112zM768 900h64v3h-64z" fill="#ffcaa2"/>' +
+  '</g></g></g>' +
+  '<g class="cdb-flank-lt"><g class="gta6Plane"><path transform="translate(386 0) scale(-1 1)" d="M160 150l30 -2l6 -12h5l-2 13l16 -1l5 -6h4l-2 8l2 8h-4l-5 -6l-16 -1l2 13h-5l-6 -12l-30 -2z" fill="#a17caa"/></g></g>' +
+  '<g class="cdb-flank-rt">' + gta6Logo(1446, 42, 0.86, '<rect x="-26" y="-18" width="160" height="108" rx="44" fill="#fff6f0" opacity="0.35"/>') + '</g>' +
   '<g class="cdb-flank-l">' +
-    '<g opacity="0.46">' +
-      '<rect x="18" y="470" width="110" height="550" fill="#f4b8d4"/><rect x="34" y="440" width="78" height="30" fill="#2fd8ff"/>' +
-      '<rect x="28" y="490" width="8" height="420" fill="#d91b7a"/><rect x="112" y="490" width="8" height="420" fill="#06b6d4"/>' +
-      '<rect x="28" y="424" width="88" height="22" rx="4" fill="#9d174d"/>' +
-      pxStr("OCEAN", 42, 430, 2, "#fff1f2", "#4c0519") +
-      '<g transform="translate(56 515)">' +
-        '<path d="M18 0 C6 0 2 14 14 22 C24 28 24 44 10 46 H26 C32 46 34 36 28 30 C18 22 14 12 22 8" fill="none" stroke="#db2777" stroke-width="3.5" stroke-linecap="round"/>' +
-        '<line x1="18" y1="46" x2="18" y2="66" stroke="#db2777" stroke-width="2.5"/>' +
-      '</g>' +
-    '</g>' +
-    '<g class="palm" fill="#8a3d7c" opacity="0.28">' +
-      '<path d="M135 1020 Q145 710 165 460 L175 460 Q158 710 150 1020 Z"/>' +
-      '<path d="M170 460 Q95 425 58 470 Q112 455 170 468 Z"/>' +
-      '<path d="M170 460 Q105 385 72 405 Q122 418 170 460 Z"/>' +
-      '<path d="M170 460 Q235 385 272 410 Q220 418 170 460 Z"/>' +
-      '<path d="M170 460 Q245 430 280 475 Q225 455 170 468 Z"/>' +
-    '</g>' +
-    '<g class="wave" opacity="0.38">' +
-      '<rect x="40" y="925" width="260" height="5" rx="2.5" fill="#d91b7a"/>' +
-      '<rect x="80" y="945" width="220" height="5" rx="2.5" fill="#06b6d4"/>' +
-    '</g>' +
+    '<g clip-path="url(#gta6AboveL)">' + gta6Hotels([[400, 64, 150, 0], [180, 120, 340, 0], [300, 92, 250, 1], [470, 54, 96, 0]], base, 5, true) + '</g>' +
+    '<path d="M44 1000V250h6V1000z" fill="#b48cb4" opacity="0.6"/><path d="M26 262h42v4h-42z" fill="#b48cb4" opacity="0.6"/>' +
+    '<path d="M30 264Q300 350 700 300M66 264Q340 380 760 342M30 264Q240 420 520 470" fill="none" stroke="#a681ad" stroke-width="1.4" opacity="0.45"/>' +
+    gta6Palm("gta6PalmA", 470, 0.36, false, "gta6Sw c", "#cd81a7") +
+    gta6Palm("gta6PalmA", 540, 0.3, true, "gta6Sw", "#cd81a7") +
+    gta6Palm("gta6PalmA", 300, 0.68, true, "gta6Sw b", "#9c5d92") +
+    gta6Palm("gta6PalmA", 110, 1.02, false, "gta6Sw", "#9f6ea6") +
+    gta6Bush(70, 0) +
   '</g>' +
   '<g class="cdb-flank-r">' +
-    '<g opacity="0.34">' +
-      '<rect x="1472" y="460" width="110" height="560" fill="#b8ecf4"/><rect x="1488" y="430" width="78" height="30" fill="#ff4cb9"/>' +
-      '<rect x="1482" y="480" width="8" height="430" fill="#d91b7a"/><rect x="1566" y="480" width="8" height="430" fill="#06b6d4"/>' +
-    '</g>' +
-    '<g class="palm b" fill="#8a3d7c" opacity="0.28">' +
-      '<path d="M1465 1020 Q1455 710 1435 460 L1425 460 Q1442 710 1450 1020 Z"/>' +
-      '<path d="M1430 460 Q1355 425 1318 470 Q1372 455 1430 468 Z"/>' +
-      '<path d="M1430 460 Q1365 385 1332 405 Q1382 418 1430 460 Z"/>' +
-      '<path d="M1430 460 Q1495 385 1532 410 Q1480 418 1430 460 Z"/>' +
-      '<path d="M1430 460 Q1505 430 1540 475 Q1485 455 1430 468 Z"/>' +
-    '</g>' +
-    '<g class="wave" opacity="0.38">' +
-      '<rect x="1300" y="925" width="260" height="5" rx="2.5" fill="#d91b7a"/>' +
-      '<rect x="1280" y="945" width="240" height="5" rx="2.5" fill="#06b6d4"/>' +
-    '</g>' +
+    '<g clip-path="url(#gta6AboveL)">' + gta6Hotels([[1090, 60, 120, 0], [1310, 110, 300, 0], [1200, 86, 210, 1], [1430, 80, 380, 0]], base, 9, false) + '</g>' +
+    gta6Palm("gta6PalmA", 1150, 0.34, false, "gta6Sw b", "#cd81a7") +
+    gta6Palm("gta6PalmA", 1240, 0.42, true, "gta6Sw c", "#cd81a7") +
+    gta6Palm("gta6PalmA", 1320, 0.66, false, "gta6Sw c", "#9c5d92") +
+    gta6Palm("gta6PalmA", 1500, 0.98, true, "gta6Sw b", "#9f6ea6") +
+    gta6Bush(1530, 1) +
   '</g>' +
   '<rect x="-800" width="3200" height="1000" fill="url(#calmL)"/></svg>';
 }
 
 function gtaVIDarkSvg() {
+  var base = 820, stripes = "", bars = "", i;
+  var sy = [[716, 3], [740, 4], [762, 6], [782, 8], [801, 10]];
+  for (i = 0; i < sy.length; i++) stripes += "M560 " + sy[i][0] + "h480v" + sy[i][1] + "h-480z";
+  var bc = ["#fba4ba", "#e291ab", "#da7891", "#be6e99"], br = gta6Rnd(23), bk = ["", "", ""];
+  for (i = 0; i < 13; i++) {
+    var bw = Math.round(250 * (1 - i * 0.065) * (0.75 + br() * 0.3)), bx = 800 - Math.round(bw / 2) + Math.round((br() - 0.5) * 30);
+    bk[i % 3] += '<rect x="' + bx + '" y="' + (base + 6 + i * 10) + '" width="' + bw + '" height="' + (i < 5 ? 3 : 2) + '" fill="' + bc[i % 4] + '"/>';
+  }
+  bars = '<g class="gta6Shim">' + bk[0] + '</g><g class="gta6Shim b">' + bk[1] + '</g><g class="gta6Shim c">' + bk[2] + '</g>';
   return openSvg(
-    '.palm{transform-origin:142px 1000px;animation:gta6PalmD 8.5s ease-in-out infinite alternate}' +
-    '.palm.b{transform-origin:1458px 1000px;animation-duration:11s;animation-direction:alternate-reverse}' +
-    '.wave{animation:gta6WaveD 12s ease-in-out infinite alternate}' +
-    '.neon{animation:gta6NeonD 4.2s ease-in-out infinite alternate}' +
-    '@keyframes gta6PalmD{from{transform:rotate(-3deg)}to{transform:rotate(3deg)}}' +
-    '@keyframes gta6WaveD{from{transform:translateX(-36px)}to{transform:translateX(36px)}}' +
-    '@keyframes gta6NeonD{from{opacity:0.65}to{opacity:0.92}}',
-    '<linearGradient id="gta6SkyD" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0" stop-color="#0d031a"/><stop offset="0.48" stop-color="#160629"/><stop offset="0.82" stop-color="#22093a"/><stop offset="1" stop-color="#10041e"/>' +
+    GTA6_SWAY_CSS +
+    '.gta6Tw{animation:gta6Tw 5s ease-in-out infinite alternate}.gta6Tw.b{animation-duration:7s;animation-delay:-2s}.gta6Tw.c{animation-duration:9s;animation-delay:-5s}' +
+    '.gta6Blink{animation:gta6Blink 11s steps(1) infinite}' +
+    '.gta6Stripe{animation:gta6Stripe 16s ease-in-out infinite alternate}' +
+    '.gta6Shim{transform-origin:800px 880px;animation:gta6Shim 4.5s ease-in-out infinite alternate}.gta6Shim.b{animation-duration:6s;animation-delay:-2s}.gta6Shim.c{animation-duration:5.2s;animation-delay:-3.5s}' +
+    '.gta6Ripple{animation:gta6Ripple 14s ease-in-out infinite alternate}' +
+    '@keyframes gta6Tw{from{opacity:0.15}to{opacity:1}}' +
+    '@keyframes gta6Blink{0%{opacity:1}40%{opacity:0.15}55%{opacity:1}80%{opacity:0.3}}' +
+    '@keyframes gta6Stripe{from{transform:translateY(-3px)}to{transform:translateY(4px)}}' +
+    '@keyframes gta6Shim{from{opacity:0.5;transform:scaleX(0.9)}to{opacity:0.95;transform:scaleX(1.08)}}' +
+    '@keyframes gta6Ripple{from{transform:translateX(-24px)}to{transform:translateX(24px)}}',
+    '<linearGradient id="gta6SkyD" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="' + base + '">' +
+      '<stop offset="0" stop-color="#1a0530"/><stop offset="0.42" stop-color="#2d0c4c"/><stop offset="0.64" stop-color="#49105e"/>' +
+      '<stop offset="0.77" stop-color="#6e1968"/><stop offset="0.85" stop-color="#952179"/><stop offset="0.905" stop-color="#bf3478"/>' +
+      '<stop offset="0.945" stop-color="#e94776"/><stop offset="0.97" stop-color="#ed5f6c"/><stop offset="0.988" stop-color="#ec7867"/><stop offset="1" stop-color="#ec935e"/>' +
     '</linearGradient>' +
-    '<linearGradient id="gta6SunD" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0" stop-color="#ffbc24"/><stop offset="0.5" stop-color="#ff2b90"/><stop offset="1" stop-color="#2b60da"/>' +
+    '<linearGradient id="gta6WaterD" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#280b3e"/><stop offset="0.45" stop-color="#17082d"/><stop offset="1" stop-color="#09061b"/>' +
     '</linearGradient>' +
-    radGrad("gta6PinkGlow", "#ff2b90", 0.28) +
-    radGrad("gta6CyanGlow", "#2fd8ff", 0.24) +
-    radGrad("gta6GoldGlow", "#ffbc24", 0.18) +
+    '<linearGradient id="gta6HazeD" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#bf3478" stop-opacity="0.38"/><stop offset="1" stop-color="#bf3478" stop-opacity="0"/>' +
+    '</linearGradient>' +
+    '<linearGradient id="gta6SunD" gradientUnits="userSpaceOnUse" x1="0" y1="638" x2="0" y2="' + base + '">' +
+      '<stop offset="0" stop-color="#fff1d2"/><stop offset="0.22" stop-color="#fee8cb"/><stop offset="0.42" stop-color="#ffd8c7"/><stop offset="0.6" stop-color="#ffc8c6"/>' +
+      '<stop offset="0.78" stop-color="#ffbace"/><stop offset="1" stop-color="#f26294"/>' +
+    '</linearGradient>' +
+    radGrad("gta6GlowD", "#f26294", 0.48) +
+    '<mask id="gta6SunMask" maskUnits="userSpaceOnUse" x="500" y="560" width="600" height="300"><rect x="500" y="560" width="600" height="300" fill="#fff"/>' +
+      '<path class="gta6Stripe" d="' + stripes + '" fill="#000"/></mask>' +
+    '<mask id="gta6CalmMask" maskUnits="userSpaceOnUse" x="-800" y="0" width="3200" height="1000"><rect x="-800" width="3200" height="1000" fill="#fff"/><g class="cdb-pane-c"><circle cx="800" cy="852" r="214" fill="#888"/></g><rect x="-800" y="' + base + '" width="3200" height="200" fill="#fff"/></mask>' +
+    '<clipPath id="gta6AboveD"><rect x="-800" y="0" width="3200" height="' + base + '"/></clipPath>' +
+    '<clipPath id="gta6BelowD"><rect x="-800" y="' + base + '" width="3200" height="200"/></clipPath>' +
+    gta6PalmDef("gta6PalmA", 520, 70, 7) +
+    GTA6_LOGO_DEFS +
     CALM_DARK
   ) +
-  '<rect x="-800" width="3200" height="1000" fill="url(#gta6SkyD)"/>' +
-  '<rect x="-800" y="900" width="3200" height="110" fill="#090214"/>' +
-  '<g class="cdb-flank-rt">' +
-    '<circle cx="1450" cy="140" r="170" fill="url(#gta6GoldGlow)"/>' +
-    '<g transform="translate(1410 62)"><g class="neon" opacity="0.68">' +
-      '<circle cx="60" cy="60" r="52" fill="url(#gta6SunD)" opacity="0.68"/>' +
-      '<path d="M16 24 L46 94 L76 24 H60 L46 64 L32 24 Z" fill="#160526" stroke="#2fd8ff" stroke-width="2.5"/>' +
-      '<rect x="82" y="24" width="18" height="70" fill="#160526" stroke="#ffbc24" stroke-width="2.5"/>' +
-    '</g></g>' +
-  '</g>' +
+  '<rect x="-800" width="3200" height="' + base + '" fill="url(#gta6SkyD)"/>' +
+  gta6Stars(56, 3, "#fde8f0") +
+  '<g clip-path="url(#gta6AboveD)"><g class="cdb-pane-c">' +
+    '<circle cx="800" cy="790" r="440" fill="url(#gta6GlowD)"/>' +
+    '<circle cx="800" cy="852" r="214" fill="url(#gta6SunD)" mask="url(#gta6SunMask)"/>' +
+  '</g></g>' +
+  gta6Far(-800, 2400, base, 10, 34, 18, 52, 11, "#3d1051") +
+  gta6Far(-780, 2400, base, 6, 22, 30, 80, 29, "#2e0e43") +
+  '<rect x="-800" y="' + base + '" width="3200" height="180" fill="url(#gta6WaterD)"/>' +
+  '<rect x="-800" y="' + base + '" width="3200" height="46" fill="url(#gta6HazeD)"/>' +
+  '<g class="gta6Ripple" opacity="0.5"><path d="M-800 846h3200v1h-3200zM-760 872h3200v1h-3200zM-820 905h3200v2h-3200zM-780 948h3200v2h-3200z" fill="#6e1968"/></g>' +
+  '<g clip-path="url(#gta6BelowD)"><g class="cdb-pane-c">' + bars + '</g></g>' +
+  '<g class="cdb-flank-rt">' + gta6Logo(1446, 42, 0.86) + '</g>' +
   '<g class="cdb-flank-l">' +
-    '<circle cx="190" cy="680" r="240" fill="url(#gta6PinkGlow)"/>' +
-    '<g fill="#120520">' +
-      '<rect x="14" y="460" width="118" height="560"/><rect x="30" y="428" width="86" height="32"/>' +
-    '</g>' +
-    '<g class="neon">' +
-      '<rect x="26" y="440" width="5" height="450" rx="2.5" fill="#ff2b90"/>' +
-      '<rect x="114" y="440" width="5" height="450" rx="2.5" fill="#2fd8ff"/>' +
-      '<rect x="38" y="434" width="70" height="4" rx="2" fill="#ffbc24"/>' +
-      pxStr("OCEAN", 42, 412, 2, "#ff7ac8", "#2d0728") +
-      '<g transform="translate(56 510)">' +
-        '<path d="M18 0 C6 0 2 14 14 22 C24 28 24 44 10 46 H26 C32 46 34 36 28 30 C18 22 14 12 22 8" fill="none" stroke="#ff2b90" stroke-width="3.5" stroke-linecap="round"/>' +
-        '<line x1="18" y1="46" x2="18" y2="66" stroke="#ff2b90" stroke-width="2.5"/>' +
-      '</g>' +
-    '</g>' +
-    '<g class="palm" fill="#1a072e" stroke="#ff2b90" stroke-opacity="0.42" stroke-width="1.5" stroke-linejoin="round">' +
-      '<path d="M135 1020 Q145 710 165 450 L176 450 Q158 710 150 1020 Z"/>' +
-      '<path d="M170 450 Q90 415 50 465 Q110 445 170 460 Z"/>' +
-      '<path d="M170 450 Q100 370 64 395 Q118 408 170 450 Z"/>' +
-      '<path d="M170 450 Q240 370 278 398 Q224 408 170 450 Z"/>' +
-      '<path d="M170 450 Q250 420 288 468 Q228 445 170 460 Z"/>' +
-    '</g>' +
-    '<g class="wave" opacity="0.82">' +
-      '<rect x="30" y="918" width="250" height="5" rx="2.5" fill="#ff2b90"/>' +
-      '<rect x="65" y="936" width="210" height="5" rx="2.5" fill="#2fd8ff"/>' +
-      '<rect x="45" y="954" width="180" height="4" rx="2" fill="#ffbc24"/>' +
-    '</g>' +
+    '<g clip-path="url(#gta6AboveD)">' + gta6Towers([[470, 58, 70, 0], [404, 70, 112, 2], [330, 78, 160, 0], [262, 72, 214, 1], [176, 92, 270, 0], [92, 88, 340, 2], [0, 96, 410, 1]], base, 13, 1) + '</g>' +
+    gta6Palm("gta6PalmA", 430, 0.5, true, "gta6Sw c", "#170726") +
+    gta6Palm("gta6PalmA", 250, 0.72, true, "gta6Sw b", "#130522") +
+    gta6Palm("gta6PalmA", 80, 1.02, false, "gta6Sw", "#0e031a") +
   '</g>' +
   '<g class="cdb-flank-r">' +
-    '<circle cx="1410" cy="680" r="240" fill="url(#gta6CyanGlow)"/>' +
-    '<g fill="#120520">' +
-      '<rect x="1468" y="450" width="118" height="570"/><rect x="1484" y="418" width="86" height="32"/>' +
-    '</g>' +
-    '<g class="neon">' +
-      '<rect x="1480" y="430" width="5" height="460" rx="2.5" fill="#2fd8ff"/>' +
-      '<rect x="1568" y="430" width="5" height="460" rx="2.5" fill="#ff2b90"/>' +
-      '<rect x="1492" y="424" width="70" height="4" rx="2" fill="#ff4cb9"/>' +
-    '</g>' +
-    '<g class="palm b" fill="#1a072e" stroke="#2fd8ff" stroke-opacity="0.42" stroke-width="1.5" stroke-linejoin="round">' +
-      '<path d="M1465 1020 Q1455 710 1435 450 L1424 450 Q1442 710 1450 1020 Z"/>' +
-      '<path d="M1430 450 Q1350 415 1312 465 Q1370 445 1430 460 Z"/>' +
-      '<path d="M1430 450 Q1360 370 1324 395 Q1378 408 1430 450 Z"/>' +
-      '<path d="M1430 450 Q1500 370 1538 398 Q1484 408 1430 450 Z"/>' +
-      '<path d="M1430 450 Q1510 420 1548 468 Q1488 445 1430 460 Z"/>' +
-    '</g>' +
-    '<g class="wave" opacity="0.82">' +
-      '<rect x="1310" y="918" width="250" height="5" rx="2.5" fill="#2fd8ff"/>' +
-      '<rect x="1285" y="936" width="220" height="5" rx="2.5" fill="#ff2b90"/>' +
-      '<rect x="1340" y="954" width="190" height="4" rx="2" fill="#ffbc24"/>' +
-    '</g>' +
+    '<g clip-path="url(#gta6AboveD)">' + gta6Towers([[1074, 56, 64, 0], [1126, 74, 104, 1], [1196, 80, 150, 2], [1272, 70, 206, 0], [1338, 96, 262, 1], [1430, 82, 330, 2], [1508, 92, 420, 0]], base, 31, -1) + '</g>' +
+    gta6Palm("gta6PalmA", 1180, 0.48, false, "gta6Sw b", "#170726") +
+    gta6Palm("gta6PalmA", 1360, 0.7, false, "gta6Sw c", "#130522") +
+    gta6Palm("gta6PalmA", 1525, 0.98, true, "gta6Sw", "#0e031a") +
   '</g>' +
-  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)"/></svg>';
+  '<rect x="-800" width="3200" height="1000" fill="url(#calmD)" mask="url(#gta6CalmMask)"/></svg>';
 }
 
 var GAMING_SCENES = [
@@ -2836,10 +2940,10 @@ var GAMING_SCENES = [
   {
     id: "gta-vi",
     title: "Vice City Sunset",
-    blurb: "Leonida synthwave twilight, glowing neon Art Deco hotel tubes, swaying Florida palms, and Vice Bay reflections.",
+    blurb: "A striped Vice City sunset sinks behind a neon skyline and drooping palms by night, and lilac palms frame a pastel Leonida golden hour by day.",
     window: "both",
     category: "gaming",
-    glass: { blur: 16, tint: "#160526", lightTint: "#f9eaf2", opacity: 0.58 },
+    glass: { blur: 16, tint: "#1d032f", lightTint: "#fdeee6", opacity: 0.58 },
     lightScene: gtaVILightSvg,
     darkScene: gtaVIDarkSvg
   }

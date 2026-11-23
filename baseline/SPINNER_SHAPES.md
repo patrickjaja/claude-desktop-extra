@@ -210,7 +210,7 @@ Defined in `js/gaming_themes.json` next to their palettes; each carries
 | `gta-iii` | Liberty City radar pill & `III` bars (sweeping arc) | 2 | multi-color | `flip` |
 | `gta-iv` | Rockstar NYC `R*` gold badge (shimmering star) | 2 | multi-color | `flip` |
 | `gta-v` | Vinewood banknote `V` crest (3-character ribbon shimmer) | 2 | multi-color | `flip` |
-| `gta-vi` | Vice City synthwave `VI` neon crest (palm gleam) | 2 | multi-color | `flip` |
+| `gta-vi` | block `VI` logo: violet rim, cream keyline, 6-band sunset gradient (`#545dc9` to `#ffa352`), diagonal sticker gleam in frame 2 | 2 | multi-color | `flip` |
 
 Every `flip` outer rim clears >= 2.6:1 contrast against both its light and dark `--bg-100`
 surface so dark-mode sidebars/headers never lose the glyph contour. Every multi-path pair

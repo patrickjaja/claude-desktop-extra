@@ -286,7 +286,7 @@ Thirteen palettes drawn from classic and modern games, each with a custom spinne
 
 ### GTA VI
 
-`"activeTheme": "gta-vi"` - Leonida rose sky (light) / Vice synthwave sunset (dark), neon VI `flip` spinner.
+`"activeTheme": "gta-vi"` - Leonida golden-hour peach and blush (light) / Vice City plum night with a coral-pink and indigo sunset gradient (dark), sunset-gradient VI block logo `flip` spinner with a sticker gleam.
 
 ![GTA VI palette](palettes/gta-vi.svg)
 

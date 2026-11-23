@@ -153,7 +153,7 @@ Two curated theme collections merge into the built-ins at startup (same resoluti
 | `gta-iii` | rain-washed concrete, teal HUD accent | midnight Liberty rain, classic teal-crimson | Liberty radar pill (`flip`) |
 | `gta-iv` | overcast Broker steel, warm amber | HD noir charcoal, Rockstar gold bevel | Rockstar NYC gold badge (`flip`) |
 | `gta-v` | Los Santos warm daylight, emerald banknote | twilight harbor, banknote green & sky | Vinewood banknote V crest (`flip`) |
-| `gta-vi` | Leonida pastel sky, magenta accent | Vice sunset synthwave, pink & cyan neon | Vice City VI neon emblem (`flip`) |
+| `gta-vi` | Leonida golden-hour peach and blush, magenta accent | Vice City plum night, coral-pink and indigo sunset gradient | sunset-gradient VI block logo with sticker gleam (`flip`) |
 
 Multi-color spinners (`playstation`, `dragonball`, `warcraft`, `gta-i..vi`, `cachyos`, `nixos`, `pop-os`, `endeavouros`, and `linux-from-scratch`) keep characteristic palette fills checked against both variants' surfaces; single-color logos follow the theme accent.
 

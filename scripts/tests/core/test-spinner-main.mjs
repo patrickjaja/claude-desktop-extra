@@ -361,7 +361,7 @@ await runSuite(async () => {
     ["gta-iii", ["#60a5fa", "#5ec4b6"]],
     ["gta-iv", ["#f59e0b", "gta4Gold"]],
     ["gta-v", ["#c084fc", "#4ec962"]],
-    ["gta-vi", ["#ff2b90", "gta6"]],
+    ["gta-vi", ["gta6SunMask", "gta6PalmA", "gta6LogoG", "#fee8cb", "#9f6ea6"]],
     ["mario", ["qface", "starman", "piranha"]],
     ["playstation", ["psTower", "psOrbs"]],
     ["gameboy", ["lineClr", "tet"]],
