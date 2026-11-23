@@ -8,6 +8,10 @@ All notable changes to the claude-desktop-extra packages will be documented in t
 
 - Added **Send queued message now** (`sendNow`, CLI slug `send-now`) to **Settings → Extra → Custom Shortcuts** (`js/custom_shortcuts_main.js`, `js/custom_shortcuts_page.js`, `scripts/claude-desktop-launcher.sh`, [guide](docs/custom-shortcuts.md)). Upstream disables the `Send now` keyboard chord in Code and Chat sessions; binding a key (e.g. `Alt+Enter`) or running `claude-desktop --trigger-shortcut send-now` clicks the newest visible enabled `Send now` / `Send N now` button (`button[data-testid="awaiting-turn-send-now"]`, with fiber and label fallbacks) without stealing focus from the composer.
 
+### Custom Shortcuts: Read aloud latest reply works in Code-tab sessions (#359)
+
+- The **Read aloud latest reply** shortcut now works in Code-tab sessions, not only in Chat. There the newest reply's action bar sits below the transcript, after any card (an Auto-fix offer, an approval or a question card), and has its own Read Aloud button; the shortcut finds that button, ties it to the newest reply, and a second press pauses it. Chat behaviour is unchanged ([guide](docs/custom-shortcuts.md)).
+
 ### Settings modal search includes Extra pages and items
 
 - Upstream's Settings search box (`SettingsNavSearch`) now also indexes and displays matching **Extra** sections and items — Themes, Community Features, Cowork (Linux), Custom Models (providers and models), Custom Shortcuts, Anthropic Features, and Deployment keys — jumping directly to and highlighting the selected row (`js/extra_settings_page.js`, `js/extra_settings_page.css`).

@@ -12,13 +12,19 @@
  *   isRecordingShortcut()        -> boolean
  *   state()                      -> diagnostic snapshot
  *
- * Anchors (derived from ion-dist 5.11492.5, inventoried in
- * baseline/CUSTOM_SHORTCUTS_ANCHORS.md):
+ * Anchors (derived from ion-dist 5.11492.5, Code tab Read Aloud from 6.28899.6;
+ * inventoried in baseline/CUSTOM_SHORTCUTS_ANCHORS.md):
  *   - Read Aloud:
- *       [data-testid="assistant-message"][data-is-streaming]
- *       [data-testid="action-bar-read-aloud"][data-state]
+ *       [data-testid="assistant-message"][data-is-streaming][data-turn-key]
+ *       [data-testid="action-bar-read-aloud"][data-state]          (Chat)
+ *       [data-testid="epitaxy-read-aloud"] + fiber { playing, label } (Code tab)
  *       [data-testid="message-actions"][data-deferred],
  *       [data-cds="MessageActions"][data-deferred]
+ *       Code tab: the newest turn's actions are portaled into
+ *       [data-testid="transcript-tail-actions"][data-transcript-last-row-controls]
+ *       inside [data-transcript-tail-turn]; owned when the reply's
+ *       data-turn-key equals the fiber turn.key or messageUuid (the entry
+ *       id) found in it. Streaming is judged per data-turn-key.
  *   - Voice Mode:
  *       button[aria-label="Use voice mode"]
  *       React fiber props: qR ({ state, onStart, onEnd, onCancel, onToggleMute }),
@@ -46,10 +52,18 @@
 
   var SETTINGS_DIALOG_SEL = '[role="dialog"]';
   var ASSISTANT_MSG_SEL = '[data-testid="assistant-message"]';
-  var READ_ALOUD_SEL = '[data-testid="action-bar-read-aloud"]';
+  // Chat: action-bar-read-aloud (data-state). Code tab: epitaxy-read-aloud
+  // (no data-state; label Read aloud / Pause / Resume, fiber prop "playing").
+  var READ_ALOUD_SEL = '[data-testid="action-bar-read-aloud"], [data-testid="epitaxy-read-aloud"]';
   var DEFERRED_ACTIONS_SEL =
     '[data-testid="message-actions"][data-deferred], [data-cds="MessageActions"][data-deferred]';
   var ACTIONS_BOX_SEL = '[data-testid="message-actions"], [data-cds="MessageActions"]';
+  // Code tab: upstream portals the NEWEST turn's message actions out of its
+  // assistant-message into this outlet below the transcript rows, after any
+  // turn box / approval / question card of the transcript tail.
+  var TAIL_ACTIONS_SEL = '[data-testid="transcript-tail-actions"], [data-transcript-last-row-controls]';
+  var TAIL_TURN_SEL = "[data-transcript-tail-turn]";
+  var TRANSCRIPT_ROOT_SEL = '[data-testid="epitaxy-virtual-transcript"], [role="feed"]';
   var VOICE_BTN_SEL = 'button[aria-label="Use voice mode"]';
   var SEND_NOW_SEL = 'button[data-testid="awaiting-turn-send-now"]';
   var RECORDING_INPUT_SEL = "[data-keyboard-shortcut-input]";
@@ -173,6 +187,96 @@
     return null;
   }
 
+  // Ownership keys a (possibly portaled) control carries on its fiber chain.
+  // The turn renderer passes turn.key (= the assistant-message's
+  // data-turn-key). The Code tab Read Aloud wrapper passes messageUuid, which
+  // is the turn's entry id (annotations entryId, 6.28899.6); it equalled the
+  // turn key in the live sample, but ownership accepts either.
+  function fiberTurnKeyOf(node) {
+    var p = findFiberAncestorProps(node, function (q) {
+      return !!q.turn && typeof q.turn === "object" && typeof q.turn.key === "string";
+    });
+    return p ? p.turn.key : null;
+  }
+
+  function fiberMessageUuidOf(node) {
+    var p = findFiberAncestorProps(node, function (q) { return typeof q.messageUuid === "string"; });
+    return p ? p.messageUuid : null;
+  }
+
+  // Tail outlets that hold msgEl's own actions. Ownership is positive: when
+  // the outlet's fiber chains yield a turn.key and/or messageUuid, msgEl's
+  // data-turn-key must equal one of them (a missing data-turn-key refuses).
+  // Only when no fiber data exists at all does upstream's placement rule
+  // apply: just the newest turn is portaled there, so msgEl must be the last
+  // assistant-message of its transcript.
+  function ownedTailOutlets(msgEl) {
+    var out = [];
+    if (!msgEl) return out;
+    try {
+      var root = msgEl.closest(TRANSCRIPT_ROOT_SEL) || document;
+      var tails = root.querySelectorAll(TAIL_ACTIONS_SEL);
+      if (!tails.length) return out;
+      var all = root.querySelectorAll(ASSISTANT_MSG_SEL);
+      var isNewest = all.length > 0 && all[all.length - 1] === msgEl;
+      var key = msgEl.getAttribute("data-turn-key") || "";
+      for (var i = 0; i < tails.length; i++) {
+        var probes = tails[i].querySelectorAll("button, [data-deferred]");
+        if (!probes.length) continue;
+        var turnKey = null, entryId = null;
+        for (var j = 0; j < probes.length && (turnKey === null || entryId === null); j++) {
+          if (turnKey === null) turnKey = fiberTurnKeyOf(probes[j]);
+          if (entryId === null) entryId = fiberMessageUuidOf(probes[j]);
+        }
+        if (turnKey !== null || entryId !== null) {
+          if (key && (key === turnKey || key === entryId)) out.push(tails[i]);
+          continue;
+        }
+        if (isNewest) out.push(tails[i]);
+      }
+    } catch (e) {}
+    return out;
+  }
+
+  // Streaming is per turn, not per row: with item granularity upstream renders
+  // one assistant-message per item, all with the turn's data-turn-key, but only
+  // the first/only row carries data-is-streaming (c2a04b80d, 6.28899.6).
+  function isTurnStreaming(msgEl) {
+    if (msgEl.getAttribute("data-is-streaming") === "true") return true;
+    var key = msgEl.getAttribute("data-turn-key") || "";
+    if (!key) return false;
+    try {
+      var root = msgEl.closest(TRANSCRIPT_ROOT_SEL) || document;
+      var rows = root.querySelectorAll(ASSISTANT_MSG_SEL + '[data-is-streaming="true"]');
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].getAttribute("data-turn-key") === key) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  // Chat buttons carry data-state. The Code tab button does not: read the
+  // SpeakAction's "playing" prop from whichever fiber copy (current or
+  // alternate; a DOM node can point at a stale one) renders the label the
+  // DOM shows now, so the answer is locale-independent.
+  function readAloudStateOf(btn) {
+    var st = btn.getAttribute("data-state");
+    if (st) return st;
+    var al = (btn.getAttribute("aria-label") || "").trim();
+    var f = fiberOf(btn);
+    for (var i = 0; f && i < MAX_FIBER_HOPS; i++, f = f.return) {
+      var cands = [f.memoizedProps, f.alternate ? f.alternate.memoizedProps : null];
+      for (var j = 0; j < cands.length; j++) {
+        var p = cands[j];
+        if (p && typeof p === "object" && typeof p.playing === "boolean" &&
+            typeof p.label === "string" && p.label.trim() === al) {
+          return p.playing ? "playing" : "idle";
+        }
+      }
+    }
+    return /^pause$/i.test(al) ? "playing" : "idle";
+  }
+
   function isVisible(el) {
     if (!el || !el.isConnected) return false;
     try {
@@ -209,6 +313,7 @@
     var roots = [msgEl];
     var scope = scopeForMessage(msgEl);
     if (scope && scope !== msgEl) roots.push(scope);
+    roots = roots.concat(ownedTailOutlets(msgEl));
 
     for (var i = 0; i < roots.length; i++) {
       var btn = roots[i].querySelector(READ_ALOUD_SEL);
@@ -246,7 +351,14 @@
     var el = msgEl.querySelector(DEFERRED_ACTIONS_SEL);
     if (el) return el;
     var scope = scopeForMessage(msgEl);
-    return scope ? scope.querySelector(DEFERRED_ACTIONS_SEL) : null;
+    el = scope ? scope.querySelector(DEFERRED_ACTIONS_SEL) : null;
+    if (el) return el;
+    var tails = ownedTailOutlets(msgEl);
+    for (var i = 0; i < tails.length; i++) {
+      el = tails[i].querySelector(DEFERRED_ACTIONS_SEL);
+      if (el) return el;
+    }
+    return null;
   }
 
   function hydrateDeferredActions(deferredEl) {
@@ -257,6 +369,9 @@
       if (typeof PointerEvent === "function") {
         deferredEl.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, cancelable: true }));
         deferredEl.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false, cancelable: false }));
+        // Code tab tail outlet: upstream marks it reached on pointerenter of the tail turn.
+        var tailTurn = deferredEl.closest(TAIL_TURN_SEL);
+        if (tailTurn) tailTurn.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false, cancelable: false }));
       }
     } catch (e) {}
     try {
@@ -289,7 +404,7 @@
     // 1. If any Read Aloud button is currently playing or loading, toggle it immediately.
     var allBtns = document.querySelectorAll(READ_ALOUD_SEL);
     for (var i = 0; i < allBtns.length; i++) {
-      var st = allBtns[i].getAttribute("data-state") || "";
+      var st = readAloudStateOf(allBtns[i]);
       if ((st === "playing" || st === "loading") && !allBtns[i].disabled) {
         allBtns[i].click();
         return Promise.resolve({ ok: true, action: "readAloud", detail: "toggled-active:" + st });
@@ -306,7 +421,7 @@
     var target = null;
     var sawStreaming = false;
     for (var m = msgs.length - 1; m >= 0; m--) {
-      if (msgs[m].getAttribute("data-is-streaming") === "true") {
+      if (isTurnStreaming(msgs[m])) {
         sawStreaming = true;
         // If a streaming reply already exposes its button, allow reading it; otherwise prefer latest completed.
         if (findReadAloudButtonInMessage(msgs[m])) {
@@ -327,7 +442,7 @@
     var direct = findReadAloudButtonInMessage(target);
     if (direct) {
       direct.click();
-      return Promise.resolve({ ok: true, action: "readAloud", detail: "clicked:" + (direct.getAttribute("data-state") || "idle") });
+      return Promise.resolve({ ok: true, action: "readAloud", detail: "clicked:" + readAloudStateOf(direct) });
     }
 
     var deferred = findDeferredActionsInMessage(target);
@@ -784,7 +899,7 @@
       var sendNowBtns = document.querySelectorAll(SEND_NOW_SEL);
       var playing = 0;
       for (var i = 0; i < readBtns.length; i++) {
-        if (readBtns[i].getAttribute("data-state") === "playing") playing++;
+        if (readAloudStateOf(readBtns[i]) === "playing") playing++;
       }
       return {
         path: String((location && location.pathname) || ""),

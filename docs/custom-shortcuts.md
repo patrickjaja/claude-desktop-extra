@@ -12,7 +12,7 @@ Everything starts **off and unbound** by default. When disabled or unbound, upst
 |----------|-----------|---------------------------------|----------|
 | **Voice mode in current chat** | `voiceMode` | `voice-mode` | Starts Voice mode in the focused chat view (closing Settings if open), or ends/cancels an active/connecting voice session. Shows a notice when invoked on unsupported views such as `/code` or `/cowork`. |
 | **New voice chat** | `newVoiceChat` | `new-voice-chat` | Ends any active voice session, navigates to `/new`, waits past the app's composer mistap guard, and starts Voice mode in the new thread. |
-| **Read aloud latest reply** | `readAloud` | `read-aloud` | Pauses/resumes an active Read Aloud button if one is playing/loading, otherwise starts Read Aloud on the newest completed Claude reply (hydrating deferred message actions without stealing focus from the composer). |
+| **Read aloud latest reply** | `readAloud` | `read-aloud` | Pauses/resumes an active Read Aloud button if one is playing/loading, otherwise starts Read Aloud on the newest completed Claude reply (hydrating deferred message actions without stealing focus from the composer). Works in Chat and in Code-tab sessions, including when a card sits between the reply and its action bar; a second press pauses it. |
 | **Send queued message now** | `sendNow` | `send-now` | Clicks the visible **Send now** (or **Send N now**) button on a queued message in Code, Chat, or Cowork so Claude reads it immediately instead of waiting for the current turn, without stealing focus from the composer. |
 
 ## Shortcut recorder rules
