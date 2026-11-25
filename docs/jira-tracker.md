@@ -1,6 +1,6 @@
 # Jira issue tracker
 
-Opt-in Community feature: Settings -> Extra -> Community Features -> Code -> **Jira issue tracker** (off by default, applies live). A **Jira** row in the main window's sidebar, or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd>, opens a page over the content area with your Jira Cloud tickets, the ticket detail, status changes and **Send to agent**. Jira Cloud only (`*.atlassian.net`); Jira Server and Data Center are not supported.
+Opt-in Community feature: Settings -> Extra -> Community Features -> Code -> **Jira issue tracker** (off by default, applies live). A **Jira** row in the main window's Code-tab sidebar (or inside **More** when unpinned via **Edit sidebar**), or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd> from any tab, opens a page over the content area with your Jira Cloud tickets, the ticket detail, status changes and **Send to agent**. Jira Cloud only (`*.atlassian.net`); Jira Server and Data Center are not supported.
 
 Patch: [`add_feature_jira_tracker.nim`](../patches/community/add_feature_jira_tracker.nim). Anchors: [baseline/JIRA_TRACKER_ANCHORS.md](../baseline/JIRA_TRACKER_ANCHORS.md).
 
@@ -40,7 +40,8 @@ The token field is part of Settings, which is a claude.ai page, so while you typ
 - **Board / Backlog / Done:** for each project on the page the app asks Jira for the project's board (the first one; **Filter** lets you pick another, remembered per project) and that board's backlog. Rows in the backlog go under **Backlog**, the other open rows under **Board**, done rows under **Done**. When the Agile API refuses (for example a scoped token without the Jira Software scopes) or the project has no board, open-sprint and in-progress rows go under **Board** and the rest under **Backlog**, with a one-time notice.
 - **Move to board / Move to backlog:** in a row's **...** menu and the ticket sidebar. On a team-managed or Kanban board the ticket is added to the board; on a Scrum board to the active sprint ("No active sprint" disables it). The row shows "pending..." until Jira's backlog shows the ticket in its new place. Jira can report that place a little late, so the tracker reads the backlog up to five times over about 6 seconds before it shows "Jira accepted the move but the ticket did not move."
 - **Status:** the menu lists Jira's transitions; one that needs more fields is disabled with "Needs fields - open in Jira". The row shows "pending..." until Jira answers.
-- **Open:** the Jira row in the sidebar or Ctrl+Shift+J.
+- **Open:** the Jira row in the Code-tab sidebar (or in **More** when unpinned) or Ctrl+Shift+J from any tab.
+- **Edit sidebar:** in the Code tab, **Edit sidebar** includes a **Jira** checkbox (on by default, saved per profile). Unchecking it moves **Jira** into the **More** menu.
 - **Close:** another sidebar row, a navigation in claude.ai, the Jira row or the shortcut again.
 
 ## Board
@@ -74,7 +75,7 @@ The first message comes from the prompt template in the settings row. Placeholde
 
 - A claude.ai menu, dialog or command palette that opens over the content area is hidden behind the page; a sidebar menu that extends past the sidebar edge is clipped. Close the page to reach them.
 - Find-in-page and Cowork artifact views can appear above the page; when an artifact view opens in the same window, the page closes.
-- On claude.ai the sidebar row is found by its English label ("Scheduled", else "Artifacts"). With the claude.ai interface in another language no Jira row appears; the shortcut still opens the page.
+- On claude.ai the sidebar row and **Edit sidebar** / **More** menu hooks are found by their English labels ("Scheduled", "Artifacts", "Customize", "On-call", "Meetings", "More", "Search", "New", "Edit sidebar"). With the claude.ai interface in another language the sidebar row still falls back to `[data-nav-item="more"]`, and Ctrl+Shift+J always opens the page.
 - While the page is open it covers part of the sidebar's resize handle. Close the page to resize the sidebar.
 - The upstream row that was active before (for example Scheduled) keeps its highlight while the Jira page is open.
 - The board's columns have a fixed width (260 px). A better width for wide windows is still open.
@@ -84,7 +85,7 @@ The first message comes from the prompt template in the settings row. Placeholde
 
 ## Privacy and files
 
-- `cdb-jira-credentials.json` (site, email, detected route and cloud ID, the token as keyring ciphertext) and `cdb-jira-state.json` (saved queries, last preset and project, last folder per project, prompt template), both mode 0600 in the profile directory; the page files in `cdb-jira-tracker/`.
+- `cdb-jira-credentials.json` (site, email, detected route and cloud ID, the token as keyring ciphertext) and `cdb-jira-state.json` (saved queries, last preset and project, last folder per project, prompt template, whether the **Jira** row is pinned in the Code sidebar), both mode 0600 in the profile directory; the page files in `cdb-jira-tracker/`.
 - `[cdb-jira]` lines in `claude-patches.log` carry the request method, path (ticket keys replaced by `<key>`) and status, and fixed event names - never ticket text, JQL, the token or a URL query.
 
 ## Troubleshooting

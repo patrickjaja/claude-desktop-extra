@@ -197,6 +197,12 @@
     jiraBounds: function (rect) {
       return ipcRenderer.invoke("cdb-jira:bounds", jiraRect(rect));
     },
+    jiraSidebarRead: function () {
+      return ipcRenderer.invoke("cdb-jira:sidebar-read");
+    },
+    jiraSidebarSet: function (pinned) {
+      return ipcRenderer.invoke("cdb-jira:sidebar-set", pinned === true);
+    },
     jiraPrefRead: function () {
       return ipcRenderer.invoke("cdb-jira-pref:read");
     },

@@ -20,7 +20,7 @@ const test = async (name, fn) => { await fn(); passed++; console.log("PASS " + n
 
 function miniDom() {
   const compound = (s) => {
-    const m = /^([a-z]*)/.exec(s), parts = { tag: m[1].toUpperCase(), cls: [], attrs: [] };
+    const m = /^([a-z0-9]*)/.exec(s), parts = { tag: m[1].toUpperCase(), cls: [], attrs: [] };
     const re = /\.([\w/-]+)|\[([\w-]+)(?:(\$?=)"?([^"\]]*)"?)?\]/g; let x;
     while ((x = re.exec(s.slice(m[1].length)))) { if (x[1]) parts.cls.push(x[1]); else parts.attrs.push([x[2], x[3], x[4]]); }
     return parts;
@@ -67,7 +67,8 @@ function miniDom() {
     querySelectorAll(sel) { return this.all().filter((n) => matches(n, sel)); }
     querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
     addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
-    click() { const ev = { target: this, preventDefault() {}, stopPropagation() {} }; for (let n = this; n; n = n.parentNode) (n.listeners && n.listeners.click || []).forEach((f) => f(ev)); docClicks.forEach((f) => f(ev)); }
+    dispatchEvent(ev) { for (let n = this; n; n = n.parentNode) (n.listeners && n.listeners[ev.type] || []).forEach((f) => f(ev)); }
+    click() { const ev = { type: "click", target: this, preventDefault() {}, stopPropagation() {} }; this.dispatchEvent(ev); docClicks.forEach((f) => f(ev)); }
     getBoundingClientRect() { return this.box || { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }; }
     cloneNode(deep) { const c = new El(this.tagName); this.attrs.forEach((v, k) => c.attrs.set(k, v)); if (deep) this.childNodes.forEach((k) => c.appendChild(k.cloneNode(true))); return c; }
   }
@@ -192,7 +193,13 @@ try {
   await test("state: queries, last preset, project, folders and template are validated and persisted", () => {
     const dir = path.join(temp, "state");
     const { store } = loadStore(dir);
-    assert.deepEqual(plain(store.state()), { queries: [], lastPreset: "assigned", project: "", sort: "updated", detailsOpen: true, boards: {}, folders: {}, template: "" });
+    assert.deepEqual(plain(store.state()), { queries: [], lastPreset: "assigned", project: "", sort: "updated", detailsOpen: true, sidebarPinned: true, boards: {}, folders: {}, template: "" });
+    assert.equal(store.stateWrite({ sidebarPinned: false }).ok, true);
+    assert.equal(store.state().sidebarPinned, false);
+    assert.equal(store.stateWrite({ sidebarPinned: "no" }).ok, false, "sidebarPinned is a boolean");
+    fs.writeFileSync(path.join(dir, "cdb-jira-state.json"), JSON.stringify({ sidebarPinned: 0 }));
+    assert.equal(store.state().sidebarPinned, true, "a non-boolean stored sidebarPinned falls back to true");
+    assert.equal(store.stateWrite({ sidebarPinned: true }).ok, true);
     assert.equal(store.stateWrite({ board: { project: "B2", id: 15 } }).ok, true);
     assert.equal(store.stateWrite({ board: { project: "B2", id: 0 } }).ok, false);
     assert.equal(store.state().boards.B2, 15);
@@ -221,7 +228,7 @@ try {
     assert.equal(store.stateWrite({ template: "Do {{key}}" }).ok, true);
     assert.equal(store.stateWrite({ template: "x".repeat(10001) }).ok, false);
     assert.equal(store.stateWrite({ deleteQuery: "Mine" }).ok, true);
-    assert.deepEqual(plain(store.state()), { queries: [], lastPreset: "reported", project: "ACME", sort: "updated", detailsOpen: true, boards: {}, folders: { ACME: "/home/dev/acme" }, template: "Do {{key}}" });
+    assert.deepEqual(plain(store.state()), { queries: [], lastPreset: "reported", project: "ACME", sort: "updated", detailsOpen: true, sidebarPinned: true, boards: {}, folders: { ACME: "/home/dev/acme" }, template: "Do {{key}}" });
     assert.equal(store.stateWrite({ template: null }).ok, true);
     assert.equal(store.state().template, "");
     assert.equal(fs.statSync(path.join(dir, "cdb-jira-state.json")).mode & 0o777, 0o600);
@@ -234,11 +241,12 @@ try {
     const listeners = {};
     const electron = { contextBridge: { exposeInMainWorld: (n, a) => { exposed = a; } }, ipcRenderer: { invoke: (...a) => { calls.push(a); return Promise.resolve({ ok: true }); }, on: (ch, f) => { (listeners[ch] ||= []).push(f); } } };
     vm.runInNewContext(read("js/extra_settings_bridge.js"), vm.createContext({ console, require: (m) => { if (m !== "electron") throw new Error(m); return electron; } }));
-    exposed.jiraOpen({ x: 1, y: 2, width: 3, height: 4, extra: 5 }); exposed.jiraClose(); exposed.jiraBounds("nope"); exposed.jiraPrefRead(); exposed.jiraPrefTest();
+    exposed.jiraOpen({ x: 1, y: 2, width: 3, height: 4, extra: 5 }); exposed.jiraClose(); exposed.jiraBounds("nope"); exposed.jiraSidebarRead(); exposed.jiraSidebarSet("yes"); exposed.jiraSidebarSet(true); exposed.jiraPrefRead(); exposed.jiraPrefTest();
     exposed.jiraPrefSet({ enabled: true, site: "s", email: "e", token: null, template: null, other: 1 });
     assert.deepEqual(plain(calls), [["cdb-jira:open", { x: 1, y: 2, width: 3, height: 4 }], ["cdb-jira:close"], ["cdb-jira:bounds", { x: null, y: null, width: null, height: null }],
+      ["cdb-jira:sidebar-read"], ["cdb-jira:sidebar-set", false], ["cdb-jira:sidebar-set", true],
       ["cdb-jira-pref:read"], ["cdb-jira-pref:test"], ["cdb-jira-pref:set", { enabled: true, site: "s", email: "e", token: null, template: null }]]);
-    assert.deepEqual(Object.keys(exposed).filter((k) => /^jira/.test(k)).sort(), ["jiraBounds", "jiraClose", "jiraOpen", "jiraPrefRead", "jiraPrefSet", "jiraPrefTest"]);
+    assert.deepEqual(Object.keys(exposed).filter((k) => /^jira/.test(k)).sort(), ["jiraBounds", "jiraClose", "jiraOpen", "jiraPrefRead", "jiraPrefSet", "jiraPrefTest", "jiraSidebarRead", "jiraSidebarSet"]);
     calls.length = 0; exposed = null;
     vm.runInNewContext(read("js/jira_tracker_preload.js"), vm.createContext({ console, require: (m) => { if (m !== "electron") throw new Error(m); return electron; } }));
     assert.deepEqual(Object.keys(exposed).sort(), ["deleteQuery", "hide", "issue", "onTheme", "openExternal", "openIssue", "openSettings", "projects", "saveQuery", "search", "send", "setBoard", "setDetailsOpen", "state", "theme", "transition", "transitions", "move", "attachment", "download", "cover", "onCover", "drop", "children"].sort());
@@ -491,6 +499,193 @@ try {
       assert.equal(rows(), 1, "the old copy stays inert next to the new one");
       win.__cdbJiraWeb.refresh(); timers.splice(0).forEach((f) => f());
       assert.equal(rows(), 1);
+    }
+    {
+      // Code-tab scoping + fallback anchors + Edit sidebar + More flyout + async initial pinned=false.
+      const makeSvg = (h, cls, d = "M0 0") => { const s = h("svg", cls ? { class: cls } : {}); s.appendChild(h("path", { d })); return s; };
+      const installTab = (dom, opts = {}) => {
+        const calls = [], diag = [], timers = [];
+        const listeners = {};
+        const win = {
+          innerWidth: 1200, innerHeight: 800,
+          location: { protocol: "https:", pathname: opts.pathname || "/epitaxy" },
+          addEventListener: (n, f) => { (listeners[n] ||= []).push(f); }, removeEventListener: () => {},
+          KeyboardEvent: class { constructor(type, init) { Object.assign(this, { type, ...init }); } },
+          cdbExtra: {
+            jiraOpen: async (r) => { calls.push(["open", r]); return { ok: true }; },
+            jiraClose: async () => { calls.push(["close"]); return { ok: true }; },
+            jiraBounds: async (r) => { calls.push(["bounds", r]); return { ok: true }; },
+            jiraSidebarRead: opts.sidebarRead,
+            jiraSidebarSet: opts.sidebarSet || (async (p) => { calls.push(["sidebarSet", p]); return { ok: true, pinned: p }; }),
+            diag: async (m) => { diag.push(m); return { ok: true }; }
+          }
+        };
+        const c = vm.createContext({
+          window: win, document: dom.document, NodeFilter: { SHOW_TEXT: 4 },
+          KeyboardEvent: win.KeyboardEvent,
+          MutationObserver: class { observe() {} disconnect() {} },
+          ResizeObserver: class { observe() {} disconnect() {} },
+          console: { warn: () => {} },
+          setTimeout: (f) => { const g = () => f(); timers.push(g); return g; },
+          clearTimeout: (g) => { const i = timers.indexOf(g); if (i >= 0) timers.splice(i, 1); },
+          requestAnimationFrame: (f) => f()
+        });
+        assert.equal(vm.runInContext(read("js/jira_tracker_web_page.js"), c), "jira: installed");
+        const flush = () => { timers.splice(0).forEach((f) => f()); };
+        return { win, calls, diag, flush };
+      };
+      // 1. Route gating + fiber frameMode + Ctrl+Shift+J (open) on Chat tab.
+      {
+        const dom = miniDom(), { h } = dom;
+        const side = sidebarOf(h, h("div", { class: "list" }, h("button", { class: ROW }, makeSvg(h, "s"), "Scheduled")));
+        dom.html.appendChild(side);
+        const { win, calls, diag, flush } = installTab(dom, { pathname: "/new" });
+        assert.equal(dom.document.querySelector("[data-cdb-jira-row]"), null, "Chat route /new gets no Jira row");
+        for (let i = 0; i < 35; i++) { win.__cdbJiraWeb.refresh(); flush(); }
+        assert.equal(diag.length, 0, "no anchor warnings on Chat tab");
+        assert.equal(win.__cdbJiraWeb.open(), true, "shortcut/open() still works on Chat tab");
+        await new Promise((r) => setTimeout(r, 5));
+        assert.equal(calls.at(-1)[0], "open");
+        win.location.pathname = "/code/artifact/abc";
+        win.__cdbJiraWeb.refresh(); flush();
+        assert.equal(dom.document.querySelector("[data-cdb-jira-row]"), null, "artifact preview route gets no row");
+        win.location.pathname = "/epitaxy/local_1";
+        win.__cdbJiraWeb.refresh(); flush();
+        assert.ok(dom.document.querySelector("[data-cdb-jira-row]"), "Code route /epitaxy gets the Jira row");
+        win.location.pathname = "/chat/123";
+        win.__cdbJiraWeb.refresh(); flush();
+        assert.equal(dom.document.querySelector("[data-cdb-jira-row]"), null, "switching back to Chat removes the Jira row");
+        // React fiber frameMode wins over pathname (including child->sibling Wrn fiber).
+        side.__reactFiber$test = { return: null, child: { memoizedProps: {}, sibling: { memoizedProps: { frameMode: "code" } } } };
+        win.__cdbJiraWeb.refresh(); flush();
+        assert.ok(dom.document.querySelector("[data-cdb-jira-row]"), "fiber frameMode=code places row even before URL updates");
+        side.__reactFiber$test = { return: { memoizedProps: { frameMode: "chat" } }, child: null };
+        win.__cdbJiraWeb.refresh(); flush();
+        assert.equal(dom.document.querySelector("[data-cdb-jira-row]"), null, "fiber frameMode=chat removes row");
+      }
+      // 2. Fallback anchors: Customize -> before More -> Search/New.
+      {
+        const dom = miniDom(), { h } = dom;
+        const cust = h("button", { class: ROW, "data-nav-item": "customize" }, makeSvg(h, "c"), "Customize", h("span", { "data-cds": "Badge" }, "New"));
+        const more = h("button", { class: ROW, "data-nav-item": "more", "aria-expanded": "false" }, makeSvg(h, "m"), "More");
+        const list = h("div", { class: "list" }, cust, more);
+        dom.html.appendChild(sidebarOf(h, list));
+        installTab(dom);
+        const row = dom.document.querySelector("[data-cdb-jira-row]");
+        assert.ok(row, "Customize fallback places Jira row");
+        assert.equal(list.childNodes.indexOf(row), list.childNodes.indexOf(cust) + 1);
+        assert.equal(row.querySelector('[data-cds="Badge"]'), null, "cloned Customize badge is stripped");
+        assert.equal(row.hasAttribute("data-nav-item"), false, "data-nav-item is stripped");
+      }
+      {
+        const dom = miniDom(), { h } = dom;
+        const search = h("button", { class: ROW, "data-nav-item": "search" }, makeSvg(h, "s"), "Search");
+        const more = h("button", { class: ROW, "data-nav-item": "more", "aria-expanded": "false" }, makeSvg(h, "m"), "More");
+        const list = h("div", { class: "list" }, search, more);
+        dom.html.appendChild(sidebarOf(h, list));
+        installTab(dom);
+        const row = dom.document.querySelector("[data-cdb-jira-row]");
+        assert.ok(row, "More fallback places Jira row");
+        assert.equal(list.childNodes.indexOf(row), list.childNodes.indexOf(more) - 1, "inserted directly before More");
+        assert.equal(row.hasAttribute("aria-expanded"), false);
+      }
+      {
+        const dom = miniDom(), { h } = dom;
+        const nw = h("button", { class: ROW, "data-nav-item": "new" }, makeSvg(h, "n"), "New", h("kbd", {}, "Ctrl+N"));
+        const list = h("div", { class: "list" }, nw);
+        dom.html.appendChild(sidebarOf(h, list));
+        installTab(dom);
+        const row = dom.document.querySelector("[data-cdb-jira-row]");
+        assert.ok(row, "New fallback places Jira row when More is absent");
+        assert.equal(row.querySelector("kbd"), null, "<kbd> shortcut hint is stripped");
+        assert.equal(row.textContent, "Jira");
+      }
+      // 3. Edit sidebar modal + More menu integration + async pinned=false.
+      {
+        const dom = miniDom(), { h } = dom;
+        const aside = h("aside", { "data-code-list": "" });
+        const sch = h("button", { class: ROW }, makeSvg(h, "nav-ico"), "Scheduled");
+        const more = h("button", { class: ROW, "data-nav-item": "more" }, makeSvg(h, "nav-ico"), "More");
+        aside.appendChild(sidebarOf(h, h("div", { class: "list" }, sch, more)));
+        const checkRow = (id, text, checked, disabled = false) => {
+          const cbAttrs = { type: "button", role: "checkbox", "aria-checked": String(checked), "aria-labelledby": id + "-lbl" };
+          cbAttrs[checked ? "data-checked" : "data-unchecked"] = "";
+          if (disabled) cbAttrs.disabled = "";
+          const cb = h("button", cbAttrs, h("span", { class: "cb-box" }, makeSvg(h, "check-svg", "M1 2")));
+          const lbl = h("span", { id: id + "-lbl" }, h("span", { class: "flex items-center" }, makeSvg(h, "item-svg", "M3 4"), text));
+          const rowAttrs = { class: "group/cb", for: id };
+          if (disabled) rowAttrs["data-disabled"] = "";
+          return h("label", rowAttrs, h("span", {}, cb), h("span", {}, lbl));
+        };
+        const group = h("div", { role: "group", "aria-label": "Choose which items appear in your sidebar." },
+          checkRow("art", "Artifacts", false, true), checkRow("sch", "Scheduled", true), checkRow("cus", "Customize", true));
+        const dialog = h("div", { role: "dialog" }, h("h2", {}, "Edit sidebar"), group);
+        const dis = h("div", { role: "menuitem", "data-highlighted": "" }, makeSvg(h, "menu-ico"), "Design", h("span", { "data-cds": "Badge" }, "Beta"), makeSvg(h, "ext-ico"));
+        const sep = h("div", { role: "separator" });
+        const editItem = h("div", { role: "menuitem" }, "Edit sidebar\u2026");
+        const menu = h("div", { role: "menu" }, dis, sep, editItem);
+        dom.html.appendChild(aside);
+        dom.html.appendChild(dialog);
+        dom.html.appendChild(menu);
+        const { win, calls, flush } = installTab(dom, { pathname: "/new" }); // aside[data-code-list] proves Code tab!
+        assert.ok(dom.document.querySelector("[data-cdb-jira-row]"), "aside[data-code-list] enables Code tab");
+        const editRow = group.querySelector("[data-cdb-jira-edit-row]");
+        assert.ok(editRow, "Edit sidebar gets Jira row");
+        assert.equal(group.childNodes.indexOf(editRow), 2, "inserted right after Scheduled");
+        const cb = editRow.querySelector('[role="checkbox"]');
+        assert.equal(cb.getAttribute("aria-checked"), "true");
+        assert.equal(cb.hasAttribute("data-checked"), true);
+        assert.equal(cb.querySelector("svg path").getAttribute("d"), "M1 2", "checkmark SVG inside checkbox is preserved");
+        assert.equal(editRow.textContent, "Jira");
+        assert.equal(editRow.hasAttribute("for"), false, "cloned for attribute is stripped");
+        assert.equal(editRow.querySelector('[id]'), null, "cloned id attributes are stripped");
+        assert.equal(menu.querySelector("[data-cdb-jira-more-item]"), null, "while pinned, Jira is not duplicated in More");
+        // Unpin via Edit sidebar click -> hides sidebar row and adds More menu item.
+        editRow.click();
+        await new Promise((r) => setTimeout(r, 5));
+        assert.equal(win.__cdbJiraWeb.isPinned(), false);
+        assert.deepEqual(calls.at(-1), ["sidebarSet", false]);
+        assert.equal(cb.getAttribute("aria-checked"), "false");
+        assert.equal(cb.hasAttribute("data-unchecked"), true);
+        assert.equal(dom.document.querySelector("[data-cdb-jira-row]"), null, "unpinning hides the Jira sidebar row");
+        const moreItem = menu.querySelector("[data-cdb-jira-more-item]");
+        assert.ok(moreItem, "unpinning injects Jira into the More menu");
+        assert.equal(moreItem.nextSibling, sep, "inserted before the separator");
+        assert.equal(moreItem.querySelector('[data-cds="Badge"]'), null, "cloned menu badge is stripped");
+        assert.equal(moreItem.querySelectorAll("svg").length, 1, "extra trailing SVG is stripped");
+        assert.equal(moreItem.textContent, "Jira");
+        let esc = 0;
+        menu.addEventListener("keydown", (ev) => { if (ev.key === "Escape") esc++; });
+        moreItem.click();
+        await new Promise((r) => setTimeout(r, 5));
+        assert.equal(esc, 1, "clicking More menu item dispatches Escape to dismiss menu");
+        assert.equal(calls.at(-1)[0], "open", "and opens Jira");
+        // Re-pin -> restores sidebar row and removes More item.
+        editRow.click();
+        flush();
+        assert.equal(win.__cdbJiraWeb.isPinned(), true);
+        assert.equal(menu.querySelector("[data-cdb-jira-more-item]"), null);
+        assert.ok(dom.document.querySelector("[data-cdb-jira-row]"));
+        win.__cdbJiraWeb.remove();
+        assert.equal(dom.document.querySelector("[data-cdb-jira-edit-row]"), null);
+        assert.equal(dom.document.querySelector("[data-cdb-jira-more-item]"), null);
+      }
+      // 4. Initial jiraSidebarRead returning pinned=false prevents row flash.
+      {
+        const dom = miniDom(), { h } = dom;
+        dom.html.appendChild(sidebarOf(h, h("div", { class: "list" }, h("button", { class: ROW }, makeSvg(h, "s"), "Scheduled"))));
+        let resolveRead;
+        const { win, flush } = installTab(dom, {
+          pathname: "/epitaxy",
+          sidebarRead: () => new Promise((r) => { resolveRead = r; })
+        });
+        assert.equal(dom.document.querySelector("[data-cdb-jira-row]"), null, "waits for sidebar-read before placing row");
+        resolveRead({ ok: true, pinned: false });
+        await new Promise((r) => setTimeout(r, 5));
+        flush();
+        assert.equal(win.__cdbJiraWeb.isPinned(), false);
+        assert.equal(dom.document.querySelector("[data-cdb-jira-row]"), null, "pinned=false never flashes the sidebar row");
+      }
     }
   });
   const MODULES = ["js/jira_tracker_adf.js", "js/jira_tracker_client.js", "js/jira_tracker_store.js", "js/jira_tracker_prompt.js", "js/jira_tracker_send.js", "js/jira_tracker_view.js"];
@@ -1226,6 +1421,20 @@ try {
     w.win.contentView.children.push({ webContents: late, getBounds: () => ({ x: 0, y: 0, width: 800, height: 600 }) });
     await new Promise((r) => setTimeout(r, 650));
     assert.equal(late.js.filter((c) => c.includes("__cdbJiraWeb = {")).length, 1);
+  });
+  await test("sidebar pin IPC: persisted via cdb-jira:sidebar-read/set, sender-checked, refreshed on SPA navigate", async () => {
+    const w = world(path.join(temp, "w-sidebar-ipc"));
+    assert.match((await w.call("cdb-jira:sidebar-read", w.claude)).error, /switched off/);
+    await on(w);
+    assert.deepEqual(plain(await w.call("cdb-jira:sidebar-read", w.claude)), { ok: true, pinned: true });
+    assert.deepEqual(plain(await w.call("cdb-jira:sidebar-set", w.claude, false)), { ok: true, pinned: false });
+    assert.deepEqual(plain(await w.call("cdb-jira:sidebar-read", w.claude)), { ok: true, pinned: false });
+    assert.equal((await w.call("cdb-jira:sidebar-set", w.claude, "nope")).error, "bad sidebar state");
+    assert.match((await w.call("cdb-jira:sidebar-read", w.popout)).error, /unrecognized sender/);
+    assert.match((await w.call("cdb-jira:sidebar-set", w.popout, true)).error, /unrecognized sender/);
+    w.claude.js.length = 0;
+    w.claude.emit("did-navigate-in-page", {}, "https://claude.ai/epitaxy", true);
+    assert.ok(w.claude.js.includes("window.__cdbJiraWeb&&window.__cdbJiraWeb.refresh()"), "SPA navigation refreshes the sidebar row");
   });
   console.log(`PASS ${passed} Jira IPC tests`);
 } finally { fs.rmSync(temp, { recursive: true, force: true }); }

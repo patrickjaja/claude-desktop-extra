@@ -162,6 +162,10 @@ ok(JSON.stringify(calls) === JSON.stringify([
   ["cdb-shortcuts:recording", false],
   ["cdb-shortcuts:recording", true]
 ]), "customShortcuts methods hit their fixed channels with sanitized boolean/string arguments: " + JSON.stringify(calls));
+calls.length = 0;
+api.jiraSidebarRead(); api.jiraSidebarSet("yes"); api.jiraSidebarSet(true);
+ok(JSON.stringify(calls) === '[["cdb-jira:sidebar-read"],["cdb-jira:sidebar-set",false],["cdb-jira:sidebar-set",true]]',
+   "jiraSidebar methods hit their fixed channels with boolean-coerced arguments: " + JSON.stringify(calls));
 ok(typeof api.invoke !== "function" && typeof api.send !== "function", "no generic passthrough to arbitrary channels");
 
 console.log(`\n${pass} passed, ${fail} failed`);

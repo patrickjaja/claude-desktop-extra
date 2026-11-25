@@ -424,7 +424,13 @@
   var CLAUDE = {
     "cdb-jira:open": function (ev, rect) { return openFor(ev.sender, rect); },
     "cdb-jira:close": function () { return view.close("web"); },
-    "cdb-jira:bounds": function (ev, rect) { return view.bounds(ev.sender, rect); }
+    "cdb-jira:bounds": function (ev, rect) { return view.bounds(ev.sender, rect); },
+    "cdb-jira:sidebar-read": function () { return { ok: true, pinned: store.state().sidebarPinned }; },
+    "cdb-jira:sidebar-set": function (ev, pinned) {
+      if (typeof pinned !== "boolean") return bad("sidebar state");
+      var r = store.stateWrite({ sidebarPinned: pinned });
+      return r.ok ? { ok: true, pinned: pinned } : r;
+    }
   };
   var PREF = {
     "cdb-jira-pref:read": function () { return prefView(); },
@@ -617,6 +623,7 @@
     wc.on("did-navigate-in-page", function (_e2, url, isMainFrame) {
       if (isMainFrame !== false) noteRoute(wc, url);
       if (isMainFrame !== false && view.claudeContents() === wc && pathOf(url) !== openedPath) view.close("navigate");
+      if (isMainFrame !== false && enabled() && mainView(wc)) webCall(wc, "window.__cdbJiraWeb&&window.__cdbJiraWeb.refresh()");
     });
     wc.on("before-input-event", function (ev, input) { if (!view.isTracker(wc)) onKey(wc, ev, input); });
   });

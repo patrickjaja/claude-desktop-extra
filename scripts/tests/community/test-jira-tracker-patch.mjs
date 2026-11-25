@@ -85,7 +85,7 @@ try {
     vm.runInContext(index.text, ctx);
     assert.deepEqual(handlers.sort(), ["cdb-jira-pref:read", "cdb-jira-pref:set", "cdb-jira-pref:test", "cdb-jira:attachment", "cdb-jira:board", "cdb-jira:bounds", "cdb-jira:children", "cdb-jira:close", "cdb-jira:cover", "cdb-jira:details", "cdb-jira:download", "cdb-jira:drop", "cdb-jira:hide", "cdb-jira:issue", "cdb-jira:move",
       "cdb-jira:open", "cdb-jira:open-external", "cdb-jira:open-settings", "cdb-jira:projects", "cdb-jira:query-delete", "cdb-jira:query-save", "cdb-jira:search",
-      "cdb-jira:send", "cdb-jira:state", "cdb-jira:theme", "cdb-jira:transition", "cdb-jira:transitions"]);
+      "cdb-jira:send", "cdb-jira:sidebar-read", "cdb-jira:sidebar-set", "cdb-jira:state", "cdb-jira:theme", "cdb-jira:transition", "cdb-jira:transitions"]);
   });
   const broken = {
     "duplicate export key": STAGED.replace("getClaudeCodeSessionManager:()=>qC,", "getClaudeCodeSessionManager:()=>qC,getClaudeCodeSessionManager:()=>qC,"),

@@ -189,6 +189,7 @@
         project: PROJECT_RE.test(str(v.project)) ? v.project : "",
         sort: SORTS.indexOf(v.sort) >= 0 ? v.sort : "updated",
         detailsOpen: typeof v.detailsOpen === "boolean" ? v.detailsOpen : true,
+        sidebarPinned: typeof v.sidebarPinned === "boolean" ? v.sidebarPinned : true,
         boards: cleanBoards(v.boards),
         folders: cleanFolders(v.folders),
         template: typeof v.template === "string" && v.template.length <= MAX_TEMPLATE ? v.template : ""
@@ -208,6 +209,10 @@
       if (patch.detailsOpen !== undefined) {
         if (typeof patch.detailsOpen !== "boolean") return { ok: false, error: "detailsOpen must be true or false" };
         s.detailsOpen = patch.detailsOpen;
+      }
+      if (patch.sidebarPinned !== undefined) {
+        if (typeof patch.sidebarPinned !== "boolean") return { ok: false, error: "sidebarPinned must be true or false" };
+        s.sidebarPinned = patch.sidebarPinned;
       }
       if (patch.board !== undefined) {
         var b = patch.board;
