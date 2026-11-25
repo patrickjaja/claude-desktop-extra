@@ -733,7 +733,7 @@
 <div class="hero">
   <div class="hero-badge">Community package - not affiliated with Anthropic</div>
   <h1>Claude Desktop, <em>packaged for every Linux</em></h1>
-  <p>Anthropic's official Claude Desktop Linux build, repackaged for Arch, Fedora/RHEL, NixOS and AppImage (plus our own <code>.deb</code>), with Linux-only extras on top: Computer Use, custom themes, multiple profiles, Quick Entry, and more under Settings &rarr; Extra.</p>
+  <p>Anthropic's official Claude Desktop Linux build, repackaged for Arch, Fedora/RHEL, NixOS and AppImage (plus our own <code>.deb</code>), with Linux-only extras on top: Computer Use, Install as app for artifacts, custom themes, multiple profiles, Quick Entry, and more under Settings &rarr; Extra.</p>
 
   <div class="terminal">
     <div class="terminal-bar">
@@ -756,8 +756,8 @@
   </div>
 
   <div class="stat-line">
-    <span class="stat"><strong data-count="total">76</strong> <a href="#patches">patches on the official build, and growing</a></span>
-    <span class="stat"><strong data-count="core">49</strong> core: where Anthropic lacks compatibility</span>
+    <span class="stat"><strong data-count="total">78</strong> <a href="#patches">patches on the official build, and growing</a></span>
+    <span class="stat"><strong data-count="core">51</strong> core: where Anthropic lacks compatibility</span>
     <span class="stat"><strong data-count="community">27</strong> community: improvements and features</span>
   </div>
 </div>
@@ -852,6 +852,14 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
       </div>
       <h3>Computer Use</h3>
       <p>Claude sees your screen and works in your apps, on every account and every session type. Bundled bridges for X11, Wayland, GNOME and KDE, a glow that shows what Claude does, a second display for Claude, and controls by name instead of by pixel. <a href="#computer-use">More &rarr;</a></p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+      </div>
+      <h3>Install as app (Artifacts)</h3>
+      <p>Anthropic's <a href="https://claude.com/resources/articles/install-as-app">Install as app (Beta)</a> is macOS/Windows-only upstream, but works on Linux today: standalone artifact windows, XDG <code>.desktop</code> entries, hicolor icons, and all three permission tiers. <a href="#artifact-apps">More &rarr;</a></p>
     </div>
 
     <div class="feature-card">
@@ -1014,6 +1022,12 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
 
   <img class="shot" src="https://raw.githubusercontent.com/patrickjaja/claude-desktop-extra/master/docs/extra/extra-settings.png" alt="The Extra section in Claude's Settings" width="1026" height="802" loading="lazy">
   <div class="shot-caption">The Extra section in Claude's Settings</div>
+
+  <details style="margin-top: 1.25rem;">
+    <summary style="cursor: pointer; color: var(--text-dim); font-size: 0.9rem;">Demo: Extra features walkthrough (GIF)</summary>
+    <img class="shot" src="https://raw.githubusercontent.com/patrickjaja/claude-desktop-extra/master/docs/extra/extra-features-demo.gif" alt="Extra features walkthrough demo" width="1587" height="1023" loading="lazy">
+    <div class="shot-caption">Walkthrough of Settings &rarr; Extra features on Linux</div>
+  </details>
 </section>
 
 <!-- CODE TAB -->
@@ -1157,6 +1171,37 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
     </div>
   </div>
   <div class="more-link">Settings &rarr; Extra &rarr; <strong>Cowork (Linux)</strong> shows whether it works here and holds its switches. Cloud Cowork and Dispatch reach it only with TPM access for the device key (one click on that page): <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md#computer-use-in-cloud-cowork-and-dispatch">details</a>. Full guide: <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/docs/computer-use.md">docs/computer-use.md</a>.</div>
+</section>
+
+<!-- ARTIFACT APPS -->
+<section id="artifact-apps" class="fade-in">
+  <div class="section-label">Artifacts</div>
+  <h2>Install interactive artifacts as standalone Linux apps</h2>
+  <p>Anthropic's <a href="https://claude.com/resources/articles/install-as-app">Install as app (Beta)</a> is currently shipped for <strong>macOS and Windows only</strong> upstream. <code>claude-desktop-extra</code> brings full Linux compatibility out of the box across all three permission tiers, ready to use today.</p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <h3>XDG launchers &amp; icons</h3>
+      <p>Writes clean <code>.desktop</code> entries to <code>~/.local/share/applications/</code> with 256&times;256 and 512&times;512 hicolor PNG icons, multi-profile isolation (<code>--profile=</code>), icon updates and uninstall.</p>
+    </div>
+    <div class="feature-card">
+      <h3>Clean Wayland &amp; X11 grouping</h3>
+      <p>Swaps per-window <code>CHROME_DESKTOP</code> / <code>StartupWMClass</code> cleanly around standalone window creation so launchers group each installed app while keeping <code>com.anthropic.Claude</code> portal identity intact.</p>
+    </div>
+    <div class="feature-card">
+      <h3>All 3 permission tiers</h3>
+      <p>Full support for Default, App Permissions and Full Computer Access tiers via our Linux preload &amp; IPC runtime, plus Show in File Manager and badge counts.</p>
+    </div>
+  </div>
+
+  <img class="shot" src="https://raw.githubusercontent.com/patrickjaja/claude-desktop-extra/master/docs/artifact-apps/install-as-app-menu.png" alt="Install as app menu option on an artifact in Claude Desktop on Linux" width="1323" height="903" loading="lazy">
+  <div class="shot-caption">1. Open the artifact menu and choose <strong>Install as app</strong></div>
+
+  <img class="shot" src="https://raw.githubusercontent.com/patrickjaja/claude-desktop-extra/master/docs/artifact-apps/install-as-app-dialog.png" alt="Install Hello World as an app confirmation dialog" width="1293" height="878" loading="lazy">
+  <div class="shot-caption">2. Confirm installation across your chosen permission tier</div>
+
+  <img class="shot" style="max-width: 448px; margin-left: auto; margin-right: auto;" src="https://raw.githubusercontent.com/patrickjaja/claude-desktop-extra/master/docs/artifact-apps/install-as-app-launcher.png" alt="Installed artifact app listed in desktop launcher" width="448" height="169" loading="lazy">
+  <div class="shot-caption">3. Launches straight from your desktop launcher as a standalone app</div>
 </section>
 
 <!-- COMMUNITY FEATURES -->
@@ -1306,7 +1351,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
 <!-- PATCHES -->
 <section id="patches" class="fade-in">
   <div class="section-label">How it works</div>
-  <h2><span data-count="total">76</span> patches on the official build, and growing</h2>
+  <h2><span data-count="total">78</span> patches on the official build, and growing</h2>
   <p>We start from Anthropic's official Claude Desktop Linux <code>.deb</code>, apply small JavaScript patches to its <code>app.asar</code>, and repackage the result for each distro.</p>
 
   <div class="steps-grid">
@@ -1327,9 +1372,9 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
   <div class="cowork-box">
     <div class="cowork-mode">
       <div class="badge badge-default">Always on</div>
-      <div class="tier-count" data-count="core">49</div>
+      <div class="tier-count" data-count="core">51</div>
       <h3>Core patches</h3>
-      <p>Where Anthropic lacks compatibility: general Linux patches for the tray, portals, Wayland and X11, the sandbox, Cowork on non-Debian distros and more, plus the shared infrastructure the features build on (the Extra settings pages, the theme engine, profiles). In the repo they are split into <span data-count="linux">39</span> Linux fixes (<code>patches/linux/</code>) and <span data-count="coreplumbing">10</span> core plumbing patches (<code>patches/core/</code>).</p>
+      <p>Where Anthropic lacks compatibility: general Linux patches for the tray, portals, Wayland and X11, the sandbox, Cowork on non-Debian distros and more, plus the shared infrastructure the features build on (the Extra settings pages, the theme engine, profiles). In the repo they are split into <span data-count="linux">41</span> Linux fixes (<code>patches/linux/</code>) and <span data-count="coreplumbing">10</span> core plumbing patches (<code>patches/core/</code>).</p>
     </div>
     <div class="cowork-mode">
       <div class="badge badge-exp">Switchable</div>
@@ -1346,12 +1391,12 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
   <!-- Generated by scripts/gen-site-patch-catalog.py from docs/patches.md - do not edit by hand. -->
   <div class="pc-controls" id="pc-controls" hidden>
     <div class="cf-search">
-      <input type="search" id="pc-filter" placeholder="Filter 76 patches by name or description" aria-label="Filter patches" autocomplete="off">
+      <input type="search" id="pc-filter" placeholder="Filter 78 patches by name or description" aria-label="Filter patches" autocomplete="off">
       <button type="button" class="cf-clear" id="pc-clear" aria-label="Clear filter" hidden>&times;</button>
     </div>
     <div class="pc-tiers" role="group" aria-label="Patch tier">
-      <button type="button" class="pc-tier active" data-tier="all" aria-pressed="true">All (76)</button>
-      <button type="button" class="pc-tier" data-tier="core" aria-pressed="false">Core (49)</button>
+      <button type="button" class="pc-tier active" data-tier="all" aria-pressed="true">All (78)</button>
+      <button type="button" class="pc-tier" data-tier="core" aria-pressed="false">Core (51)</button>
       <button type="button" class="pc-tier" data-tier="community" aria-pressed="false">Community (27)</button>
     </div>
   </div>
@@ -1517,7 +1562,7 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
       </div>
     </div>
     <div class="cf-group pc-group" id="pc-linux" data-tier="core">
-      <h3 class="pc-group-h">Linux compatibility <span class="pc-group-n">39</span></h3>
+      <h3 class="pc-group-h">Linux compatibility <span class="pc-group-n">41</span></h3>
       <div class="cf-group-sub">Always on: where Anthropic lacks compatibility on Linux. <code>patches/linux/</code></div>
       <div class="cf-list">
         <div class="cf-row pc-row" id="patch-enable_local_agent_mode" data-tier="core">
@@ -1527,6 +1572,14 @@ chmod +x Claude_Desktop-*-x86_64.AppImage && ./Claude_Desktop-*-x86_64.AppImage<
         <div class="cf-row pc-row" id="patch-fix_app_quit" data-tier="core">
           <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/linux/fix_app_quit.nim">fix_app_quit.nim</a> <span class="cf-hint badge-default">Core: Linux fix</span></div>
           <div class="cf-note">Ends the process 3 seconds after quit if it is still alive. When logout, <code>systemctl stop</code>, <code>pkill</code> or Ctrl+C signal every app process at once, Electron 44.7.0 loops on failed GPU-process relaunches and no regular exit call returns, so without this the app spins at full CPU until it is force-killed</div>
+        </div>
+        <div class="cf-row pc-row" id="patch-fix_artifact_apps_linux" data-tier="core">
+          <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/linux/fix_artifact_apps_linux.nim">fix_artifact_apps_linux.nim</a> <span class="cf-hint badge-default">Core: Linux fix</span></div>
+          <div class="cf-note">Enables Anthropic&#x27;s <strong>Install as app (Beta)</strong> (<code>artifactApps</code>) across all three permission tiers on Linux: unfolds the build-time-folded capability, IPC and startup gates (<code>Ybi</code>, <code>vMr</code>, <code>vTi</code>), injects the Linux desktop-entry runtime (<a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/js/artifact_apps_linux.js"><code>js/artifact_apps_linux.js</code></a>) together with the bundled <a href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/js/artifact_app_window_preload.js"><code>artifactAppWindow.js</code></a> preload, generates per-profile XDG <code>.desktop</code> entries and hicolor PNG icons, swaps <code>CHROME_DESKTOP</code> and <code>app.setDesktopName</code> strictly around standalone window construction so Wayland/X11 panels and taskbars group each installed app separately while keeping <code>com.anthropic.Claude</code> portal identity intact, routes <code>--artifact-app=&lt;id&gt;</code> cold-start and second-instance launches, and maps uninstall, Show in File Manager, icon updates, badges and tray keep-alive to Linux equivalents</div>
+        </div>
+        <div class="cf-row pc-row" id="patch-fix_artifact_apps_pre_linux" data-tier="core">
+          <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/linux/fix_artifact_apps_pre_linux.nim">fix_artifact_apps_pre_linux.nim</a> <span class="cf-hint badge-default">Core: Linux fix</span></div>
+          <div class="cf-note">Early-startup (<code>index.pre.js</code>) companion for <strong>Install as app</strong>: recognizes <code>--artifact-app=&lt;32-hex&gt;</code> before <code>index.js</code> loads so launching an installed artifact desktop entry starts hidden (<code>bornHiddenReason: &quot;appifact&quot;</code>) and suppresses the main Claude window</div>
         </div>
         <div class="cf-row pc-row" id="patch-fix_browser_tools_linux" data-tier="core">
           <div class="cf-title"><a class="pc-name" href="https://github.com/patrickjaja/claude-desktop-extra/blob/master/patches/linux/fix_browser_tools_linux.nim">fix_browser_tools_linux.nim</a> <span class="cf-hint badge-default">Core: Linux fix</span></div>

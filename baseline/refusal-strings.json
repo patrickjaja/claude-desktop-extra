@@ -337,6 +337,20 @@
       "reason": "Settings description (attention bounce); documentation text."
     },
     {
+      "id": "4bd38429df78",
+      "text": "bundles are installed on macOS only",
+      "status": "unreachable",
+      "sites": 1,
+      "reason": "Artifact Apps macOS .app bundle installer helper (gr); fix_artifact_apps_linux.nim replaces the install and icon-update paths (Sl/kl) with Linux XDG .desktop entry generation, so this throw is unreachable on Linux."
+    },
+    {
+      "id": "dc22d070a064",
+      "text": "bundles are sealed on macOS only",
+      "status": "unreachable",
+      "sites": 1,
+      "reason": "Artifact Apps macOS .app bundle code-signing hash helper (zr); fix_artifact_apps_linux.nim replaces the install and icon-update paths (Sl/kl) with Linux XDG .desktop entries, so this throw is unreachable on Linux."
+    },
+    {
       "id": "13b5c5440c5f",
       "text": "Cannot branch: this session type cannot be branched.",
       "status": "accepted",
@@ -1008,6 +1022,13 @@
       "status": "accepted",
       "sites": 1,
       "reason": "macOS/Windows-specific path or wording (app-scoped mode, AX, keychain, TCC, ...): on Linux it is not taken, or the statement is true."
+    },
+    {
+      "id": "97015490914d",
+      "text": "safeStorage's asynchronous decrypt is used on macOS only",
+      "status": "unreachable",
+      "sites": 1,
+      "reason": "Thrown by OT(e, t='sync') only when t==='async'; its only conditional caller (E8n) passes 'async' only when v8n().asyncOnly is truthy, and in the Linux build v8n() never sets asyncOnly."
     },
     {
       "id": "feac7516a9c3",

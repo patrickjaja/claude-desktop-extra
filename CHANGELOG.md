@@ -2,6 +2,14 @@
 
 All notable changes to the claude-desktop-extra packages will be documented in this file.
 
+## 2026-11-25
+
+### Artifact Apps ("Install as app" Beta) on Linux
+
+- Enabled upstream's **Install as app** (`artifactApps`) feature for artifacts on Linux across all three permission tiers (**Default**, **App Permissions**, and **Full Computer Access**: GrowthBook flags `2701212339`, `3983690295`, `3574866070`) via [`fix_artifact_apps_linux.nim`](patches/linux/fix_artifact_apps_linux.nim) and [`fix_artifact_apps_pre_linux.nim`](patches/linux/fix_artifact_apps_pre_linux.nim).
+- Added the missing [`artifactAppWindow.js`](js/artifact_app_window_preload.js) preload and Linux runtime ([`js/artifact_apps_linux.js`](js/artifact_apps_linux.js)): installs XDG `.desktop` entries under `~/.local/share/applications/` and hicolor PNG icons (`256×256` / `512×512`), isolates entries and `--profile=` arguments per profile (`CLAUDE_PROFILE`), swaps `CHROME_DESKTOP` / `app.setDesktopName` strictly around standalone window construction so compositors and panels group installed apps cleanly while preserving `com.anthropic.Claude` portal identity, routes `--artifact-app=<id>` cold-start and second-instance launches, and maps uninstall, "Show in File Manager", icon updates, badge counts and tray keep-alive to Linux.
+- Updated `scripts/check-refusal-strings.py` and `baseline/refusal-strings.json` to catch `"on macOS/Windows only"` wording, and corrected the `2701212339` / `3983690295` / `3574866070` descriptions in `docs/claude-desktop-extra.jsonc` / `js/growthbook_overrides.js`.
+
 ## 2026-11-23
 
 ### Custom Shortcuts: Send queued message now (`send-now`)

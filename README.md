@@ -10,7 +10,7 @@
 [![AppImage](https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-desktop-extra/badges/appimage.json)](https://github.com/patrickjaja/claude-desktop-extra#appimage-any-distro)
 [![Nix flake](https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-desktop-extra/badges/nix.json)](https://github.com/patrickjaja/claude-desktop-extra#nixos--nix)
 
-**Anthropic's official Claude Desktop Linux build, repackaged for Arch, Fedora/RHEL, NixOS and AppImage (plus our own `.deb`), with Linux-only extras on top:** [Computer Use](#computer-use), [custom themes](#custom-themes), [multiple profiles](#multiple-profiles), [Quick Entry](#quick-entry), and more under [Settings → Extra](#the-extra-settings).
+**Anthropic's official Claude Desktop Linux build, repackaged for Arch, Fedora/RHEL, NixOS and AppImage (plus our own `.deb`), with Linux-only extras on top:** [Computer Use](#computer-use), [Install as app](#install-as-app-artifacts), [custom themes](#custom-themes), [multiple profiles](#multiple-profiles), [Quick Entry](#quick-entry), and more under [Settings → Extra](#the-extra-settings).
 
 Everything else - Chat, Cowork, Claude Code, Browser Tools, 3P inference - is Anthropic's own build. New upstream releases reach you automatically through your package manager. On Ubuntu 22.04+ / Debian 12+ you can also install [Anthropic's official `.deb`](https://code.claude.com/docs/en/desktop-linux) directly; this package is the same app with [Linux fixes](docs/patches.md#linux-compatibility) and the extras above.
 
@@ -209,6 +209,13 @@ Settings → **Extra** holds everything this project adds, no config file or `su
 | ![Settings → Extra → Anthropic](docs/extra/anthropic-features.png) | ![Settings → Extra → Deployment](docs/extra/deployment.png) |
 </details>
 
+<details>
+<summary><b>Demo: Extra features walkthrough</b></summary>
+
+![Extra features walkthrough demo](docs/extra/extra-features-demo.gif)
+
+</details>
+
 ### The Code tab as an IDE
 
 Three Community switches make the Code tab work like VS Code:
@@ -234,6 +241,18 @@ What you get on top of plain clicking:
 - **Close to upstream.** New Computer Use features in Anthropic's build are carried over to the Linux backends as they appear.
 
 Settings → Extra → **Cowork (Linux)** shows whether it works here and holds the switches. Cloud Cowork and Dispatch reach it only with TPM access for the device key (one click on that page): [details](docs/computer-use.md#computer-use-in-cloud-cowork-and-dispatch). Full guide: [docs/computer-use.md](docs/computer-use.md), per-session matrix: [dependencies](docs/computer-use-dependencies.md).
+
+## Install as app (Artifacts)
+
+Turn interactive artifacts into standalone desktop apps via **[Install as app (Beta)](https://claude.com/resources/articles/install-as-app)**. Anthropic currently ships this feature on **macOS and Windows only**; `claude-desktop-extra` brings full Linux compatibility today out of the box (always-on Linux patches, no flags to flip).
+
+- **All three permission tiers** work: **Default** (isolated app), **App Permissions** (files/notifications/clipboard/shortcuts), and **Full Computer Access**.
+- **Native XDG integration:** writes a `.desktop` launcher under `~/.local/share/applications/` and `256×256` / `512×512` PNG icons under `~/.local/share/icons/hicolor/`, so your desktop launcher finds and starts installed artifact apps directly (`claude-desktop --artifact-app=<id>`).
+- **Clean Wayland & X11 window grouping:** sets per-window `CHROME_DESKTOP` / `StartupWMClass` so compositors and panels group installed apps under their own entry and icon, while keeping `com.anthropic.Claude` portal identity intact; per-profile isolation (`CLAUDE_PROFILE`), **Show in File Manager**, icon updates, badge counts and **Uninstall** are all wired cleanly to Linux.
+
+| Artifact menu | Confirmation dialog | Desktop launcher |
+|---|---|---|
+| ![Install as app menu option on an artifact](docs/artifact-apps/install-as-app-menu.png) | ![Install artifact as an app confirmation dialog](docs/artifact-apps/install-as-app-dialog.png) | ![Installed artifact app in desktop application launcher](docs/artifact-apps/install-as-app-launcher.png) |
 
 ## Custom Themes
 
@@ -267,7 +286,7 @@ Override Anthropic's server-side feature flags in `~/.config/Claude/claude-deskt
 
 ## Patches
 
-We patch the official `app.asar` at repackage time: [`patches/community/`](docs/patches.md#community-features) (27 patches, opt-in features), [`patches/core/`](docs/patches.md#core-infrastructure) (10, infrastructure) and [`patches/linux/`](docs/patches.md#linux-compatibility) (39, Linux fixes). A patch that stops matching fails the build, and a patch is removed once upstream ships the behavior. Catalog: [docs/patches.md](docs/patches.md).
+We patch the official `app.asar` at repackage time: [`patches/community/`](docs/patches.md#community-features) (27 patches, opt-in features), [`patches/core/`](docs/patches.md#core-infrastructure) (10, infrastructure) and [`patches/linux/`](docs/patches.md#linux-compatibility) (41, Linux fixes). A patch that stops matching fails the build, and a patch is removed once upstream ships the behavior. Catalog: [docs/patches.md](docs/patches.md).
 
 ## Command-line flags
 

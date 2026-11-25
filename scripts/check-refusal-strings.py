@@ -93,13 +93,14 @@ WEAK_TOPICS = (b"this device", b"this computer", b"this system")
 TOPIC_WORDS = STRONG_TOPICS + WEAK_REFUSAL_TOPICS + WEAK_TOPICS
 SUPPORT = re.compile(
     r"(?i)not supported|unsupported|not available|unavailable|isn't available|only available|not yet supported|"
-    r"not currently supported|doesn't support|does not support|isn't supported|no support|\bonly (?:on|for)\b")
+    r"not currently supported|doesn't support|does not support|isn't supported|no support|"
+    r"\bonly (?:on|for)\b|\bon (?:macOS|Windows) only\b")
 REFUSAL = re.compile(
     r"(?i)not supported|not available|unavailable|unsupported|\bneeds? (?:an? |the )|\brequires?\b|\brequired\b|"
     r"only available|cannot|can't|can not|can only|not starting|not enabled|disabled|refus|"
     r"only works|doesn't work|does not work|isn't supported|is not supported|won't work|isn't available|"
     r"is not available|not yet supported|not currently supported|doesn't support|does not support|unable to|"
-    r"\bonly (?:on|for)\b|not possible|won't run|will not work|no support")
+    r"\bonly (?:on|for)\b|\bon (?:macOS|Windows) only\b|not possible|won't run|will not work|no support")
 LONG = 300  # longer texts (prompts) are keyed per sentence
 # `"a"+x+"b"`: the gap between two literals of one concatenation chain
 _CONCAT_GAP = re.compile(rb"\s*\+\s*(?:(?:[\w$.?!]|\((?:[^()\"'`;{}]|\([^()\"'`;{}]*\))*\))+\s*\+\s*)?")

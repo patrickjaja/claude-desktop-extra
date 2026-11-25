@@ -500,6 +500,15 @@ if ! python3 "$SCRIPT_DIR/check-upstream-absorbed.py" --patches "$PATCHES_DIR" \
     exit 1
 fi
 
+# Install the Linux artifact-app preload script (absent in upstream's Linux .deb)
+ARTIFACT_APP_PRELOAD_DST="$APP_DIR/app.asar.contents/.vite/build/artifactAppWindow.js"
+if [ -f "$ARTIFACT_APP_PRELOAD_DST" ]; then
+    log_error "upstream now ships .vite/build/artifactAppWindow.js natively - re-audit fix_artifact_apps_linux.nim and preload injection"
+    exit 1
+fi
+cp "$PROJECT_DIR/js/artifact_app_window_preload.js" "$ARTIFACT_APP_PRELOAD_DST"
+log_info "Installed artifactAppWindow.js preload from js/artifact_app_window_preload.js"
+
 # Apply all patches via orchestrator
 log_info "Applying patches..."
 if ! python3 "$SCRIPT_DIR/apply_patches.py" "$PATCHES_DIR" "$APP_DIR"; then

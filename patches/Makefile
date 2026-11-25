@@ -186,6 +186,8 @@ core/add_tool_path_resolver: ../js/tool_path.js
 
 linux/fix_open_external_tool_path: ../js/open_external_tool_path.js
 
+linux/fix_artifact_apps_linux: ../js/artifact_apps_linux.js
+
 community/add_feature_github_alerts: \
   ../js/github_alerts_main.js \
   ../js/github_alerts_page.js \

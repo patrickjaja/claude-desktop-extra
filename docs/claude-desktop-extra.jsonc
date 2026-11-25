@@ -860,7 +860,7 @@
     // "2694357830": true, // iOS/Android simulator tools always-load by dev intent (alwaysLoadOnDevIntents: ios_app / android_app / react_native_app / flutter_app) (new in v2.26454.0)
     // "2694715967": true, // blockFocusWithoutPressLatched - latched pref, applies on every platform; on the next start adds the Chromium feature BlockingFocusWithoutUserActivation (new in v6.28899.2)
     // "2696933583": true, // ccd editor MCP tools - open_in_editor / reveal_path / request_keep_awake (default ON) (new in v2.2553.0)
-    // "2701212339": true, // app shim full-screen tier 1 (macOS dock; st map) (new in v6.28899.2)
+    // "2701212339": true, // Artifact Apps ("Install as app") tier 1 - desktop installation & standalone window (enabled on Linux by fix_artifact_apps_linux.nim) (new in v6.28899.2)
     // "2706827450": true, // remote Computer Use: same-identity grant release kill-switch - ON keeps the computer held for other sessions (new in v2.26454.0)
     // "2711562102": true, // dev-server preview autoPort retargeting to a free port when autoPort is unset (default ON) (new in v2.37337.1)
     // "2715281412": true, // sshFolderEntries registry gate (first condition) (new in v6.28899.2)
@@ -1095,7 +1095,7 @@
     // "3566354119": true, // plugin skills sync (new in v6.28899.2)
     // "3570147551": true, // ccd_ssh_policy_real_place_killswitch - under allowedWorkspaceFolders the hook asks no SSH host where a file tool's path leads (new in v4.16336.0)
     // "3572572142": true, // sessions-bridge init - live listener
-    // "3574866070": true, // app shim full-screen tier 3 (macOS dock; st map) (new in v6.28899.2)
+    // "3574866070": true, // Artifact Apps ("Install as app") tier 3 - Full Computer Access (childProcess/pty/globalShortcut/Menu/dock/tray) (new in v6.28899.2)
     // "3582863981": true, // (value flag .on) startup module option (new in v6.28899.2)
     // "3584135426": true, // transcript search worker reads the whole tail (new in v6.28899.2)
     // "3586389629": true, // APe interval ms (value flag)
@@ -1193,7 +1193,7 @@
     // "3977864451": true, // agent-emulated viewport reset at turn end (default ON) (new in v2.2553.0)
     // "3981275407": true, // Computer Use sub-feature gate next to teachModeEnabled / batchOnly (mode 'default' follows this flag) (new in v4.23118.0)
     // "3982397363": true, // stale-model-clear robustness toggle
-    // "3983690295": true, // app shim full-screen tier 2 (macOS dock; st map) (new in v6.28899.2)
+    // "3983690295": true, // Artifact Apps ("Install as app") tier 2 - App Permissions (fs/os/shell/window/notification/screen) (new in v6.28899.2)
     // "3985448564": true, // custom plugins remote marketplace gate, sibling of 1183214304 / 3764441751 / 1410651677 / 30891128 / 592261068 / 2416564355 (new in v4.23118.0)
     // "3989806346": true, // Cowork memory resets ledger (cowork-memory-resets.json); 3p behaves as ON (new in v4.16336.0)
     // "3990395613": true, // branch-deltas feature co-gate (new in v1.26832.0)
